@@ -27,6 +27,36 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
            + (long)player.Weed * _options.WeedNetWorth
            + (long)player.Coke * _options.CokeNetWorth;
 
+    public CrewReportResponse GetCrewReport(Player player)
+    {
+        var morale = _options.Morale;
+        var crew = _options.Crew;
+        var managementCapacity = Math.Max(1, player.Pimps) * morale.HoesManagedPerPimp;
+        var unmanagedHoes = Math.Max(0, player.Hoes - managementCapacity);
+        var armedThugs = Math.Min(player.Weapons, player.Thugs);
+        var uncoveredThugs = Math.Max(0, player.Thugs - player.Weapons);
+        var condomsNeeded = RequiredUpkeep(player.Hoes, _options.MaxActionTurns, morale.TurnsPerCondom);
+        var beerNeeded = RequiredUpkeep(player.Thugs, _options.MaxActionTurns, morale.TurnsPerBeer);
+        var condomCost = (long)condomsNeeded * _options.CondomPrice;
+        var beerCost = (long)beerNeeded * _options.BeerPrice;
+
+        return new CrewReportResponse(
+            managementCapacity,
+            unmanagedHoes,
+            armedThugs,
+            uncoveredThugs,
+            condomsNeeded,
+            beerNeeded,
+            condomCost,
+            beerCost,
+            condomCost + beerCost,
+            crew.HirePimpCost,
+            crew.HireHoeCost,
+            crew.HireThugCost,
+            crew.MinHoeMoraleToHire,
+            crew.MinThugMoraleToHire);
+    }
+
     public ActionResultResponse Scout(Player player, int turns)
     {
         ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
@@ -274,6 +304,93 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             new Dictionary<string, object?> { ["amount"] = amount, ["direction"] = "withdraw" });
     }
 
+    public ActionResultResponse HireCrew(Player player, string? role, int quantity)
+    {
+        var crew = _options.Crew;
+        var normalizedRole = NormalizeCrewRole(role);
+        ValidateCrewQuantity(quantity, crew);
+
+        var unitCost = normalizedRole switch
+        {
+            "pimps" => crew.HirePimpCost,
+            "hoes" => crew.HireHoeCost,
+            "thugs" => crew.HireThugCost,
+            _ => throw new GameRuleException("Crew role must be 'pimps', 'hoes', or 'thugs'.")
+        };
+
+        if (normalizedRole == "hoes" && player.HoeHappiness < crew.MinHoeMoraleToHire)
+            throw new GameRuleException($"Hoe morale must be at least {crew.MinHoeMoraleToHire:N0}% before you can hire more hoes.");
+        if (normalizedRole == "thugs" && player.ThugHappiness < crew.MinThugMoraleToHire)
+            throw new GameRuleException($"Thug morale must be at least {crew.MinThugMoraleToHire:N0}% before you can hire more thugs.");
+
+        var totalCost = (long)unitCost * quantity;
+        if (player.Cash < totalCost)
+            throw new GameRuleException($"You need ${totalCost:N0} cash on hand to hire that crew.");
+
+        player.Cash -= totalCost;
+        switch (normalizedRole)
+        {
+            case "pimps": player.Pimps += quantity; break;
+            case "hoes": player.Hoes += quantity; break;
+            case "thugs": player.Thugs += quantity; break;
+        }
+
+        return new ActionResultResponse(
+            $"Hired {quantity:N0} {CrewLabel(normalizedRole, quantity)} for ${totalCost:N0}.",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["role"] = normalizedRole,
+                ["quantity"] = quantity,
+                ["unitCost"] = unitCost,
+                ["totalCost"] = totalCost,
+                ["cashRemaining"] = player.Cash
+            });
+    }
+
+    public ActionResultResponse FireCrew(Player player, string? role, int quantity)
+    {
+        var crew = _options.Crew;
+        var normalizedRole = NormalizeCrewRole(role);
+        ValidateCrewQuantity(quantity, crew);
+
+        switch (normalizedRole)
+        {
+            case "pimps":
+                if (player.Pimps - quantity < 1)
+                    throw new GameRuleException("You must keep at least one pimp managing the operation.");
+                player.Pimps -= quantity;
+                player.HoeHappiness = ClampHappiness(player.HoeHappiness - FirePenalty(quantity, crew.FirePimpHoeMoralePenalty, crew));
+                break;
+            case "hoes":
+                if (player.Hoes < quantity)
+                    throw new GameRuleException("You do not have that many hoes.");
+                player.Hoes -= quantity;
+                player.HoeHappiness = ClampHappiness(player.HoeHappiness - FirePenalty(quantity, crew.FireHoeMoralePenalty, crew));
+                break;
+            case "thugs":
+                if (player.Thugs < quantity)
+                    throw new GameRuleException("You do not have that many thugs.");
+                player.Thugs -= quantity;
+                player.ThugHappiness = ClampHappiness(player.ThugHappiness - FirePenalty(quantity, crew.FireThugMoralePenalty, crew));
+                break;
+        }
+
+        return new ActionResultResponse(
+            $"Fired {quantity:N0} {CrewLabel(normalizedRole, quantity)}.",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["role"] = normalizedRole,
+                ["quantity"] = quantity,
+                ["pimps"] = player.Pimps,
+                ["hoes"] = player.Hoes,
+                ["thugs"] = player.Thugs,
+                ["hoeHappiness"] = Math.Round(player.HoeHappiness, 2),
+                ["thugHappiness"] = Math.Round(player.ThugHappiness, 2)
+            });
+    }
+
     public ActionResultResponse UpdateCrewSettings(Player player, int hoeCutPercent)
     {
         if (hoeCutPercent is < 10 or > 80)
@@ -313,6 +430,30 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         if (key is "weed" or "coke") return key;
         throw new GameRuleException("Product must be 'weed' or 'coke'.");
     }
+
+    private static string NormalizeCrewRole(string? role)
+    {
+        var key = role?.Trim().ToLowerInvariant();
+        return key switch
+        {
+            "pimp" or "pimps" => "pimps",
+            "hoe" or "hoes" => "hoes",
+            "thug" or "thugs" => "thugs",
+            _ => throw new GameRuleException("Crew role must be 'pimps', 'hoes', or 'thugs'.")
+        };
+    }
+
+    private static void ValidateCrewQuantity(int quantity, CrewOptions crew)
+    {
+        if (quantity < 1 || quantity > crew.MaxCrewTransactionQuantity)
+            throw new GameRuleException($"Quantity must be between 1 and {crew.MaxCrewTransactionQuantity:N0}.");
+    }
+
+    private static double FirePenalty(int quantity, double penaltyPerCrew, CrewOptions crew)
+        => Math.Min(crew.MaxFireMoralePenalty, quantity * penaltyPerCrew);
+
+    private static string CrewLabel(string role, int quantity)
+        => quantity == 1 ? role.TrimEnd('s') : role;
 
     private int Roll(RangeOptions range) => random.NextInclusive(range.Min, range.Max);
 

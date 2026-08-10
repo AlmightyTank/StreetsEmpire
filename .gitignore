@@ -2,8 +2,10 @@
 **/obj/
 **/node_modules/
 **/dist/
+*.tsbuildinfo
 .vs/
 .idea/
 .env
 *.user
 *.suo
+/.pnpm-store

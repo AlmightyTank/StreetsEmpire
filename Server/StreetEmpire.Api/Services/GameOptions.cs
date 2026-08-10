@@ -33,6 +33,14 @@ public sealed class GameOptions
     public StreetActionOptions StreetAction { get; set; } = new();
     public ProductionOptions Production { get; set; } = new();
     public MoraleOptions Morale { get; set; } = new();
+    public CrewOptions Crew { get; set; } = new();
+}
+
+public sealed class BotAutomationOptions
+{
+    public bool Enabled { get; set; } = false;
+    public int TickSeconds { get; set; } = 60;
+    public int RoundsPerTick { get; set; } = 1;
 }
 
 public sealed class StreetActionOptions
@@ -77,9 +85,68 @@ public sealed class MoraleOptions
     public double MaxDesertionChance { get; set; } = 0.20;
 }
 
-public sealed record RangeOptions(int Min, int Max);
+public sealed class CrewOptions
+{
+    public int MaxCrewTransactionQuantity { get; set; } = 1_000;
+    public int HirePimpCost { get; set; } = 2_500;
+    public int HireHoeCost { get; set; } = 750;
+    public int HireThugCost { get; set; } = 1_500;
+    public double MinHoeMoraleToHire { get; set; } = 35;
+    public double MinThugMoraleToHire { get; set; } = 35;
+    public double FireHoeMoralePenalty { get; set; } = 1.5;
+    public double FireThugMoralePenalty { get; set; } = 1.25;
+    public double FirePimpHoeMoralePenalty { get; set; } = 2.0;
+    public double MaxFireMoralePenalty { get; set; } = 25;
+}
 
-public sealed record FindOptions(double Chance, int Min, int Max);
+public sealed class RangeOptions
+{
+    public RangeOptions()
+    {
+    }
 
-public sealed record ProductProductionOptions(int CostPerTurn, int UnitsMin, int UnitsMax);
+    public RangeOptions(int min, int max)
+    {
+        Min = min;
+        Max = max;
+    }
+
+    public int Min { get; set; }
+    public int Max { get; set; }
+}
+
+public sealed class FindOptions
+{
+    public FindOptions()
+    {
+    }
+
+    public FindOptions(double chance, int min, int max)
+    {
+        Chance = chance;
+        Min = min;
+        Max = max;
+    }
+
+    public double Chance { get; set; }
+    public int Min { get; set; }
+    public int Max { get; set; }
+}
+
+public sealed class ProductProductionOptions
+{
+    public ProductProductionOptions()
+    {
+    }
+
+    public ProductProductionOptions(int costPerTurn, int unitsMin, int unitsMax)
+    {
+        CostPerTurn = costPerTurn;
+        UnitsMin = unitsMin;
+        UnitsMax = unitsMax;
+    }
+
+    public int CostPerTurn { get; set; }
+    public int UnitsMin { get; set; }
+    public int UnitsMax { get; set; }
 }

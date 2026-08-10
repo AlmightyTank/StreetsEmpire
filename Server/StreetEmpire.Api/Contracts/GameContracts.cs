@@ -1,3 +1,5 @@
+using StreetEmpire.Api.Services;
+
 namespace StreetEmpire.Api.Contracts;
 
 public sealed record ScoutRequest(int Turns);
@@ -6,10 +8,16 @@ public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
 public sealed record BankRequest(long Amount);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
+public sealed record CrewRequest(string? Role, int Quantity);
+public sealed record AdminCheatRequest(string? Cheat, long Amount);
+public sealed record AdminSeedBotsRequest(int Count);
+public sealed record AdminRunBotsRequest(int Rounds);
+public sealed record AdminBotAutomationRequest(bool Enabled);
 
 public sealed record DashboardResponse(
     Guid PlayerId,
     string Name,
+    bool IsAdmin,
     string City,
     long Cash,
     long BankCash,
@@ -17,6 +25,7 @@ public sealed record DashboardResponse(
     int Rank,
     int Turns,
     int MaxTurns,
+    int MaxActionTurns,
     int TurnsPerTick,
     int TurnTickMinutes,
     int SecondsUntilNextTurnTick,
@@ -33,8 +42,25 @@ public sealed record DashboardResponse(
     int Coke,
     int WeedSellPrice,
     int CokeSellPrice,
+    CrewReportResponse CrewReport,
     IReadOnlyList<StoreItemResponse> Store,
     IReadOnlyList<ActivityResponse> RecentActivity);
+
+public sealed record CrewReportResponse(
+    int ManagementCapacity,
+    int UnmanagedHoes,
+    int ArmedThugs,
+    int UncoveredThugs,
+    int CondomsNeededForMaxStreetAction,
+    int BeerNeededForMaxStreetAction,
+    long CondomCostForMaxStreetAction,
+    long BeerCostForMaxStreetAction,
+    long SupplyCostForMaxStreetAction,
+    int HirePimpCost,
+    int HireHoeCost,
+    int HireThugCost,
+    double MinHoeMoraleToHire,
+    double MinThugMoraleToHire);
 
 public sealed record StoreItemResponse(
     string Key,
@@ -63,7 +89,37 @@ public sealed record LeaderboardEntryResponse(
     int Hoes,
     int Thugs);
 
+public sealed record WorldNewsEntryResponse(
+    long Id,
+    string PlayerName,
+    string City,
+    string Action,
+    string Summary,
+    int TurnsSpent,
+    DateTime CreatedAtUtc);
+
 public sealed record ActionResultResponse(
     string Summary,
     int TurnsRemaining,
     IReadOnlyDictionary<string, object?>? Breakdown = null);
+
+public sealed record AdminOverviewResponse(
+    DateTime GeneratedAtUtc,
+    int TotalAccounts,
+    int AdminAccounts,
+    int BotAccounts,
+    int TotalPlayers,
+    long TotalCashOnHand,
+    long TotalBankCash,
+    long TotalLiquidCash,
+    long TotalNetWorth,
+    int TotalTurnsBanked,
+    double AverageHoeMorale,
+    double AverageThugMorale,
+    BotAutomationStatusResponse BotAutomation,
+    GameOptions Economy);
+
+public sealed record BotAutomationStatusResponse(
+    bool Enabled,
+    int TickSeconds,
+    int RoundsPerTick);

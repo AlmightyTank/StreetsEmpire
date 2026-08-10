@@ -16,9 +16,27 @@ export type StoreItem = {
   description: string
 }
 
+export type CrewReport = {
+  managementCapacity: number
+  unmanagedHoes: number
+  armedThugs: number
+  uncoveredThugs: number
+  condomsNeededForMaxStreetAction: number
+  beerNeededForMaxStreetAction: number
+  condomCostForMaxStreetAction: number
+  beerCostForMaxStreetAction: number
+  supplyCostForMaxStreetAction: number
+  hirePimpCost: number
+  hireHoeCost: number
+  hireThugCost: number
+  minHoeMoraleToHire: number
+  minThugMoraleToHire: number
+}
+
 export type Dashboard = {
   playerId: string
   name: string
+  isAdmin: boolean
   city: string
   cash: number
   bankCash: number
@@ -26,6 +44,7 @@ export type Dashboard = {
   rank: number
   turns: number
   maxTurns: number
+  maxActionTurns: number
   turnsPerTick: number
   turnTickMinutes: number
   secondsUntilNextTurnTick: number
@@ -42,6 +61,7 @@ export type Dashboard = {
   coke: number
   weedSellPrice: number
   cokeSellPrice: number
+  crewReport: CrewReport
   store: StoreItem[]
   recentActivity: Activity[]
 }
@@ -58,9 +78,83 @@ export type LeaderboardEntry = {
   thugs: number
 }
 
+export type WorldNewsEntry = {
+  id: number
+  playerName: string
+  city: string
+  action: string
+  summary: string
+  turnsSpent: number
+  createdAtUtc: string
+}
+
 export type ActionResult = {
   summary: string
   turnsRemaining: number
+  breakdown?: Record<string, unknown>
+}
+
+export type GameOptions = {
+  turnsPerTick: number
+  turnTickMinutes: number
+  maxTurns: number
+  maxActionTurns: number
+  startingTurns: number
+  startingCash: number
+  startingBankCash: number
+  condomPrice: number
+  beerPrice: number
+  weaponPrice: number
+  weedSellPrice: number
+  cokeSellPrice: number
+  streetAction: {
+    baseGrossPerTurn: number
+    pimpRecruitChance: number
+    hoeRecruitChance: number
+    thugRecruitChance: number
+  }
+  production: {
+    weed: { costPerTurn: number, unitsMin: number, unitsMax: number }
+    coke: { costPerTurn: number, unitsMin: number, unitsMax: number }
+  }
+  morale: {
+    hoesManagedPerPimp: number
+    turnsPerCondom: number
+    turnsPerBeer: number
+    desertionThreshold: number
+    maxDesertionChance: number
+  }
+  crew: {
+    maxCrewTransactionQuantity: number
+    hirePimpCost: number
+    hireHoeCost: number
+    hireThugCost: number
+    minHoeMoraleToHire: number
+    minThugMoraleToHire: number
+  }
+}
+
+export type AdminOverview = {
+  generatedAtUtc: string
+  totalAccounts: number
+  adminAccounts: number
+  botAccounts: number
+  totalPlayers: number
+  totalCashOnHand: number
+  totalBankCash: number
+  totalLiquidCash: number
+  totalNetWorth: number
+  totalTurnsBanked: number
+  averageHoeMorale: number
+  averageThugMorale: number
+  botAutomation: BotAutomationStatus
+  economy: GameOptions
+}
+
+export type BotAutomationStatus = {
+  enabled: boolean
+  tickSeconds: number
+  roundsPerTick: number
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -97,6 +191,24 @@ export const api = {
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   leaderboard: () => request<LeaderboardEntry[]>('/api/game/leaderboard'),
+  worldNews: () => request<WorldNewsEntry[]>('/api/world/news'),
+  adminOverview: () => request<AdminOverview>('/api/admin/overview'),
+  adminCheat: (cheat: string, amount: number) => request<ActionResult>('/api/admin/cheats', {
+    method: 'POST',
+    body: JSON.stringify({ cheat, amount }),
+  }),
+  adminSeedBots: (count: number) => request<ActionResult>('/api/admin/bots/seed', {
+    method: 'POST',
+    body: JSON.stringify({ count }),
+  }),
+  adminRunBots: (rounds: number) => request<ActionResult>('/api/admin/bots/run', {
+    method: 'POST',
+    body: JSON.stringify({ rounds }),
+  }),
+  adminSetBotAutomation: (enabled: boolean) => request<ActionResult>('/api/admin/bots/automation', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  }),
   workStreet: (turns: number) => request<ActionResult>('/api/game/street', {
     method: 'POST',
     body: JSON.stringify({ turns }),
@@ -124,5 +236,13 @@ export const api = {
   setHoeCut: (hoeCutPercent: number) => request<ActionResult>('/api/game/crew/settings', {
     method: 'PUT',
     body: JSON.stringify({ hoeCutPercent }),
+  }),
+  hireCrew: (role: 'pimps' | 'hoes' | 'thugs', quantity: number) => request<ActionResult>('/api/game/crew/hire', {
+    method: 'POST',
+    body: JSON.stringify({ role, quantity }),
+  }),
+  fireCrew: (role: 'pimps' | 'hoes' | 'thugs', quantity: number) => request<ActionResult>('/api/game/crew/fire', {
+    method: 'POST',
+    body: JSON.stringify({ role, quantity }),
   }),
 }

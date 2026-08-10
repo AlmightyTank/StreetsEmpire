@@ -1,6 +1,91 @@
-# Street Empire 0.1.1
+# Street Empire 0.1.10
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
+
+## What changed in 0.1.10
+
+0.1.10 teaches AI rivals to manage crew morale.
+
+- AI rivals raise hoe cut when hoe morale gets low and ease it back down when morale recovers.
+- AI rivals prioritize pimps, condoms, beer, and weapons when crew morale or coverage is strained.
+- AI rivals pause crew expansion and street work when morale needs recovery.
+
+## What changed in 0.1.9
+
+0.1.9 adds live admin control for automatic AI.
+
+- The Admin Control Center shows whether automatic AI is on or off.
+- Admins can turn automatic AI on or off without editing configuration.
+- Automatic AI starts disabled by default through `Bots:Enabled`.
+
+## What changed in 0.1.8
+
+0.1.8 makes AI rivals progress automatically.
+
+- The API hosts an automatic bot service that wakes on a configurable interval.
+- Automatic ticks run one AI round and let per-bot cooldowns decide who is actually due to act.
+- `Bots:Enabled`, `Bots:TickSeconds`, and `Bots:RoundsPerTick` control the automation.
+
+## What changed in 0.1.7
+
+0.1.7 gives AI rivals a progression loop instead of leaving them as static seeded accounts.
+
+- Admins can call `/api/admin/bots/run` to advance AI rivals through economy rounds.
+- AI rivals use the same server-side economy rules as players for store buys, hiring, street work, production, product sales, and banking.
+- AI rivals pace themselves by keeping turns in reserve and running at most one small turn-spending action per round.
+- AI rival activity uses real action timestamps in World News while per-bot cooldowns decide whether automatic bots are due to act.
+- The browser Admin Control Center includes controls for running 1, 3, or 10 AI rounds.
+
+## What changed in 0.1.6
+
+0.1.6 adds AI rivals so 0.2.0 combat can be tested against populated leaderboards.
+
+- Accounts now have a persistent AI-player flag.
+- Bot accounts are disabled for login and counted separately in the admin overview.
+- Admins can call `/api/admin/bots/seed` to create up to 15 seeded rivals with varied cities, cash, crews, morale, inventory, and turns.
+- The browser Admin Control Center includes AI rival seeding controls.
+- Development databases drop legacy 0.1.0 economy columns, including old happiness fields, after their values are copied into the current schema.
+
+## What changed in 0.1.5
+
+0.1.5 starts the world-activity layer.
+
+- Players can call `/api/world/news` for a recent global activity feed.
+- World News is built from server-side action logs and excludes admin cheat logs and store purchases.
+- The browser includes a World News panel in the right rail.
+
+## What changed in 0.1.4
+
+0.1.4 starts the game-administration layer for economy oversight.
+
+- Accounts now have a persistent admin flag.
+- The first registered account becomes an admin automatically.
+- Existing development databases promote the oldest account to admin through the 0.1.4 migration.
+- Admins can call `/api/admin/overview` for account/player totals, cash totals, net-worth totals, morale averages, and the active economy configuration.
+- Admins can call `/api/admin/cheats` for audited balance-testing grants.
+- The browser shows an Admin Control Center panel only to admin accounts, including quick cheats for cash, turns, crew, inventory, product, and morale.
+
+## What changed in 0.1.3
+
+0.1.3 adds direct crew-management depth on top of the 0.1.2 tuning foundation.
+
+- Players can hire or fire pimps, hoes, and thugs directly.
+- Hire costs, morale hiring requirements, firing morale penalties, and max crew transaction size are configurable through `Game:Crew`.
+- Hoes and thugs now require minimum morale before more can be hired.
+- Firing crew applies configurable morale pressure.
+- The dashboard reports management capacity, armed-thug coverage, max-action supply needs, and projected supply reserve cost.
+- The browser includes a new Crew Management panel with hire/fire controls.
+
+## What changed in 0.1.2
+
+0.1.2 turns the 0.1.1 economy into a tunable foundation for balance work.
+
+- Street income ranges, recruit odds, found-item tables, production costs, production yields, action turn limits, and morale pressures are now configurable through `Game` options.
+- Action responses now include structured server-calculated breakdowns in addition to human-readable summaries.
+- The browser uses the server-provided action turn limit and shows compact action breakdown metrics after resolved actions.
+- Malformed auth/product/store inputs now fail with rule errors instead of null-reference crashes.
+- The initial EF migration now creates the schema required by a fresh PostgreSQL database.
+- A lightweight backend rule-check runner covers net worth, turn refresh, street action math, production math, and invalid product handling.
 
 ## What changed in 0.1.1
 
@@ -76,7 +161,7 @@ Working the streets for 1-20 turns can now:
 - Per-player economy/action history.
 - Responsive React browser UI.
 
-PvP, travel, organizations, player-to-player markets, and territory are intentionally not part of 0.1.1.
+PvP, travel, organizations, player-to-player markets, and territory are intentionally not part of 0.1.10.
 
 ## Stack
 
@@ -101,25 +186,17 @@ From the repository root:
 docker compose up -d
 ```
 
-### 2. Create the database migration
+### 2. Apply the database migration
 
 For a brand-new database:
 
 ```powershell
 cd Server\StreetEmpire.Api
 dotnet tool install --global dotnet-ef
-dotnet ef migrations add InitialCreate
 dotnet ef database update
 ```
 
-If you already created a 0.1.0 database and still have its EF migration files, create an upgrade migration instead:
-
-```powershell
-dotnet ef migrations add Economy_0_1_1
-dotnet ef database update
-```
-
-Because the 0.1.1 player schema replaces the old Workers/Enforcers/Supplies fields, this is still an early-development schema. If there is no save data you care about, deleting the development database and generating a fresh `InitialCreate` migration is the simplest path.
+Because the 0.1.x player schema is still early-development, deleting the development database and applying the committed `InitialCreate` migration is the simplest path if there is no save data you care about.
 
 ### 3. Run the API
 
@@ -133,7 +210,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.1.1`.
+It should report version `0.1.10`.
 
 ### 4. Run the browser client
 
@@ -185,6 +262,27 @@ Net Worth = Cash on Hand
 
 The product net-worth value is deliberately below its fixed sale value so inventory does not inflate ranking exactly like liquid cash.
 
+## Economy tuning
+
+The server remains authoritative, and 0.1.10 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
+
+The configurable tables now include:
+
+- `MaxActionTurns`
+- `StreetAction` gross ranges, recruit chances, and found-item tables
+- `Production` product costs and unit ranges
+- `Morale` upkeep rates, management capacity, pressure penalties, and desertion thresholds
+- `Crew` hire costs, morale hire requirements, and firing penalties
+
+## Verification
+
+```powershell
+dotnet build StreetEmpire.sln
+dotnet run --project Tests\StreetEmpire.Tests\StreetEmpire.Tests.csproj
+cd Client
+npm run build
+```
+
 ## API added in 0.1.1
 
 ```text
@@ -196,6 +294,13 @@ POST /api/game/store/buy
 POST /api/game/bank/deposit
 POST /api/game/bank/withdraw
 PUT  /api/game/crew/settings
+POST /api/game/crew/hire
+POST /api/game/crew/fire
+GET  /api/world/news
+GET  /api/admin/overview
+POST /api/admin/cheats
+POST /api/admin/bots/seed
+POST /api/admin/bots/run
 ```
 
 `POST /api/game/scout` is retained as a temporary compatibility alias for the new street action.
@@ -208,8 +313,13 @@ That rule becomes especially important once PvP and a player market are introduc
 
 ## Proposed 0.1.x path
 
-- **0.1.2 — Economy tuning:** configurable street/recruit/production tables, stronger balance controls, and better action breakdowns.
-- **0.1.3 — Crew depth:** hiring/firing controls, deeper happiness requirements, and crew expense reporting.
-- **0.1.4 — Game administration:** admin configuration and economy controls.
-- **0.1.5 — World activity:** notifications and a global activity/news feed.
+- **0.1.2 — Done:** economy tuning, configurable tables, stronger balance controls, and better action breakdowns.
+- **0.1.3 — Done:** hiring/firing controls, deeper happiness requirements, and crew expense reporting.
+- **0.1.4 — Done:** admin identity, admin-only economy overview, browser admin control center, and audited admin cheats.
+- **0.1.5 — Done:** global action-log news feed and browser World News panel.
+- **0.1.6 — Done:** seeded AI rivals for pre-combat leaderboard and 0.2.0 testing.
+- **0.1.7 — Done:** AI rival progression rounds using the player economy.
+- **0.1.8 — Done:** automatic AI rival progression with staggered per-bot cooldowns.
+- **0.1.9 — Done:** admin runtime toggle for automatic AI.
+- **0.1.10 — Done:** AI crew-morale management.
 - **0.2.0 — War:** player search, attack/defense strength, combat, theft, losses, protection windows, and attack logs.

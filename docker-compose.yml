@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: street-empire-postgres
+    environment:
+      POSTGRES_DB: street_empire
+      POSTGRES_USER: street_empire
+      POSTGRES_PASSWORD: street_empire_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - street-empire-data:/var/lib/postgresql/data
+
+volumes:
+  street-empire-data:

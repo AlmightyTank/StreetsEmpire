@@ -294,8 +294,8 @@ http://localhost:5173
 | Pimps | 1 |
 | Hoes | 3 |
 | Thugs | 1 |
-| Condoms | 25 |
-| Beer | 12 |
+| Condoms | 17 |
+| Beer | 10 |
 | Weapons | 1 |
 | Hoe payout | 30% |
 | Hoe morale | 100% |

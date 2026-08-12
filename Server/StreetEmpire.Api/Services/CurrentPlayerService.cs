@@ -15,6 +15,8 @@ public sealed class CurrentPlayerService(GameDbContext db, IHttpContextAccessor 
 
         return await db.Players
             .Include(x => x.Account)
+            .Include(x => x.Hideout)
+            .Include(x => x.Crew)
             .SingleOrDefaultAsync(x => x.AccountId == accountId, cancellationToken);
     }
 }

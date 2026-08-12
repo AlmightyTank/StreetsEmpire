@@ -12,14 +12,19 @@ using StreetEmpire.Api.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("Game"));
+// Hideout tables come from config alone; this only fills tables appsettings left out entirely.
+builder.Services.PostConfigure<GameOptions>(options => options.Hideout.ApplyDefaultsWhereEmpty());
 builder.Services.Configure<BotAutomationOptions>(builder.Configuration.GetSection("Bots"));
 builder.Services.AddDbContext<GameDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("GameDatabase")));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentPlayerService>();
 builder.Services.AddScoped<TurnService>();
+builder.Services.AddScoped<HideoutService>();
+builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<EconomyService>();
 builder.Services.AddScoped<CombatService>();
+builder.Services.AddSingleton<CombatSchedule>();
 builder.Services.AddScoped<CombatMissionService>();
 builder.Services.AddScoped<CombatResolutionService>();
 builder.Services.AddScoped<BotSimulationService>();
@@ -67,6 +72,7 @@ app.MapPost("/api/auth/register", async (
     GameDbContext db,
     IPasswordHasher<PlayerAccount> passwordHasher,
     IOptions<GameOptions> gameOptions,
+    PimpRoster pimps,
     HttpContext http,
     CancellationToken ct) =>
 {
@@ -107,6 +113,9 @@ app.MapPost("/api/auth/register", async (
         ThugHappiness = 100,
         LastTurnUpdateUtc = DateTime.UtcNow
     };
+    player.Hideout = new Hideout { Player = player };
+    // Turns the starting pimp count into named crew.
+    pimps.Reconcile(player, DateTime.UtcNow);
 
     db.Accounts.Add(account);
     db.Players.Add(player);
@@ -160,6 +169,8 @@ app.MapGet("/api/game/dashboard", async (
     TurnService turns,
     EconomyService economy,
     IOptions<GameOptions> gameOptions,
+    HideoutService hideouts,
+    PimpRoster pimps,
     CombatMissionService combatMissions,
     CombatResolutionService combatResolver,
     CancellationToken ct) =>
@@ -180,6 +191,10 @@ app.MapGet("/api/game/dashboard", async (
         .CountAsync(x => x.DefenderId == player.Id && x.CreatedAtUtc >= combatSince, ct);
     var combatCrew = await combatMissions.CommitmentAsync(player, ct);
     var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
+    var commandingPimpIds = await combatMissions.ActiveAttackMissions(player.Id)
+        .Where(x => x.CommanderPimpId != null)
+        .Select(x => x.CommanderPimpId!.Value)
+        .ToListAsync(ct);
     var rank = await db.Players.AsNoTracking()
         .CountAsync(economy.RanksAbove(netWorth, player.CreatedAtUtc), ct) + 1;
     var activity = await db.ActionLogs.AsNoTracking()
@@ -220,6 +235,9 @@ app.MapGet("/api/game/dashboard", async (
         opts.WeedSellPrice,
         opts.CokeSellPrice,
         economy.GetCrewReport(player),
+        ToHideoutResponse(player, hideouts),
+        pimps.Active(player).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
+        pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
         ToCombatCrewResponse(combatCrew),
         ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
         economy.GetStore(),
@@ -248,7 +266,7 @@ app.MapPost("/api/game/street", async (
     var before = Snapshot(player);
     try
     {
-        var result = economy.Scout(player, request.Turns);
+        var result = economy.Scout(player, request.Turns, request.AutoBuySupplies);
         AddLog(db, player, before, "STREET", request.Turns, result.Summary);
         await db.SaveChangesAsync(ct);
         return Results.Ok(result);
@@ -282,7 +300,7 @@ app.MapPost("/api/game/scout", async (
     var before = Snapshot(player);
     try
     {
-        var result = economy.Scout(player, request.Turns);
+        var result = economy.Scout(player, request.Turns, request.AutoBuySupplies);
         AddLog(db, player, before, "STREET", request.Turns, result.Summary);
         await db.SaveChangesAsync(ct);
         return Results.Ok(result);
@@ -511,6 +529,30 @@ app.MapPost("/api/game/hideout/recover", async (
             ? Convert.ToInt32(turnsSpent)
             : 0,
             result.Summary);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(result);
+    }
+    catch (GameRuleException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
+app.MapPost("/api/game/hideout/upgrade", async (
+    HideoutUpgradeRequest request,
+    CurrentPlayerService current,
+    GameDbContext db,
+    HideoutService hideouts,
+    CancellationToken ct) =>
+{
+    var player = await current.GetAsync(ct);
+    if (player is null) return Results.Unauthorized();
+
+    var before = Snapshot(player);
+    try
+    {
+        var result = hideouts.Upgrade(player, request.Room);
+        AddLog(db, player, before, "HIDEOUT", 0, result.Summary);
         await db.SaveChangesAsync(ct);
         return Results.Ok(result);
     }
@@ -835,6 +877,7 @@ app.MapPost("/api/admin/cheats", async (
     CurrentPlayerService current,
     GameDbContext db,
     IOptions<GameOptions> gameOptions,
+    PimpRoster pimps,
     CancellationToken ct) =>
 {
     var player = await current.GetAsync(ct);
@@ -845,6 +888,7 @@ app.MapPost("/api/admin/cheats", async (
     try
     {
         var summary = ApplyAdminCheat(player, request, gameOptions.Value);
+        pimps.Reconcile(player, DateTime.UtcNow);
         AddLog(db, player, before, "ADMIN", 0, summary);
         await db.SaveChangesAsync(ct);
         return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
@@ -868,6 +912,8 @@ app.MapPost("/api/admin/bots/seed", async (
     CurrentPlayerService current,
     GameDbContext db,
     IOptions<GameOptions> gameOptions,
+    HideoutService hideouts,
+    PimpRoster pimps,
     CancellationToken ct) =>
 {
     var admin = await current.GetAsync(ct);
@@ -875,6 +921,9 @@ app.MapPost("/api/admin/bots/seed", async (
     if (!admin.Account.IsAdmin) return Results.Forbid();
 
     var templates = BotTemplates();
+    var hideoutConfig = gameOptions.Value.Hideout;
+    var maxStorageLevel = hideoutConfig.Storage.Count == 0 ? 1 : hideoutConfig.Storage.Max(x => x.Level);
+    var maxSafeLevel = hideoutConfig.Safe.Count == 0 ? 1 : hideoutConfig.Safe.Max(x => x.Level);
     var count = Math.Clamp(request.Count, 1, templates.Count);
     var now = DateTime.UtcNow;
     // Only the seed templates can collide, so ask about those names instead of reading every
@@ -899,7 +948,9 @@ app.MapPost("/api/admin/bots/seed", async (
         if (existingUsernames.Contains(template.Username) || existingNames.Contains(template.Name))
             continue;
 
-        var player = CreateBotPlayer(template, gameOptions.Value, now);
+        var player = CreateBotPlayer(template, gameOptions.Value, now, maxStorageLevel, maxSafeLevel);
+        hideouts.ClampToCapacity(player);
+        pimps.Reconcile(player, now);
         db.Accounts.Add(player.Account);
         db.Players.Add(player);
         db.ActionLogs.Add(new GameActionLog
@@ -1189,6 +1240,47 @@ static CombatReadinessResponse ToCombatReadiness(Player player)
         riskBand);
 }
 
+static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts)
+{
+    var capacity = hideouts.CapacityFor(player.Hideout);
+    return new HideoutResponse(
+        capacity.TierName,
+        capacity.Tier,
+        capacity.StorageLevel,
+        capacity.SafeLevel,
+        capacity.WeedLabLevel,
+        capacity.CokeLabLevel,
+        capacity.MaxPimps,
+        capacity.MaxHoes,
+        capacity.MaxThugs,
+        capacity.MaxCash,
+        capacity.MaxCondoms,
+        capacity.MaxBeer,
+        capacity.MaxWeapons,
+        capacity.MaxWeed,
+        capacity.MaxCoke,
+        hideouts.ProductionYieldBonusPercent(player.Hideout, "weed"),
+        hideouts.ProductionYieldBonusPercent(player.Hideout, "coke"),
+        hideouts.NextUpgradeCost(player.Hideout, "storage"),
+        hideouts.NextUpgradeCost(player.Hideout, "safe"),
+        hideouts.NextUpgradeCost(player.Hideout, "weedlab"),
+        hideouts.NextUpgradeCost(player.Hideout, "cokelab"));
+}
+
+static PimpResponse ToPimpResponse(Pimp pimp, IReadOnlyCollection<long> commandingPimpIds)
+    => new(
+        pimp.Id,
+        pimp.Name,
+        pimp.Specialty,
+        pimp.BonusPercent,
+        Math.Round(pimp.Loyalty, 2),
+        pimp.MissionsLed,
+        pimp.Victories,
+        commandingPimpIds.Contains(pimp.Id),
+        pimp.HiredAtUtc,
+        pimp.LostAtUtc,
+        pimp.LostReason);
+
 static CombatCrewResponse ToCombatCrewResponse(CombatCommitment commitment)
     => new(
         commitment.CommittedPimps,
@@ -1281,6 +1373,8 @@ static CombatMissionResponse ToCombatMissionResponse(CombatMission mission)
         mission.Summary,
         mission.TurnsSpent,
         mission.AssignedPimps,
+        mission.CommanderName,
+        mission.CommanderBonusPercent,
         mission.AssignedThugs,
         mission.AssignedWeapons,
         mission.RemainingAttackers,
@@ -1394,7 +1488,7 @@ static int ToInt(long value)
     return (int)value;
 }
 
-static Player CreateBotPlayer(BotTemplate template, GameOptions options, DateTime createdAtUtc)
+static Player CreateBotPlayer(BotTemplate template, GameOptions options, DateTime createdAtUtc, int maxStorageLevel, int maxSafeLevel)
 {
     var account = new PlayerAccount
     {
@@ -1404,7 +1498,7 @@ static Player CreateBotPlayer(BotTemplate template, GameOptions options, DateTim
         CreatedAtUtc = createdAtUtc
     };
 
-    return new Player
+    var player = new Player
     {
         Account = account,
         Name = template.Name,
@@ -1426,6 +1520,15 @@ static Player CreateBotPlayer(BotTemplate template, GameOptions options, DateTim
         LastTurnUpdateUtc = createdAtUtc,
         CreatedAtUtc = createdAtUtc
     };
+    // Rivals are seeded as established operations, then clamped so they obey the same limits players do.
+    player.Hideout = new Hideout
+    {
+        Player = player,
+        StorageLevel = maxStorageLevel,
+        SafeLevel = maxSafeLevel,
+        CreatedAtUtc = createdAtUtc
+    };
+    return player;
 }
 
 static IReadOnlyList<BotTemplate> BotTemplates() =>

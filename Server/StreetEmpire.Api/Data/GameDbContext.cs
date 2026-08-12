@@ -11,6 +11,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CombatLog> CombatLogs => Set<CombatLog>();
     public DbSet<CombatMission> CombatMissions => Set<CombatMission>();
     public DbSet<CombatMissionEvent> CombatMissionEvents => Set<CombatMissionEvent>();
+    public DbSet<Hideout> Hideouts => Set<Hideout>();
+    public DbSet<Pimp> Pimps => Set<Pimp>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,6 +32,27 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Name).HasMaxLength(32);
             entity.Property(x => x.HoeHappiness).HasPrecision(5, 2);
             entity.Property(x => x.ThugHappiness).HasPrecision(5, 2);
+        });
+
+        modelBuilder.Entity<Hideout>(entity =>
+        {
+            entity.HasIndex(x => x.PlayerId).IsUnique();
+            entity.HasOne(x => x.Player)
+                .WithOne(x => x.Hideout)
+                .HasForeignKey<Hideout>(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Pimp>(entity =>
+        {
+            entity.HasIndex(x => new { x.PlayerId, x.LostAtUtc });
+            entity.Property(x => x.Name).HasMaxLength(48);
+            entity.Property(x => x.LostReason).HasMaxLength(32);
+            entity.Property(x => x.Loyalty).HasPrecision(5, 2);
+            entity.HasOne(x => x.Player)
+                .WithMany(x => x.Crew)
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<GameActionLog>(entity =>
@@ -74,6 +97,12 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany(x => x.MissionsDefended)
                 .HasForeignKey(x => x.DefenderId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.CommanderName).HasMaxLength(48);
+            // A dead commander's row stays for the roll of the fallen, so the mission keeps pointing at it.
+            entity.HasOne(x => x.CommanderPimp)
+                .WithMany()
+                .HasForeignKey(x => x.CommanderPimpId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CombatMissionEvent>(entity =>

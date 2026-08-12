@@ -1,15 +1,15 @@
-import React, { FormEvent, useEffect, useMemo, useState } from 'react'
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { api } from './api'
-import type { ActionResult, AdminOverview, CombatLog, CombatMission, Dashboard, LeaderboardEntry, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
+import type { ActionResult, AdminOverview, CombatLog, CombatMission, Dashboard, LeaderboardEntry, Pimp, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
 type AdminCheatKey = 'cash' | 'bank' | 'turns' | 'pimps' | 'hoes' | 'thugs' | 'condoms' | 'beer' | 'weapons' | 'weed' | 'coke' | 'morale'
-type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'market' | 'recon' | 'admin'
 
 const adminCheatOptions: { key: AdminCheatKey, label: string, amount: number }[] = [
   { key: 'cash', label: '+$10k Cash', amount: 10_000 },
@@ -30,6 +30,7 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   overview: { label: 'Overview', short: 'OV', kicker: 'Command center' },
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
   crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
+  hideout: { label: 'Hideout', short: 'HO', kicker: 'Capacity and upgrades' },
   market: { label: 'Market', short: 'MK', kicker: 'Store, product, bank' },
   recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control center' },
@@ -52,16 +53,22 @@ function App() {
   const [lastBreakdown, setLastBreakdown] = useState<Record<string, unknown> | null>(null)
   const [busy, setBusy] = useState(false)
   const [streetTurns, setStreetTurns] = useState(5)
+  const [autoBuySupplies, setAutoBuySupplies] = useState(false)
   const [productionTurns, setProductionTurns] = useState(5)
   const [hoeCut, setHoeCut] = useState(30)
   const [bankAmount, setBankAmount] = useState(1000)
   const [crewQty, setCrewQty] = useState<Record<'pimps' | 'hoes' | 'thugs', number>>({ pimps: 1, hoes: 1, thugs: 1 })
-  const [attackCrew, setAttackCrew] = useState({ pimps: 1, thugs: 1, weapons: 0 })
+  const [attackCrew, setAttackCrew] = useState({ thugs: 1, weapons: 0 })
+  const [commanderId, setCommanderId] = useState<number | null>(null)
   // Left empty so each page derives its own default until the player types a quantity.
   const [storeQty, setStoreQty] = useState<Record<string, number>>({})
   const [sellQty, setSellQty] = useState<Record<'weed' | 'coke', number>>({ weed: 10, coke: 5 })
   const [tickSeconds, setTickSeconds] = useState(0)
 
+  /**
+   * Full reload after an action. `pollMissions` instead re-reads only what a running mission changes,
+   * which keeps the 5-second poll from re-fetching the leaderboard, world news and target list.
+   */
   const refresh = async () => {
     try {
       const [d, l, news, targetList, combatHistory, missions] = await Promise.all([api.dashboard(), api.leaderboard(), api.worldNews(), api.targets(targetQuery), api.combatLogs(), api.combatMissions()])
@@ -90,6 +97,21 @@ function App() {
     }
   }
 
+  // A boolean, not the mission array: depending on the array rebuilt the interval on every poll.
+  const hasActiveMission = combatMissions.some(mission => mission.status !== 'Complete')
+  const hadActiveMission = useRef(false)
+
+  const pollMissions = async () => {
+    try {
+      const [missions, d] = await Promise.all([api.combatMissions(), api.dashboard()])
+      setCombatMissions(missions)
+      setDashboard(d)
+      setTickSeconds(d.secondsUntilNextTurnTick)
+    } catch {
+      // A dropped poll is not worth surfacing; the next tick or action will resync.
+    }
+  }
+
   useEffect(() => { void refresh() }, [])
   useEffect(() => {
     if (activePage === 'admin' && !adminOverview)
@@ -109,10 +131,21 @@ function App() {
     return () => window.clearInterval(timer)
   }, [dashboard?.playerId, dashboard?.turns, dashboard?.maxTurns, dashboard?.turnTickMinutes])
   useEffect(() => {
-    if (!dashboard || !combatMissions.some(mission => mission.status !== 'Complete')) return
-    const timer = window.setInterval(() => { void refresh() }, 5000)
+    if (!dashboard || !hasActiveMission) return
+    let inFlight = false
+    const timer = window.setInterval(() => {
+      // Skip a tick rather than stacking requests when a poll outlives the interval.
+      if (inFlight) return
+      inFlight = true
+      void pollMissions().finally(() => { inFlight = false })
+    }, 5000)
     return () => window.clearInterval(timer)
-  }, [dashboard?.playerId, combatMissions])
+  }, [dashboard?.playerId, hasActiveMission])
+  useEffect(() => {
+    // The narrow poll leaves combat history and world news behind, so resync once on the way out.
+    if (hadActiveMission.current && !hasActiveMission) void refresh()
+    hadActiveMission.current = hasActiveMission
+  }, [hasActiveMission])
 
   const nextTurn = useMemo(() => {
     if (!dashboard || dashboard.turns >= dashboard.maxTurns) return 'MAX'
@@ -164,7 +197,7 @@ function App() {
   }
 
   const attackTarget = async (defenderId: string) => {
-    await act(() => api.attack(defenderId, attackCrew.pimps, attackCrew.thugs, attackCrew.weapons))
+    await act(() => api.attack(defenderId, attackCrew.thugs, attackCrew.weapons, commanderId))
     try {
       setSelectedTarget(await api.playerProfile(defenderId))
     } catch {
@@ -209,11 +242,13 @@ function App() {
     targetQuery,
     busy,
     streetTurns,
+    autoBuySupplies,
     productionTurns,
     hoeCut,
     bankAmount,
     crewQty,
     attackCrew,
+    commanderId,
     storeQty,
     sellQty,
     nextTurn,
@@ -223,11 +258,13 @@ function App() {
     setActivePage,
     setTargetQuery,
     setStreetTurns,
+    setAutoBuySupplies,
     setProductionTurns,
     setHoeCut,
     setBankAmount,
     setCrewQty,
     setAttackCrew,
+    setCommanderId,
     setStoreQty,
     setSellQty,
     act,
@@ -302,11 +339,13 @@ type PageContext = {
   targetQuery: string
   busy: boolean
   streetTurns: number
+  autoBuySupplies: boolean
   productionTurns: number
   hoeCut: number
   bankAmount: number
   crewQty: Record<'pimps' | 'hoes' | 'thugs', number>
-  attackCrew: { pimps: number, thugs: number, weapons: number }
+  attackCrew: { thugs: number, weapons: number }
+  commanderId: number | null
   storeQty: Record<string, number>
   sellQty: Record<'weed' | 'coke', number>
   nextTurn: string
@@ -316,11 +355,13 @@ type PageContext = {
   setActivePage: (page: AppPage) => void
   setTargetQuery: (query: string) => void
   setStreetTurns: (turns: number) => void
+  setAutoBuySupplies: (enabled: boolean) => void
   setProductionTurns: (turns: number) => void
   setHoeCut: (cut: number) => void
   setBankAmount: (amount: number) => void
   setCrewQty: React.Dispatch<React.SetStateAction<Record<'pimps' | 'hoes' | 'thugs', number>>>
-  setAttackCrew: React.Dispatch<React.SetStateAction<{ pimps: number, thugs: number, weapons: number }>>
+  setAttackCrew: React.Dispatch<React.SetStateAction<{ thugs: number, weapons: number }>>
+  setCommanderId: (id: number | null) => void
   setStoreQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
   setSellQty: React.Dispatch<React.SetStateAction<Record<'weed' | 'coke', number>>>
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
@@ -338,6 +379,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
   switch (page) {
     case 'street': return <StreetPage {...ctx} />
     case 'crew': return <CrewPage {...ctx} />
+    case 'hideout': return <HideoutPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
     case 'recon': return <ReconPage {...ctx} />
     case 'admin': return ctx.adminOverview
@@ -399,8 +441,9 @@ function OverviewPage(ctx: PageContext) {
 }
 
 function StreetPage(ctx: PageContext) {
-  const { dashboard, combatMissions, busy, streetTurns, hoeCut, bankAmount, storeQty, setActivePage, setStreetTurns, setHoeCut, setBankAmount, setStoreQty, act } = ctx
+  const { dashboard, combatMissions, busy, streetTurns, autoBuySupplies, hoeCut, bankAmount, storeQty, setActivePage, setStreetTurns, setAutoBuySupplies, setHoeCut, setBankAmount, setStoreQty, act } = ctx
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
+  const restock = restockEstimate(dashboard, streetTurns)
   return <div className="page-grid two-column">
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
@@ -422,8 +465,15 @@ function StreetPage(ctx: PageContext) {
         <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
         <label>Hoe Cut %<input type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
         <button className="secondary" disabled={busy || hoeCut < 10 || hoeCut > 80 || hoeCut === dashboard.hoeCutPercent} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</button>
-        <button className="primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
+        <button className="primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
       </div>
+      <label className={autoBuySupplies ? 'auto-buy active' : 'auto-buy'}>
+        <input type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
+        <span>
+          <strong>Auto-buy upkeep before working</strong>
+          <small>{restockLabel(restock, dashboard.cash)}</small>
+        </span>
+      </label>
       <div className="rule-strip">
         <span>1 pimp manages 10 hoes</span><span>Condoms support hoes</span><span>Beer + weapons support thugs</span>
       </div>
@@ -445,9 +495,9 @@ function CrewPage(ctx: PageContext) {
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
       <div className="crew-grid">
-        <CrewCard name="Pimps" count={dashboard.pimps} desc={`Manage up to ${number.format(managementCapacity)} hoes.`} />
-        <CrewCard name="Hoes" count={dashboard.hoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} />
-        <CrewCard name="Thugs" count={dashboard.thugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale / ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} />
+        <CrewCard name="Pimps" count={dashboard.pimps} cap={dashboard.hideout.maxPimps} desc={`Manage up to ${number.format(managementCapacity)} hoes.`} />
+        <CrewCard name="Hoes" count={dashboard.hoes} cap={dashboard.hideout.maxHoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} />
+        <CrewCard name="Thugs" count={dashboard.thugs} cap={dashboard.hideout.maxThugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale / ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} />
       </div>
       <div className="crew-combat-strip">
         <AdminMetric label="Free pimps" value={number.format(combatCrew.availablePimps)} />
@@ -457,8 +507,6 @@ function CrewPage(ctx: PageContext) {
         <AdminMetric label="Attack slots" value={`${combatCrew.activeAttackMissions}/${combatCrew.maxActiveAttackMissions}`} />
       </div>
     </section>
-
-    <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
 
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Crew Management</h2><span>Hire + fire</span></div>
@@ -506,6 +554,114 @@ function CrewPage(ctx: PageContext) {
         />
       </div>
     </section>
+
+    <PimpRosterPanel dashboard={dashboard} />
+  </div>
+}
+
+function HideoutPage(ctx: PageContext) {
+  const { dashboard, busy, act } = ctx
+  const hideout = dashboard.hideout
+  return <div className="page-grid two-column">
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>{hideout.tierName}</h2><span>Tier {hideout.tier}</span></div>
+      <p>Your hideout sets every hard limit you operate under. Crew beyond its capacity walks away, goods beyond your storage room spill, and cash beyond your safe is swept into the bank.</p>
+      <div className="capacity-grid">
+        <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
+        <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
+        <CapacityBar label="Thugs" used={dashboard.thugs} cap={hideout.maxThugs} />
+        <CapacityBar label="Cash on hand" used={dashboard.cash} cap={hideout.maxCash} money />
+        <CapacityBar label="Condoms" used={dashboard.condoms} cap={hideout.maxCondoms} />
+        <CapacityBar label="Beer" used={dashboard.beer} cap={hideout.maxBeer} />
+        <CapacityBar label="Weapons" used={dashboard.weapons} cap={hideout.maxWeapons} />
+        <CapacityBar label="Weed" used={dashboard.weed} cap={hideout.maxWeed} />
+        <CapacityBar label="Coke" used={dashboard.coke} cap={hideout.maxCoke} />
+      </div>
+    </section>
+
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>Rooms</h2><span>Spend cash on hand</span></div>
+      <div className="room-list">
+        <RoomRow
+          name="Storage Room"
+          level={hideout.storageLevel}
+          detail={`Holds ${number.format(hideout.maxCondoms)} condoms, ${number.format(hideout.maxBeer)} beer, ${number.format(hideout.maxWeapons)} weapons, ${number.format(hideout.maxWeed)} weed, ${number.format(hideout.maxCoke)} coke`}
+          cost={hideout.storageUpgradeCost}
+          cash={dashboard.cash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('storage'))}
+        />
+        <RoomRow
+          name="Safe"
+          level={hideout.safeLevel}
+          detail={`Holds ${money.format(hideout.maxCash)} cash on hand`}
+          cost={hideout.safeUpgradeCost}
+          cash={dashboard.cash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('safe'))}
+        />
+        <RoomRow
+          name="Weed Lab"
+          level={hideout.weedLabLevel}
+          detail={hideout.weedLabLevel === 0
+            ? 'Not built. Raises the yield of every weed production turn.'
+            : `+${hideout.weedLabYieldBonusPercent}% yield per weed production turn`}
+          cost={hideout.weedLabUpgradeCost}
+          cash={dashboard.cash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('weedlab'))}
+        />
+        <RoomRow
+          name="Coke Lab"
+          level={hideout.cokeLabLevel}
+          detail={hideout.cokeLabLevel === 0
+            ? 'Not built. Raises the yield of every coke production turn.'
+            : `+${hideout.cokeLabYieldBonusPercent}% yield per coke production turn`}
+          cost={hideout.cokeLabUpgradeCost}
+          cash={dashboard.cash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
+        />
+      </div>
+    </section>
+
+    <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
+  </div>
+}
+
+function CapacityBar({ label, used, cap, money: asMoney = false }: { label: string, used: number, cap: number, money?: boolean }) {
+  const percent = cap <= 0 ? 0 : Math.min(100, (used / cap) * 100)
+  const over = used > cap
+  const format = (value: number) => asMoney ? money.format(value) : number.format(value)
+  return <div className={over ? 'capacity over' : percent >= 90 ? 'capacity near' : 'capacity'}>
+    <div className="capacity-head">
+      <span>{label}</span>
+      <strong>{format(used)} / {format(cap)}</strong>
+    </div>
+    <div className="capacity-track"><div className="capacity-fill" style={{ width: `${Math.max(2, percent)}%` }} /></div>
+    {over && <small>Over capacity. You keep this, but cannot take on more until it drains.</small>}
+  </div>
+}
+
+function RoomRow({ name, level, detail, cost, cash, busy, onUpgrade }: {
+  name: string
+  level: number
+  detail: string
+  cost?: number | null
+  cash: number
+  busy: boolean
+  onUpgrade: () => void
+}) {
+  const maxed = cost === null || cost === undefined
+  return <div className="room-row">
+    <div className="room-copy">
+      <strong>{name}</strong>
+      <span>{detail}</span>
+    </div>
+    <em>{level === 0 ? 'Not built' : `Level ${level}`}</em>
+    <button className="primary" disabled={busy || maxed || cash < cost} onClick={onUpgrade}>
+      {maxed ? 'Maxed' : `Upgrade ${money.format(cost)}`}
+    </button>
   </div>
 }
 
@@ -598,6 +754,8 @@ function ReconPage(ctx: PageContext) {
       dashboard={ctx.dashboard}
       attackCrew={ctx.attackCrew}
       setAttackCrew={ctx.setAttackCrew}
+      commanderId={ctx.commanderId}
+      setCommanderId={ctx.setCommanderId}
       onQuery={ctx.setTargetQuery}
       onSearch={ctx.searchTargets}
       onInspect={ctx.inspectTarget}
@@ -642,17 +800,30 @@ function CombatMissionsPanel({ ctx }: { ctx: PageContext }) {
 }
 
 function MissionCard({ mission, currentPlayerId, compact = false, busy = false, onCancel }: { mission: CombatMission, currentPlayerId: string, compact?: boolean, busy?: boolean, onCancel?: (missionId: number) => void }) {
+  // Finished missions fold away: their round-by-round log is history, not something to scroll past.
+  const [expanded, setExpanded] = useState(false)
+  const showEvents = !compact || expanded
   const attacking = mission.attackerId === currentPlayerId
   const nextAt = nextMissionTime(mission)
-  const title = attacking ? `${mission.attackerName} -> ${mission.defenderName}` : `${mission.attackerName} attacking you`
+  const commander = mission.commanderName ?? 'A pimp'
+  const title = attacking ? `${commander} -> ${mission.defenderName}` : `${mission.attackerName} attacking you`
   const canCancel = attacking && !compact && mission.canCancel && onCancel
   return <div className={`mission-card ${mission.status.toLowerCase()}`}>
     <div className="mission-head">
       <div><strong>{title}</strong><span>{mission.status} / {mission.outcome}</span></div>
-      <b>{mission.status === 'Complete' ? 'Done' : timeUntil(nextAt)}</b>
+      {compact
+        ? <button
+            className="mission-toggle"
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(value => !value)}
+          >
+            {expanded ? 'Hide log' : `${mission.events.length} update${mission.events.length === 1 ? '' : 's'}`}
+          </button>
+        : <b>{mission.status === 'Complete' ? 'Done' : timeUntil(nextAt)}</b>}
     </div>
     {!compact && <div className="mission-stats">
-      <AdminMetric label="Sent" value={`${mission.assignedPimps} P / ${mission.assignedThugs} T / ${mission.assignedWeapons} W`} />
+      <AdminMetric label="Commander" value={mission.commanderBonusPercent > 0 ? `${commander} +${mission.commanderBonusPercent}%` : commander} />
       <AdminMetric label="Remaining" value={`${mission.remainingAttackers} T / ${mission.remainingWeapons} W`} />
       <AdminMetric label="Round" value={`${mission.currentRound}/${mission.maxRounds}`} />
       <AdminMetric label="Morale" value={`${mission.attackerMorale.toFixed(0)} / ${mission.defenderMorale.toFixed(0)}`} />
@@ -669,14 +840,14 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
         }}
       >Cancel Mission</button>
     </div>}
-    <div className="mission-events">
+    {showEvents && <div className="mission-events">
       {mission.events.length === 0 && <small>No updates yet.</small>}
       {mission.events.map(event => <div className="mission-event" key={event.id}>
         <strong>{event.kind}{event.round > 0 ? ` ${event.round}` : ''}</strong>
         <span>{new Date(event.createdAtUtc).toLocaleTimeString()}</span>
         <p>{event.summary}</p>
       </div>)}
-    </div>
+    </div>}
   </div>
 }
 
@@ -702,6 +873,41 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
   </section>
 }
 
+/** Upkeep a street action of this length burns, scaled from the server's max-action figures. */
+function upkeepFor(dashboard: Dashboard, turns: number) {
+  const planned = Math.max(1, Math.min(turns, dashboard.maxActionTurns))
+  const scale = (maxActionNeed: number) => Math.ceil(maxActionNeed * planned / dashboard.maxActionTurns)
+  return {
+    planned,
+    condoms: scale(dashboard.crewReport.condomsNeededForMaxStreetAction),
+    beer: scale(dashboard.crewReport.beerNeededForMaxStreetAction),
+  }
+}
+
+/**
+ * Mirrors the server's auto-buy: shortfall, limited by storage room and by cash. Only an estimate for
+ * display; the API does the real arithmetic and is the authority on what gets spent.
+ */
+function restockEstimate(dashboard: Dashboard, turns: number) {
+  const upkeep = upkeepFor(dashboard, turns)
+  const price = (key: string) => dashboard.store.find(item => item.key === key)?.price ?? 0
+  const wanted = (need: number, held: number, cap: number) => Math.max(0, Math.min(need - held, cap - held))
+  const condoms = wanted(upkeep.condoms, dashboard.condoms, dashboard.hideout.maxCondoms)
+  const beer = wanted(upkeep.beer, dashboard.beer, dashboard.hideout.maxBeer)
+  const cost = condoms * price('condoms') + beer * price('beer')
+  return { condoms, beer, cost }
+}
+
+function restockLabel(restock: { condoms: number, beer: number, cost: number }, cash: number) {
+  if (restock.condoms === 0 && restock.beer === 0)
+    return 'Nothing to top up for this action.'
+  const parts: string[] = []
+  if (restock.condoms > 0) parts.push(`${number.format(restock.condoms)} condoms`)
+  if (restock.beer > 0) parts.push(`${number.format(restock.beer)} beer`)
+  const short = cash < restock.cost ? ' Your cash covers only part of it, so it buys what it can.' : ''
+  return `Buys ${parts.join(' and ')} for about ${money.format(restock.cost)}.${short}`
+}
+
 function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty, act, onMarket }: {
   dashboard: Dashboard
   busy: boolean
@@ -711,16 +917,16 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
   onMarket: () => void
 }) {
-  const plannedTurns = Math.max(1, Math.min(streetTurns, dashboard.maxActionTurns))
+  const upkeep = upkeepFor(dashboard, streetTurns)
+  const plannedTurns = upkeep.planned
   const turnLabel = `${plannedTurns} turn${plannedTurns === 1 ? '' : 's'}`
-  const report = dashboard.crewReport
-  const forPlannedTurns = (maxActionNeed: number) => Math.ceil(maxActionNeed * plannedTurns / dashboard.maxActionTurns)
   const catalog = new Map(dashboard.store.map(item => [item.key, item] as const))
+  const hideout = dashboard.hideout
   const supplies = [
-    { key: 'condoms', owned: dashboard.condoms, needed: forPlannedTurns(report.condomsNeededForMaxStreetAction), basis: `to work ${turnLabel}` },
-    { key: 'beer', owned: dashboard.beer, needed: forPlannedTurns(report.beerNeededForMaxStreetAction), basis: `to work ${turnLabel}` },
+    { key: 'condoms', owned: dashboard.condoms, cap: hideout.maxCondoms, needed: upkeep.condoms, basis: `to work ${turnLabel}` },
+    { key: 'beer', owned: dashboard.beer, cap: hideout.maxBeer, needed: upkeep.beer, basis: `to work ${turnLabel}` },
     // Weapons are permanent coverage, so their requirement is the crew size rather than the turns.
-    { key: 'weapons', owned: dashboard.weapons, needed: dashboard.thugs, basis: 'to arm every thug' },
+    { key: 'weapons', owned: dashboard.weapons, cap: hideout.maxWeapons, needed: dashboard.thugs, basis: 'to arm every thug' },
   ].filter(supply => catalog.has(supply.key))
   if (supplies.length === 0) return null
 
@@ -733,22 +939,23 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
       {supplies.map(supply => {
         const item = catalog.get(supply.key)!
         const short = Math.max(0, supply.needed - supply.owned)
-        // Falls back to the shortfall, so the quantity tracks what this action actually needs.
-        const qty = storeQty[supply.key] ?? Math.max(1, short)
+        // The storage room refuses buys that do not fit, so never offer more than the room left.
+        const room = Math.max(0, supply.cap - supply.owned)
+        const qty = Math.min(storeQty[supply.key] ?? Math.max(1, short), Math.max(1, room))
         const total = qty * item.price
         return <div className={short > 0 ? 'supply-row short' : 'supply-row'} key={supply.key}>
           <div className="supply-copy">
             <strong>{item.name}</strong>
-            <span>{number.format(supply.owned)} on hand / {number.format(supply.needed)} {supply.basis}</span>
+            <span>{number.format(supply.owned)} on hand / {number.format(supply.needed)} {supply.basis} / {number.format(supply.cap)} storage</span>
           </div>
-          <em>{short > 0 ? `${number.format(short)} short` : 'Covered'}</em>
-          <label>Qty<input aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={event => setStoreQty(value => ({ ...value, [supply.key]: Number(event.target.value) }))} /></label>
+          <em>{room === 0 ? 'Storage full' : short > 0 ? `${number.format(short)} short` : 'Covered'}</em>
+          <label>Qty<input aria-label={`${item.name} quantity`} type="number" min={1} max={Math.max(1, room)} value={qty} onChange={event => setStoreQty(value => ({ ...value, [supply.key]: Number(event.target.value) }))} /></label>
           <button
             className="primary"
-            disabled={busy || qty < 1 || dashboard.cash < total}
+            disabled={busy || qty < 1 || room === 0 || qty > room || dashboard.cash < total}
             onClick={() => void act(() => api.buyStoreItem(supply.key, qty))}
           >
-            Buy {money.format(total)}
+            {room === 0 ? 'Storage Full' : `Buy ${money.format(total)}`}
           </button>
         </div>
       })}
@@ -804,6 +1011,40 @@ function NextMovePanel({ dashboard, weaponCoverage, managementCapacity, onPage }
   </section>
 }
 
+function PimpRosterPanel({ dashboard }: { dashboard: Dashboard }) {
+  const crew = dashboard.crew
+  const fallen = dashboard.fallenCrew
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Your Pimps</h2><span>{crew.length}/{dashboard.hideout.maxPimps} on the payroll</span></div>
+    <p>Pimps are the only crew you know by name. One of them commands each attack, and loyalty slides when the operation is miserable or a mission goes badly.</p>
+    <div className="pimp-list">
+      {crew.length === 0 && <p className="coming">No pimps left. Hire one before you can run the streets or attack.</p>}
+      {crew.map(pimp => <div className={pimp.isCommanding ? 'pimp-row out' : 'pimp-row'} key={pimp.id}>
+        <div className="pimp-copy">
+          <strong>{pimp.name} <b className={pimp.specialty === 'Enforcer' ? 'tag enforcer' : 'tag hustler'}>{pimp.specialty} +{pimp.bonusPercent}%</b></strong>
+          <span>{pimp.specialty === 'Enforcer' ? 'Sharpens attacks they lead and the house while home' : 'Lifts street income while home'}</span>
+          <span>{pimp.missionsLed === 0 ? 'No missions led yet' : `${number.format(pimp.missionsLed)} mission${pimp.missionsLed === 1 ? '' : 's'} led / ${number.format(pimp.victories)} won`}</span>
+        </div>
+        <em>{pimp.isCommanding ? 'Out commanding' : 'At the house'}</em>
+        <div className={`pimp-loyalty ${moraleTone(pimp.loyalty)}`}>
+          <span>Loyalty</span>
+          <strong>{pimp.loyalty.toFixed(0)}%</strong>
+        </div>
+      </div>)}
+    </div>
+    {fallen.length > 0 && <div className="pimp-fallen">
+      <strong>Gone</strong>
+      <div className="pimp-fallen-list">
+        {fallen.map(pimp => <div className="pimp-gone" key={pimp.id}>
+          <b>{pimp.name}</b>
+          <span>{pimp.lostReason}</span>
+          <small>{pimp.lostAtUtc ? new Date(pimp.lostAtUtc).toLocaleDateString() : ''}</small>
+        </div>)}
+      </div>
+    </div>}
+  </section>
+}
+
 function moraleTone(value: number) {
   if (value < 30) return 'danger'
   if (value < 60) return 'warn'
@@ -849,7 +1090,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
   </section>
 }
 
-function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerId, combatMissions, dashboard, attackCrew, setAttackCrew, onQuery, onSearch, onInspect, onAttack }: {
+function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerId, combatMissions, dashboard, attackCrew, setAttackCrew, commanderId, setCommanderId, onQuery, onSearch, onInspect, onAttack }: {
   targets: PlayerTarget[]
   selectedTarget: PlayerProfile | null
   query: string
@@ -857,8 +1098,10 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   currentPlayerId: string
   combatMissions: CombatMission[]
   dashboard: Dashboard
-  attackCrew: { pimps: number, thugs: number, weapons: number }
-  setAttackCrew: React.Dispatch<React.SetStateAction<{ pimps: number, thugs: number, weapons: number }>>
+  attackCrew: { thugs: number, weapons: number }
+  setAttackCrew: React.Dispatch<React.SetStateAction<{ thugs: number, weapons: number }>>
+  commanderId: number | null
+  setCommanderId: (id: number | null) => void
   onQuery: (query: string) => void
   onSearch: (event: FormEvent<HTMLFormElement>) => void
   onInspect: (playerId: string) => void
@@ -870,11 +1113,11 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     ? activeOutgoingMissions.find(mission => mission.defenderId === profile.playerId)
     : undefined
   const crew = dashboard.combatCrew
-  const attackReady = attackCrew.pimps >= 1
+  const freeCommanders = dashboard.crew.filter(pimp => !pimp.isCommanding)
+  const attackReady = crew.availablePimps >= 1
     && attackCrew.thugs >= 1
     && attackCrew.weapons >= 0
     && attackCrew.weapons <= attackCrew.thugs
-    && attackCrew.pimps <= crew.availablePimps
     && attackCrew.thugs <= crew.availableThugs
     && attackCrew.weapons <= crew.availableWeapons
     && crew.activeAttackMissions < crew.maxActiveAttackMissions
@@ -910,10 +1153,21 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <StatusRow label="Available" value={`${crew.availablePimps} P / ${crew.availableThugs} T / ${crew.availableWeapons} W`} warn={crew.availablePimps < 1 || crew.availableThugs < 1} />
           <StatusRow label="Committed" value={`${crew.committedPimps} P / ${crew.committedThugs} T / ${crew.committedWeapons} W`} warn={crew.committedThugs > 0} />
           <div className="attack-inputs">
-            <label>Pimps<input type="number" min={1} max={Math.max(1, crew.availablePimps)} value={attackCrew.pimps} onChange={e => setAttackCrew(value => ({ ...value, pimps: Number(e.target.value) }))} /></label>
+            <label>Commander
+              <select
+                value={commanderId ?? ''}
+                onChange={event => setCommanderId(event.target.value === '' ? null : Number(event.target.value))}
+              >
+                <option value="">Best available</option>
+                {freeCommanders.map(pimp => <option key={pimp.id} value={pimp.id}>
+                  {pimp.name} - {pimp.specialty} +{pimp.bonusPercent}%
+                </option>)}
+              </select>
+            </label>
             <label>Thugs<input type="number" min={1} max={Math.max(1, crew.availableThugs)} value={attackCrew.thugs} onChange={e => setAttackCrew(value => ({ ...value, thugs: Number(e.target.value), weapons: Math.min(value.weapons, Number(e.target.value)) }))} /></label>
             <label>Weapons<input type="number" min={0} max={Math.max(0, Math.min(crew.availableWeapons, attackCrew.thugs))} value={attackCrew.weapons} onChange={e => setAttackCrew(value => ({ ...value, weapons: Number(e.target.value) }))} /></label>
           </div>
+          <small className="attack-note">{commanderNote(freeCommanders.find(x => x.id === commanderId) ?? null)}</small>
         </div>
         <div className="target-actions">
           <button
@@ -1186,6 +1440,13 @@ function attackStatusText(status: { canAttackNow: boolean, eligibility: string, 
   return status.eligibility
 }
 
+function commanderNote(pimp: Pimp | null) {
+  if (!pimp) return 'Server fields your strongest enforcer'
+  return pimp.specialty === 'Enforcer'
+    ? `+${pimp.bonusPercent}% attack power while leading`
+    : `Hustler: no combat bonus, and their +${pimp.bonusPercent}% street income stays home`
+}
+
 function nextMissionTime(mission: CombatMission) {
   return mission.status === 'Traveling'
     ? mission.arrivesAtUtc
@@ -1233,8 +1494,12 @@ function Stat({ label, value, sub }: { label: string, value: string, sub?: strin
   </div>
 }
 
-function CrewCard({ name, count, desc, tone }: { name: string, count: number, desc: string, tone?: string }) {
-  return <div className={`crew-card ${tone ?? ''}`}><span>{name}</span><strong>{number.format(count)}</strong><p>{desc}</p></div>
+function CrewCard({ name, count, desc, tone, cap }: { name: string, count: number, desc: string, tone?: string, cap?: number }) {
+  return <div className={`crew-card ${tone ?? ''}`}>
+    <span>{name}</span>
+    <strong>{number.format(count)}{cap !== undefined && <small> / {number.format(cap)}</small>}</strong>
+    <p>{desc}</p>
+  </div>
 }
 
 function InventoryCard({ name, count, note }: { name: string, count: number, note: string }) {

@@ -2,7 +2,7 @@ using StreetEmpire.Api.Services;
 
 namespace StreetEmpire.Api.Contracts;
 
-public sealed record ScoutRequest(int Turns);
+public sealed record ScoutRequest(int Turns, bool AutoBuySupplies = false);
 public sealed record ProduceRequest(string? Product, int Turns);
 public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
@@ -14,7 +14,11 @@ public sealed record AdminCheatRequest(string? Cheat, long Amount);
 public sealed record AdminSeedBotsRequest(int Count);
 public sealed record AdminRunBotsRequest(int Rounds);
 public sealed record AdminBotAutomationRequest(bool Enabled);
-public sealed record CombatAttackRequest(Guid DefenderId, int Pimps = 1, int Thugs = 1, int Weapons = 0);
+/// <summary>
+/// An attack carries exactly one commanding pimp, so there is no count to send. Naming a pimp picks
+/// the commander; leaving it null lets the server field the best Enforcer available.
+/// </summary>
+public sealed record CombatAttackRequest(Guid DefenderId, int Thugs = 1, int Weapons = 0, long? CommanderPimpId = null);
 
 public sealed record DashboardResponse(
     Guid PlayerId,
@@ -45,6 +49,9 @@ public sealed record DashboardResponse(
     int WeedSellPrice,
     int CokeSellPrice,
     CrewReportResponse CrewReport,
+    HideoutResponse Hideout,
+    IReadOnlyList<PimpResponse> Crew,
+    IReadOnlyList<PimpResponse> FallenCrew,
     CombatCrewResponse CombatCrew,
     CombatStatusResponse CombatStatus,
     IReadOnlyList<StoreItemResponse> Store,
@@ -141,6 +148,44 @@ public sealed record PlayerProfileResponse(
     CombatStatusResponse CombatStatus,
     IReadOnlyList<ActivityResponse> PublicActivity);
 
+public sealed record HideoutUpgradeRequest(string? Room);
+
+public sealed record PimpResponse(
+    long Id,
+    string Name,
+    string Specialty,
+    int BonusPercent,
+    double Loyalty,
+    int MissionsLed,
+    int Victories,
+    bool IsCommanding,
+    DateTime HiredAtUtc,
+    DateTime? LostAtUtc,
+    string? LostReason);
+
+public sealed record HideoutResponse(
+    string TierName,
+    int Tier,
+    int StorageLevel,
+    int SafeLevel,
+    int WeedLabLevel,
+    int CokeLabLevel,
+    int MaxPimps,
+    int MaxHoes,
+    int MaxThugs,
+    long MaxCash,
+    int MaxCondoms,
+    int MaxBeer,
+    int MaxWeapons,
+    int MaxWeed,
+    int MaxCoke,
+    int WeedLabYieldBonusPercent,
+    int CokeLabYieldBonusPercent,
+    long? StorageUpgradeCost,
+    long? SafeUpgradeCost,
+    long? WeedLabUpgradeCost,
+    long? CokeLabUpgradeCost);
+
 public sealed record CombatReadinessResponse(
     int AttackPower,
     int DefensePower,
@@ -210,6 +255,8 @@ public sealed record CombatMissionResponse(
     string Summary,
     int TurnsSpent,
     int AssignedPimps,
+    string? CommanderName,
+    int CommanderBonusPercent,
     int AssignedThugs,
     int AssignedWeapons,
     int RemainingAttackers,

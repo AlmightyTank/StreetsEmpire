@@ -13,8 +13,9 @@ public sealed class GameOptions
     public int StartingPimps { get; set; } = 1;
     public int StartingHoes { get; set; } = 3;
     public int StartingThugs { get; set; } = 1;
-    public int StartingCondoms { get; set; } = 25;
-    public int StartingBeer { get; set; } = 12;
+    // Starting supplies fill a level 1 storage room exactly, so a new player is never over capacity.
+    public int StartingCondoms { get; set; } = 17;
+    public int StartingBeer { get; set; } = 10;
     public int StartingWeapons { get; set; } = 1;
     public int StartingHoeCutPercent { get; set; } = 30;
 
@@ -35,6 +36,136 @@ public sealed class GameOptions
     public MoraleOptions Morale { get; set; } = new();
     public CrewOptions Crew { get; set; } = new();
     public CombatOptions Combat { get; set; } = new();
+    public HideoutOptions Hideout { get; set; } = new();
+    public PimpOptions Pimps { get; set; } = new();
+}
+
+public sealed class PimpOptions
+{
+    public double StartingLoyalty { get; set; } = 100;
+
+    /// <summary>Loyalty lost by the pimp who led a defeat, and gained by one who led a win.</summary>
+    public double DefeatLoyaltyPenalty { get; set; } = 12;
+    public double StandstillLoyaltyPenalty { get; set; } = 4;
+    public double VictoryLoyaltyGain { get; set; } = 6;
+
+    /// <summary>Per turn of street work, applied while crew morale sits below the threshold.</summary>
+    public double LowMoraleLoyaltyPenaltyPerTurn { get; set; } = 0.35;
+    public double LowMoraleThreshold { get; set; } = 45;
+    public double PassiveRecoveryPerTick { get; set; } = 0.5;
+    public double RestRecovery { get; set; } = 6;
+    public double PartyRecovery { get; set; } = 9;
+
+    /// <summary>Below this loyalty a pimp may walk out after street work.</summary>
+    public double WalkOutThreshold { get; set; } = 25;
+    public double MaxWalkOutChance { get; set; } = 0.15;
+
+    /// <summary>Chance the commanding pimp dies when the attack is beaten.</summary>
+    public double CommanderDeathChanceOnDefeat { get; set; } = 0.20;
+
+    /// <summary>Chance a pimp at home dies when a defence is broken.</summary>
+    public double DefenderDeathChanceOnLoss { get; set; } = 0.15;
+
+    /// <summary>Per-pimp bonus rolled at hire, in percent.</summary>
+    public int MinBonusPercent { get; set; } = 3;
+    public int MaxBonusPercent { get; set; } = 8;
+
+    /// <summary>
+    /// Ceilings on the stacked bonus from pimps at home. Six Hustlers at 8% would otherwise be a 48%
+    /// income swing, which is no longer a small bonus.
+    /// </summary>
+    public int MaxStreetBonusPercent { get; set; } = 20;
+    public int MaxDefenceBonusPercent { get; set; } = 20;
+}
+
+/// <summary>
+/// Hideout tuning tables. These start empty on purpose: the configuration binder appends to a
+/// pre-populated <see cref="List{T}"/> instead of replacing it, so shipping defaults in the
+/// initializers would merge them with appsettings and let the stale default win the level lookup.
+/// Call <see cref="ApplyDefaultsWhereEmpty"/> after binding to fill in whatever config omitted.
+/// </summary>
+public sealed class HideoutOptions
+{
+    public List<HideoutTierOptions> Tiers { get; set; } = [];
+    public List<StorageLevelOptions> Storage { get; set; } = [];
+    public List<SafeLevelOptions> Safe { get; set; } = [];
+    public List<LabLevelOptions> WeedLab { get; set; } = [];
+    public List<LabLevelOptions> CokeLab { get; set; } = [];
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (Tiers.Count == 0)
+            Tiers = [new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25 }];
+
+        if (Storage.Count == 0)
+            Storage =
+            [
+                // Level 1 supplies a fifth of a full-length action at the crew caps: 4 turns of both.
+                new StorageLevelOptions { Level = 1, Condoms = 17, Beer = 10, Weapons = 5, Weed = 25, Coke = 10 },
+                // Level 2 supplies exactly half a full-length action: 10 turns of both.
+                new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, UpgradeCost = 15_000 },
+                // Level 3 holds exactly what a full-length action consumes: 84 condoms for 50 hoes at
+                // 12 turns each, 50 beer for 25 thugs at 10. It drains the room dry each time.
+                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, UpgradeCost = 50_000 }
+            ];
+
+        if (Safe.Count == 0)
+            Safe =
+            [
+                new SafeLevelOptions { Level = 1, MaxCash = 50_000 },
+                new SafeLevelOptions { Level = 2, MaxCash = 100_000, UpgradeCost = 40_000 }
+            ];
+
+        if (WeedLab.Count == 0)
+            WeedLab =
+            [
+                new LabLevelOptions { Level = 1, YieldBonusPercent = 25, UpgradeCost = 10_000 },
+                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, UpgradeCost = 30_000 },
+                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, UpgradeCost = 75_000 }
+            ];
+
+        if (CokeLab.Count == 0)
+            CokeLab =
+            [
+                new LabLevelOptions { Level = 1, YieldBonusPercent = 25, UpgradeCost = 25_000 },
+                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, UpgradeCost = 60_000 },
+                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, UpgradeCost = 150_000 }
+            ];
+    }
+}
+
+public sealed class HideoutTierOptions
+{
+    public int Level { get; set; } = 1;
+    public string Name { get; set; } = "Trap House";
+    public int MaxPimps { get; set; }
+    public int MaxHoes { get; set; }
+    public int MaxThugs { get; set; }
+}
+
+public sealed class StorageLevelOptions
+{
+    public int Level { get; set; }
+    public int Condoms { get; set; }
+    public int Beer { get; set; }
+    public int Weapons { get; set; }
+    public int Weed { get; set; }
+    public int Coke { get; set; }
+    public long UpgradeCost { get; set; }
+}
+
+public sealed class SafeLevelOptions
+{
+    public int Level { get; set; }
+    public long MaxCash { get; set; }
+    public long UpgradeCost { get; set; }
+}
+
+public sealed class LabLevelOptions
+{
+    public int Level { get; set; }
+    public int YieldBonusPercent { get; set; }
+    public long UpgradeCost { get; set; }
 }
 
 public sealed class BotAutomationOptions

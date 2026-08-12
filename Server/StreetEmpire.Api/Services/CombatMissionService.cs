@@ -6,10 +6,19 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions> options, IGameRandom random)
+public sealed class CombatMissionService(
+    GameDbContext db,
+    IOptions<GameOptions> options,
+    IGameRandom random,
+    HideoutService hideout,
+    CombatSchedule schedule,
+    PimpRoster pimps)
 {
     // Shared so the cancel path and the lane query cannot drift apart on the spelling.
     private const string CanceledOutcome = "Canceled";
+
+    /// <summary>One pimp commands each attack, like a general. Sending more adds nothing.</summary>
+    public const int CommandingPimps = 1;
 
     private readonly GameOptions _options = options.Value;
 
@@ -23,11 +32,16 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
 
         ValidateLaunch(attacker, defender, request, nowUtc, committed, combat, laneReadyAt);
 
+        // Whoever is already out leading another mission cannot lead this one too.
+        var commanding = activeMissions.Where(x => x.CommanderPimpId is not null).Select(x => x.CommanderPimpId!.Value).ToList();
+        var commander = pimps.ChooseCommander(attacker, commanding, request.CommanderPimpId)
+            ?? throw new GameRuleException("You need a free pimp to command the attack.");
+
         var travelSeconds = RollSeconds(combat.AttackTravelSecondsMin, combat.AttackTravelSecondsMax);
         var arrivesAt = nowUtc.AddSeconds(travelSeconds);
         var attackerMorale = AverageMorale(attacker);
         var defenderMorale = Math.Min(100, AverageMorale(defender) + 5);
-        var summary = $"{attacker.Name} sent {request.Pimps:N0} pimp(s), {request.Thugs:N0} thug(s), and {request.Weapons:N0} weapon(s) toward {defender.Name}.";
+        var summary = $"{attacker.Name} sent {commander.Name} commanding {request.Thugs:N0} thug(s) and {request.Weapons:N0} weapon(s) toward {defender.Name}.";
 
         attacker.Turns -= combat.AttackTurnCost;
         attacker.LastAttackAtUtc = nowUtc;
@@ -42,7 +56,10 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
             Outcome = "Pending",
             Summary = summary,
             TurnsSpent = combat.AttackTurnCost,
-            AssignedPimps = request.Pimps,
+            AssignedPimps = CommandingPimps,
+            CommanderPimp = commander,
+            CommanderName = commander.Name,
+            CommanderBonusPercent = commander.Specialty == PimpSpecialties.Enforcer ? commander.BonusPercent : 0,
             AssignedThugs = request.Thugs,
             AssignedWeapons = request.Weapons,
             RemainingAttackers = request.Thugs,
@@ -57,7 +74,7 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
                 new CombatMissionEvent
                 {
                     Kind = "Launch",
-                    Summary = $"{attacker.Name}'s crew left for {defender.Name}. Arrival in {FormatDuration(travelSeconds)}.",
+                    Summary = $"{commander.Name} led the crew out toward {defender.Name}. Arrival in {FormatDuration(travelSeconds)}.",
                     AttackerMorale = attackerMorale,
                     DefenderMorale = defenderMorale,
                     CreatedAtUtc = nowUtc
@@ -66,14 +83,18 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
         };
 
         db.CombatMissions.Add(mission);
+        // Arrival is sooner than whatever the gate was holding, so bring it forward.
+        schedule.NoteUpcoming(arrivesAt);
         return mission;
     }
 
     public async Task<int> ResolveDueAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
         var missions = await db.CombatMissions
-            .Include(x => x.Attacker)
-            .Include(x => x.Defender)
+            .Include(x => x.Attacker).ThenInclude(x => x.Hideout)
+            .Include(x => x.Attacker).ThenInclude(x => x.Crew)
+            .Include(x => x.Defender).ThenInclude(x => x.Crew)
+            .Include(x => x.CommanderPimp)
             .Include(x => x.Events)
             .Where(x => x.Status != "Complete")
             .OrderBy(x => x.ArrivesAtUtc)
@@ -216,6 +237,9 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
         });
 
         await db.SaveChangesAsync(cancellationToken);
+        // This mission is gone, so the cached next-due may now be too early. Harmless: an early gate
+        // costs one wasted pass, whereas a late one would stall the remaining missions.
+        schedule.Invalidate();
         return new CombatMissionCancelResult(mission, cost);
     }
 
@@ -274,14 +298,12 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
             throw new GameRuleException($"All {committed.MaxActiveAttackMissions:N0} attack lane(s) are cooling down. The next one frees in {FormatDuration((int)Math.Ceiling((readyAt - nowUtc).TotalSeconds))}.");
         if (committed.ActiveAttackMissions >= committed.MaxActiveAttackMissions)
             throw new GameRuleException($"You already have {committed.ActiveAttackMissions:N0} active attack mission(s).");
-        if (request.Pimps < 1)
-            throw new GameRuleException("Each attack needs at least one pimp in control.");
         if (request.Thugs < 1)
             throw new GameRuleException("Each attack needs at least one thug.");
         if (request.Weapons < 0 || request.Weapons > request.Thugs)
             throw new GameRuleException("Weapons sent must be between zero and the number of thugs sent.");
-        if (request.Pimps > committed.AvailablePimps)
-            throw new GameRuleException("You do not have that many available pimps.");
+        if (committed.AvailablePimps < CommandingPimps)
+            throw new GameRuleException("You need a free pimp to command the attack.");
         if (request.Thugs > committed.AvailableThugs)
             throw new GameRuleException("You do not have that many available thugs.");
         if (request.Weapons > committed.AvailableWeapons)
@@ -311,15 +333,16 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
     {
         var combat = _options.Combat;
         var defenderCommitted = await ActiveAttackMissions(mission.DefenderId)
-            .Select(x => new { x.AssignedPimps, x.RemainingAttackers, x.RemainingWeapons })
+            .Select(x => new { x.AssignedPimps, x.RemainingAttackers, x.RemainingWeapons, x.CommanderPimpId })
             .ToListAsync(cancellationToken);
+        var defenderAway = defenderCommitted.Where(x => x.CommanderPimpId != null).Select(x => x.CommanderPimpId!.Value).ToList();
         var defenderHomePimps = Math.Max(0, mission.Defender.Pimps - defenderCommitted.Sum(x => x.AssignedPimps));
         var defenderHomeThugs = Math.Max(0, mission.Defender.Thugs - defenderCommitted.Sum(x => x.RemainingAttackers));
         var defenderHomeWeapons = Math.Max(0, mission.Defender.Weapons - defenderCommitted.Sum(x => x.RemainingWeapons));
 
         mission.CurrentRound++;
-        var attackerPower = AttackPower(mission.AssignedPimps, mission.RemainingAttackers, mission.RemainingWeapons, mission.AttackerMorale);
-        var defenderPower = DefensePower(defenderHomePimps, defenderHomeThugs, defenderHomeWeapons, mission.DefenderMorale);
+        var attackerPower = AttackPower(mission.AssignedPimps, mission.RemainingAttackers, mission.RemainingWeapons, mission.AttackerMorale, mission.CommanderBonusPercent);
+        var defenderPower = DefensePower(defenderHomePimps, defenderHomeThugs, defenderHomeWeapons, mission.DefenderMorale, pimps.DefenceBonusPercent(mission.Defender, defenderAway));
         var attackRoll = ApplyPowerVariance(attackerPower, combat.PowerRandomnessPercent);
         var defenseRoll = ApplyPowerVariance(defenderPower, combat.PowerRandomnessPercent);
         var difference = attackRoll - defenseRoll;
@@ -385,8 +408,18 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
         }
         else if (mission.DefenderMorale <= combat.MoraleBreakThreshold || defenderHomeThugs <= defenderLosses)
         {
-            ApplyLoot(mission);
-            BeginReturn(mission, "Victory", $"{mission.Attacker.Name}'s crew broke {mission.Defender.Name}'s defense and grabbed ${mission.CashStolen:N0}, {mission.WeedStolen:N0} weed, and {mission.CokeStolen:N0} coke.", nowUtc);
+            var lootOverflow = ApplyLoot(mission);
+            // The house fell, so a pimp who stayed behind to hold it may not have survived it.
+            var defenderCommanding = await ActiveAttackMissions(mission.DefenderId)
+                .Where(x => x.CommanderPimpId != null)
+                .Select(x => x.CommanderPimpId!.Value)
+                .ToListAsync(cancellationToken);
+            var defenderFate = pimps.SettleBrokenDefence(mission.Defender, defenderCommanding, nowUtc);
+            if (defenderFate.Happened)
+                mission.DefenderPimpsLost = 1;
+
+            var fell = defenderFate.Happened ? $" {defenderFate.Name} died holding the house." : string.Empty;
+            BeginReturn(mission, "Victory", $"{mission.CommanderName} broke {mission.Defender.Name}'s defense and grabbed ${mission.CashStolen:N0}, {mission.WeedStolen:N0} weed, and {mission.CokeStolen:N0} coke.{fell}{lootOverflow.Describe()}", nowUtc);
         }
         else if (mission.CurrentRound >= mission.MaxRounds)
         {
@@ -425,9 +458,17 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
     private void Complete(CombatMission mission, DateTime nowUtc)
     {
         ApplyMoraleAftermath(mission);
+
+        // The commander's own reckoning: a win lifts them, a beating can cost their life.
+        var commanderFate = pimps.SettleMission(mission.Attacker, mission.CommanderPimp, mission.Outcome, nowUtc);
+        if (commanderFate.Happened)
+            mission.AttackerPimpsLost = 1;
+
         mission.Status = "Complete";
         mission.CompletedAtUtc = nowUtc;
-        mission.Summary = $"{mission.Attacker.Name}'s crew returned from {mission.Defender.Name}: {mission.Outcome}.";
+        mission.Summary = commanderFate.Happened
+            ? $"{mission.CommanderName} did not come back from {mission.Defender.Name}: {mission.Outcome}."
+            : $"{mission.CommanderName ?? "The crew"} returned from {mission.Defender.Name}: {mission.Outcome}.";
         mission.Events.Add(new CombatMissionEvent
         {
             Round = mission.CurrentRound,
@@ -521,18 +562,22 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
         });
     }
 
-    private void ApplyLoot(CombatMission mission)
+    private StorageOverflow ApplyLoot(CombatMission mission)
     {
         var combat = _options.Combat;
         mission.CashStolen = LootCash(mission.Defender.Cash, combat.MinCashLootPercent, combat.MaxCashLootPercent);
         mission.WeedStolen = LootProduct(mission.Defender.Weed, combat.MinProductLootPercent, combat.MaxProductLootPercent);
         mission.CokeStolen = LootProduct(mission.Defender.Coke, combat.MinProductLootPercent, combat.MaxProductLootPercent);
         mission.Defender.Cash -= mission.CashStolen;
-        mission.Attacker.Cash += mission.CashStolen;
         mission.Defender.Weed -= mission.WeedStolen;
-        mission.Attacker.Weed += mission.WeedStolen;
         mission.Defender.Coke -= mission.CokeStolen;
+
+        // The haul still has to fit at home: cash over the safe banks itself, goods over storage spill.
+        var stockBefore = StockLevels.From(mission.Attacker);
+        mission.Attacker.Cash += mission.CashStolen;
+        mission.Attacker.Weed += mission.WeedStolen;
         mission.Attacker.Coke += mission.CokeStolen;
+        return hideout.Settle(mission.Attacker, stockBefore);
     }
 
     private void ApplyAttackerLosses(CombatMission mission, int thugsLost, int weaponsLost)
@@ -555,17 +600,22 @@ public sealed class CombatMissionService(GameDbContext db, IOptions<GameOptions>
         mission.DefenderWeaponsLost += weaponsLost;
     }
 
-    private int AttackPower(int pimps, int thugs, int weapons, double morale)
+    private int AttackPower(int pimps, int thugs, int weapons, double morale, int commanderBonusPercent = 0)
     {
         var armedThugs = Math.Min(weapons, thugs);
-        return Math.Max(1, thugs * 12 + armedThugs * 8 + pimps * 2 + (int)Math.Round(morale / 2));
+        var raw = thugs * 12 + armedThugs * 8 + pimps * 2 + (int)Math.Round(morale / 2);
+        return Math.Max(1, WithBonus(raw, commanderBonusPercent));
     }
 
-    private int DefensePower(int pimps, int thugs, int weapons, double morale)
+    private int DefensePower(int pimps, int thugs, int weapons, double morale, int enforcerBonusPercent = 0)
     {
         var armedThugs = Math.Min(weapons, thugs);
-        return Math.Max(1, thugs * 14 + armedThugs * 10 + pimps * 3 + (int)Math.Round(morale));
+        var raw = thugs * 14 + armedThugs * 10 + pimps * 3 + (int)Math.Round(morale);
+        return Math.Max(1, WithBonus(raw, enforcerBonusPercent));
     }
+
+    private static int WithBonus(int power, int bonusPercent)
+        => bonusPercent <= 0 ? power : (int)Math.Round(power * (1 + bonusPercent / 100.0), MidpointRounding.AwayFromZero);
 
     private double ApplyPowerVariance(int power, double randomnessPercent)
     {

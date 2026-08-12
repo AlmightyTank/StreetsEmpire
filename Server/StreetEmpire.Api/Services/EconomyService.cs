@@ -5,7 +5,7 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom random)
+public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom random, HideoutService hideout, PimpRoster pimps)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -140,12 +140,14 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             morale.HqPartyThugMoraleGain);
     }
 
-    public ActionResultResponse Scout(Player player, int turns)
+    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false)
     {
         ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
 
         var street = _options.StreetAction;
         var morale = _options.Morale;
+        var stockBefore = StockLevels.From(player);
+        var restock = autoBuySupplies ? RestockForAction(player, turns) : Restock.None;
         var hoesBefore = player.Hoes;
         var thugsBefore = player.Thugs;
         var hoeHappinessBefore = player.HoeHappiness;
@@ -176,12 +178,26 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             cokeFound += RollFind(street.Finds.Coke);
         }
 
+        // The hideout only has so many beds, so recruits beyond it walk away.
+        var recruitsOffered = recruitedPimps + recruitedHoes + recruitedThugs;
+        recruitedPimps = Math.Min(recruitedPimps, hideout.CrewRoom(player, "pimps"));
+        recruitedHoes = Math.Min(recruitedHoes, hideout.CrewRoom(player, "hoes"));
+        recruitedThugs = Math.Min(recruitedThugs, hideout.CrewRoom(player, "thugs"));
+        var recruitsTurnedAway = recruitsOffered - (recruitedPimps + recruitedHoes + recruitedThugs);
+
+        // Hustlers at home lift the take. Street work is blocked while a mission is out, so nobody
+        // is away commanding at this point.
+        var streetBonusPercent = pimps.StreetBonusPercent(player, []);
+        var grossBeforeBonus = gross;
+        gross += (long)Math.Round(gross * (streetBonusPercent / 100.0), MidpointRounding.AwayFromZero);
+
         var crewPayout = (long)Math.Round(gross * (player.HoeCutPercent / 100.0), MidpointRounding.AwayFromZero);
         var playerProfit = Math.Max(0, gross - crewPayout);
 
         player.Turns -= turns;
         player.Cash += playerProfit;
-        player.Pimps += recruitedPimps;
+        // Recruited pimps arrive as named crew, which also moves the counter.
+        var recruitedPimpNames = pimps.Hire(player, recruitedPimps, DateTime.UtcNow).Select(x => x.Name).ToList();
         player.Hoes += recruitedHoes;
         player.Thugs += recruitedThugs;
         player.Condoms += condomsFound;
@@ -219,10 +235,21 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         var thugDeserters = RollDeserters(player.Thugs, player.ThugHappiness, morale);
         player.Hoes -= hoeDeserters;
         player.Thugs -= thugDeserters;
+        var walkouts = pimps.SettleStreetWork(player, turns, (player.HoeHappiness + player.ThugHappiness) / 2, DateTime.UtcNow);
+        var overflow = hideout.Settle(player, stockBefore);
 
-        var summary = $"Worked the streets for {turns} turn{Plural(turns)}. Grossed ${gross:N0}; crew cut was ${crewPayout:N0}; you kept ${playerProfit:N0}.";
+        var summary = string.Empty;
+        if (restock.Any)
+            summary += $"Auto-bought {restock.Describe()} for ${restock.Cost:N0}. ";
+        summary += $"Worked the streets for {turns} turn{Plural(turns)}. Grossed ${gross:N0}; crew cut was ${crewPayout:N0}; you kept ${playerProfit:N0}.";
         if (recruitedPimps + recruitedHoes + recruitedThugs > 0)
             summary += $" Recruited {recruitedPimps} pimp(s), {recruitedHoes} hoe(s), and {recruitedThugs} thug(s).";
+        if (recruitedPimpNames.Count > 0)
+            summary += $" {string.Join(" and ", recruitedPimpNames)} signed on.";
+        if (streetBonusPercent > 0)
+            summary += $" Your hustlers added {streetBonusPercent}% to the take.";
+        if (recruitsTurnedAway > 0)
+            summary += $" {recruitsTurnedAway} recruit(s) walked because your hideout is full.";
         if (condomsFound + beerFound + weedFound + cokeFound > 0)
             summary += $" Found {condomsFound} condoms, {beerFound} beer, {weedFound} weed, and {cokeFound} coke.";
         if (condomShortage > 0) summary += $" Condom shortage: {condomShortage}.";
@@ -231,10 +258,24 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         if (uncoveredThugs > 0) summary += $" {uncoveredThugs} thug(s) do not have weapons.";
         if (hoeDeserters > 0 || thugDeserters > 0)
             summary += $" {hoeDeserters} hoe(s) and {thugDeserters} thug(s) walked out due to low morale.";
+        foreach (var walkout in walkouts)
+            summary += $" {walkout.Name} had enough and walked out on you.";
+        summary += overflow.Describe();
 
         return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
         {
             ["turnsSpent"] = turns,
+            ["hustlerBonusPercent"] = streetBonusPercent,
+            ["grossBeforeHustlers"] = grossBeforeBonus,
+            ["autoBoughtCondoms"] = restock.Condoms,
+            ["autoBoughtBeer"] = restock.Beer,
+            ["autoBuyCost"] = restock.Cost,
+            ["recruitsTurnedAway"] = recruitsTurnedAway,
+            ["cashBankedByOverflow"] = overflow.CashBanked,
+            ["condomsLostToStorage"] = overflow.CondomsLost,
+            ["beerLostToStorage"] = overflow.BeerLost,
+            ["weedLostToStorage"] = overflow.WeedLost,
+            ["cokeLostToStorage"] = overflow.CokeLost,
             ["gross"] = gross,
             ["crewPayout"] = crewPayout,
             ["playerProfit"] = playerProfit,
@@ -270,10 +311,15 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         ValidateTurns(player, turns, _options.MaxActionTurns, "Production");
         var key = NormalizeProduct(product);
         var production = GetProduction(key);
+        var stockBefore = StockLevels.From(player);
 
-        var produced = 0;
+        var baseUnits = 0;
         for (var i = 0; i < turns; i++)
-            produced += random.NextInclusive(production.UnitsMin, production.UnitsMax);
+            baseUnits += random.NextInclusive(production.UnitsMin, production.UnitsMax);
+
+        // The lab is turn-fed: it raises what each production turn yields rather than running itself.
+        var labBonusPercent = hideout.ProductionYieldBonusPercent(player.Hideout, key);
+        var produced = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero);
 
         var totalCost = (long)production.CostPerTurn * turns;
         if (player.Cash < totalCost)
@@ -283,17 +329,27 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         player.Turns -= turns;
         if (key == "weed") player.Weed += produced;
         else player.Coke += produced;
+        var overflow = hideout.Settle(player, stockBefore);
+
+        var summary = $"Produced {produced:N0} {key} using {turns} turn{Plural(turns)} and ${totalCost:N0} in materials.";
+        if (labBonusPercent > 0)
+            summary += $" The {key} lab added {labBonusPercent:N0}% yield.";
+        summary += overflow.Describe();
 
         return new ActionResultResponse(
-            $"Produced {produced:N0} {key} using {turns} turn{Plural(turns)} and ${totalCost:N0} in materials.",
+            summary,
             player.Turns,
             new Dictionary<string, object?>
             {
                 ["product"] = key,
                 ["turnsSpent"] = turns,
                 ["unitsProduced"] = produced,
+                ["baseUnits"] = baseUnits,
+                ["labBonusPercent"] = labBonusPercent,
                 ["costPerTurn"] = production.CostPerTurn,
-                ["totalCost"] = totalCost
+                ["totalCost"] = totalCost,
+                ["weedLostToStorage"] = overflow.WeedLost,
+                ["cokeLostToStorage"] = overflow.CokeLost
             });
     }
 
@@ -303,6 +359,7 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             throw new GameRuleException("Quantity must be between 1 and 100,000.");
 
         var key = NormalizeProduct(product);
+        var stockBefore = StockLevels.From(player);
         var price = key == "weed" ? _options.WeedSellPrice : _options.CokeSellPrice;
         if (key == "weed")
         {
@@ -317,15 +374,17 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
 
         var total = (long)quantity * price;
         player.Cash += total;
+        var overflow = hideout.Settle(player, stockBefore);
         return new ActionResultResponse(
-            $"Sold {quantity:N0} {key} for ${total:N0} cash.",
+            $"Sold {quantity:N0} {key} for ${total:N0} cash.{overflow.Describe()}",
             player.Turns,
             new Dictionary<string, object?>
             {
                 ["product"] = key,
                 ["quantity"] = quantity,
                 ["unitPrice"] = price,
-                ["total"] = total
+                ["total"] = total,
+                ["cashBankedByOverflow"] = overflow.CashBanked
             });
     }
 
@@ -342,13 +401,27 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         if (player.Cash < total)
             throw new GameRuleException("You do not have enough cash on hand.");
 
+        // Purchases are refused rather than clamped: losing goods you paid for is worse than a refusal.
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var (held, cap) = item.Key switch
+        {
+            "condoms" => (player.Condoms, capacity.MaxCondoms),
+            "beer" => (player.Beer, capacity.MaxBeer),
+            "weapons" => (player.Weapons, capacity.MaxWeapons),
+            _ => throw new GameRuleException("Store item is not implemented.")
+        };
+        var room = Math.Max(0, cap - held);
+        if (quantity > room)
+            throw new GameRuleException(room == 0
+                ? $"Your storage room is full at {cap:N0} {item.Name.ToLowerInvariant()}. Upgrade it to hold more."
+                : $"Your storage room only has space for {room:N0} more {item.Name.ToLowerInvariant()}.");
+
         player.Cash -= total;
         switch (item.Key)
         {
             case "condoms": player.Condoms += quantity; break;
             case "beer": player.Beer += quantity; break;
             case "weapons": player.Weapons += quantity; break;
-            default: throw new GameRuleException("Store item is not implemented.");
         }
 
         return new ActionResultResponse(
@@ -379,6 +452,15 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
     {
         ValidateMoneyAmount(amount);
         if (player.BankCash < amount) throw new GameRuleException("You do not have that much money in the bank.");
+
+        // Refused rather than clamped, since clamping would bounce the cash straight back to the bank.
+        var safeCap = hideout.CapacityFor(player.Hideout).MaxCash;
+        var room = Math.Max(0, safeCap - player.Cash);
+        if (amount > room)
+            throw new GameRuleException(room == 0
+                ? $"Your safe is full at ${safeCap:N0} cash on hand. Upgrade it to hold more."
+                : $"Your safe only has room for ${room:N0} more cash on hand.");
+
         player.BankCash -= amount;
         player.Cash += amount;
         return new ActionResultResponse(
@@ -406,20 +488,41 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         if (normalizedRole == "thugs" && player.ThugHappiness < crew.MinThugMoraleToHire)
             throw new GameRuleException($"Thug morale must be at least {crew.MinThugMoraleToHire:N0}% before you can hire more thugs.");
 
+        var room = hideout.CrewRoom(player, normalizedRole);
+        if (quantity > room)
+        {
+            var capacity = hideout.CapacityFor(player.Hideout);
+            var cap = normalizedRole switch
+            {
+                "pimps" => capacity.MaxPimps,
+                "hoes" => capacity.MaxHoes,
+                _ => capacity.MaxThugs
+            };
+            throw new GameRuleException(room == 0
+                ? $"Your {capacity.TierName} holds {cap:N0} {normalizedRole} and is full."
+                : $"Your {capacity.TierName} only has room for {room:N0} more {CrewLabel(normalizedRole, room)}.");
+        }
+
         var totalCost = (long)unitCost * quantity;
         if (player.Cash < totalCost)
             throw new GameRuleException($"You need ${totalCost:N0} cash on hand to hire that crew.");
 
         player.Cash -= totalCost;
+        var hiredNames = string.Empty;
         switch (normalizedRole)
         {
-            case "pimps": player.Pimps += quantity; break;
+            case "pimps":
+                var hired = pimps.Hire(player, quantity, DateTime.UtcNow);
+                hiredNames = string.Join(", ", hired.Select(x => x.Name));
+                break;
             case "hoes": player.Hoes += quantity; break;
             case "thugs": player.Thugs += quantity; break;
         }
 
         return new ActionResultResponse(
-            $"Hired {quantity:N0} {CrewLabel(normalizedRole, quantity)} for ${totalCost:N0}.",
+            normalizedRole == "pimps"
+                ? $"Hired {hiredNames} for ${totalCost:N0}."
+                : $"Hired {quantity:N0} {CrewLabel(normalizedRole, quantity)} for ${totalCost:N0}.",
             player.Turns,
             new Dictionary<string, object?>
             {
@@ -436,13 +539,14 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         var crew = _options.Crew;
         var normalizedRole = NormalizeCrewRole(role);
         ValidateCrewQuantity(quantity, crew);
+        var firedNames = string.Empty;
 
         switch (normalizedRole)
         {
             case "pimps":
                 if (player.Pimps - quantity < 1)
                     throw new GameRuleException("You must keep at least one pimp managing the operation.");
-                player.Pimps -= quantity;
+                firedNames = string.Join(", ", pimps.Release(player, quantity, "Fired", DateTime.UtcNow).Select(x => x.Name));
                 player.HoeHappiness = ClampHappiness(player.HoeHappiness - FirePenalty(quantity, crew.FirePimpHoeMoralePenalty, crew));
                 break;
             case "hoes":
@@ -460,7 +564,9 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         }
 
         return new ActionResultResponse(
-            $"Fired {quantity:N0} {CrewLabel(normalizedRole, quantity)}.",
+            normalizedRole == "pimps"
+                ? $"Let {firedNames} go."
+                : $"Fired {quantity:N0} {CrewLabel(normalizedRole, quantity)}.",
             player.Turns,
             new Dictionary<string, object?>
             {
@@ -504,6 +610,7 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             player.Cash -= cashCost;
             player.HoeHappiness = ClampHappiness(player.HoeHappiness + morale.HqRestMoraleGain);
             player.ThugHappiness = ClampHappiness(player.ThugHappiness + morale.HqRestMoraleGain);
+            pimps.Recover(player, pimps.RestRecovery);
 
             return new ActionResultResponse(
                 $"Opened the Trap House for crew downtime. Morale rose by up to {morale.HqRestMoraleGain:N0}%.",
@@ -530,6 +637,7 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             player.Weed -= weedCost;
             player.HoeHappiness = ClampHappiness(player.HoeHappiness + morale.HqPartyHoeMoraleGain);
             player.ThugHappiness = ClampHappiness(player.ThugHappiness + morale.HqPartyThugMoraleGain);
+            pimps.Recover(player, pimps.PartyRecovery);
 
             return new ActionResultResponse(
                 $"Threw a Trap House party and let the crew burn off pressure. Hoe morale rose by up to {morale.HqPartyHoeMoraleGain:N0}%; thug morale rose by up to {morale.HqPartyThugMoraleGain:N0}%.",
@@ -538,6 +646,43 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         }
 
         throw new GameRuleException("Morale recovery strategy must be 'rest' or 'party'.");
+    }
+
+    /// <summary>
+    /// Tops up the consumables this action will burn, spending cash on hand only. Buys as much of the
+    /// shortfall as the storage room and the wallet allow rather than refusing outright, so a thin
+    /// wallet still gets a partial restock and the action still runs. Weapons are left alone: they are
+    /// permanent coverage, not upkeep, and quietly spending hundreds on them would be a nasty surprise.
+    /// Condoms come first because hoes drive the gross.
+    /// </summary>
+    private Restock RestockForAction(Player player, int turns)
+    {
+        var morale = _options.Morale;
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var condomsNeeded = RequiredUpkeep(player.Hoes, turns, morale.TurnsPerCondom);
+        var beerNeeded = RequiredUpkeep(player.Thugs, turns, morale.TurnsPerBeer);
+
+        var condoms = BuyUpTo(player, condomsNeeded - player.Condoms, capacity.MaxCondoms - player.Condoms, _options.CondomPrice);
+        player.Condoms += condoms.Quantity;
+        var beer = BuyUpTo(player, beerNeeded - player.Beer, capacity.MaxBeer - player.Beer, _options.BeerPrice);
+        player.Beer += beer.Quantity;
+
+        return new Restock(condoms.Quantity, beer.Quantity, condoms.Cost + beer.Cost);
+    }
+
+    private static (int Quantity, long Cost) BuyUpTo(Player player, int shortfall, int room, int unitPrice)
+    {
+        if (shortfall <= 0 || room <= 0 || unitPrice <= 0)
+            return (0, 0);
+
+        var affordable = (int)Math.Min(int.MaxValue, player.Cash / unitPrice);
+        var quantity = Math.Min(shortfall, Math.Min(room, affordable));
+        if (quantity <= 0)
+            return (0, 0);
+
+        var cost = (long)quantity * unitPrice;
+        player.Cash -= cost;
+        return (quantity, cost);
     }
 
     private ProductProductionOptions GetProduction(string product)
@@ -656,6 +801,22 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
 }
 
 public sealed class GameRuleException(string message) : Exception(message);
+
+/// <summary>What an auto-buy topped up before an action ran.</summary>
+public sealed record Restock(int Condoms, int Beer, long Cost)
+{
+    public static readonly Restock None = new(0, 0, 0);
+
+    public bool Any => Condoms > 0 || Beer > 0;
+
+    public string Describe()
+    {
+        var parts = new List<string>();
+        if (Condoms > 0) parts.Add($"{Condoms:N0} condoms");
+        if (Beer > 0) parts.Add($"{Beer:N0} beer");
+        return string.Join(" and ", parts);
+    }
+}
 
 /// <summary>A player's position in the net worth order, without the rest of the player row.</summary>
 public sealed record PlayerStanding(long NetWorth, DateTime CreatedAtUtc);

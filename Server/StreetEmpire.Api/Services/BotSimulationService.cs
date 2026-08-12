@@ -11,7 +11,8 @@ public sealed class BotSimulationService(
     EconomyService economy,
     TurnService turns,
     IGameRandom random,
-    IOptions<GameOptions> options)
+    IOptions<GameOptions> options,
+    HideoutService hideouts)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -20,6 +21,8 @@ public sealed class BotSimulationService(
         var rounds = Math.Clamp(requestedRounds, 1, 10);
         var bots = await db.Players
             .Include(x => x.Account)
+            .Include(x => x.Hideout)
+            .Include(x => x.Crew)
             .Where(x => x.Account.IsBot)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
@@ -151,6 +154,10 @@ public sealed class BotSimulationService(
 
         var crew = _options.Crew;
         var report = economy.GetCrewReport(bot);
+        var capacity = hideouts.CapacityFor(bot.Hideout);
+        // Recovery stockpiles are capped by storage for the same reason the buy targets are.
+        var condomStockpile = Math.Min(capacity.MaxCondoms, report.CondomsNeededForMaxStreetAction * brain.RecoverySupplyMultiplier);
+        var beerStockpile = Math.Min(capacity.MaxBeer, report.BeerNeededForMaxStreetAction * brain.RecoverySupplyMultiplier);
 
         if (bot.HoeHappiness < brain.RaiseHoeCutBelow && bot.HoeCutPercent < brain.HighHoeCutPercent)
         {
@@ -167,11 +174,11 @@ public sealed class BotSimulationService(
         if (report.UnmanagedHoes > brain.UnmanagedHoeTolerance && bot.Cash >= crew.HirePimpCost + CashReserve(bot, brain))
             return TryAction(bot, "CREW", 0, actionTimeUtc, () => economy.HireCrew(bot, "pimps", 1));
 
-        if (bot.HoeHappiness < brain.SupplyMoraleThreshold && bot.Condoms < report.CondomsNeededForMaxStreetAction * brain.RecoverySupplyMultiplier)
+        if (bot.HoeHappiness < brain.SupplyMoraleThreshold && bot.Condoms < condomStockpile)
         {
             var quantity = AffordableQuantity(
                 bot,
-                report.CondomsNeededForMaxStreetAction * brain.RecoverySupplyMultiplier - bot.Condoms,
+                condomStockpile - bot.Condoms,
                 _options.CondomPrice,
                 random.NextInclusive(brain.MinSupplyBuy, brain.MaxSupplyBuy),
                 brain);
@@ -179,11 +186,11 @@ public sealed class BotSimulationService(
                 return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "condoms", quantity));
         }
 
-        if (bot.ThugHappiness < brain.SupplyMoraleThreshold && bot.Beer < report.BeerNeededForMaxStreetAction * brain.RecoverySupplyMultiplier)
+        if (bot.ThugHappiness < brain.SupplyMoraleThreshold && bot.Beer < beerStockpile)
         {
             var quantity = AffordableQuantity(
                 bot,
-                report.BeerNeededForMaxStreetAction * brain.RecoverySupplyMultiplier - bot.Beer,
+                beerStockpile - bot.Beer,
                 _options.BeerPrice,
                 random.NextInclusive(brain.MinSupplyBuy, brain.MaxSupplyBuy),
                 brain);
@@ -204,8 +211,11 @@ public sealed class BotSimulationService(
     private int TryBuySupplies(Player bot, BotBrain brain, DateTime actionTimeUtc)
     {
         var report = economy.GetCrewReport(bot);
-        var targetCondoms = (int)Math.Ceiling(report.CondomsNeededForMaxStreetAction * brain.SupplyTargetMultiplier);
-        var targetBeer = (int)Math.Ceiling(report.BeerNeededForMaxStreetAction * brain.SupplyTargetMultiplier);
+        var capacity = hideouts.CapacityFor(bot.Hideout);
+        // Targets are capped by the storage room. Without this a bot aims past what it can hold, the
+        // store refuses the buy, and the swallowed rule error leaves it silently unable to restock.
+        var targetCondoms = Math.Min(capacity.MaxCondoms, (int)Math.Ceiling(report.CondomsNeededForMaxStreetAction * brain.SupplyTargetMultiplier));
+        var targetBeer = Math.Min(capacity.MaxBeer, (int)Math.Ceiling(report.BeerNeededForMaxStreetAction * brain.SupplyTargetMultiplier));
 
         if (bot.Condoms < targetCondoms)
         {
@@ -219,7 +229,7 @@ public sealed class BotSimulationService(
             return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "beer", quantity));
         }
 
-        var targetWeapons = Math.Max(0, (int)Math.Ceiling(bot.Thugs * brain.WeaponCoverageTarget));
+        var targetWeapons = Math.Min(capacity.MaxWeapons, Math.Max(0, (int)Math.Ceiling(bot.Thugs * brain.WeaponCoverageTarget)));
         if (bot.Weapons < targetWeapons)
         {
             var quantity = AffordableQuantity(bot, targetWeapons - bot.Weapons, _options.WeaponPrice, random.NextInclusive(1, brain.MaxWeaponBuy), brain);

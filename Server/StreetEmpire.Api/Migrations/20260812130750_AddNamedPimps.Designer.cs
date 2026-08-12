@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812130750_AddNamedPimps")]
+    partial class AddNamedPimps
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -157,9 +160,6 @@ namespace StreetEmpire.Api.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<int>("CokeStolen")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("CommanderBonusPercent")
                         .HasColumnType("integer");
 
                     b.Property<string>("CommanderName")
@@ -423,9 +423,6 @@ namespace StreetEmpire.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("BonusPercent")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("HiredAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -450,10 +447,6 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<Guid>("PlayerId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("Specialty")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<int>("Victories")
                         .HasColumnType("integer");

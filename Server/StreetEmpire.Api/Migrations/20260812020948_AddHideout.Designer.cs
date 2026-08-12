@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812020948_AddHideout")]
+    partial class AddHideout
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -159,16 +162,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<int>("CokeStolen")
                         .HasColumnType("integer");
 
-                    b.Property<int>("CommanderBonusPercent")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CommanderName")
-                        .HasMaxLength(48)
-                        .HasColumnType("character varying(48)");
-
-                    b.Property<long?>("CommanderPimpId")
-                        .HasColumnType("bigint");
-
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -240,8 +233,6 @@ namespace StreetEmpire.Api.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("CommanderPimpId");
 
                     b.HasIndex("AttackerId", "Status");
 
@@ -415,56 +406,6 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("Hideouts");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.Pimp", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<int>("BonusPercent")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("HiredAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("LostAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("LostReason")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<double>("Loyalty")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("MissionsLed")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(48)
-                        .HasColumnType("character varying(48)");
-
-                    b.Property<Guid>("PlayerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Specialty")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Victories")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlayerId", "LostAtUtc");
-
-                    b.ToTable("Pimps");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.Player", b =>
                 {
                     b.Property<Guid>("Id")
@@ -612,11 +553,6 @@ namespace StreetEmpire.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("StreetEmpire.Api.Models.Pimp", "CommanderPimp")
-                        .WithMany()
-                        .HasForeignKey("CommanderPimpId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("StreetEmpire.Api.Models.Player", "Defender")
                         .WithMany("MissionsDefended")
                         .HasForeignKey("DefenderId")
@@ -624,8 +560,6 @@ namespace StreetEmpire.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Attacker");
-
-                    b.Navigation("CommanderPimp");
 
                     b.Navigation("Defender");
                 });
@@ -663,17 +597,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Player");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.Pimp", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
-                        .WithMany("Crew")
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Player");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.Player", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.PlayerAccount", "Account")
@@ -695,8 +618,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("ActionLogs");
 
                     b.Navigation("AttacksMade");
-
-                    b.Navigation("Crew");
 
                     b.Navigation("Defenses");
 

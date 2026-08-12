@@ -18,10 +18,22 @@ var tests = new (string Name, Action Test)[]
     ("hire crew spends cash and respects morale gates", HireCrewSpendsCashAndChecksMorale),
     ("fire crew updates counts and morale", FireCrewUpdatesCountsAndMorale),
     ("trap house recovery spends resources and boosts morale", TrapHouseRecoverySpendsResourcesAndBoostsMorale),
+    ("street auto-buy tops up upkeep within cash and storage", StreetAutoBuyToppsUpWithinLimits),
+    ("pimp roster stays in step with the pimp counter", PimpRosterStaysInStepWithCounter),
+    ("pimp specialties bonus the right activity", PimpSpecialtiesBonusTheRightActivity),
+    ("pimp commander selection honours the request", PimpCommanderSelectionHonoursRequest),
+    ("pimp commander dies on a bad defeat", PimpCommanderDiesOnDefeat),
+    ("pimp walks out when loyalty bottoms out", PimpWalksOutWhenLoyaltyBottomsOut),
+    ("hideout caps crew hiring at the tier limit", HideoutCapsCrewHiring),
+    ("hideout blocks store buys that would overflow storage", HideoutBlocksOverflowingStoreBuys),
+    ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
+    ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
+    ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
     ("combat commitment calculates available crew", CombatCommitmentCalculatesAvailableCrew),
+    ("combat schedule gate never runs late", CombatScheduleGateNeverRunsLate),
     ("combat mission cancel price scales by status", CombatMissionCancelPriceScalesByStatus),
     ("combat mission launch respects the attacker cooldown", CombatMissionLaunchRespectsAttackerCooldown),
     ("combat victory steals cash and product without touching bank", CombatVictoryStealsCashAndProductWithoutTouchingBank),
@@ -145,12 +157,12 @@ static void RanksAbovePredicateAgreesWithInMemoryRanking()
 
 static void TurnRefreshCatchesUp()
 {
-    var service = new TurnService(Options.Create(new GameOptions
+    var service = CreateTurns(new GameOptions
     {
         TurnsPerTick = 2,
         TurnTickMinutes = 10,
         MaxTurns = 20
-    }));
+    });
     var player = new Player
     {
         Turns = 10,
@@ -166,13 +178,13 @@ static void TurnRefreshCatchesUp()
 
 static void TurnRefreshPassivelyRecoversMorale()
 {
-    var service = new TurnService(Options.Create(new GameOptions
+    var service = CreateTurns(new GameOptions
     {
         TurnsPerTick = 2,
         TurnTickMinutes = 10,
         MaxTurns = 20,
         Morale = new MoraleOptions { PassiveRecoveryPerTick = 0.5 }
-    }));
+    });
     var player = new Player
     {
         Turns = 20,
@@ -425,6 +437,291 @@ static void TrapHouseRecoverySpendsResourcesAndBoostsMorale()
     AssertEqual(2, Value<int>(breakdown, "weedCost"));
 }
 
+static void StreetAutoBuyToppsUpWithinLimits()
+{
+    var options = new GameOptions
+    {
+        MaxActionTurns = 20,
+        CondomPrice = 10,
+        BeerPrice = 15,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 0,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0,
+            ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Morale = new MoraleOptions { TurnsPerCondom = 10, TurnsPerBeer = 10 }
+    };
+    var service = CreateEconomy(options);
+
+    // 10 hoes over 10 turns needs 10 condoms; 5 thugs needs 5 beer. Holding none of either.
+    var player = new Player { Turns = 20, Cash = 10_000, Hoes = 10, Thugs = 5, Hideout = new Hideout { StorageLevel = 3 } };
+    var breakdown = RequiredBreakdown(service.Scout(player, 10, autoBuySupplies: true));
+
+    AssertEqual(10, Value<int>(breakdown, "autoBoughtCondoms"));
+    AssertEqual(5, Value<int>(breakdown, "autoBoughtBeer"));
+    AssertEqual(175L, Value<long>(breakdown, "autoBuyCost"));
+    AssertEqual(0, Value<int>(breakdown, "condomShortage"));
+    AssertEqual(0, Value<int>(breakdown, "beerShortage"));
+
+    // Cash only stretches to two condoms, and the action still runs on a partial restock.
+    var broke = new Player { Turns = 20, Cash = 20, Hoes = 10, Thugs = 5, Hideout = new Hideout { StorageLevel = 3 } };
+    var brokeBreakdown = RequiredBreakdown(service.Scout(broke, 10, autoBuySupplies: true));
+
+    AssertEqual(2, Value<int>(brokeBreakdown, "autoBoughtCondoms"));
+    AssertEqual(0, Value<int>(brokeBreakdown, "autoBoughtBeer"));
+    AssertEqual(8, Value<int>(brokeBreakdown, "condomShortage"));
+    AssertEqual(10, Value<int>(brokeBreakdown, "turnsSpent"));
+
+    // Storage is the other ceiling: a level 1 room caps the top-up at what fits.
+    var cramped = new Player { Turns = 20, Cash = 10_000, Hoes = 50, Thugs = 5, Hideout = new Hideout { StorageLevel = 1 } };
+    var crampedBreakdown = RequiredBreakdown(service.Scout(cramped, 20, autoBuySupplies: true));
+
+    AssertEqual(17, Value<int>(crampedBreakdown, "autoBoughtCondoms"));
+
+    // Left off, nothing is bought at all.
+    var manual = new Player { Turns = 20, Cash = 10_000, Hoes = 10, Thugs = 5, Hideout = new Hideout { StorageLevel = 3 } };
+    var manualBreakdown = RequiredBreakdown(service.Scout(manual, 10));
+
+    AssertEqual(0, Value<int>(manualBreakdown, "autoBoughtCondoms"));
+    AssertEqual(10_000L, manual.Cash);
+}
+
+// Player.Pimps is what the economy and the leaderboard's net worth expression read, so it must
+// always equal the number of living pimps on the roster.
+static void PimpRosterStaysInStepWithCounter()
+{
+    var service = CreateEconomy();
+    var roster = CreateRoster();
+    var now = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Cash = 1_000_000, Pimps = 0, HoeHappiness = 100, ThugHappiness = 100 };
+
+    // A counter set directly, as admin cheats and bot seeding do, is reconciled into named crew.
+    player.Pimps = 3;
+    roster.Reconcile(player, now);
+    AssertEqual(3, player.Pimps);
+    AssertEqual(3, roster.Active(player).Count);
+    AssertEqual(3, roster.Active(player).Select(x => x.Name).Distinct().Count());
+
+    service.HireCrew(player, "pimps", 2);
+    AssertEqual(5, player.Pimps);
+    AssertEqual(5, roster.Active(player).Count);
+
+    service.FireCrew(player, "pimps", 2);
+    AssertEqual(3, player.Pimps);
+    AssertEqual(3, roster.Active(player).Count);
+    // The fired pair stay on the books as history rather than vanishing.
+    AssertEqual(2, roster.Fallen(player).Count);
+
+    // Reconcile also trims when the counter drops beneath the roster.
+    player.Pimps = 1;
+    roster.Reconcile(player, now);
+    AssertEqual(1, player.Pimps);
+    AssertEqual(1, roster.Active(player).Count);
+}
+
+static void PimpSpecialtiesBonusTheRightActivity()
+{
+    var options = new GameOptions { Pimps = new PimpOptions { MaxStreetBonusPercent = 20, MaxDefenceBonusPercent = 20 } };
+    var roster = CreateRoster(options);
+    var now = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Pimps = 3 };
+    roster.Reconcile(player, now);
+    var crew = roster.Active(player);
+    // Unsaved rows all carry Id 0, which the "already commanding" filter keys on.
+    for (var i = 0; i < crew.Count; i++) crew[i].Id = i + 1;
+    crew[0].Specialty = PimpSpecialties.Hustler; crew[0].BonusPercent = 5;
+    crew[1].Specialty = PimpSpecialties.Hustler; crew[1].BonusPercent = 4;
+    crew[2].Specialty = PimpSpecialties.Enforcer; crew[2].BonusPercent = 6;
+
+    // Each specialty only counts toward its own activity.
+    AssertEqual(9, roster.StreetBonusPercent(player, []));
+    AssertEqual(6, roster.DefenceBonusPercent(player, []));
+
+    // A pimp away commanding is not home to help either one.
+    AssertEqual(4, roster.StreetBonusPercent(player, [crew[0].Id]));
+    AssertEqual(0, roster.DefenceBonusPercent(player, [crew[2].Id]));
+
+    // Stacked bonuses are capped so a full roster is not a huge swing.
+    foreach (var pimp in crew) { pimp.Specialty = PimpSpecialties.Hustler; pimp.BonusPercent = 40; }
+    AssertEqual(20, roster.StreetBonusPercent(player, []));
+}
+
+static void PimpCommanderSelectionHonoursRequest()
+{
+    var roster = CreateRoster();
+    var now = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Pimps = 3 };
+    roster.Reconcile(player, now);
+    var crew = roster.Active(player);
+    for (var i = 0; i < crew.Count; i++) crew[i].Id = i + 1;
+    crew[0].Specialty = PimpSpecialties.Hustler; crew[0].BonusPercent = 8;
+    crew[1].Specialty = PimpSpecialties.Enforcer; crew[1].BonusPercent = 3;
+    crew[2].Specialty = PimpSpecialties.Enforcer; crew[2].BonusPercent = 7;
+
+    // Asking for someone specific gets exactly them, even a weaker choice.
+    AssertEqual(crew[0].Id, roster.ChooseCommander(player, [], crew[0].Id)!.Id);
+
+    // With no request the strongest Enforcer leads.
+    AssertEqual(crew[2].Id, roster.ChooseCommander(player, [])!.Id);
+
+    // Someone already out cannot lead a second attack.
+    AssertRuleError(() => roster.ChooseCommander(player, [crew[0].Id], crew[0].Id), "requesting a pimp already commanding");
+    AssertEqual(crew[2].Id, roster.ChooseCommander(player, [crew[1].Id])!.Id);
+
+    // Nor can a pimp who belongs to nobody here.
+    AssertRuleError(() => roster.ChooseCommander(player, [], 999_999), "requesting a pimp that is not yours");
+}
+
+static void PimpCommanderDiesOnDefeat()
+{
+    var options = new GameOptions { Pimps = new PimpOptions { CommanderDeathChanceOnDefeat = 1 } };
+    var roster = CreateRoster(options, new AlwaysRandom());
+    var now = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Pimps = 2 };
+    roster.Reconcile(player, now);
+    var commander = roster.Active(player)[0];
+
+    var fate = roster.SettleMission(player, commander, "Defeat", now);
+
+    AssertTrue(fate.Happened, "a certain-death defeat should kill the commander");
+    AssertEqual("Killed in action", fate.Reason);
+    AssertEqual(1, player.Pimps);
+    AssertEqual(1, roster.Active(player).Count);
+    AssertEqual(1, roster.Fallen(player).Count);
+
+    // A win instead builds their record and leaves them standing.
+    var survivor = roster.Active(player)[0];
+    var won = roster.SettleMission(player, survivor, "Victory", now);
+    AssertTrue(!won.Happened, "a victory should not cost the commander");
+    AssertEqual(1, survivor.Victories);
+    AssertEqual(1, survivor.MissionsLed);
+}
+
+static void PimpWalksOutWhenLoyaltyBottomsOut()
+{
+    var options = new GameOptions { Pimps = new PimpOptions { WalkOutThreshold = 90, MaxWalkOutChance = 1 } };
+    var roster = CreateRoster(options, new AlwaysRandom());
+    var now = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Pimps = 3 };
+    roster.Reconcile(player, now);
+    foreach (var pimp in roster.Active(player))
+        pimp.Loyalty = 5;
+
+    var walked = roster.SettleStreetWork(player, turns: 5, crewMorale: 100, nowUtc: now);
+
+    // Never the last one: a player with no pimps could never command an attack again.
+    AssertEqual(2, walked.Count);
+    AssertEqual(1, player.Pimps);
+    AssertEqual(1, roster.Active(player).Count);
+    AssertEqual("Walked out", roster.Fallen(player)[0].LostReason);
+}
+
+static void HideoutCapsCrewHiring()
+{
+    var service = CreateEconomy();
+    var player = new Player
+    {
+        Cash = 1_000_000,
+        Pimps = 1,
+        Hoes = 48,
+        Thugs = 1,
+        HoeHappiness = 100,
+        ThugHappiness = 100,
+        Hideout = new Hideout()
+    };
+
+    // Trap House holds 50 hoes, so only two more fit.
+    service.HireCrew(player, "hoes", 2);
+    AssertEqual(50, player.Hoes);
+
+    AssertRuleError(() => service.HireCrew(player, "hoes", 1), "hiring past the hideout cap");
+    AssertEqual(50, player.Hoes);
+}
+
+static void HideoutBlocksOverflowingStoreBuys()
+{
+    var service = CreateEconomy(StorageCapOptions(condoms: 10));
+    var player = new Player { Cash = 1_000_000, Condoms = 8, Hideout = new Hideout() };
+
+    AssertRuleError(() => service.BuyStoreItem(player, "condoms", 5), "buying past storage capacity");
+    AssertEqual(8, player.Condoms);
+    AssertEqual(1_000_000L, player.Cash);
+
+    service.BuyStoreItem(player, "condoms", 2);
+    AssertEqual(10, player.Condoms);
+}
+
+static void HideoutBanksCashOverSafeAndSpillsGoods()
+{
+    var options = new GameOptions { WeedSellPrice = 40 };
+    var service = CreateEconomy(options);
+    var player = new Player
+    {
+        Cash = 49_000,
+        BankCash = 0,
+        Weed = 60,
+        Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
+    };
+
+    // 60 weed at $40 is $2,400, which pushes cash past the level 1 safe's $50,000.
+    var result = service.SellProduct(player, "weed", 60);
+
+    AssertEqual(50_000L, player.Cash);
+    AssertEqual(1_400L, player.BankCash);
+    AssertEqual(1_400L, Value<long>(RequiredBreakdown(result), "cashBankedByOverflow"));
+    AssertTrue(result.Summary.Contains("safe was full"), "the summary should explain the transfer");
+}
+
+static void HideoutGrandfathersExistingStock()
+{
+    var hideouts = CreateHideouts(StorageCapOptions(condoms: 10));
+    // The room holds 10, but this player already had 68 from before caps existed.
+    var player = new Player { Condoms = 68, Hideout = new Hideout() };
+    var before = StockLevels.From(player);
+
+    var noGain = hideouts.Settle(player, before);
+    AssertEqual(68, player.Condoms);
+    AssertTrue(!noGain.Any, "held stock should never be taken away");
+
+    // Gains on top of a grandfathered amount still spill.
+    player.Condoms += 5;
+    var overflow = hideouts.Settle(player, before);
+    AssertEqual(68, player.Condoms);
+    AssertEqual(5, overflow.CondomsLost);
+
+    // Once spent back under the cap, the ceiling follows them down.
+    player.Condoms = 4;
+    var settled = StockLevels.From(player);
+    player.Condoms = 12;
+    AssertEqual(2, hideouts.Settle(player, settled).CondomsLost);
+    AssertEqual(10, player.Condoms);
+}
+
+static void HideoutLabRaisesProductionYield()
+{
+    var options = new GameOptions
+    {
+        Production = new ProductionOptions { Weed = new ProductProductionOptions(25, 4, 4) }
+    };
+    var service = CreateEconomy(options);
+    var withoutLab = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout() };
+    var withLab = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3 } };
+
+    var plain = service.Produce(withoutLab, "weed", 5);
+    var boosted = service.Produce(withLab, "weed", 5);
+
+    // MinimumRandom always rolls the low end, so five turns is a flat 20 units before the lab.
+    AssertEqual(20, Value<int>(RequiredBreakdown(plain), "baseUnits"));
+    AssertEqual(20, Value<int>(RequiredBreakdown(boosted), "baseUnits"));
+    AssertEqual(110, Value<int>(RequiredBreakdown(boosted), "labBonusPercent"));
+    AssertEqual(42, Value<int>(RequiredBreakdown(boosted), "unitsProduced"));
+}
+
 static void CombatBlocksSelfAttacks()
 {
     var service = CreateCombat();
@@ -516,6 +813,35 @@ static void CombatCommitmentCalculatesAvailableCrew()
     AssertEqual(7, commitment.AvailableThugs);
     AssertEqual(5, commitment.AvailableWeapons);
     AssertEqual(2, commitment.ActiveAttackMissions);
+}
+
+// The gate may fire early and waste a pass, but must never fire late: a late gate stalls combat.
+static void CombatScheduleGateNeverRunsLate()
+{
+    var now = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var schedule = new CombatSchedule();
+
+    AssertTrue(schedule.MayBeDue(now), "a cold schedule must take the slow path");
+
+    schedule.SetNextDue(now.AddSeconds(30));
+    AssertTrue(!schedule.MayBeDue(now), "nothing is due 30 seconds early");
+    AssertTrue(schedule.MayBeDue(now.AddSeconds(30)), "the exact due moment counts as due");
+    AssertTrue(schedule.MayBeDue(now.AddMinutes(5)), "past due still counts as due");
+
+    // A launch landing sooner than the cached time must bring the gate forward.
+    schedule.SetNextDue(now.AddMinutes(10));
+    schedule.NoteUpcoming(now.AddSeconds(5));
+    AssertTrue(schedule.MayBeDue(now.AddSeconds(5)), "an earlier arrival must open the gate");
+
+    // A later event must not push the gate out past work already waiting.
+    schedule.SetNextDue(now.AddSeconds(5));
+    schedule.NoteUpcoming(now.AddHours(1));
+    AssertTrue(schedule.MayBeDue(now.AddSeconds(5)), "a later event must not delay the gate");
+
+    schedule.SetNextDue(null);
+    AssertTrue(!schedule.MayBeDue(now.AddYears(50)), "an empty schedule stays shut");
+    schedule.Invalidate();
+    AssertTrue(schedule.MayBeDue(now), "invalidating forces the slow path");
 }
 
 static void CombatMissionCancelPriceScalesByStatus()
@@ -667,7 +993,61 @@ static void CombatAttackSpendsTurnsAndCreatesLog()
 }
 
 static EconomyService CreateEconomy(GameOptions? options = null)
-    => new(Options.Create(options ?? new GameOptions()), new MinimumRandom());
+{
+    var resolved = Resolve(options);
+    return new EconomyService(
+        Options.Create(resolved),
+        new MinimumRandom(),
+        new HideoutService(Options.Create(resolved)),
+        new PimpRoster(Options.Create(resolved), new MinimumRandom()));
+}
+
+static TurnService CreateTurns(GameOptions? options = null)
+{
+    var resolved = Resolve(options);
+    return new TurnService(Options.Create(resolved), new PimpRoster(Options.Create(resolved), new MinimumRandom()));
+}
+
+static PimpRoster CreateRoster(GameOptions? options = null, IGameRandom? random = null)
+    => new(Options.Create(Resolve(options)), random ?? new MinimumRandom());
+
+static HideoutService CreateHideouts(GameOptions? options = null)
+    => new(Options.Create(Resolve(options)));
+
+/// <summary>Mirrors the API's PostConfigure step, which fills hideout tables config left empty.</summary>
+static GameOptions Resolve(GameOptions? options)
+{
+    var resolved = options ?? new GameOptions();
+    resolved.Hideout.ApplyDefaultsWhereEmpty();
+    return resolved;
+}
+
+/// <summary>
+/// Options with a single, explicitly sized storage room, so capacity rule tests do not break every
+/// time the shipped storage table is retuned.
+/// </summary>
+static GameOptions StorageCapOptions(int condoms)
+    => new()
+    {
+        Hideout = new HideoutOptions
+        {
+            Storage = [new StorageLevelOptions { Level = 1, Condoms = condoms, Beer = 10, Weapons = 5, Weed = 25, Coke = 10 }]
+        }
+    };
+
+static void AssertRuleError(Action action, string expectation)
+{
+    try
+    {
+        action();
+    }
+    catch (GameRuleException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException($"Expected a rule error when {expectation}.");
+}
 
 static CombatService CreateCombat(GameOptions? options = null)
     => new(Options.Create(options ?? new GameOptions()), new MinimumRandom());
@@ -701,6 +1081,12 @@ static void AssertTrue(bool value, string message)
 {
     if (!value)
         throw new InvalidOperationException(message);
+}
+
+sealed class AlwaysRandom : IGameRandom
+{
+    public int NextInclusive(int min, int max) => min;
+    public double NextDouble() => 0;
 }
 
 sealed class MinimumRandom : IGameRandom

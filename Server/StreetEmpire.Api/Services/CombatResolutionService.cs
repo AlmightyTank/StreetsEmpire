@@ -4,15 +4,29 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class CombatResolutionService(GameDbContext db, CombatService combat, CombatMissionService missions)
+public sealed class CombatResolutionService(
+    GameDbContext db,
+    CombatService combat,
+    CombatMissionService missions,
+    CombatSchedule schedule)
 {
     private static readonly SemaphoreSlim ResolutionLock = new(1, 1);
 
     public async Task<int> ResolveDueAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
+        // Cheap gate first: most calls arrive while a mission is mid-travel or mid-round with nothing
+        // to settle, and those should cost no queries and no time in the lock.
+        if (!schedule.MayBeDue(nowUtc))
+            return 0;
+
         await ResolutionLock.WaitAsync(cancellationToken);
         try
         {
+            // Re-check inside the lock: a request that queued behind the one that did the work has
+            // nothing left to do.
+            if (!schedule.MayBeDue(nowUtc))
+                return 0;
+
             var missionUpdates = await missions.ResolveDueAsync(nowUtc, cancellationToken);
             var dueLogs = await db.CombatLogs
                 .Include(x => x.Attacker)
@@ -33,12 +47,46 @@ public sealed class CombatResolutionService(GameDbContext db, CombatService comb
             if (dueLogs.Count > 0)
                 await db.SaveChangesAsync(cancellationToken);
 
+            schedule.SetNextDue(await NextDueAtUtcAsync(cancellationToken));
             return dueLogs.Count + missionUpdates;
         }
         finally
         {
             ResolutionLock.Release();
         }
+    }
+
+    /// <summary>
+    /// The earliest moment combat needs attention again, or null when nothing is outstanding. Reads
+    /// only the timestamps, and only after a resolution pass rather than on every request.
+    /// </summary>
+    private async Task<DateTime?> NextDueAtUtcAsync(CancellationToken cancellationToken)
+    {
+        var active = await db.CombatMissions.AsNoTracking()
+            .Where(x => x.Status != "Complete")
+            .Select(x => new { x.Status, x.ArrivesAtUtc, x.NextRoundAtUtc, x.ReturnsAtUtc })
+            .ToListAsync(cancellationToken);
+        var pendingLog = await db.CombatLogs.AsNoTracking()
+            .Where(x => x.Outcome == "Pending" && x.ResolvesAtUtc != null)
+            .OrderBy(x => x.ResolvesAtUtc)
+            .Select(x => x.ResolvesAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var times = active
+            .Select(x => x.Status switch
+            {
+                "Traveling" => x.ArrivesAtUtc,
+                "Fighting" => x.NextRoundAtUtc,
+                "Returning" => x.ReturnsAtUtc,
+                _ => null
+            })
+            .Where(x => x is not null)
+            .Select(x => x!.Value)
+            .ToList();
+        if (pendingLog is { } logDue)
+            times.Add(logDue);
+
+        return times.Count == 0 ? null : times.Min();
     }
 
     private void AddLog(

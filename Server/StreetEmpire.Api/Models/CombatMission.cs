@@ -14,6 +14,14 @@ public sealed class CombatMission
 
     public int TurnsSpent { get; set; }
     public int AssignedPimps { get; set; }
+
+    /// <summary>The pimp commanding this attack, kept so the mission can name them.</summary>
+    public long? CommanderPimpId { get; set; }
+    public Pimp? CommanderPimp { get; set; }
+    public string? CommanderName { get; set; }
+
+    /// <summary>Frozen at launch, so a commander dying mid-mission does not change the fight.</summary>
+    public int CommanderBonusPercent { get; set; }
     public int AssignedThugs { get; set; }
     public int AssignedWeapons { get; set; }
     public int RemainingAttackers { get; set; }

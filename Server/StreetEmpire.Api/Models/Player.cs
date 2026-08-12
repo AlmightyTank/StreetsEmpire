@@ -37,6 +37,11 @@ public sealed class Player
     public DateTime? LastAttackAtUtc { get; set; }
     public DateTime? LastAttackedAtUtc { get; set; }
 
+    public Hideout? Hideout { get; set; }
+
+    /// <summary>Named pimps, active and fallen. <see cref="Pimps"/> counts the active ones.</summary>
+    public List<Pimp> Crew { get; set; } = [];
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<GameActionLog> ActionLogs { get; set; } = [];
     public List<CombatLog> AttacksMade { get; set; } = [];

@@ -42,6 +42,46 @@ export type CrewReport = {
   hqPartyThugMoraleGain: number
 }
 
+export type Hideout = {
+  tierName: string
+  tier: number
+  storageLevel: number
+  safeLevel: number
+  weedLabLevel: number
+  cokeLabLevel: number
+  maxPimps: number
+  maxHoes: number
+  maxThugs: number
+  maxCash: number
+  maxCondoms: number
+  maxBeer: number
+  maxWeapons: number
+  maxWeed: number
+  maxCoke: number
+  weedLabYieldBonusPercent: number
+  cokeLabYieldBonusPercent: number
+  storageUpgradeCost?: number | null
+  safeUpgradeCost?: number | null
+  weedLabUpgradeCost?: number | null
+  cokeLabUpgradeCost?: number | null
+}
+
+export type HideoutRoom = 'storage' | 'safe' | 'weedlab' | 'cokelab'
+
+export type Pimp = {
+  id: number
+  name: string
+  specialty: string
+  bonusPercent: number
+  loyalty: number
+  missionsLed: number
+  victories: number
+  isCommanding: boolean
+  hiredAtUtc: string
+  lostAtUtc?: string | null
+  lostReason?: string | null
+}
+
 export type Dashboard = {
   playerId: string
   name: string
@@ -71,6 +111,9 @@ export type Dashboard = {
   weedSellPrice: number
   cokeSellPrice: number
   crewReport: CrewReport
+  hideout: Hideout
+  crew: Pimp[]
+  fallenCrew: Pimp[]
   combatCrew: CombatCrew
   combatStatus: CombatStatus
   store: StoreItem[]
@@ -215,6 +258,8 @@ export type CombatMission = {
   summary: string
   turnsSpent: number
   assignedPimps: number
+  commanderName?: string | null
+  commanderBonusPercent: number
   assignedThugs: number
   assignedWeapons: number
   remainingAttackers: number
@@ -377,10 +422,13 @@ export const api = {
   playerProfile: (playerId: string) => request<PlayerProfile>(`/api/game/players/${encodeURIComponent(playerId)}/profile`),
   combatLogs: () => request<CombatLog[]>('/api/game/combat/logs'),
   combatMissions: () => request<CombatMission[]>('/api/game/combat/missions'),
-  attack: (defenderId: string, pimps: number, thugs: number, weapons: number) => request<ActionResult>('/api/game/combat/attack', {
-    method: 'POST',
-    body: JSON.stringify({ defenderId, pimps, thugs, weapons }),
-  }),
+  // Exactly one pimp commands. Pass a commanderPimpId to pick them, or null to let the server field
+  // the best Enforcer available.
+  attack: (defenderId: string, thugs: number, weapons: number, commanderPimpId: number | null) =>
+    request<ActionResult>('/api/game/combat/attack', {
+      method: 'POST',
+      body: JSON.stringify({ defenderId, thugs, weapons, commanderPimpId }),
+    }),
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNewsEntry[]>('/api/world/news'),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
@@ -400,9 +448,9 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
   }),
-  workStreet: (turns: number) => request<ActionResult>('/api/game/street', {
+  workStreet: (turns: number, autoBuySupplies = false) => request<ActionResult>('/api/game/street', {
     method: 'POST',
-    body: JSON.stringify({ turns }),
+    body: JSON.stringify({ turns, autoBuySupplies }),
   }),
   produce: (product: 'weed' | 'coke', turns: number) => request<ActionResult>('/api/game/production', {
     method: 'POST',
@@ -419,6 +467,10 @@ export const api = {
   recoverMorale: (strategy: 'rest' | 'party') => request<ActionResult>('/api/game/hideout/recover', {
     method: 'POST',
     body: JSON.stringify({ strategy }),
+  }),
+  upgradeHideout: (room: HideoutRoom) => request<ActionResult>('/api/game/hideout/upgrade', {
+    method: 'POST',
+    body: JSON.stringify({ room }),
   }),
   deposit: (amount: number) => request<ActionResult>('/api/game/bank/deposit', {
     method: 'POST',

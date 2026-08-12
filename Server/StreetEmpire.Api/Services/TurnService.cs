@@ -3,7 +3,7 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class TurnService(IOptions<GameOptions> options)
+public sealed class TurnService(IOptions<GameOptions> options, PimpRoster pimps)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -27,6 +27,8 @@ public sealed class TurnService(IOptions<GameOptions> options)
         player.Turns = Math.Min(_options.MaxTurns, player.Turns + turnsToAdd);
         player.HoeHappiness = RecoverMorale(player.HoeHappiness, moraleRecovery);
         player.ThugHappiness = RecoverMorale(player.ThugHappiness, moraleRecovery);
+        // Pimps cool off over the same ticks, so loyalty is not a one-way ratchet.
+        pimps.Recover(player, completedTicks * pimps.PassiveRecoveryPerTick);
         player.LastTurnUpdateUtc = player.Turns >= _options.MaxTurns
             ? nowUtc
             : player.LastTurnUpdateUtc.AddMinutes(completedTicks * _options.TurnTickMinutes);

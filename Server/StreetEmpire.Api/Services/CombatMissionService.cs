@@ -8,7 +8,7 @@ namespace StreetEmpire.Api.Services;
 
 public sealed class CombatMissionService(
     GameDbContext db,
-    IOptions<GameOptions> options,
+    IOptionsSnapshot<GameOptions> options,
     IGameRandom random,
     HideoutService hideout,
     CombatSchedule schedule,

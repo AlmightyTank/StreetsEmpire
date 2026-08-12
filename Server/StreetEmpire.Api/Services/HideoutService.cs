@@ -8,7 +8,7 @@ namespace StreetEmpire.Api.Services;
 /// Owns hideout capacity. Crew comes from the tier, goods from the storage room, cash on hand from
 /// the safe, and production yield from the labs.
 /// </summary>
-public sealed class HideoutService(IOptions<GameOptions> options)
+public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 {
     private readonly GameOptions _options = options.Value;
 

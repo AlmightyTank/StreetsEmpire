@@ -8,7 +8,7 @@ namespace StreetEmpire.Api.Services;
 /// economy and for the net worth expression the database sorts by, so every method here keeps that
 /// counter in step with the active rows. A rule test asserts the two never drift.
 /// </summary>
-public sealed class PimpRoster(IOptions<GameOptions> options, IGameRandom random)
+public sealed class PimpRoster(IOptionsSnapshot<GameOptions> options, IGameRandom random)
 {
     private readonly PimpOptions _options = options.Value.Pimps;
 

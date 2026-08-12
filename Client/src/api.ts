@@ -432,10 +432,6 @@ export const api = {
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNewsEntry[]>('/api/world/news'),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
-  adminCheat: (cheat: string, amount: number) => request<ActionResult>('/api/admin/cheats', {
-    method: 'POST',
-    body: JSON.stringify({ cheat, amount }),
-  }),
   adminSeedBots: (count: number) => request<ActionResult>('/api/admin/bots/seed', {
     method: 'POST',
     body: JSON.stringify({ count }),
@@ -492,4 +488,179 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ role, quantity }),
   }),
+}
+
+export type AdminPlayerSummary = {
+  playerId: string
+  name: string
+  username: string
+  city: string
+  isBot: boolean
+  isAdmin: boolean
+  isBanned: boolean
+  suspendedUntilUtc?: string | null
+  enforcementReason?: string | null
+  netWorth: number
+  cash: number
+  bankCash: number
+  turns: number
+  pimps: number
+  hoes: number
+  thugs: number
+  createdAtUtc: string
+}
+
+export type AdminAuditEntry = {
+  id: number
+  actorUsername: string
+  action: string
+  targetPlayerId?: string | null
+  targetName?: string | null
+  summary: string
+  reason?: string | null
+  createdAtUtc: string
+}
+
+export type AdminPlayerDetail = {
+  summary: AdminPlayerSummary
+  condoms: number
+  beer: number
+  weapons: number
+  weed: number
+  coke: number
+  hoeHappiness: number
+  thugHappiness: number
+  hoeCutPercent: number
+  lastAttackAtUtc?: string | null
+  lastAttackedAtUtc?: string | null
+  combatProtectionUntilUtc?: string | null
+  hideout: Hideout
+  crew: Pimp[]
+  recentActivity: Activity[]
+  auditTrail: AdminAuditEntry[]
+  adjustableResources: string[]
+}
+
+export const adminApi = {
+  searchPlayers: (query: string) =>
+    request<AdminPlayerSummary[]>(`/api/admin/players${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+  playerDetail: (playerId: string) =>
+    request<AdminPlayerDetail>(`/api/admin/players/${encodeURIComponent(playerId)}`),
+  adjust: (playerId: string, resource: string, delta: number, reason: string) =>
+    request<ActionResult>(`/api/admin/players/${playerId}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify({ resource, delta, reason }),
+    }),
+  setMorale: (playerId: string, morale: number, reason: string) =>
+    request<ActionResult>(`/api/admin/players/${playerId}/morale`, {
+      method: 'POST',
+      body: JSON.stringify({ morale, reason }),
+    }),
+  enforcement: (playerId: string, action: 'ban' | 'suspend' | 'clear', untilUtc: string | null, reason: string) =>
+    request<ActionResult>(`/api/admin/players/${playerId}/enforcement`, {
+      method: 'POST',
+      body: JSON.stringify({ action, untilUtc, reason }),
+    }),
+  forceLogout: (playerId: string, reason: string) =>
+    request<ActionResult>(`/api/admin/players/${playerId}/force-logout`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  rename: (playerId: string, name: string, reason: string) =>
+    request<ActionResult>(`/api/admin/players/${playerId}/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ name, reason }),
+    }),
+  setAdminRights: (playerId: string, isAdmin: boolean, reason: string) =>
+    request<ActionResult>(`/api/admin/players/${playerId}/admin-rights`, {
+      method: 'POST',
+      body: JSON.stringify({ isAdmin, reason }),
+    }),
+  audit: () => request<AdminAuditEntry[]>('/api/admin/audit'),
+}
+
+export type AdminWealthBand = { label: string, players: number, totalNetWorth: number }
+export type AdminMover = {
+  playerId: string
+  name: string
+  isBot: boolean
+  netWorth: number
+  cashGained24h: number
+  actionsLast24h: number
+}
+export type AdminMission = {
+  missionId: number
+  attackerName: string
+  defenderName: string
+  commanderName?: string | null
+  status: string
+  outcome: string
+  currentRound: number
+  maxRounds: number
+  startedAtUtc: string
+  nextEventAtUtc?: string | null
+  isOverdue: boolean
+}
+export type AdminBotHealth = {
+  playerId: string
+  name: string
+  personality: string
+  netWorth: number
+  lastActionAtUtc?: string | null
+  minutesIdle: number
+}
+export type AdminOversight = {
+  medianNetWorth: number
+  topNetWorth: number
+  giniPercent: number
+  wealthBands: AdminWealthBand[]
+  fastestMovers: AdminMover[]
+  activeMissions: AdminMission[]
+  bots: AdminBotHealth[]
+}
+
+export type LiveOps = {
+  maintenanceMode: boolean
+  maintenanceMessage?: string | null
+  announcement?: string | null
+  updatedAtUtc: string
+  updatedBy?: string | null
+}
+
+export const opsApi = {
+  oversight: () => request<AdminOversight>('/api/admin/oversight'),
+  forceResolve: (missionId: number) =>
+    request<ActionResult>(`/api/admin/missions/${missionId}/force-resolve`, { method: 'POST' }),
+  liveOps: () => request<LiveOps>('/api/game/live-ops'),
+  setLiveOps: (body: { maintenanceMode?: boolean, maintenanceMessage?: string, announcement?: string, reason?: string }) =>
+    request<LiveOps>('/api/admin/live-ops', { method: 'PUT', body: JSON.stringify(body) }),
+}
+
+export type AdminConfigEntry = {
+  path: string
+  type: string
+  effectiveValue: string
+  overrideValue?: string | null
+  isOverridden: boolean
+}
+
+export type AdminConfig = {
+  version: number
+  overrideCount: number
+  settings: AdminConfigEntry[]
+}
+
+export const configApi = {
+  get: () => request<AdminConfig>('/api/admin/config'),
+  set: (path: string, value: string, reason: string) =>
+    request<ActionResult>('/api/admin/config', {
+      method: 'PUT',
+      body: JSON.stringify({ path, value, reason }),
+    }),
+  // An empty value clears the override and falls back to appsettings.
+  clear: (path: string, reason: string) =>
+    request<ActionResult>('/api/admin/config', {
+      method: 'PUT',
+      body: JSON.stringify({ path, value: '', reason }),
+    }),
 }

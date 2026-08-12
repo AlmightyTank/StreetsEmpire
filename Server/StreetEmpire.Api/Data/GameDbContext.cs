@@ -13,6 +13,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CombatMissionEvent> CombatMissionEvents => Set<CombatMissionEvent>();
     public DbSet<Hideout> Hideouts => Set<Hideout>();
     public DbSet<Pimp> Pimps => Set<Pimp>();
+    public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
+    public DbSet<GameSetting> GameSettings => Set<GameSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +43,31 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<GameSetting>(entity =>
+        {
+            entity.Property(x => x.MaintenanceMessage).HasMaxLength(400);
+            entity.Property(x => x.Announcement).HasMaxLength(400);
+            entity.Property(x => x.UpdatedBy).HasMaxLength(32);
+            // Seeded so the single row always exists and readers never have to cope with its absence.
+            entity.HasData(new GameSetting { Id = 1, UpdatedAtUtc = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc) });
+        });
+
+        modelBuilder.Entity<AdminAuditLog>(entity =>
+        {
+            entity.HasIndex(x => x.CreatedAtUtc);
+            entity.HasIndex(x => x.TargetPlayerId);
+            entity.Property(x => x.ActorUsername).HasMaxLength(32);
+            entity.Property(x => x.Action).HasMaxLength(32);
+            entity.Property(x => x.TargetName).HasMaxLength(32);
+            entity.Property(x => x.Summary).HasMaxLength(400);
+            entity.Property(x => x.Reason).HasMaxLength(400);
+        });
+
+        modelBuilder.Entity<PlayerAccount>(entity =>
+        {
+            entity.Property(x => x.EnforcementReason).HasMaxLength(400);
         });
 
         modelBuilder.Entity<Pimp>(entity =>

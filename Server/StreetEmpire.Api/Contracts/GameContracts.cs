@@ -10,7 +10,6 @@ public sealed record BankRequest(long Amount);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
 public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);
-public sealed record AdminCheatRequest(string? Cheat, long Amount);
 public sealed record AdminSeedBotsRequest(int Count);
 public sealed record AdminRunBotsRequest(int Rounds);
 public sealed record AdminBotAutomationRequest(bool Enabled);
@@ -329,3 +328,123 @@ public sealed record BotAutomationStatusResponse(
     bool Enabled,
     int TickSeconds,
     int RoundsPerTick);
+
+// ----- Admin panel -----
+
+public sealed record AdminAdjustRequest(string? Resource, long Delta, string? Reason);
+public sealed record AdminMoraleRequest(double Morale, string? Reason);
+public sealed record AdminEnforcementRequest(string? Action, DateTime? UntilUtc, string? Reason);
+public sealed record AdminSetAdminRequest(bool IsAdmin, string? Reason);
+public sealed record AdminRenameRequest(string? Name, string? Reason);
+public sealed record AdminReasonRequest(string? Reason);
+
+public sealed record AdminPlayerSummaryResponse(
+    Guid PlayerId,
+    string Name,
+    string Username,
+    string City,
+    bool IsBot,
+    bool IsAdmin,
+    bool IsBanned,
+    DateTime? SuspendedUntilUtc,
+    string? EnforcementReason,
+    long NetWorth,
+    long Cash,
+    long BankCash,
+    int Turns,
+    int Pimps,
+    int Hoes,
+    int Thugs,
+    DateTime CreatedAtUtc);
+
+public sealed record AdminPlayerDetailResponse(
+    AdminPlayerSummaryResponse Summary,
+    int Condoms,
+    int Beer,
+    int Weapons,
+    int Weed,
+    int Coke,
+    double HoeHappiness,
+    double ThugHappiness,
+    int HoeCutPercent,
+    DateTime? LastAttackAtUtc,
+    DateTime? LastAttackedAtUtc,
+    DateTime? CombatProtectionUntilUtc,
+    HideoutResponse Hideout,
+    IReadOnlyList<PimpResponse> Crew,
+    IReadOnlyList<ActivityResponse> RecentActivity,
+    IReadOnlyList<AdminAuditEntryResponse> AuditTrail,
+    IReadOnlyList<string> AdjustableResources);
+
+public sealed record AdminAuditEntryResponse(
+    long Id,
+    string ActorUsername,
+    string Action,
+    Guid? TargetPlayerId,
+    string? TargetName,
+    string Summary,
+    string? Reason,
+    DateTime CreatedAtUtc);
+
+public sealed record AdminWealthBandResponse(string Label, int Players, long TotalNetWorth);
+
+public sealed record AdminMoverResponse(
+    Guid PlayerId,
+    string Name,
+    bool IsBot,
+    long NetWorth,
+    long CashGained24h,
+    int ActionsLast24h);
+
+public sealed record AdminMissionResponse(
+    long MissionId,
+    string AttackerName,
+    string DefenderName,
+    string? CommanderName,
+    string Status,
+    string Outcome,
+    int CurrentRound,
+    int MaxRounds,
+    DateTime StartedAtUtc,
+    DateTime? NextEventAtUtc,
+    bool IsOverdue);
+
+public sealed record AdminBotHealthResponse(
+    Guid PlayerId,
+    string Name,
+    string Personality,
+    long NetWorth,
+    DateTime? LastActionAtUtc,
+    int MinutesIdle);
+
+public sealed record AdminOversightResponse(
+    long MedianNetWorth,
+    long TopNetWorth,
+    double GiniPercent,
+    IReadOnlyList<AdminWealthBandResponse> WealthBands,
+    IReadOnlyList<AdminMoverResponse> FastestMovers,
+    IReadOnlyList<AdminMissionResponse> ActiveMissions,
+    IReadOnlyList<AdminBotHealthResponse> Bots);
+
+public sealed record AdminLiveOpsRequest(bool? MaintenanceMode, string? MaintenanceMessage, string? Announcement, string? Reason);
+
+public sealed record LiveOpsResponse(
+    bool MaintenanceMode,
+    string? MaintenanceMessage,
+    string? Announcement,
+    DateTime UpdatedAtUtc,
+    string? UpdatedBy);
+
+public sealed record AdminConfigChangeRequest(string? Path, string? Value, string? Reason);
+
+public sealed record AdminConfigEntryResponse(
+    string Path,
+    string Type,
+    string EffectiveValue,
+    string? OverrideValue,
+    bool IsOverridden);
+
+public sealed record AdminConfigResponse(
+    int Version,
+    int OverrideCount,
+    IReadOnlyList<AdminConfigEntryResponse> Settings);

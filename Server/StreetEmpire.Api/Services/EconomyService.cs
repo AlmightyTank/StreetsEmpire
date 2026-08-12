@@ -5,7 +5,7 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom random, HideoutService hideout, PimpRoster pimps)
+public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameRandom random, HideoutService hideout, PimpRoster pimps)
 {
     private readonly GameOptions _options = options.Value;
 

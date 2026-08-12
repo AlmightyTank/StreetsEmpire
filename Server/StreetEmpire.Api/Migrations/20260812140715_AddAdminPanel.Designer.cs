@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812140715_AddAdminPanel")]
+    partial class AddAdminPanel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -425,48 +428,6 @@ namespace StreetEmpire.Api.Migrations
                     b.HasIndex("PlayerId", "CreatedAtUtc");
 
                     b.ToTable("ActionLogs");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.GameSetting", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Announcement")
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<string>("ConfigOverridesJson")
-                        .HasColumnType("text");
-
-                    b.Property<string>("MaintenanceMessage")
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<bool>("MaintenanceMode")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("GameSettings");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            MaintenanceMode = false,
-                            UpdatedAtUtc = new DateTime(2026, 8, 12, 0, 0, 0, 0, DateTimeKind.Utc)
-                        });
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.Hideout", b =>

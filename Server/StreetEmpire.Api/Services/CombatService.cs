@@ -4,7 +4,7 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class CombatService(IOptions<GameOptions> options, IGameRandom random)
+public sealed class CombatService(IOptionsSnapshot<GameOptions> options, IGameRandom random)
 {
     private readonly GameOptions _options = options.Value;
 

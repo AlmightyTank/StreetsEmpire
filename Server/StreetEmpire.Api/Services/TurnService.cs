@@ -3,7 +3,7 @@ using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
-public sealed class TurnService(IOptions<GameOptions> options, PimpRoster pimps)
+public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoster pimps)
 {
     private readonly GameOptions _options = options.Value;
 

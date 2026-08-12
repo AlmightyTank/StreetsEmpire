@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -11,9 +12,16 @@ using StreetEmpire.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSingleton<GameOptionOverrides>();
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("Game"));
-// Hideout tables come from config alone; this only fills tables appsettings left out entirely.
-builder.Services.PostConfigure<GameOptions>(options => options.Hideout.ApplyDefaultsWhereEmpty());
+// Runs per scope for IOptionsSnapshot, so admin overrides take effect on the next request rather than
+// at the next restart. Order matters: overrides land on the bound values, then hideout tables are
+// filled if config left them out.
+builder.Services.AddOptions<GameOptions>().PostConfigure<GameOptionOverrides>((options, overrides) =>
+{
+    overrides.Apply(options);
+    options.Hideout.ApplyDefaultsWhereEmpty();
+});
 builder.Services.Configure<BotAutomationOptions>(builder.Configuration.GetSection("Bots"));
 builder.Services.AddDbContext<GameDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("GameDatabase")));
@@ -22,6 +30,7 @@ builder.Services.AddScoped<CurrentPlayerService>();
 builder.Services.AddScoped<TurnService>();
 builder.Services.AddScoped<HideoutService>();
 builder.Services.AddScoped<PimpRoster>();
+builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();
 builder.Services.AddScoped<CombatService>();
 builder.Services.AddSingleton<CombatSchedule>();
@@ -47,6 +56,39 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return Task.CompletedTask;
         };
+        // Without this, Results.Forbid() redirects to an access-denied page and the API answers a
+        // non-admin with a 302 to HTML instead of a status the browser client can act on.
+        options.Events.OnRedirectToAccessDenied = ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+        // A ban, suspension, or force-logout has to end sessions that are already signed in.
+        options.Events.OnValidatePrincipal = async ctx =>
+        {
+            var accountId = ctx.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(accountId, out var id))
+                return;
+
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<GameDbContext>();
+            var account = await db.Accounts.AsNoTracking()
+                .Select(x => new { x.Id, x.IsBanned, x.SuspendedUntilUtc, x.SessionsValidAfterUtc })
+                .SingleOrDefaultAsync(x => x.Id == id);
+
+            var now = DateTime.UtcNow;
+            var lockedOut = account is null
+                || account.IsBanned
+                || (account.SuspendedUntilUtc is { } until && until > now);
+            var staleSession = account?.SessionsValidAfterUtc is { } validAfter
+                && ctx.Properties.IssuedUtc is { } issued
+                && issued.UtcDateTime < validAfter;
+
+            if (lockedOut || staleSession)
+            {
+                ctx.RejectPrincipal();
+                await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            }
+        };
     });
 builder.Services.AddAuthorization();
 
@@ -61,9 +103,74 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Overrides live in the database, so they have to be in memory before the first request binds options.
+using (var startupScope = app.Services.CreateScope())
+{
+    var startupDb = startupScope.ServiceProvider.GetRequiredService<GameDbContext>();
+    var startupOverrides = startupScope.ServiceProvider.GetRequiredService<GameOptionOverrides>();
+    try
+    {
+        var stored = await startupDb.GameSettings
+            .AsNoTracking()
+            .Where(x => x.Id == 1)
+            .Select(x => x.ConfigOverridesJson)
+            .SingleOrDefaultAsync();
+        if (!string.IsNullOrWhiteSpace(stored))
+        {
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(stored);
+            if (parsed is not null)
+                startupOverrides.Replace(parsed);
+        }
+    }
+    catch (Exception ex)
+    {
+        // A missing or unreadable settings row must not stop the game booting on appsettings alone.
+        app.Logger.LogWarning(ex, "Could not load tuning overrides; running on appsettings values.");
+    }
+}
+
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Maintenance gate. Written as middleware rather than a per-endpoint check so a new gameplay endpoint
+// cannot forget it. Reads stay open so a locked-out player still sees their empire and the notice.
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value ?? string.Empty;
+    var isWrite = !HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method);
+    var isGameplay = path.StartsWith("/api/game/", StringComparison.OrdinalIgnoreCase);
+    if (!isWrite || !isGameplay)
+    {
+        await next(context);
+        return;
+    }
+
+    var db = context.RequestServices.GetRequiredService<GameDbContext>();
+    var settings = await LiveOpsAsync(db, context.RequestAborted);
+    if (!settings.MaintenanceMode)
+    {
+        await next(context);
+        return;
+    }
+
+    // Admins keep playing through maintenance so they can verify a deploy.
+    var current = context.RequestServices.GetRequiredService<CurrentPlayerService>();
+    var player = await current.GetAsync(context.RequestAborted);
+    if (player?.Account.IsAdmin == true)
+    {
+        await next(context);
+        return;
+    }
+
+    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+    await context.Response.WriteAsJsonAsync(new
+    {
+        error = string.IsNullOrWhiteSpace(settings.MaintenanceMessage)
+            ? "The game is down for maintenance. Try again shortly."
+            : settings.MaintenanceMessage
+    }, context.RequestAborted);
+});
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.1" }));
 
@@ -71,7 +178,7 @@ app.MapPost("/api/auth/register", async (
     RegisterRequest request,
     GameDbContext db,
     IPasswordHasher<PlayerAccount> passwordHasher,
-    IOptions<GameOptions> gameOptions,
+    IOptionsSnapshot<GameOptions> gameOptions,
     PimpRoster pimps,
     HttpContext http,
     CancellationToken ct) =>
@@ -153,6 +260,10 @@ app.MapPost("/api/auth/login", async (
     if (account is null || account.IsBot || passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password) == PasswordVerificationResult.Failed)
         return Results.Unauthorized();
 
+    var nowUtc = DateTime.UtcNow;
+    if (account.IsLockedOut(nowUtc))
+        return Results.Json(new { error = account.LockoutMessage(nowUtc) }, statusCode: StatusCodes.Status403Forbidden);
+
     await SignInAsync(http, account);
     return Results.Ok(new AuthResponse(account.Player!.Id, account.Player.Name, account.Username));
 });
@@ -168,7 +279,7 @@ app.MapGet("/api/game/dashboard", async (
     GameDbContext db,
     TurnService turns,
     EconomyService economy,
-    IOptions<GameOptions> gameOptions,
+    IOptionsSnapshot<GameOptions> gameOptions,
     HideoutService hideouts,
     PimpRoster pimps,
     CombatMissionService combatMissions,
@@ -593,7 +704,7 @@ app.MapGet("/api/game/targets", async (
     CurrentPlayerService current,
     GameDbContext db,
     EconomyService economy,
-    IOptions<GameOptions> gameOptions,
+    IOptionsSnapshot<GameOptions> gameOptions,
     CombatMissionService combatMissions,
     CombatResolutionService combatResolver,
     CancellationToken ct) =>
@@ -637,7 +748,7 @@ app.MapGet("/api/game/players/{playerId:guid}/profile", async (
     CurrentPlayerService current,
     GameDbContext db,
     EconomyService economy,
-    IOptions<GameOptions> gameOptions,
+    IOptionsSnapshot<GameOptions> gameOptions,
     CombatMissionService combatMissions,
     CombatResolutionService combatResolver,
     CancellationToken ct) =>
@@ -825,7 +936,7 @@ app.MapGet("/api/admin/overview", async (
     CurrentPlayerService current,
     GameDbContext db,
     EconomyService economy,
-    IOptions<GameOptions> gameOptions,
+    IOptionsSnapshot<GameOptions> gameOptions,
     IOptions<BotAutomationOptions> botOptions,
     BotAutomationState botAutomation,
     CancellationToken ct) =>
@@ -872,46 +983,11 @@ app.MapGet("/api/admin/overview", async (
         gameOptions.Value));
 }).RequireAuthorization();
 
-app.MapPost("/api/admin/cheats", async (
-    AdminCheatRequest request,
-    CurrentPlayerService current,
-    GameDbContext db,
-    IOptions<GameOptions> gameOptions,
-    PimpRoster pimps,
-    CancellationToken ct) =>
-{
-    var player = await current.GetAsync(ct);
-    if (player is null) return Results.Unauthorized();
-    if (!player.Account.IsAdmin) return Results.Forbid();
-
-    var before = Snapshot(player);
-    try
-    {
-        var summary = ApplyAdminCheat(player, request, gameOptions.Value);
-        pimps.Reconcile(player, DateTime.UtcNow);
-        AddLog(db, player, before, "ADMIN", 0, summary);
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
-        {
-            ["cheat"] = request.Cheat?.Trim().ToLowerInvariant(),
-            ["amount"] = request.Amount
-        }));
-    }
-    catch (GameRuleException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-    catch (OverflowException)
-    {
-        return Results.BadRequest(new { error = "Cheat amount would exceed the resource limit." });
-    }
-}).RequireAuthorization();
-
 app.MapPost("/api/admin/bots/seed", async (
     AdminSeedBotsRequest request,
     CurrentPlayerService current,
     GameDbContext db,
-    IOptions<GameOptions> gameOptions,
+    IOptionsSnapshot<GameOptions> gameOptions,
     HideoutService hideouts,
     PimpRoster pimps,
     CancellationToken ct) =>
@@ -1036,6 +1112,413 @@ app.MapPut("/api/admin/bots/automation", async (
     }));
 }).RequireAuthorization();
 
+// ----- Admin: player administration -----
+
+app.MapGet("/api/admin/players", async (
+    string? query,
+    CurrentPlayerService current,
+    AdminService admins,
+    EconomyService economy,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    // Capped: an admin needs the first page of matches, not the whole table.
+    var matches = await admins.SearchPlayers(query)
+        .OrderBy(x => x.Name)
+        .Take(50)
+        .ToListAsync(ct);
+    return Results.Ok(matches.Select(x => ToAdminSummary(x, economy)).ToList());
+}).RequireAuthorization();
+
+app.MapGet("/api/admin/players/{playerId:guid}", async (
+    Guid playerId,
+    CurrentPlayerService current,
+    GameDbContext db,
+    AdminService admins,
+    EconomyService economy,
+    HideoutService hideouts,
+    PimpRoster pimps,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var target = await admins.FindPlayerAsync(playerId, ct);
+    if (target is null) return Results.NotFound(new { error = "Player not found." });
+
+    var activity = await db.ActionLogs.AsNoTracking()
+        .Where(x => x.PlayerId == playerId)
+        .OrderByDescending(x => x.CreatedAtUtc)
+        .ThenByDescending(x => x.Id)
+        .Take(20)
+        .Select(x => new ActivityResponse(x.Id, x.Action, x.Summary, x.TurnsSpent, x.CashDelta, x.BankDelta, x.CreatedAtUtc))
+        .ToListAsync(ct);
+    var audit = await admins.AuditTrail()
+        .Where(x => x.TargetPlayerId == playerId)
+        .Take(20)
+        .Select(x => new AdminAuditEntryResponse(x.Id, x.ActorUsername, x.Action, x.TargetPlayerId, x.TargetName, x.Summary, x.Reason, x.CreatedAtUtc))
+        .ToListAsync(ct);
+
+    return Results.Ok(new AdminPlayerDetailResponse(
+        ToAdminSummary(target, economy),
+        target.Condoms,
+        target.Beer,
+        target.Weapons,
+        target.Weed,
+        target.Coke,
+        Math.Round(target.HoeHappiness, 2),
+        Math.Round(target.ThugHappiness, 2),
+        target.HoeCutPercent,
+        target.LastAttackAtUtc,
+        target.LastAttackedAtUtc,
+        target.CombatProtectionUntilUtc,
+        ToHideoutResponse(target, hideouts),
+        pimps.Active(target).Select(x => ToPimpResponse(x, [])).ToList(),
+        activity,
+        audit,
+        AdminService.AdjustableResources.ToList()));
+}).RequireAuthorization();
+
+app.MapPost("/api/admin/players/{playerId:guid}/adjust", (Guid playerId, AdminAdjustRequest request, HttpContext http) =>
+    AdminAction(http, playerId, (admins, actor, target, now) =>
+        admins.AdjustResource(actor, target, request.Resource, request.Delta, request.Reason, now)))
+    .RequireAuthorization();
+
+app.MapPost("/api/admin/players/{playerId:guid}/morale", (Guid playerId, AdminMoraleRequest request, HttpContext http) =>
+    AdminAction(http, playerId, (admins, actor, target, now) =>
+        admins.SetMorale(actor, target, request.Morale, request.Reason, now)))
+    .RequireAuthorization();
+
+app.MapPost("/api/admin/players/{playerId:guid}/enforcement", (Guid playerId, AdminEnforcementRequest request, HttpContext http) =>
+    AdminAction(http, playerId, (admins, actor, target, now) =>
+        admins.SetEnforcement(actor, target, request.Action, request.UntilUtc, request.Reason, now)))
+    .RequireAuthorization();
+
+app.MapPost("/api/admin/players/{playerId:guid}/force-logout", (Guid playerId, AdminReasonRequest request, HttpContext http) =>
+    AdminAction(http, playerId, (admins, actor, target, now) =>
+        admins.ForceLogout(actor, target, request.Reason, now)))
+    .RequireAuthorization();
+
+app.MapPost("/api/admin/players/{playerId:guid}/rename", (Guid playerId, AdminRenameRequest request, HttpContext http) =>
+    AdminAction(http, playerId, (admins, actor, target, now) =>
+        admins.Rename(actor, target, request.Name, request.Reason, now)))
+    .RequireAuthorization();
+
+app.MapPost("/api/admin/players/{playerId:guid}/admin-rights", async (
+    Guid playerId,
+    AdminSetAdminRequest request,
+    CurrentPlayerService current,
+    GameDbContext db,
+    AdminService admins,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var target = await admins.FindPlayerAsync(playerId, ct);
+    if (target is null) return Results.NotFound(new { error = "Player not found." });
+
+    try
+    {
+        var summary = await admins.SetAdminAsync(admin.Account, target, request.IsAdmin, request.Reason, DateTime.UtcNow, ct);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new ActionResultResponse(summary, admin.Turns));
+    }
+    catch (GameRuleException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
+// ----- Live operations -----
+
+// Readable by any signed-in player: the client needs the banner and the maintenance notice.
+app.MapGet("/api/game/live-ops", async (GameDbContext db, CancellationToken ct) =>
+    Results.Ok(ToLiveOpsResponse(await LiveOpsAsync(db, ct)))).RequireAuthorization();
+
+app.MapPut("/api/admin/live-ops", async (
+    AdminLiveOpsRequest request,
+    CurrentPlayerService current,
+    GameDbContext db,
+    AdminService admins,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var settings = await LiveOpsAsync(db, ct);
+    var now = DateTime.UtcNow;
+    var changes = new List<string>();
+
+    if (request.MaintenanceMode is { } maintenance && maintenance != settings.MaintenanceMode)
+    {
+        settings.MaintenanceMode = maintenance;
+        changes.Add(maintenance ? "maintenance on" : "maintenance off");
+    }
+
+    if (request.MaintenanceMessage is not null)
+    {
+        settings.MaintenanceMessage = Blank(request.MaintenanceMessage);
+        changes.Add("maintenance message updated");
+    }
+
+    if (request.Announcement is not null)
+    {
+        settings.Announcement = Blank(request.Announcement);
+        changes.Add(settings.Announcement is null ? "announcement cleared" : "announcement updated");
+    }
+
+    if (changes.Count == 0)
+        return Results.BadRequest(new { error = "Nothing to change." });
+
+    settings.UpdatedAtUtc = now;
+    settings.UpdatedBy = admin.Account.Username;
+    admins.Record(admin.Account, "LiveOps", null, string.Join("; ", changes), request.Reason, now);
+    await db.SaveChangesAsync(ct);
+
+    return Results.Ok(ToLiveOpsResponse(settings));
+}).RequireAuthorization();
+
+app.MapGet("/api/admin/config", async (
+    CurrentPlayerService current,
+    IOptionsSnapshot<GameOptions> gameOptions,
+    GameOptionOverrides overrides,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    // The snapshot already has overrides layered on, so these are the values the game is really using.
+    var active = overrides.Snapshot();
+    var settings = GameOptionPaths.Describe(gameOptions.Value)
+        .Select(x => new AdminConfigEntryResponse(
+            x.Path,
+            x.Type,
+            x.CurrentValue,
+            active.TryGetValue(x.Path, out var value) ? value : null,
+            active.ContainsKey(x.Path)))
+        .ToList();
+
+    return Results.Ok(new AdminConfigResponse(overrides.Version, active.Count, settings));
+}).RequireAuthorization();
+
+app.MapPut("/api/admin/config", async (
+    AdminConfigChangeRequest request,
+    CurrentPlayerService current,
+    GameDbContext db,
+    AdminService admins,
+    IOptionsSnapshot<GameOptions> gameOptions,
+    GameOptionOverrides overrides,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var path = request.Path?.Trim() ?? string.Empty;
+    if (path.Length == 0)
+        return Results.BadRequest(new { error = "Which setting?" });
+
+    // Validate against a throwaway copy so a bad value never reaches the live options.
+    var probe = new GameOptions();
+    if (!GameOptionPaths.IsKnownPath(probe, path))
+        return Results.BadRequest(new { error = $"'{path}' is not an editable setting." });
+
+    var current_ = overrides.Snapshot().ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
+    var now = DateTime.UtcNow;
+    var before = GameOptionPaths.Read(gameOptions.Value, path) ?? "?";
+    string summary;
+
+    if (string.IsNullOrWhiteSpace(request.Value))
+    {
+        if (!current_.Remove(path))
+            return Results.BadRequest(new { error = $"'{path}' is not overridden." });
+        summary = $"{path}: override cleared (was {before})";
+    }
+    else
+    {
+        if (!GameOptionPaths.TryApply(probe, path, request.Value, out var error))
+            return Results.BadRequest(new { error });
+        current_[path] = request.Value.Trim();
+        summary = $"{path}: {before} -> {request.Value.Trim()}";
+    }
+
+    var settings = await LiveOpsAsync(db, ct);
+    settings.ConfigOverridesJson = current_.Count == 0 ? null : JsonSerializer.Serialize(current_);
+    settings.UpdatedAtUtc = now;
+    settings.UpdatedBy = admin.Account.Username;
+    admins.Record(admin.Account, "Config", null, summary, request.Reason, now);
+    await db.SaveChangesAsync(ct);
+
+    // Swapping the map is what makes the change live: the next request rebinds through PostConfigure.
+    overrides.Replace(current_);
+    return Results.Ok(new ActionResultResponse(summary, admin.Turns));
+}).RequireAuthorization();
+
+app.MapGet("/api/admin/oversight", async (
+    CurrentPlayerService current,
+    GameDbContext db,
+    EconomyService economy,
+    CombatMissionService combatMissions,
+    IOptionsSnapshot<GameOptions> gameOptions,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var now = DateTime.UtcNow;
+    var since = now.AddHours(-24);
+
+    // Net worth is a computed expression, so the distribution is read as bare standings.
+    var standings = await db.Players.AsNoTracking()
+        .Select(economy.StandingExpression())
+        .ToListAsync(ct);
+    var worths = standings.Select(x => x.NetWorth).OrderBy(x => x).ToList();
+
+    // Growth is approximated from logged cash deltas: the game keeps no net worth history to diff.
+    var movement = await db.ActionLogs.AsNoTracking()
+        .Where(x => x.CreatedAtUtc >= since)
+        .GroupBy(x => x.PlayerId)
+        .Select(g => new { PlayerId = g.Key, Gained = g.Sum(x => x.CashDelta + x.BankDelta), Actions = g.Count() })
+        .OrderByDescending(x => x.Gained)
+        .Take(8)
+        .ToListAsync(ct);
+    var moverIds = movement.Select(x => x.PlayerId).ToList();
+    var moverPlayers = await db.Players.AsNoTracking()
+        .Include(x => x.Account)
+        .Where(x => moverIds.Contains(x.Id))
+        .ToListAsync(ct);
+    var movers = movement
+        .Join(moverPlayers, m => m.PlayerId, p => p.Id, (m, p) => new AdminMoverResponse(
+            p.Id, p.Name, p.Account.IsBot, economy.CalculateNetWorth(p), m.Gained, m.Actions))
+        .ToList();
+
+    var missions = await db.CombatMissions.AsNoTracking()
+        .Include(x => x.Attacker)
+        .Include(x => x.Defender)
+        .Where(x => x.Status != "Complete")
+        .OrderBy(x => x.StartedAtUtc)
+        .Take(50)
+        .ToListAsync(ct);
+    var activeMissions = missions.Select(mission =>
+    {
+        var nextAt = mission.Status switch
+        {
+            "Traveling" => mission.ArrivesAtUtc,
+            "Fighting" => mission.NextRoundAtUtc,
+            "Returning" => mission.ReturnsAtUtc,
+            _ => null
+        };
+        // Anything more than five minutes past its next event is stuck, not in flight.
+        var overdue = nextAt is { } due && due < now.AddMinutes(-5);
+        return new AdminMissionResponse(
+            mission.Id,
+            mission.Attacker.Name,
+            mission.Defender.Name,
+            mission.CommanderName,
+            mission.Status,
+            mission.Outcome,
+            mission.CurrentRound,
+            mission.MaxRounds,
+            mission.StartedAtUtc,
+            nextAt,
+            overdue);
+    }).ToList();
+
+    var bots = await db.Players.AsNoTracking()
+        .Include(x => x.Account)
+        .Where(x => x.Account.IsBot)
+        .ToListAsync(ct);
+    var botIds = bots.Select(x => x.Id).ToList();
+    var lastActions = await db.ActionLogs.AsNoTracking()
+        .Where(x => botIds.Contains(x.PlayerId))
+        .GroupBy(x => x.PlayerId)
+        .Select(g => new { PlayerId = g.Key, Last = g.Max(x => x.CreatedAtUtc) })
+        .ToDictionaryAsync(x => x.PlayerId, x => x.Last, ct);
+    var botHealth = bots
+        .Select(bot =>
+        {
+            var last = lastActions.TryGetValue(bot.Id, out var at) ? at : (DateTime?)null;
+            return new AdminBotHealthResponse(
+                bot.Id,
+                bot.Name,
+                BotBrain.For(bot).Name,
+                economy.CalculateNetWorth(bot),
+                last,
+                last is { } value ? (int)Math.Max(0, (now - value).TotalMinutes) : int.MaxValue);
+        })
+        .OrderByDescending(x => x.MinutesIdle)
+        .ToList();
+
+    return Results.Ok(new AdminOversightResponse(
+        WealthStats.Median(worths),
+        worths.Count == 0 ? 0 : worths[^1],
+        WealthStats.GiniPercent(worths),
+        WealthStats.WealthBands(worths),
+        movers,
+        activeMissions,
+        botHealth));
+}).RequireAuthorization();
+
+app.MapPost("/api/admin/missions/{missionId:long}/force-resolve", async (
+    long missionId,
+    CurrentPlayerService current,
+    GameDbContext db,
+    AdminService admins,
+    CombatSchedule schedule,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var mission = await db.CombatMissions
+        .Include(x => x.Attacker)
+        .Include(x => x.Defender)
+        .SingleOrDefaultAsync(x => x.Id == missionId, ct);
+    if (mission is null) return Results.NotFound(new { error = "Mission not found." });
+    if (mission.Status == "Complete") return Results.BadRequest(new { error = "That mission is already complete." });
+
+    // Pulls every timer into the past, then lets the normal resolver finish it through the usual rules
+    // rather than hand-writing an outcome.
+    var now = DateTime.UtcNow;
+    if (mission.Status == "Traveling") mission.ArrivesAtUtc = now;
+    if (mission.NextRoundAtUtc is not null) mission.NextRoundAtUtc = now;
+    if (mission.ReturnsAtUtc is not null) mission.ReturnsAtUtc = now;
+    admins.Record(admin.Account, "ForceResolve", mission.Attacker,
+        $"mission {mission.Id} ({mission.Status}) against {mission.Defender.Name} pushed to resolve", null, now);
+    await db.SaveChangesAsync(ct);
+
+    schedule.Invalidate();
+    var updates = await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+    return Results.Ok(new ActionResultResponse($"Pushed mission {missionId} through the resolver ({updates:N0} update(s)).", admin.Turns));
+}).RequireAuthorization();
+
+app.MapGet("/api/admin/audit", async (
+    CurrentPlayerService current,
+    AdminService admins,
+    CancellationToken ct) =>
+{
+    var admin = await current.GetAsync(ct);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var entries = await admins.AuditTrail()
+        .Take(100)
+        .Select(x => new AdminAuditEntryResponse(x.Id, x.ActorUsername, x.Action, x.TargetPlayerId, x.TargetName, x.Summary, x.Reason, x.CreatedAtUtc))
+        .ToListAsync(ct);
+    return Results.Ok(entries);
+}).RequireAuthorization();
+
 app.Run();
 
 static async Task SignInAsync(HttpContext http, PlayerAccount account)
@@ -1052,6 +1535,85 @@ static async Task SignInAsync(HttpContext http, PlayerAccount account)
         new ClaimsPrincipal(identity),
         new AuthenticationProperties { IsPersistent = true });
 }
+
+/// <summary>
+/// Shared shape for the admin write endpoints: authorise, resolve the target, run the action, save, and
+/// turn a rule violation into a 400. Keeps AdminService the only place the logic and the audit live.
+/// </summary>
+static async Task<IResult> AdminAction(
+    HttpContext http,
+    Guid playerId,
+    Func<AdminService, PlayerAccount, Player, DateTime, string> action)
+{
+    var services = http.RequestServices;
+    var current = services.GetRequiredService<CurrentPlayerService>();
+    var admins = services.GetRequiredService<AdminService>();
+    var db = services.GetRequiredService<GameDbContext>();
+
+    var admin = await current.GetAsync(http.RequestAborted);
+    if (admin is null) return Results.Unauthorized();
+    if (!admin.Account.IsAdmin) return Results.Forbid();
+
+    var target = await admins.FindPlayerAsync(playerId, http.RequestAborted);
+    if (target is null) return Results.NotFound(new { error = "Player not found." });
+
+    try
+    {
+        var summary = action(admins, admin.Account, target, DateTime.UtcNow);
+        await db.SaveChangesAsync(http.RequestAborted);
+        return Results.Ok(new ActionResultResponse(summary, admin.Turns));
+    }
+    catch (GameRuleException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}
+
+/// <summary>
+/// The single live-ops row, created on demand so a database that predates the seed still works.
+/// </summary>
+static async Task<GameSetting> LiveOpsAsync(GameDbContext db, CancellationToken cancellationToken)
+{
+    var settings = await db.GameSettings.SingleOrDefaultAsync(x => x.Id == 1, cancellationToken);
+    if (settings is not null)
+        return settings;
+
+    settings = new GameSetting { Id = 1 };
+    db.GameSettings.Add(settings);
+    await db.SaveChangesAsync(cancellationToken);
+    return settings;
+}
+
+static LiveOpsResponse ToLiveOpsResponse(GameSetting settings)
+    => new(
+        settings.MaintenanceMode,
+        settings.MaintenanceMessage,
+        settings.Announcement,
+        settings.UpdatedAtUtc,
+        settings.UpdatedBy);
+
+static string? Blank(string? value)
+    => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+static AdminPlayerSummaryResponse ToAdminSummary(Player player, EconomyService economy)
+    => new(
+        player.Id,
+        player.Name,
+        player.Account.Username,
+        player.City,
+        player.Account.IsBot,
+        player.Account.IsAdmin,
+        player.Account.IsBanned,
+        player.Account.SuspendedUntilUtc,
+        player.Account.EnforcementReason,
+        economy.CalculateNetWorth(player),
+        player.Cash,
+        player.BankCash,
+        player.Turns,
+        player.Pimps,
+        player.Hoes,
+        player.Thugs,
+        player.CreatedAtUtc);
 
 static PlayerSnapshot Snapshot(Player player) => new(
     player.Cash,
@@ -1425,68 +1987,6 @@ static CombatMissionEventResponse ToCombatMissionEventResponse(CombatMissionEven
         entry.AttackerWeaponsLost,
         entry.DefenderWeaponsLost,
         entry.CreatedAtUtc);
-
-static string ApplyAdminCheat(Player player, AdminCheatRequest request, GameOptions options)
-{
-    var cheat = request.Cheat?.Trim().ToLowerInvariant() ?? string.Empty;
-    var amount = request.Amount;
-    if (amount <= 0)
-        throw new GameRuleException("Cheat amount must be positive.");
-    if (amount > 1_000_000_000)
-        throw new GameRuleException("Cheat amount is too large.");
-
-    switch (cheat)
-    {
-        case "cash":
-            player.Cash = checked(player.Cash + amount);
-            return $"Admin cheat granted ${amount:N0} cash.";
-        case "bank":
-        case "bankcash":
-            player.BankCash = checked(player.BankCash + amount);
-            return $"Admin cheat granted ${amount:N0} bank cash.";
-        case "turns":
-            player.Turns = Math.Min(options.MaxTurns, checked(player.Turns + ToInt(amount)));
-            return $"Admin cheat granted up to {amount:N0} turns.";
-        case "pimps":
-            player.Pimps = checked(player.Pimps + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} pimps.";
-        case "hoes":
-            player.Hoes = checked(player.Hoes + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} hoes.";
-        case "thugs":
-            player.Thugs = checked(player.Thugs + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} thugs.";
-        case "condoms":
-            player.Condoms = checked(player.Condoms + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} condoms.";
-        case "beer":
-            player.Beer = checked(player.Beer + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} beer.";
-        case "weapons":
-            player.Weapons = checked(player.Weapons + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} weapons.";
-        case "weed":
-            player.Weed = checked(player.Weed + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} weed.";
-        case "coke":
-            player.Coke = checked(player.Coke + ToInt(amount));
-            return $"Admin cheat granted {amount:N0} coke.";
-        case "morale":
-            var morale = Math.Clamp(amount, 0, 100);
-            player.HoeHappiness = morale;
-            player.ThugHappiness = morale;
-            return $"Admin cheat set crew morale to {morale:N0}%.";
-        default:
-            throw new GameRuleException("Unknown admin cheat.");
-    }
-}
-
-static int ToInt(long value)
-{
-    if (value > int.MaxValue)
-        throw new GameRuleException("Cheat amount is too large for this resource.");
-    return (int)value;
-}
 
 static Player CreateBotPlayer(BotTemplate template, GameOptions options, DateTime createdAtUtc, int maxStorageLevel, int maxSafeLevel)
 {

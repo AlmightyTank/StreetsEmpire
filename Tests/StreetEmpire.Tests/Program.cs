@@ -29,6 +29,10 @@ var tests = new (string Name, Action Test)[]
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
     ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
+    ("account lockout blocks banned and suspended players", AccountLockoutBlocksBannedAndSuspended),
+    ("wealth stats describe the distribution", WealthStatsDescribeTheDistribution),
+    ("option paths discover and write scalar tuning", OptionPathsDiscoverAndWriteScalars),
+    ("option overrides layer over appsettings values", OptionOverridesLayerOverAppsettings),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
@@ -722,6 +726,135 @@ static void HideoutLabRaisesProductionYield()
     AssertEqual(42, Value<int>(RequiredBreakdown(boosted), "unitsProduced"));
 }
 
+// The lockout check is what a ban actually means, so it has to be exact about the boundaries.
+static void AccountLockoutBlocksBannedAndSuspended()
+{
+    var now = new DateTime(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
+
+    var clean = new PlayerAccount { Username = "clean" };
+    AssertTrue(!clean.IsLockedOut(now), "an untouched account is not locked out");
+    AssertEqual(string.Empty, clean.LockoutMessage(now));
+
+    var banned = new PlayerAccount { Username = "banned", IsBanned = true, EnforcementReason = "Exploiting" };
+    AssertTrue(banned.IsLockedOut(now), "a banned account is locked out");
+    AssertTrue(banned.LockoutMessage(now).Contains("banned"), "the message should say it is a ban");
+    AssertTrue(banned.LockoutMessage(now).Contains("Exploiting"), "the reason should reach the player");
+
+    // A suspension is a deadline, not a state: it has to expire on its own.
+    var suspended = new PlayerAccount { Username = "suspended", SuspendedUntilUtc = now.AddHours(1) };
+    AssertTrue(suspended.IsLockedOut(now), "a live suspension locks the account");
+    AssertTrue(!suspended.IsLockedOut(now.AddHours(1)), "a suspension expires at its deadline");
+    AssertTrue(!suspended.IsLockedOut(now.AddHours(2)), "a lapsed suspension stays lifted");
+    AssertTrue(suspended.LockoutMessage(now).Contains("suspended"), "the message should say it is a suspension");
+
+    // A ban with no reason recorded still has to produce a usable message.
+    var quiet = new PlayerAccount { Username = "quiet", IsBanned = true };
+    AssertTrue(quiet.LockoutMessage(now).Contains("No reason recorded"), "a reasonless ban still explains itself");
+}
+
+static void WealthStatsDescribeTheDistribution()
+{
+    AssertEqual(0L, WealthStats.Median([]));
+    AssertEqual(5L, WealthStats.Median([5]));
+    AssertEqual(3L, WealthStats.Median([1, 5]));
+    AssertEqual(5L, WealthStats.Median([1, 5, 9]));
+
+    // Perfect equality is 0; one player holding everything approaches 100.
+    AssertEqual(0d, WealthStats.GiniPercent([100, 100, 100, 100]));
+    AssertEqual(0d, WealthStats.GiniPercent([]));
+    AssertEqual(0d, WealthStats.GiniPercent([0, 0]));
+    AssertTrue(WealthStats.GiniPercent([0, 0, 0, 1000]) > 70, "one holder of everything is severely unequal");
+    AssertTrue(
+        WealthStats.GiniPercent([100, 200, 300]) < WealthStats.GiniPercent([1, 1, 1000]),
+        "a spread economy must score lower than a concentrated one");
+
+    // Bands partition without overlap: every player lands in exactly one.
+    var bands = WealthStats.WealthBands([10_000, 60_000, 300_000, 5_000_000, 20_000]);
+    AssertEqual(4, bands.Count);
+    AssertEqual(2, bands[0].Players);
+    AssertEqual(1, bands[1].Players);
+    AssertEqual(1, bands[2].Players);
+    AssertEqual(1, bands[3].Players);
+    AssertEqual(5, bands.Sum(x => x.Players));
+    AssertEqual(5_390_000L, bands.Sum(x => x.TotalNetWorth));
+
+    // Boundaries belong to the upper band, so nobody is counted twice.
+    AssertEqual(1, WealthStats.WealthBands([50_000])[1].Players);
+    AssertEqual(1, WealthStats.WealthBands([1_000_000])[3].Players);
+}
+
+// This reflection is what makes runtime tuning possible, so its edges need pinning down.
+static void OptionPathsDiscoverAndWriteScalars()
+{
+    var options = new GameOptions();
+    var paths = GameOptionPaths.Describe(options);
+    var byPath = paths.ToDictionary(x => x.Path, StringComparer.OrdinalIgnoreCase);
+
+    // Nested scalars are reachable at every depth.
+    AssertTrue(byPath.ContainsKey("MaxTurns"), "top-level scalars are editable");
+    AssertTrue(byPath.ContainsKey("Combat.AttackTurnCost"), "one level down is editable");
+    AssertTrue(byPath.ContainsKey("StreetAction.Finds.Coke.Chance"), "deeply nested scalars are editable");
+    AssertTrue(byPath.ContainsKey("Morale.TurnsPerCondom"), "morale tuning is editable");
+
+    // List-shaped config is deliberately out of scope.
+    AssertTrue(!paths.Any(x => x.Path.StartsWith("Hideout.Storage", StringComparison.OrdinalIgnoreCase)),
+        "table-shaped settings must not be exposed as scalars");
+
+    // Types are reported so the UI can validate before submitting.
+    AssertEqual("whole number", byPath["Combat.AttackTurnCost"].Type);
+    AssertEqual("decimal", byPath["Morale.TurnsPerCondom"].Type);
+
+    // Writing goes through parsing and lands on the real property.
+    AssertTrue(GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "7", out _), "a valid int is accepted");
+    AssertEqual(7, options.Combat.AttackTurnCost);
+    AssertTrue(GameOptionPaths.TryApply(options, "morale.turnspercondom", "18.5", out _), "paths are case-insensitive");
+    AssertEqual(18.5, options.Morale.TurnsPerCondom);
+
+    // Failures report a reason instead of throwing, since the values come from an admin form.
+    AssertTrue(!GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "abc", out var parseError), "text is rejected for a number");
+    AssertTrue(parseError is not null && parseError.Contains("whole number"), "the error names the expected type");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "-3", out var negativeError), "negatives are rejected");
+    AssertTrue(negativeError is not null, "a negative reports why");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Nope.NotReal", "1", out var unknownError), "unknown paths are rejected");
+    AssertTrue(unknownError is not null, "an unknown path reports why");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Hideout.Storage", "1", out _), "a list cannot be set as a scalar");
+
+    // The value written is the value read back.
+    AssertEqual("7", GameOptionPaths.Read(options, "Combat.AttackTurnCost"));
+    AssertTrue(GameOptionPaths.Read(options, "Nope.NotReal") is null, "reading an unknown path yields null");
+}
+
+static void OptionOverridesLayerOverAppsettings()
+{
+    var overrides = new GameOptionOverrides();
+    AssertEqual(0, overrides.Snapshot().Count);
+
+    overrides.Replace(new Dictionary<string, string>
+    {
+        ["Combat.AttackTurnCost"] = "4",
+        ["Morale.TurnsPerCondom"] = "25",
+        // A stale or bogus entry must be skipped, not crash every request that binds options.
+        ["Removed.Setting"] = "1",
+        ["Combat.AttackCooldownMinutes"] = "not a number"
+    });
+
+    var options = new GameOptions();
+    overrides.Apply(options);
+
+    AssertEqual(4, options.Combat.AttackTurnCost);
+    AssertEqual(25.0, options.Morale.TurnsPerCondom);
+    // Untouched by the bad entry: the shipped default survives.
+    AssertEqual(30, options.Combat.AttackCooldownMinutes);
+
+    // Replacing swaps the whole map and bumps the version consumers watch.
+    var versionBefore = overrides.Version;
+    overrides.Replace(new Dictionary<string, string>());
+    AssertTrue(overrides.Version > versionBefore, "replacing bumps the version");
+    var reset = new GameOptions();
+    overrides.Apply(reset);
+    AssertEqual(10, reset.Combat.AttackTurnCost);
+}
+
 static void CombatBlocksSelfAttacks()
 {
     var service = CreateCombat();
@@ -996,23 +1129,23 @@ static EconomyService CreateEconomy(GameOptions? options = null)
 {
     var resolved = Resolve(options);
     return new EconomyService(
-        Options.Create(resolved),
+        Snapshot(resolved),
         new MinimumRandom(),
-        new HideoutService(Options.Create(resolved)),
-        new PimpRoster(Options.Create(resolved), new MinimumRandom()));
+        new HideoutService(Snapshot(resolved)),
+        new PimpRoster(Snapshot(resolved), new MinimumRandom()));
 }
 
 static TurnService CreateTurns(GameOptions? options = null)
 {
     var resolved = Resolve(options);
-    return new TurnService(Options.Create(resolved), new PimpRoster(Options.Create(resolved), new MinimumRandom()));
+    return new TurnService(Snapshot(resolved), new PimpRoster(Snapshot(resolved), new MinimumRandom()));
 }
 
 static PimpRoster CreateRoster(GameOptions? options = null, IGameRandom? random = null)
-    => new(Options.Create(Resolve(options)), random ?? new MinimumRandom());
+    => new(Snapshot(Resolve(options)), random ?? new MinimumRandom());
 
 static HideoutService CreateHideouts(GameOptions? options = null)
-    => new(Options.Create(Resolve(options)));
+    => new(Snapshot(Resolve(options)));
 
 /// <summary>Mirrors the API's PostConfigure step, which fills hideout tables config left empty.</summary>
 static GameOptions Resolve(GameOptions? options)
@@ -1035,6 +1168,8 @@ static GameOptions StorageCapOptions(int condoms)
         }
     };
 
+static IOptionsSnapshot<GameOptions> Snapshot(GameOptions options) => new OptionsSnapshotStub<GameOptions>(options);
+
 static void AssertRuleError(Action action, string expectation)
 {
     try
@@ -1050,7 +1185,7 @@ static void AssertRuleError(Action action, string expectation)
 }
 
 static CombatService CreateCombat(GameOptions? options = null)
-    => new(Options.Create(options ?? new GameOptions()), new MinimumRandom());
+    => new(Snapshot(options ?? new GameOptions()), new MinimumRandom());
 
 static FindTableOptions NoFinds() => new()
 {
@@ -1081,6 +1216,13 @@ static void AssertTrue(bool value, string message)
 {
     if (!value)
         throw new InvalidOperationException(message);
+}
+
+/// <summary>Stands in for the scoped IOptionsSnapshot the services now take.</summary>
+sealed class OptionsSnapshotStub<T>(T value) : IOptionsSnapshot<T> where T : class
+{
+    public T Value => value;
+    public T Get(string? name) => value;
 }
 
 sealed class AlwaysRandom : IGameRandom

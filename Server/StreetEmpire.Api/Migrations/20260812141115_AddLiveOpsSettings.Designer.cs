@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812141115_AddLiveOpsSettings")]
+    partial class AddLiveOpsSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -438,9 +441,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<string>("Announcement")
                         .HasMaxLength(400)
                         .HasColumnType("character varying(400)");
-
-                    b.Property<string>("ConfigOverridesJson")
-                        .HasColumnType("text");
 
                     b.Property<string>("MaintenanceMessage")
                         .HasMaxLength(400)

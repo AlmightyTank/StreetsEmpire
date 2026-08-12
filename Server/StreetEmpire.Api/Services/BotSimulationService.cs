@@ -11,7 +11,7 @@ public sealed class BotSimulationService(
     EconomyService economy,
     TurnService turns,
     IGameRandom random,
-    IOptions<GameOptions> options,
+    IOptionsSnapshot<GameOptions> options,
     HideoutService hideouts)
 {
     private readonly GameOptions _options = options.Value;

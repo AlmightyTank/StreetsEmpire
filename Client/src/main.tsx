@@ -1,29 +1,29 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { api } from './api'
-import type { ActionResult, AdminOverview, CombatLog, CombatMission, Dashboard, LeaderboardEntry, Pimp, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
+import { adminApi, api, configApi, opsApi } from './api'
+import type { ActionResult, AdminAuditEntry, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, LeaderboardEntry, LiveOps, Pimp, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AdminCheatKey = 'cash' | 'bank' | 'turns' | 'pimps' | 'hoes' | 'thugs' | 'condoms' | 'beer' | 'weapons' | 'weed' | 'coke' | 'morale'
 type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'market' | 'recon' | 'admin'
 
-const adminCheatOptions: { key: AdminCheatKey, label: string, amount: number }[] = [
-  { key: 'cash', label: '+$10k Cash', amount: 10_000 },
-  { key: 'bank', label: '+$10k Bank', amount: 10_000 },
-  { key: 'turns', label: '+50 Turns', amount: 50 },
-  { key: 'pimps', label: '+5 Pimps', amount: 5 },
-  { key: 'hoes', label: '+25 Hoes', amount: 25 },
-  { key: 'thugs', label: '+10 Thugs', amount: 10 },
-  { key: 'condoms', label: '+100 Condoms', amount: 100 },
-  { key: 'beer', label: '+100 Beer', amount: 100 },
-  { key: 'weapons', label: '+10 Weapons', amount: 10 },
-  { key: 'weed', label: '+250 Weed', amount: 250 },
-  { key: 'coke', label: '+100 Coke', amount: 100 },
-  { key: 'morale', label: 'Morale 100%', amount: 100 },
+// Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
+// unlike the old self-only cheats these work on anybody and leave a record with a reason.
+const adjustPresets: { label: string, resource: string, delta: number }[] = [
+  { label: '+$10k cash', resource: 'cash', delta: 10_000 },
+  { label: '+$10k bank', resource: 'bank', delta: 10_000 },
+  { label: '+50 turns', resource: 'turns', delta: 50 },
+  { label: '+5 pimps', resource: 'pimps', delta: 5 },
+  { label: '+25 hoes', resource: 'hoes', delta: 25 },
+  { label: '+10 thugs', resource: 'thugs', delta: 10 },
+  { label: '+100 condoms', resource: 'condoms', delta: 100 },
+  { label: '+100 beer', resource: 'beer', delta: 100 },
+  { label: '+10 weapons', resource: 'weapons', delta: 10 },
+  { label: '+250 weed', resource: 'weed', delta: 250 },
+  { label: '+100 coke', resource: 'coke', delta: 100 },
 ]
 
 const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
@@ -272,7 +272,6 @@ function App() {
     inspectTarget,
     attackTarget: defenderId => void attackTarget(defenderId),
     cancelMission: missionId => void act(() => api.cancelCombatMission(missionId)),
-    runAdminCheat: (cheat, amount) => void act(() => api.adminCheat(cheat, amount)),
     seedBots: count => void act(() => api.adminSeedBots(count)),
     runBots: rounds => void act(() => api.adminRunBots(rounds)),
     setBotAutomation: enabled => void act(() => api.adminSetBotAutomation(enabled)),
@@ -369,7 +368,6 @@ type PageContext = {
   inspectTarget: (playerId: string) => void
   attackTarget: (defenderId: string) => void
   cancelMission: (missionId: number) => void
-  runAdminCheat: (cheat: AdminCheatKey, amount: number) => void
   seedBots: (count: number) => void
   runBots: (rounds: number) => void
   setBotAutomation: (enabled: boolean) => void
@@ -852,10 +850,494 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
 }
 
 function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
+  return <div className="page-grid one-column">
+    <AdminLiveOpsPanel busy={ctx.busy} />
+    <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />
+    <AdminOversightPanel busy={ctx.busy} />
+    <AdminConfigPanel busy={ctx.busy} />
+    <AdminAuditPanel />
+    <AdminBotsAndConfig ctx={ctx} />
+  </div>
+}
+
+function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
+  const [ops, setOps] = useState<LiveOps | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  const [maintenanceMessage, setMaintenanceMessage] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  const load = async () => {
+    try {
+      const next = await opsApi.liveOps()
+      setOps(next)
+      setAnnouncement(next.announcement ?? '')
+      setMaintenanceMessage(next.maintenanceMessage ?? '')
+    } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [])
+
+  const apply = async (body: Parameters<typeof opsApi.setLiveOps>[0]) => {
+    setWorking(true); setError('')
+    try {
+      const next = await opsApi.setLiveOps(body)
+      setOps(next)
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const locked = busy || working
+  return <section className={ops?.maintenanceMode ? 'panel wide-panel maintenance-on' : 'panel wide-panel'}>
+    <div className="panel-title">
+      <h2>Live Operations</h2>
+      <span>{ops?.maintenanceMode ? 'Maintenance is ON' : 'Game is open'}</span>
+    </div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+    <p>Maintenance blocks every gameplay action for players while leaving reads and admin access open, so you can verify a deploy before letting anyone back in.</p>
+    <div className="admin-action-row">
+      <button
+        className={ops?.maintenanceMode ? 'primary compact' : 'secondary compact'}
+        disabled={locked}
+        onClick={() => void apply({ maintenanceMode: !ops?.maintenanceMode })}
+      >
+        {ops?.maintenanceMode ? 'End maintenance' : 'Start maintenance'}
+      </button>
+      <label>Maintenance notice<input value={maintenanceMessage} onChange={e => setMaintenanceMessage(e.target.value)} placeholder="Back in 10 minutes" /></label>
+      <button className="secondary compact" disabled={locked}
+        onClick={() => void apply({ maintenanceMessage })}>Save notice</button>
+    </div>
+    <div className="admin-action-row">
+      <label className="grow">Announcement banner<input value={announcement} onChange={e => setAnnouncement(e.target.value)} placeholder="Shown to every player" /></label>
+      <button className="secondary compact" disabled={locked}
+        onClick={() => void apply({ announcement })}>Save banner</button>
+      <button className="secondary compact" disabled={locked || !ops?.announcement}
+        onClick={() => void apply({ announcement: '' })}>Clear</button>
+    </div>
+    {ops && <small className="admin-updated">Last changed {new Date(ops.updatedAtUtc).toLocaleString()}{ops.updatedBy ? ` by ${ops.updatedBy}` : ''}.</small>}
+  </section>
+}
+
+/**
+ * Live tuning. Values here take effect on the next request, without a restart, because the services
+ * read configuration per scope. Table-shaped settings (storage levels, lab tiers) stay in appsettings.
+ */
+function AdminConfigPanel({ busy }: { busy: boolean }) {
+  const [config, setConfig] = useState<AdminConfig | null>(null)
+  const [filter, setFilter] = useState('')
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [working, setWorking] = useState(false)
+  const [showAll, setShowAll] = useState(false)
+
+  const load = async () => {
+    try { setConfig(await configApi.get()) } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [])
+
+  const run = async (label: string, fn: () => Promise<ActionResult>) => {
+    if (reason.trim().length < 3) {
+      setError('Give a reason first. Tuning changes are audited.')
+      return
+    }
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const result = await fn()
+      setMessage(`${label}: ${result.summary}`)
+      setEdits({})
+      await load()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  if (!config) return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Tuning</h2><span>Live config</span></div>
+    {error ? <div className="error banner"><span>{error}</span></div> : <p className="coming">Loading.</p>}
+  </section>
+
+  const needle = filter.trim().toLowerCase()
+  const matches = config.settings.filter(entry =>
+    (!showAll ? entry.isOverridden || needle.length > 0 : true)
+    && (needle.length === 0 || entry.path.toLowerCase().includes(needle)))
+  const locked = busy || working
+
+  return <section className="panel wide-panel">
+    <div className="panel-title">
+      <h2>Tuning</h2>
+      <span>{config.overrideCount} override{config.overrideCount === 1 ? '' : 's'} live</span>
+    </div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+    {message && <div className="notice banner"><span>{message}</span></div>}
+    <p>Changes apply on the next request, no restart. Overrides are stored in the database and layered over appsettings, so clearing one falls back to the shipped value. Table-shaped settings like storage levels are not editable here.</p>
+
+    <label className="admin-reason">Reason (recorded in the audit trail)
+      <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why are you retuning this?" />
+    </label>
+
+    <div className="admin-action-row">
+      <label className="grow">Filter<input value={filter} onChange={e => setFilter(e.target.value)} placeholder="combat, morale, price..." /></label>
+      <button className="secondary compact" disabled={locked} onClick={() => setShowAll(value => !value)}>
+        {showAll ? 'Show overrides only' : `Show all ${config.settings.length}`}
+      </button>
+    </div>
+
+    <div className="config-list">
+      {matches.length === 0 && <p className="coming">
+        {showAll ? 'Nothing matches that filter.' : 'No overrides yet. Filter or show all to change something.'}
+      </p>}
+      {matches.map(entry => <ConfigRow
+        key={entry.path}
+        entry={entry}
+        draft={edits[entry.path] ?? entry.effectiveValue}
+        locked={locked}
+        onDraft={value => setEdits(current => ({ ...current, [entry.path]: value }))}
+        onSave={() => void run('Set', () => configApi.set(entry.path, edits[entry.path] ?? entry.effectiveValue, reason))}
+        onClear={() => void run('Cleared', () => configApi.clear(entry.path, reason))}
+      />)}
+    </div>
+  </section>
+}
+
+function ConfigRow({ entry, draft, locked, onDraft, onSave, onClear }: {
+  entry: AdminConfigEntry
+  draft: string
+  locked: boolean
+  onDraft: (value: string) => void
+  onSave: () => void
+  onClear: () => void
+}) {
+  const dirty = draft.trim() !== entry.effectiveValue.trim()
+  return <div className={entry.isOverridden ? 'config-row overridden' : 'config-row'}>
+    <div className="config-copy">
+      <strong>{entry.path}</strong>
+      <span>{entry.type}{entry.isOverridden ? ' / overridden' : ' / from appsettings'}</span>
+    </div>
+    <input value={draft} onChange={e => onDraft(e.target.value)} />
+    <button className="primary compact" disabled={locked || !dirty} onClick={onSave}>Save</button>
+    <button className="secondary compact" disabled={locked || !entry.isOverridden} onClick={onClear}>Reset</button>
+  </div>
+}
+
+function AdminOversightPanel({ busy }: { busy: boolean }) {
+  const [data, setData] = useState<AdminOversight | null>(null)
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  const load = async () => {
+    try { setData(await opsApi.oversight()) } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [])
+
+  const resolve = async (missionId: number) => {
+    setWorking(true); setError('')
+    try { await opsApi.forceResolve(missionId); await load() }
+    catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  if (!data) return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Oversight</h2><span>Economy and combat</span></div>
+    {error ? <div className="error banner"><span>{error}</span></div> : <p className="coming">Loading.</p>}
+  </section>
+
+  const overdue = data.activeMissions.filter(mission => mission.isOverdue)
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Oversight</h2><span>Economy and combat</span></div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+    <div className="admin-metrics">
+      <AdminMetric label="Median net worth" value={money.format(data.medianNetWorth)} />
+      <AdminMetric label="Richest" value={money.format(data.topNetWorth)} />
+      <AdminMetric label="Concentration" value={`${data.giniPercent.toFixed(1)}% Gini`} />
+      <AdminMetric label="Active missions" value={number.format(data.activeMissions.length)} />
+      <AdminMetric label="Stuck missions" value={number.format(overdue.length)} />
+    </div>
+
+    <div className="admin-action-block">
+      <strong>Wealth spread</strong>
+      <div className="admin-metrics">
+        {data.wealthBands.map(band => <AdminMetric key={band.label} label={band.label} value={`${number.format(band.players)} / ${money.format(band.totalNetWorth)}`} />)}
+      </div>
+      <small>Gini runs 0 (everyone equal) to 100 (one player holds everything).</small>
+    </div>
+
+    <div className="admin-action-block">
+      <strong>Fastest movers, last 24h</strong>
+      <div className="audit-list">
+        {data.fastestMovers.length === 0 && <p className="coming">No logged activity in the last day.</p>}
+        {data.fastestMovers.map(mover => <div className="audit-row" key={mover.playerId}>
+          <div>
+            <strong>{mover.name}{mover.isBot ? ' (AI)' : ''}</strong>
+            <span>{money.format(mover.cashGained24h)} in {number.format(mover.actionsLast24h)} actions</span>
+          </div>
+          <p>Net worth {money.format(mover.netWorth)}</p>
+        </div>)}
+      </div>
+      <small>Approximated from logged cash and bank deltas; the game keeps no net worth history to diff.</small>
+    </div>
+
+    <div className="admin-action-block">
+      <strong>In-flight missions</strong>
+      <div className="audit-list">
+        {data.activeMissions.length === 0 && <p className="coming">Nothing in flight.</p>}
+        {data.activeMissions.map(mission => <div className={mission.isOverdue ? 'audit-row overdue' : 'audit-row'} key={mission.missionId}>
+          <div>
+            <strong>{mission.status}{mission.isOverdue ? ' / STUCK' : ''}</strong>
+            <span>round {mission.currentRound}/{mission.maxRounds}</span>
+          </div>
+          <p>{mission.commanderName ?? 'A pimp'} ({mission.attackerName}) vs {mission.defenderName}</p>
+          <div className="admin-action-row">
+            <em>{mission.nextEventAtUtc ? `next ${new Date(mission.nextEventAtUtc).toLocaleTimeString()}` : 'no timer'}</em>
+            <button className="secondary compact" disabled={busy || working}
+              onClick={() => void resolve(mission.missionId)}>Force resolve</button>
+          </div>
+        </div>)}
+      </div>
+    </div>
+
+    <div className="admin-action-block">
+      <strong>AI health</strong>
+      <div className="audit-list">
+        {data.bots.map(bot => <div className="audit-row" key={bot.playerId}>
+          <div>
+            <strong>{bot.name}</strong>
+            <span>{bot.personality}</span>
+          </div>
+          <p>{money.format(bot.netWorth)} / {bot.lastActionAtUtc ? `idle ${number.format(bot.minutesIdle)}m` : 'never acted'}</p>
+        </div>)}
+      </div>
+    </div>
+  </section>
+}
+
+/**
+ * Player administration. Owns its own state and talks to the admin API directly rather than threading
+ * a dozen fields through PageContext, matching how AdminPanel already handles its local controls.
+ */
+function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () => void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<AdminPlayerSummary[]>([])
+  const [detail, setDetail] = useState<AdminPlayerDetail | null>(null)
+  const [reason, setReason] = useState('')
+  const [resource, setResource] = useState('cash')
+  const [delta, setDelta] = useState(10000)
+  const [renameTo, setRenameTo] = useState('')
+  const [suspendHours, setSuspendHours] = useState(24)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  const search = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault()
+    setError('')
+    try {
+      setResults(await adminApi.searchPlayers(query))
+    } catch (e) { setError((e as Error).message) }
+  }
+
+  const open = async (playerId: string) => {
+    setError(''); setMessage('')
+    try {
+      const next = await adminApi.playerDetail(playerId)
+      setDetail(next)
+      setRenameTo(next.summary.name)
+    } catch (e) { setError((e as Error).message) }
+  }
+
+  // Every mutation needs a reason: it is what makes the audit trail worth having.
+  const run = async (label: string, fn: () => Promise<ActionResult>, requireReason = true) => {
+    if (requireReason && reason.trim().length < 3) {
+      setError('Give a reason first. It goes in the audit trail.')
+      return
+    }
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const result = await fn()
+      setMessage(`${label}: ${result.summary}`)
+      if (detail) await open(detail.summary.playerId)
+      await search()
+      onChanged()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  useEffect(() => { void search() }, [])
+  const locked = busy || working
+  const target = detail?.summary
+
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Players</h2><span>Find and fix</span></div>
+    <form className="target-search" onSubmit={search}>
+      <label>Search<input value={query} onChange={e => setQuery(e.target.value)} placeholder="Player, username, or city" /></label>
+      <button className="secondary compact" disabled={locked}>Search</button>
+    </form>
+
+    {error && <div className="error banner"><span>{error}</span></div>}
+    {message && <div className="notice banner"><span>{message}</span></div>}
+
+    <div className="admin-players">
+      <div className="admin-player-list">
+        {results.length === 0 && <p className="coming">No players matched.</p>}
+        {results.map(player => <button
+          className={target?.playerId === player.playerId ? 'admin-player-row active' : 'admin-player-row'}
+          key={player.playerId}
+          type="button"
+          disabled={locked}
+          onClick={() => void open(player.playerId)}
+        >
+          <strong>{player.name}</strong>
+          <small>{player.username}{player.isBot ? ' / AI' : ''}{player.isAdmin ? ' / admin' : ''}</small>
+          <em>{enforcementLabel(player)}</em>
+          <b>{money.format(player.netWorth)}</b>
+        </button>)}
+      </div>
+
+      {detail && target && <div className="admin-player-detail">
+        <div className="admin-player-head">
+          <div><strong>{target.name}</strong><span>{target.username} / {target.city}</span></div>
+          <b className={target.isBanned ? 'tag banned' : 'tag ok'}>{enforcementLabel(target)}</b>
+        </div>
+        <div className="admin-metrics">
+          <AdminMetric label="Net worth" value={money.format(target.netWorth)} />
+          <AdminMetric label="Cash" value={money.format(target.cash)} />
+          <AdminMetric label="Bank" value={money.format(target.bankCash)} />
+          <AdminMetric label="Turns" value={number.format(target.turns)} />
+          <AdminMetric label="Crew" value={`${target.pimps} P / ${target.hoes} H / ${target.thugs} T`} />
+          <AdminMetric label="Morale" value={`${detail.hoeHappiness.toFixed(0)}% / ${detail.thugHappiness.toFixed(0)}%`} />
+          <AdminMetric label="Hideout" value={`${detail.hideout.tierName} S${detail.hideout.storageLevel}/V${detail.hideout.safeLevel}`} />
+          <AdminMetric label="Joined" value={new Date(target.createdAtUtc).toLocaleDateString()} />
+        </div>
+
+        <label className="admin-reason">Reason (recorded in the audit trail)
+          <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why are you doing this?" />
+        </label>
+
+        <div className="admin-action-block">
+          <strong>Quick grants</strong>
+          <div className="admin-cheat-grid">
+            {adjustPresets.map(preset => <button
+              className="secondary compact"
+              key={preset.label}
+              disabled={locked}
+              onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, preset.resource, preset.delta, reason))}
+            >{preset.label}</button>)}
+            <button className="secondary compact" disabled={locked}
+              onClick={() => void run('Morale set', () => adminApi.setMorale(target.playerId, 100, reason))}>Morale 100%</button>
+          </div>
+        </div>
+
+        <div className="admin-action-block">
+          <strong>Adjust a resource</strong>
+          <div className="admin-action-row">
+            <label>Resource<select value={resource} onChange={e => setResource(e.target.value)}>
+              {detail.adjustableResources.map(key => <option key={key} value={key}>{key}</option>)}
+            </select></label>
+            <label>Change<input type="number" value={delta} onChange={e => setDelta(Number(e.target.value))} /></label>
+            <button className="primary compact" disabled={locked || delta === 0}
+              onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, resource, delta, reason))}>
+              Apply
+            </button>
+          </div>
+          <small>Negative values take resources away. Nothing drops below zero.</small>
+        </div>
+
+        <div className="admin-action-block">
+          <strong>Account</strong>
+          <div className="admin-action-row">
+            <button className="secondary compact" disabled={locked}
+              onClick={() => void run('Banned', () => adminApi.enforcement(target.playerId, 'ban', null, reason))}>
+              Ban
+            </button>
+            <label>Suspend hours<input type="number" min={1} value={suspendHours} onChange={e => setSuspendHours(Number(e.target.value))} /></label>
+            <button className="secondary compact" disabled={locked || suspendHours < 1}
+              onClick={() => void run('Suspended', () => adminApi.enforcement(
+                target.playerId,
+                'suspend',
+                new Date(Date.now() + suspendHours * 3600_000).toISOString(),
+                reason))}>
+              Suspend
+            </button>
+            <button className="secondary compact" disabled={locked}
+              onClick={() => void run('Cleared', () => adminApi.enforcement(target.playerId, 'clear', null, reason))}>
+              Lift
+            </button>
+            <button className="secondary compact" disabled={locked}
+              onClick={() => void run('Logged out', () => adminApi.forceLogout(target.playerId, reason))}>
+              Force logout
+            </button>
+          </div>
+        </div>
+
+        <div className="admin-action-block">
+          <strong>Identity and rights</strong>
+          <div className="admin-action-row">
+            <label>Name<input value={renameTo} onChange={e => setRenameTo(e.target.value)} minLength={3} maxLength={32} /></label>
+            <button className="secondary compact" disabled={locked || renameTo.trim() === target.name}
+              onClick={() => void run('Renamed', () => adminApi.rename(target.playerId, renameTo, reason))}>
+              Rename
+            </button>
+            <button className="secondary compact" disabled={locked || target.isBot}
+              onClick={() => void run('Rights changed', () => adminApi.setAdminRights(target.playerId, !target.isAdmin, reason))}>
+              {target.isAdmin ? 'Revoke admin' : 'Grant admin'}
+            </button>
+          </div>
+        </div>
+
+        <div className="admin-action-block">
+          <strong>Recent activity</strong>
+          <ActivityList entries={detail.recentActivity.slice(0, 6)} />
+        </div>
+
+        {detail.auditTrail.length > 0 && <div className="admin-action-block">
+          <strong>Admin history for this player</strong>
+          <AuditList entries={detail.auditTrail} />
+        </div>}
+      </div>}
+    </div>
+  </section>
+}
+
+function AdminAuditPanel() {
+  const [entries, setEntries] = useState<AdminAuditEntry[]>([])
+  const [error, setError] = useState('')
+  useEffect(() => {
+    void (async () => {
+      try { setEntries(await adminApi.audit()) } catch (e) { setError((e as Error).message) }
+    })()
+  }, [])
+
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Audit Trail</h2><span>Every admin action</span></div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+    {entries.length === 0 && <p className="coming">No admin actions recorded yet.</p>}
+    <AuditList entries={entries.slice(0, 30)} />
+  </section>
+}
+
+function AuditList({ entries }: { entries: AdminAuditEntry[] }) {
+  return <div className="audit-list">
+    {entries.map(entry => <div className="audit-row" key={entry.id}>
+      <div>
+        <strong>{entry.action}</strong>
+        <span>{entry.actorUsername}{entry.targetName ? ` -> ${entry.targetName}` : ''}</span>
+      </div>
+      <p>{entry.summary}</p>
+      {entry.reason && <small>"{entry.reason}"</small>}
+      <em>{new Date(entry.createdAtUtc).toLocaleString()}</em>
+    </div>)}
+  </div>
+}
+
+function enforcementLabel(player: AdminPlayerSummary) {
+  if (player.isBanned) return 'Banned'
+  if (player.suspendedUntilUtc && new Date(player.suspendedUntilUtc) > new Date()) return 'Suspended'
+  return 'Active'
+}
+
+function AdminBotsAndConfig({ ctx }: { ctx: PageContext & { overview: AdminOverview } }) {
   return <AdminPanel
     overview={ctx.overview}
     busy={ctx.busy}
-    onCheat={ctx.runAdminCheat}
     onSeedBots={ctx.seedBots}
     onRunBots={ctx.runBots}
     onSetBotAutomation={ctx.setBotAutomation}
@@ -1274,17 +1756,14 @@ function ProductTradeCard({ name, owned, price, quantity, canProduce, disabled, 
   </div>
 }
 
-function AdminPanel({ overview, busy, onCheat, onSeedBots, onRunBots, onSetBotAutomation }: {
+function AdminPanel({ overview, busy, onSeedBots, onRunBots, onSetBotAutomation }: {
   overview: AdminOverview
   busy: boolean
-  onCheat: (cheat: AdminCheatKey, amount: number) => void
   onSeedBots: (count: number) => void
   onRunBots: (rounds: number) => void
   onSetBotAutomation: (enabled: boolean) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [customCheat, setCustomCheat] = useState<AdminCheatKey>('cash')
-  const [customAmount, setCustomAmount] = useState(10000)
   const [botSeedCount, setBotSeedCount] = useState(10)
   const [botRunRounds, setBotRunRounds] = useState(1)
   const game = overview.economy
@@ -1324,23 +1803,6 @@ function AdminPanel({ overview, busy, onCheat, onSeedBots, onRunBots, onSetBotAu
         <StatusRow label="Production" value={`Weed ${money.format(game.production.weed.costPerTurn)} ${game.production.weed.unitsMin}-${game.production.weed.unitsMax}, coke ${money.format(game.production.coke.costPerTurn)} ${game.production.coke.unitsMin}-${game.production.coke.unitsMax}`} />
         <StatusRow label="Morale rules" value={`${game.morale.hoesManagedPerPimp} hoes/pimp, desertion below ${game.morale.desertionThreshold}%`} />
         <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
-      </div>
-      <div className="admin-cheats">
-        <div className="admin-subtitle"><strong>Cheats</strong><span>Admin-only, audited as ADMIN actions</span></div>
-        <div className="admin-cheat-grid">
-          {adminCheatOptions.map(option =>
-            <button className="secondary compact" disabled={busy} key={option.key} onClick={() => onCheat(option.key, option.amount)}>
-              {option.label}
-            </button>
-          )}
-        </div>
-        <div className="admin-cheat-custom">
-          <label>Cheat<select value={customCheat} onChange={event => setCustomCheat(event.target.value as AdminCheatKey)}>
-            {adminCheatOptions.map(option => <option key={option.key} value={option.key}>{option.key}</option>)}
-          </select></label>
-          <label>Amount<input type="number" min={1} max={1000000000} value={customAmount} onChange={event => setCustomAmount(Number(event.target.value))} /></label>
-          <button className="primary compact" disabled={busy || customAmount < 1 || customAmount > 1_000_000_000} onClick={() => onCheat(customCheat, customAmount)}>Apply Cheat</button>
-        </div>
       </div>
       <div className="admin-bots">
         <div className="admin-subtitle"><strong>AI Rivals</strong><span>Seed test opponents for 0.2.0</span></div>

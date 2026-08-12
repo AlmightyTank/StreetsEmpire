@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260810131513_AddPendingCombatTiming")]
+    partial class AddPendingCombatTiming
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -109,197 +112,6 @@ namespace StreetEmpire.Api.Migrations
                     b.HasIndex("Outcome", "ResolvesAtUtc");
 
                     b.ToTable("CombatLogs");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.CombatMission", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("ArrivesAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("AssignedPimps")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AssignedThugs")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AssignedWeapons")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AttackerHoesLost")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("AttackerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<double>("AttackerMorale")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("AttackerPimpsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AttackerPower")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AttackerThugsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AttackerWeaponsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("CashStolen")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("CokeStolen")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("CurrentRound")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("DefenderHoesLost")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("DefenderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<double>("DefenderMorale")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("DefenderPimpsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("DefenderPower")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("DefenderProtectionUntilUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DefenderThugsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("DefenderWeaponsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("MaxRounds")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("NextRoundAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<int>("RemainingAttackers")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RemainingWeapons")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ReturnsAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Summary")
-                        .IsRequired()
-                        .HasMaxLength(800)
-                        .HasColumnType("character varying(800)");
-
-                    b.Property<int>("TurnsSpent")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("WeedStolen")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AttackerId", "Status");
-
-                    b.HasIndex("DefenderId", "Status");
-
-                    b.HasIndex("Status", "ArrivesAtUtc", "NextRoundAtUtc", "ReturnsAtUtc");
-
-                    b.ToTable("CombatMissions");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.CombatMissionEvent", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<double>("AttackRoll")
-                        .HasPrecision(8, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("AttackerMorale")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("AttackerThugsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("AttackerWeaponsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("CombatMissionId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<double>("DefenderMorale")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<int>("DefenderThugsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("DefenderWeaponsLost")
-                        .HasColumnType("integer");
-
-                    b.Property<double>("DefenseRoll")
-                        .HasPrecision(8, 2)
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<int>("Round")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Summary")
-                        .IsRequired()
-                        .HasMaxLength(800)
-                        .HasColumnType("character varying(800)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CombatMissionId", "CreatedAtUtc");
-
-                    b.ToTable("CombatMissionEvents");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.GameActionLog", b =>
@@ -505,36 +317,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Defender");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.CombatMission", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Player", "Attacker")
-                        .WithMany("MissionsStarted")
-                        .HasForeignKey("AttackerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Player", "Defender")
-                        .WithMany("MissionsDefended")
-                        .HasForeignKey("DefenderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Attacker");
-
-                    b.Navigation("Defender");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.CombatMissionEvent", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.CombatMission", "CombatMission")
-                        .WithMany("Events")
-                        .HasForeignKey("CombatMissionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CombatMission");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.GameActionLog", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.Player", "Player")
@@ -557,11 +339,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Account");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.CombatMission", b =>
-                {
-                    b.Navigation("Events");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.Player", b =>
                 {
                     b.Navigation("ActionLogs");
@@ -569,10 +346,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("AttacksMade");
 
                     b.Navigation("Defenses");
-
-                    b.Navigation("MissionsDefended");
-
-                    b.Navigation("MissionsStarted");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.PlayerAccount", b =>

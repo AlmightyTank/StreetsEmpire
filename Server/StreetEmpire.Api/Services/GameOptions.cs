@@ -34,6 +34,7 @@ public sealed class GameOptions
     public ProductionOptions Production { get; set; } = new();
     public MoraleOptions Morale { get; set; } = new();
     public CrewOptions Crew { get; set; } = new();
+    public CombatOptions Combat { get; set; } = new();
 }
 
 public sealed class BotAutomationOptions
@@ -83,6 +84,16 @@ public sealed class MoraleOptions
     public double UncoveredThugPenalty { get; set; } = 0.35;
     public double DesertionThreshold { get; set; } = 25;
     public double MaxDesertionChance { get; set; } = 0.20;
+    public double PassiveRecoveryPerTick { get; set; } = 0.35;
+    public int HqRestTurnCost { get; set; } = 4;
+    public long HqRestCashPerCrew { get; set; } = 75;
+    public double HqRestMoraleGain { get; set; } = 8;
+    public int HqPartyTurnCost { get; set; } = 2;
+    public long HqPartyCashPerCrew { get; set; } = 45;
+    public int HqPartyBeerPerThug { get; set; } = 5;
+    public int HqPartyWeedPerHoes { get; set; } = 10;
+    public double HqPartyHoeMoraleGain { get; set; } = 12;
+    public double HqPartyThugMoraleGain { get; set; } = 10;
 }
 
 public sealed class CrewOptions
@@ -97,6 +108,37 @@ public sealed class CrewOptions
     public double FireThugMoralePenalty { get; set; } = 1.25;
     public double FirePimpHoeMoralePenalty { get; set; } = 2.0;
     public double MaxFireMoralePenalty { get; set; } = 25;
+}
+
+public sealed class CombatOptions
+{
+    public int AttackTurnCost { get; set; } = 10;
+    public int AttackCooldownMinutes { get; set; } = 30;
+    public int AttackTravelSecondsMin { get; set; } = 75;
+    public int AttackTravelSecondsMax { get; set; } = 180;
+    public int ReturnTravelSecondsMin { get; set; } = 60;
+    public int ReturnTravelSecondsMax { get; set; } = 150;
+    public int FightRoundSeconds { get; set; } = 20;
+    public int MaxFightRounds { get; set; } = 6;
+    public int MaxActiveAttackMissions { get; set; } = 2;
+    public double MoraleBreakThreshold { get; set; } = 5;
+    public int DefenderProtectionMinutes { get; set; } = 60;
+    public double PowerRandomnessPercent { get; set; } = 0.15;
+    public double MinCashLootPercent { get; set; } = 0.05;
+    public double MaxCashLootPercent { get; set; } = 0.20;
+    public double MinProductLootPercent { get; set; } = 0.05;
+    public double MaxProductLootPercent { get; set; } = 0.15;
+    public double WinnerCrewLossPercent { get; set; } = 0.03;
+    public double LoserCrewLossPercent { get; set; } = 0.10;
+    public double WeaponLossPercent { get; set; } = 0.08;
+    public double AttackerDefeatThugMoralePenalty { get; set; } = 8;
+    public double AttackerDefeatHoeMoralePenalty { get; set; } = 3;
+    public double AttackerStandstillThugMoralePenalty { get; set; } = 3;
+    public double AttackerVictoryThugMoraleGain { get; set; } = 4;
+    public double AttackerVictoryHoeMoraleGain { get; set; } = 1.5;
+    public double DefenderDefeatThugMoralePenalty { get; set; } = 6;
+    public double DefenderDefeatHoeMoralePenalty { get; set; } = 4;
+    public double DefenderVictoryThugMoraleGain { get; set; } = 3;
 }
 
 public sealed class RangeOptions

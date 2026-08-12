@@ -32,6 +32,15 @@ public sealed class Player
     public int Weed { get; set; }
     public int Coke { get; set; }
 
+    // Combat pacing fields written by the attack flow.
+    public DateTime? CombatProtectionUntilUtc { get; set; }
+    public DateTime? LastAttackAtUtc { get; set; }
+    public DateTime? LastAttackedAtUtc { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<GameActionLog> ActionLogs { get; set; } = [];
+    public List<CombatLog> AttacksMade { get; set; } = [];
+    public List<CombatLog> Defenses { get; set; } = [];
+    public List<CombatMission> MissionsStarted { get; set; } = [];
+    public List<CombatMission> MissionsDefended { get; set; } = [];
 }

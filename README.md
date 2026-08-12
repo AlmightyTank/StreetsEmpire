@@ -1,6 +1,52 @@
-# Street Empire 0.1.10
+# Street Empire 0.2.1
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
+
+## What changed in 0.2.1
+
+0.2.1 turns attacks into live combat missions.
+
+- Attacks now use assigned pimps, thugs, and weapons instead of always sending the whole crew.
+- Each active mission requires at least one pimp in control.
+- Up to two attack missions can run at once when enough free pimps and crew are available.
+- Combat missions travel, fight round by round, and return home.
+- The Combat page shows target scouting, launch controls, live mission status, morale, rounds, remaining attackers, and recent combat events.
+- Crews committed to attacks are unavailable at home, so players can be attacked while their defense is weakened.
+- Completed missions still write final combat logs and world activity.
+
+## What changed in 0.2.0
+
+0.2.0 turns combat on.
+
+- Players can dispatch attacks against inspected targets from Target Recon.
+- Attacks spend turns immediately, then resolve after a short server-side travel timer.
+- Players cannot work the streets or dispatch another attack while an outgoing attack is pending.
+- Attacks respect attacker cooldowns and give defenders a protection window.
+- Combat compares attack and defense power from thugs, weapons, pimps, and morale.
+- Victories can steal cash on hand, weed, and coke, while bank cash remains protected.
+- Combat can cause crew and weapon losses for both sides.
+- Attack dispatches and final results write world activity and detailed combat logs.
+- The browser includes attack controls in Recon and a Combat History panel in World.
+
+## What changed in 0.1.12
+
+0.1.12 prepares the database and API surface for the 0.2.0 combat layer.
+
+- Players now have combat protection and attack timestamp fields.
+- The database has a `CombatLogs` table for future attack outcomes, theft, losses, power checks, and protection windows.
+- Dashboard and Target Recon responses include read-only combat status.
+- The browser shows protection/eligibility hints in Overview and Target Recon.
+- `/api/game/combat/logs` is ready to return a player's combat history once attacks start writing records.
+
+## What changed in 0.1.11
+
+0.1.11 prepares the browser and API for the 0.2.0 combat layer.
+
+- Players can search future combat targets by name or city.
+- Public player profiles expose rank, net worth, visible resources, crew, weapon coverage, morale, and recent public activity.
+- The browser includes a Target Recon panel with combat-readiness hints.
+- AI rivals now receive a stable random brain, such as Resource Manager, Big Spender, Hard Charger, Product Runner, Crew Builder, Banker, or Balanced Operator.
+- The browser UI now uses a full app shell with separate Overview, Street, Crew, Market, Recon, World, and Admin pages.
 
 ## What changed in 0.1.10
 
@@ -161,7 +207,7 @@ Working the streets for 1-20 turns can now:
 - Per-player economy/action history.
 - Responsive React browser UI.
 
-PvP, travel, organizations, player-to-player markets, and territory are intentionally not part of 0.1.10.
+Travel, organizations, player-to-player markets, and territory are intentionally not part of 0.2.0.
 
 ## Stack
 
@@ -177,6 +223,16 @@ PvP, travel, organizations, player-to-player markets, and territory are intentio
 - Docker Desktop (recommended) or a local PostgreSQL server
 
 ## Run locally
+
+### Quick start on Windows
+
+After PostgreSQL is running and client dependencies are installed, launch both dev servers from the repository root:
+
+```powershell
+.\start-dev.bat
+```
+
+The script opens the API and Vite client in separate command windows.
 
 ### 1. Start PostgreSQL
 
@@ -210,7 +266,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.1.10`.
+It should report version `0.2.1`.
 
 ### 4. Run the browser client
 
@@ -264,7 +320,7 @@ The product net-worth value is deliberately below its fixed sale value so invent
 
 ## Economy tuning
 
-The server remains authoritative, and 0.1.10 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
+The server remains authoritative, and 0.2.1 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
 
 The configurable tables now include:
 
@@ -273,6 +329,7 @@ The configurable tables now include:
 - `Production` product costs and unit ranges
 - `Morale` upkeep rates, management capacity, pressure penalties, and desertion thresholds
 - `Crew` hire costs, morale hire requirements, and firing penalties
+- `Combat` turn costs, travel timers, cooldowns, defender protection, power randomness, loot rates, and loss rates
 
 ## Verification
 
@@ -283,7 +340,7 @@ cd Client
 npm run build
 ```
 
-## API added in 0.1.1
+## API surface
 
 ```text
 POST /api/game/street
@@ -297,6 +354,11 @@ PUT  /api/game/crew/settings
 POST /api/game/crew/hire
 POST /api/game/crew/fire
 GET  /api/world/news
+GET  /api/game/targets
+GET  /api/game/players/{playerId}/profile
+GET  /api/game/combat/logs
+GET  /api/game/combat/missions
+POST /api/game/combat/attack
 GET  /api/admin/overview
 POST /api/admin/cheats
 POST /api/admin/bots/seed
@@ -313,13 +375,17 @@ That rule becomes especially important once PvP and a player market are introduc
 
 ## Proposed 0.1.x path
 
-- **0.1.2 — Done:** economy tuning, configurable tables, stronger balance controls, and better action breakdowns.
-- **0.1.3 — Done:** hiring/firing controls, deeper happiness requirements, and crew expense reporting.
-- **0.1.4 — Done:** admin identity, admin-only economy overview, browser admin control center, and audited admin cheats.
-- **0.1.5 — Done:** global action-log news feed and browser World News panel.
-- **0.1.6 — Done:** seeded AI rivals for pre-combat leaderboard and 0.2.0 testing.
-- **0.1.7 — Done:** AI rival progression rounds using the player economy.
-- **0.1.8 — Done:** automatic AI rival progression with staggered per-bot cooldowns.
-- **0.1.9 — Done:** admin runtime toggle for automatic AI.
-- **0.1.10 — Done:** AI crew-morale management.
-- **0.2.0 — War:** player search, attack/defense strength, combat, theft, losses, protection windows, and attack logs.
+- **0.1.2 - Done:** economy tuning, configurable tables, stronger balance controls, and better action breakdowns.
+- **0.1.3 - Done:** hiring/firing controls, deeper happiness requirements, and crew expense reporting.
+- **0.1.4 - Done:** admin identity, admin-only economy overview, browser admin control center, and audited admin cheats.
+- **0.1.5 - Done:** global action-log news feed and browser World News panel.
+- **0.1.6 - Done:** seeded AI rivals for pre-combat leaderboard and 0.2.0 testing.
+- **0.1.7 - Done:** AI rival progression rounds using the player economy.
+- **0.1.8 - Done:** automatic AI rival progression with staggered per-bot cooldowns.
+- **0.1.9 - Done:** admin runtime toggle for automatic AI.
+- **0.1.10 - Done:** AI crew-morale management.
+- **0.1.11 - Done:** target recon and public player profiles for combat prep.
+- **0.1.12 - Done:** combat schema, protection status, and combat log contracts.
+- **0.2.0 - Done:** player search, attack/defense strength, combat, theft, losses, protection windows, and attack logs.
+- **0.2.1 - Done:** live combat missions, assigned crew, round events, combined Combat page, and committed-crew vulnerability.
+- **0.2.2 - Next:** combat balance pass, AI attack behavior, anti-farm protections, and better defender alerts.

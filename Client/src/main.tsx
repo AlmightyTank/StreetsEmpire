@@ -1,14 +1,15 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import React, { FormEvent, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { api } from './api'
-import type { ActionResult, AdminOverview, Dashboard, LeaderboardEntry, WorldNewsEntry } from './api'
+import type { ActionResult, AdminOverview, CombatLog, CombatMission, Dashboard, LeaderboardEntry, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
 type AdminCheatKey = 'cash' | 'bank' | 'turns' | 'pimps' | 'hoes' | 'thugs' | 'condoms' | 'beer' | 'weapons' | 'weed' | 'coke' | 'morale'
+type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'admin'
 
 const adminCheatOptions: { key: AdminCheatKey, label: string, amount: number }[] = [
   { key: 'cash', label: '+$10k Cash', amount: 10_000 },
@@ -25,11 +26,26 @@ const adminCheatOptions: { key: AdminCheatKey, label: string, amount: number }[]
   { key: 'morale', label: 'Morale 100%', amount: 100 },
 ]
 
+const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
+  overview: { label: 'Overview', short: 'OV', kicker: 'Command center' },
+  street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
+  crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
+  market: { label: 'Market', short: 'MK', kicker: 'Store, product, bank' },
+  recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
+  admin: { label: 'Admin', short: 'AD', kicker: 'Control center' },
+}
+
 function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null)
   const [leaders, setLeaders] = useState<LeaderboardEntry[]>([])
+  const [targets, setTargets] = useState<PlayerTarget[]>([])
+  const [selectedTarget, setSelectedTarget] = useState<PlayerProfile | null>(null)
+  const [combatLogs, setCombatLogs] = useState<CombatLog[]>([])
+  const [combatMissions, setCombatMissions] = useState<CombatMission[]>([])
   const [worldNews, setWorldNews] = useState<WorldNewsEntry[]>([])
+  const [targetQuery, setTargetQuery] = useState('')
+  const [activePage, setActivePage] = useState<AppPage>('overview')
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -40,46 +56,45 @@ function App() {
   const [hoeCut, setHoeCut] = useState(30)
   const [bankAmount, setBankAmount] = useState(1000)
   const [crewQty, setCrewQty] = useState<Record<'pimps' | 'hoes' | 'thugs', number>>({ pimps: 1, hoes: 1, thugs: 1 })
-  const [storeQty, setStoreQty] = useState<Record<string, number>>({ condoms: 25, beer: 12, weapons: 1 })
+  const [attackCrew, setAttackCrew] = useState({ pimps: 1, thugs: 1, weapons: 0 })
+  // Left empty so each page derives its own default until the player types a quantity.
+  const [storeQty, setStoreQty] = useState<Record<string, number>>({})
   const [sellQty, setSellQty] = useState<Record<'weed' | 'coke', number>>({ weed: 10, coke: 5 })
   const [tickSeconds, setTickSeconds] = useState(0)
-  const summaryRef = useRef<HTMLElement | null>(null)
 
   const refresh = async () => {
     try {
-      const [d, l, news] = await Promise.all([api.dashboard(), api.leaderboard(), api.worldNews()])
+      const [d, l, news, targetList, combatHistory, missions] = await Promise.all([api.dashboard(), api.leaderboard(), api.worldNews(), api.targets(targetQuery), api.combatLogs(), api.combatMissions()])
       const admin = d.isAdmin ? await api.adminOverview() : null
       setDashboard(d)
       setAdminOverview(admin)
       setLeaders(l)
       setWorldNews(news)
+      setTargets(targetList)
+      setCombatLogs(combatHistory)
+      setCombatMissions(missions)
       setTickSeconds(d.secondsUntilNextTurnTick)
       setHoeCut(d.hoeCutPercent)
       setError('')
     } catch (e) {
-      if ((e as Error).message === 'Unauthorized') { setDashboard(null); setAdminOverview(null); setWorldNews([]) }
-      else setError((e as Error).message)
+      if ((e as Error).message === 'Unauthorized') {
+        setDashboard(null)
+        setAdminOverview(null)
+        setWorldNews([])
+        setCombatLogs([])
+        setCombatMissions([])
+        setTargets([])
+        setSelectedTarget(null)
+        setActivePage('overview')
+      } else setError((e as Error).message)
     }
   }
 
   useEffect(() => { void refresh() }, [])
   useEffect(() => {
-    const element = summaryRef.current
-    if (!element) return
-
-    const setHeight = () => {
-      document.documentElement.style.setProperty('--summary-stack-height', `${Math.ceil(element.getBoundingClientRect().height)}px`)
-    }
-    setHeight()
-
-    const observer = new ResizeObserver(setHeight)
-    observer.observe(element)
-    window.addEventListener('resize', setHeight)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', setHeight)
-    }
-  }, [dashboard?.playerId, error, notice, lastBreakdown])
+    if (activePage === 'admin' && !adminOverview)
+      setActivePage('overview')
+  }, [activePage, adminOverview])
   useEffect(() => {
     if (!dashboard || dashboard.turns >= dashboard.maxTurns) return
     const timer = window.setInterval(() => {
@@ -93,6 +108,11 @@ function App() {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [dashboard?.playerId, dashboard?.turns, dashboard?.maxTurns, dashboard?.turnTickMinutes])
+  useEffect(() => {
+    if (!dashboard || !combatMissions.some(mission => mission.status !== 'Complete')) return
+    const timer = window.setInterval(() => { void refresh() }, 5000)
+    return () => window.clearInterval(timer)
+  }, [dashboard?.playerId, combatMissions])
 
   const nextTurn = useMemo(() => {
     if (!dashboard || dashboard.turns >= dashboard.maxTurns) return 'MAX'
@@ -126,6 +146,32 @@ function App() {
     finally { setBusy(false) }
   }
 
+  const searchTargets = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try {
+      setTargets(await api.targets(targetQuery))
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const inspectTarget = async (playerId: string) => {
+    setBusy(true); setError('')
+    try {
+      setSelectedTarget(await api.playerProfile(playerId))
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const attackTarget = async (defenderId: string) => {
+    await act(() => api.attack(defenderId, attackCrew.pimps, attackCrew.thugs, attackCrew.weapons))
+    try {
+      setSelectedTarget(await api.playerProfile(defenderId))
+    } catch {
+      // The action result already refreshed the main screen; this only keeps the inspected card current.
+    }
+  }
+
   if (!dashboard) {
     return <main className="auth-shell">
       <section className="auth-card panel">
@@ -141,7 +187,7 @@ function App() {
           {authMode === 'register' && <label>Player Name<input name="playerName" minLength={3} maxLength={32} required /></label>}
           <label>Password<input name="password" type="password" minLength={8} required /></label>
           {error && <DismissibleMessage className="error" onClose={() => setError('')}>{error}</DismissibleMessage>}
-          <button className="primary" disabled={busy}>{busy ? 'Working…' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
+          <button className="primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
         </form>
       </section>
     </main>
@@ -150,209 +196,828 @@ function App() {
   const totalCrew = dashboard.pimps + dashboard.hoes + dashboard.thugs
   const weaponCoverage = dashboard.thugs === 0 ? 100 : Math.min(100, (dashboard.weapons / dashboard.thugs) * 100)
   const managementCapacity = dashboard.crewReport.managementCapacity
+  const visiblePages = (Object.keys(pageMeta) as AppPage[]).filter(page => page !== 'admin' || adminOverview)
+  const contentContext: PageContext = {
+    dashboard,
+    adminOverview,
+    leaders,
+    targets,
+    selectedTarget,
+    worldNews,
+    combatLogs,
+    combatMissions,
+    targetQuery,
+    busy,
+    streetTurns,
+    productionTurns,
+    hoeCut,
+    bankAmount,
+    crewQty,
+    attackCrew,
+    storeQty,
+    sellQty,
+    nextTurn,
+    totalCrew,
+    weaponCoverage,
+    managementCapacity,
+    setActivePage,
+    setTargetQuery,
+    setStreetTurns,
+    setProductionTurns,
+    setHoeCut,
+    setBankAmount,
+    setCrewQty,
+    setAttackCrew,
+    setStoreQty,
+    setSellQty,
+    act,
+    searchTargets,
+    inspectTarget,
+    attackTarget: defenderId => void attackTarget(defenderId),
+    cancelMission: missionId => void act(() => api.cancelCombatMission(missionId)),
+    runAdminCheat: (cheat, amount) => void act(() => api.adminCheat(cheat, amount)),
+    seedBots: count => void act(() => api.adminSeedBots(count)),
+    runBots: rounds => void act(() => api.adminRunBots(rounds)),
+    setBotAutomation: enabled => void act(() => api.adminSetBotAutomation(enabled)),
+  }
 
   return <main className="game-shell">
-    <header className="topbar">
-      <div><strong>STREET EMPIRE</strong><span className="version">0.1.10</span></div>
-      <div className="top-actions"><span>{dashboard.name}</span><button onClick={() => void act(api.logout)}>Logout</button></div>
-    </header>
+    <aside className="app-nav">
+      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.1</small></div>
+      <nav>
+        {visiblePages.map(page => <button
+          className={activePage === page ? 'active' : ''}
+          key={page}
+          type="button"
+          onClick={() => setActivePage(page)}
+        >
+          <span>{pageMeta[page].short}</span>
+          <strong>{pageMeta[page].label}</strong>
+        </button>)}
+      </nav>
+      <button className="logout-link" onClick={() => void act(api.logout)}>Logout</button>
+    </aside>
 
-    <section ref={summaryRef} className="summary-stack">
-      <div className="stats-grid">
-        <Stat icon={<CashIcon />} label="Cash on Hand" value={money.format(dashboard.cash)} />
-        <Stat icon={<BankIcon />} label="Bank" value={money.format(dashboard.bankCash)} />
-        <Stat icon={<WorthIcon />} label="Net Worth" value={money.format(dashboard.netWorth)} />
-        <Stat icon={<TurnsIcon />} label="Turns" value={`${dashboard.turns} / ${dashboard.maxTurns}`} sub={nextTurn === 'MAX' ? 'Turn bank full' : `+${dashboard.turnsPerTick} in ${nextTurn}`} />
-        <Stat icon={<RankIcon />} label="Rank" value={`#${dashboard.rank}`} />
-        <Stat icon={<CityIcon />} label="City" value={dashboard.city} />
-      </div>
-
-      {error && <DismissibleMessage className="error banner" onClose={() => setError('')}>{error}</DismissibleMessage>}
-      {notice && <DismissibleMessage className="notice banner" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
-      {lastBreakdown && <div className="breakdown banner notification">
-        <div className="breakdown-items">
-          {Object.entries(lastBreakdown).filter(([, value]) => value !== 0 && value !== null).slice(0, 18).map(([key, value]) =>
-            <span key={key}><strong>{formatBreakdownKey(key)}</strong>{formatBreakdownValue(key, value)}</span>
-          )}
+    <section className="app-main">
+      <header className="command-header">
+        <div>
+          <span>{pageMeta[activePage].kicker}</span>
+          <h1>{pageMeta[activePage].label}</h1>
         </div>
-        <button className="dismiss" type="button" aria-label="Close breakdown" onClick={() => setLastBreakdown(null)}>x</button>
-      </div>}
+        <div className="player-plate">
+          <strong>{dashboard.name}</strong>
+          <span>{dashboard.city} / Rank #{dashboard.rank}</span>
+        </div>
+      </header>
+
+      <StatusStrip dashboard={dashboard} nextTurn={nextTurn} />
+
+      <section className="alerts">
+        {error && <DismissibleMessage className="error banner" onClose={() => setError('')}>{error}</DismissibleMessage>}
+        {notice && <DismissibleMessage className="notice banner" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
+        {lastBreakdown && <div className="breakdown banner notification">
+          <div className="breakdown-items">
+            {Object.entries(lastBreakdown).filter(([, value]) => value !== 0 && value !== null).slice(0, 18).map(([key, value]) =>
+              <span key={key}><strong>{formatBreakdownKey(key)}</strong>{formatBreakdownValue(key, value)}</span>
+            )}
+          </div>
+          <button className="dismiss" type="button" aria-label="Close breakdown" onClick={() => setLastBreakdown(null)}>x</button>
+        </div>}
+      </section>
+
+      {renderPage(activePage, contentContext)}
     </section>
+  </main>
+}
 
-    <div className="layout">
-      <section className="main-column">
-        {adminOverview && <AdminPanel
-          overview={adminOverview}
-          busy={busy}
-          onCheat={(cheat, amount) => void act(() => api.adminCheat(cheat, amount))}
-          onSeedBots={(count) => void act(() => api.adminSeedBots(count))}
-          onRunBots={(rounds) => void act(() => api.adminRunBots(rounds))}
-          onSetBotAutomation={(enabled) => void act(() => api.adminSetBotAutomation(enabled))}
-        />}
+type PageContext = {
+  dashboard: Dashboard
+  adminOverview: AdminOverview | null
+  leaders: LeaderboardEntry[]
+  targets: PlayerTarget[]
+  selectedTarget: PlayerProfile | null
+  worldNews: WorldNewsEntry[]
+  combatLogs: CombatLog[]
+  combatMissions: CombatMission[]
+  targetQuery: string
+  busy: boolean
+  streetTurns: number
+  productionTurns: number
+  hoeCut: number
+  bankAmount: number
+  crewQty: Record<'pimps' | 'hoes' | 'thugs', number>
+  attackCrew: { pimps: number, thugs: number, weapons: number }
+  storeQty: Record<string, number>
+  sellQty: Record<'weed' | 'coke', number>
+  nextTurn: string
+  totalCrew: number
+  weaponCoverage: number
+  managementCapacity: number
+  setActivePage: (page: AppPage) => void
+  setTargetQuery: (query: string) => void
+  setStreetTurns: (turns: number) => void
+  setProductionTurns: (turns: number) => void
+  setHoeCut: (cut: number) => void
+  setBankAmount: (amount: number) => void
+  setCrewQty: React.Dispatch<React.SetStateAction<Record<'pimps' | 'hoes' | 'thugs', number>>>
+  setAttackCrew: React.Dispatch<React.SetStateAction<{ pimps: number, thugs: number, weapons: number }>>
+  setStoreQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
+  setSellQty: React.Dispatch<React.SetStateAction<Record<'weed' | 'coke', number>>>
+  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+  searchTargets: (event: FormEvent<HTMLFormElement>) => void
+  inspectTarget: (playerId: string) => void
+  attackTarget: (defenderId: string) => void
+  cancelMission: (missionId: number) => void
+  runAdminCheat: (cheat: AdminCheatKey, amount: number) => void
+  seedBots: (count: number) => void
+  runBots: (rounds: number) => void
+  setBotAutomation: (enabled: boolean) => void
+}
 
-        <div className="panel">
-          <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
-          <div className="crew-grid">
-            <CrewCard name="Pimps" count={dashboard.pimps} desc={`Manage up to ${number.format(managementCapacity)} hoes.`} />
-            <CrewCard name="Hoes" count={dashboard.hoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale · ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} />
-            <CrewCard name="Thugs" count={dashboard.thugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale · ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} />
-          </div>
+function renderPage(page: AppPage, ctx: PageContext) {
+  switch (page) {
+    case 'street': return <StreetPage {...ctx} />
+    case 'crew': return <CrewPage {...ctx} />
+    case 'market': return <MarketPage {...ctx} />
+    case 'recon': return <ReconPage {...ctx} />
+    case 'admin': return ctx.adminOverview
+      ? <AdminPage {...ctx} overview={ctx.adminOverview} />
+      : <OverviewPage {...ctx} />
+    default: return <OverviewPage {...ctx} />
+  }
+}
+
+function OverviewPage(ctx: PageContext) {
+  const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, setActivePage } = ctx
+  return <div className="overview-layout">
+    <div className="overview-stack">
+      <section className="panel hero-panel">
+        <span className="eyebrow">Empire Snapshot</span>
+        <h2>{dashboard.name}</h2>
+        <div className="hero-metrics">
+          <AdminMetric label="Net worth" value={money.format(dashboard.netWorth)} />
+          <AdminMetric label="Crew" value={number.format(totalCrew)} />
+          <AdminMetric label="Turns" value={`${dashboard.turns}/${dashboard.maxTurns}`} />
         </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Crew Management</h2><span>Hire + fire</span></div>
-          <div className="crew-manage-list">
-            <CrewManageRow
-              label="Pimps"
-              owned={dashboard.pimps}
-              quantity={crewQty.pimps}
-              hireCost={dashboard.crewReport.hirePimpCost}
-              cash={dashboard.cash}
-              busy={busy}
-              canFire={dashboard.pimps - crewQty.pimps >= 1}
-              onQuantity={quantity => setCrewQty(value => ({ ...value, pimps: quantity }))}
-              onHire={() => void act(() => api.hireCrew('pimps', crewQty.pimps))}
-              onFire={() => void act(() => api.fireCrew('pimps', crewQty.pimps))}
-              note={`${number.format(managementCapacity)} hoe management capacity`}
-            />
-            <CrewManageRow
-              label="Hoes"
-              owned={dashboard.hoes}
-              quantity={crewQty.hoes}
-              hireCost={dashboard.crewReport.hireHoeCost}
-              cash={dashboard.cash}
-              busy={busy}
-              canHire={dashboard.hoeHappiness >= dashboard.crewReport.minHoeMoraleToHire}
-              canFire={dashboard.hoes >= crewQty.hoes}
-              onQuantity={quantity => setCrewQty(value => ({ ...value, hoes: quantity }))}
-              onHire={() => void act(() => api.hireCrew('hoes', crewQty.hoes))}
-              onFire={() => void act(() => api.fireCrew('hoes', crewQty.hoes))}
-              note={`${dashboard.hoeHappiness.toFixed(0)}% morale, ${dashboard.crewReport.minHoeMoraleToHire.toFixed(0)}% needed to hire`}
-            />
-            <CrewManageRow
-              label="Thugs"
-              owned={dashboard.thugs}
-              quantity={crewQty.thugs}
-              hireCost={dashboard.crewReport.hireThugCost}
-              cash={dashboard.cash}
-              busy={busy}
-              canHire={dashboard.thugHappiness >= dashboard.crewReport.minThugMoraleToHire}
-              canFire={dashboard.thugs >= crewQty.thugs}
-              onQuantity={quantity => setCrewQty(value => ({ ...value, thugs: quantity }))}
-              onHire={() => void act(() => api.hireCrew('thugs', crewQty.thugs))}
-              onFire={() => void act(() => api.fireCrew('thugs', crewQty.thugs))}
-              note={`${dashboard.crewReport.armedThugs}/${dashboard.thugs} armed`}
-            />
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
-          <p>Your hoes generate gross income. Their cut is paid before your cash is deposited on hand. Street work can also recruit crew and turn up small amounts of inventory.</p>
-          <div className="action-row wrap">
-            <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
-            <label>Hoe Cut %<input type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
-            <button className="secondary" disabled={busy || hoeCut < 10 || hoeCut > 80 || hoeCut === dashboard.hoeCutPercent} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</button>
-            <button className="primary" disabled={busy || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns))}>Work {streetTurns} Turn{streetTurns === 1 ? '' : 's'}</button>
-          </div>
-          <div className="rule-strip">
-            <span>1 pimp manages 10 hoes</span><span>Condoms support hoes</span><span>Beer + weapons support thugs</span>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Inventory</h2><span>Supplies + product</span></div>
-          <div className="inventory-grid">
-            <InventoryCard name="Condoms" count={dashboard.condoms} note="Hoe upkeep" />
-            <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
-            <InventoryCard name="Weapons" count={dashboard.weapons} note="Permanent security" />
-            <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} street price`} />
-            <InventoryCard name="Coke" count={dashboard.coke} note={`${money.format(dashboard.cokeSellPrice)} street price`} />
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
-          <p>Production turns cash-on-hand into inventory. Product can be sold immediately for fixed 0.1.10 street prices.</p>
-          <div className="action-row wrap">
-            <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
-            <button className="primary" disabled={busy || productionTurns < 1 || productionTurns > dashboard.turns || productionTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.produce('weed', productionTurns))}>Produce Weed</button>
-            <button className="primary" disabled={busy || productionTurns < 1 || productionTurns > dashboard.turns || productionTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.produce('coke', productionTurns))}>Produce Coke</button>
-          </div>
-          <div className="sell-grid">
-            <SellRow name="Weed" owned={dashboard.weed} price={dashboard.weedSellPrice} quantity={sellQty.weed} onQuantity={q => setSellQty(v => ({ ...v, weed: q }))} onSell={() => void act(() => api.sellProduct('weed', sellQty.weed))} disabled={busy} />
-            <SellRow name="Coke" owned={dashboard.coke} price={dashboard.cokeSellPrice} quantity={sellQty.coke} onQuantity={q => setSellQty(v => ({ ...v, coke: q }))} onSell={() => void act(() => api.sellProduct('coke', sellQty.coke))} disabled={busy} />
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Street Store</h2><span>Cash on hand only</span></div>
-          <div className="store-list">
-            {dashboard.store.map(item => {
-              const qty = storeQty[item.key] ?? 1
-              return <div className="store-row" key={item.key}>
-                <div><strong>{item.name}</strong><span>{item.category}</span><p>{item.description}</p></div>
-                <div className="price">{money.format(item.price)}</div>
-                <input aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} />
-                <button className="primary compact" disabled={busy || qty < 1 || dashboard.cash < qty * item.price} onClick={() => void act(() => api.buyStoreItem(item.key, qty))}>Buy</button>
-              </div>
-            })}
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Bank</h2><span>Protected money foundation</span></div>
-          <p>Banked cash still counts toward net worth. PvP protection rules arrive with the combat build.</p>
-          <div className="action-row wrap">
-            <label>Amount<input type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
-            <button className="secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
-            <button className="secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title"><h2>Activity</h2><span>Last 12 actions</span></div>
-          <div className="activity-list">
-            {dashboard.recentActivity.map(a => <div className="activity" key={a.id}>
-              <div><strong>{a.action}</strong><span>{new Date(a.createdAtUtc).toLocaleString()}</span></div>
-              <p>{a.summary}</p>
-            </div>)}
-          </div>
+        <div className="quick-actions">
+          <button className="primary" onClick={() => setActivePage('street')}>Work Streets</button>
+          <button className="secondary" onClick={() => setActivePage('crew')}>Manage Crew</button>
+          <button className="secondary" onClick={() => setActivePage('market')}>Open Market</button>
+          <button className="secondary" onClick={() => setActivePage('recon')}>Combat</button>
         </div>
       </section>
 
-      <aside className="side-column sticky">
-        <div className="panel">
-          <div className="panel-title"><h2>Empire Status</h2><span>0.1.10</span></div>
-          <StatusRow label="Hoe morale" value={`${dashboard.hoeHappiness.toFixed(0)}%`} warn={dashboard.hoeHappiness < 40} />
-          <StatusRow label="Thug morale" value={`${dashboard.thugHappiness.toFixed(0)}%`} warn={dashboard.thugHappiness < 40} />
-          <StatusRow label="Management" value={`${dashboard.hoes}/${managementCapacity} hoes`} warn={dashboard.hoes > managementCapacity} />
-          <StatusRow label="Armed thugs" value={`${Math.min(dashboard.weapons, dashboard.thugs)}/${dashboard.thugs}`} warn={dashboard.weapons < dashboard.thugs} />
-          <StatusRow label="20-turn condoms" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
-          <StatusRow label="20-turn beer" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
-          <StatusRow label="Supply reserve" value={money.format(dashboard.crewReport.supplyCostForMaxStreetAction)} />
-        </div>
+      <NextMovePanel dashboard={dashboard} weaponCoverage={weaponCoverage} managementCapacity={managementCapacity} onPage={setActivePage} />
 
-        <div className="panel">
-          <div className="panel-title"><h2>Top Players</h2><span>Net worth</span></div>
-          <div className="leaderboard">
-            {leaders.slice(0, 10).map(l => <div className={l.playerName === dashboard.name ? 'leader me' : 'leader'} key={l.rank}>
-              <span>#{l.rank}</span><strong>{l.playerName}</strong><span>{money.format(l.netWorth)}</span>
-            </div>)}
-          </div>
-          <p className="coming">PvP still begins in 0.2.0. 0.1.x is locking down the economy first.</p>
-        </div>
-
-        <WorldNewsPanel entries={worldNews} currentPlayer={dashboard.name} />
-      </aside>
+      <section className="panel">
+        <div className="panel-title"><h2>Inventory</h2><span>On hand</span></div>
+        <MiniInventory dashboard={dashboard} />
+      </section>
     </div>
-  </main>
+
+    <div className="overview-stack">
+      <section className="panel">
+        <div className="panel-title"><h2>Readiness</h2><span>Combat prep</span></div>
+        <StatusRow label="Hoe morale" value={`${dashboard.hoeHappiness.toFixed(0)}%`} warn={dashboard.hoeHappiness < 40} />
+        <StatusRow label="Thug morale" value={`${dashboard.thugHappiness.toFixed(0)}%`} warn={dashboard.thugHappiness < 40} />
+        <StatusRow label="Management" value={`${dashboard.hoes}/${managementCapacity} hoes`} warn={dashboard.hoes > managementCapacity} />
+        <StatusRow label="Armed thugs" value={`${Math.min(dashboard.weapons, dashboard.thugs)}/${dashboard.thugs}`} warn={dashboard.weapons < dashboard.thugs} />
+        <StatusRow label="Weapon coverage" value={`${weaponCoverage.toFixed(0)}%`} warn={weaponCoverage < 75} />
+        <StatusRow label="Combat status" value={dashboard.combatStatus.eligibility} warn={dashboard.combatStatus.isProtected} />
+        <StatusRow label="20-turn condoms" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
+        <StatusRow label="20-turn beer" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-title"><h2>Top Players</h2><span>Net worth</span></div>
+        <Leaderboard leaders={leaders.slice(0, 8)} currentPlayer={dashboard.name} />
+      </section>
+    </div>
+
+    <WorldNewsPanel entries={worldNews.slice(0, 5)} currentPlayer={dashboard.name} />
+  </div>
+}
+
+function StreetPage(ctx: PageContext) {
+  const { dashboard, combatMissions, busy, streetTurns, hoeCut, bankAmount, storeQty, setActivePage, setStreetTurns, setHoeCut, setBankAmount, setStoreQty, act } = ctx
+  const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
+  return <div className="page-grid two-column">
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
+      <p>Your hoes generate gross income. Their cut is paid before your cash is deposited on hand. Street work can also recruit crew and turn up small amounts of inventory.</p>
+      {pendingOutgoingAttack && <div className="mission-lock">
+        <strong>Crew is out</strong>
+        <span>Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
+      </div>}
+      <StreetSupplyPanel
+        dashboard={dashboard}
+        busy={busy}
+        streetTurns={streetTurns}
+        storeQty={storeQty}
+        setStoreQty={setStoreQty}
+        act={act}
+        onMarket={() => setActivePage('market')}
+      />
+      <div className="action-row wrap">
+        <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
+        <label>Hoe Cut %<input type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
+        <button className="secondary" disabled={busy || hoeCut < 10 || hoeCut > 80 || hoeCut === dashboard.hoeCutPercent} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</button>
+        <button className="primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
+      </div>
+      <div className="rule-strip">
+        <span>1 pimp manages 10 hoes</span><span>Condoms support hoes</span><span>Beer + weapons support thugs</span>
+      </div>
+    </section>
+
+    <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} />
+
+    <section className="panel">
+      <div className="panel-title"><h2>Activity</h2><span>Last 12 actions</span></div>
+      <ActivityList entries={dashboard.recentActivity} />
+    </section>
+  </div>
+}
+
+function CrewPage(ctx: PageContext) {
+  const { dashboard, busy, crewQty, totalCrew, weaponCoverage, managementCapacity, setCrewQty, act } = ctx
+  const combatCrew = dashboard.combatCrew
+  return <div className="page-grid">
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
+      <div className="crew-grid">
+        <CrewCard name="Pimps" count={dashboard.pimps} desc={`Manage up to ${number.format(managementCapacity)} hoes.`} />
+        <CrewCard name="Hoes" count={dashboard.hoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} />
+        <CrewCard name="Thugs" count={dashboard.thugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale / ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} />
+      </div>
+      <div className="crew-combat-strip">
+        <AdminMetric label="Free pimps" value={number.format(combatCrew.availablePimps)} />
+        <AdminMetric label="Free thugs" value={number.format(combatCrew.availableThugs)} />
+        <AdminMetric label="Free weapons" value={number.format(combatCrew.availableWeapons)} />
+        <AdminMetric label="Committed" value={`${number.format(combatCrew.committedPimps)} P / ${number.format(combatCrew.committedThugs)} T / ${number.format(combatCrew.committedWeapons)} W`} />
+        <AdminMetric label="Attack slots" value={`${combatCrew.activeAttackMissions}/${combatCrew.maxActiveAttackMissions}`} />
+      </div>
+    </section>
+
+    <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
+
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>Crew Management</h2><span>Hire + fire</span></div>
+      <div className="crew-manage-list">
+        <CrewManageRow
+          label="Pimps"
+          owned={dashboard.pimps}
+          quantity={crewQty.pimps}
+          hireCost={dashboard.crewReport.hirePimpCost}
+          cash={dashboard.cash}
+          busy={busy}
+          canFire={dashboard.pimps - crewQty.pimps >= 1}
+          onQuantity={quantity => setCrewQty(value => ({ ...value, pimps: quantity }))}
+          onHire={() => void act(() => api.hireCrew('pimps', crewQty.pimps))}
+          onFire={() => void act(() => api.fireCrew('pimps', crewQty.pimps))}
+          note={`${number.format(managementCapacity)} hoe management capacity`}
+        />
+        <CrewManageRow
+          label="Hoes"
+          owned={dashboard.hoes}
+          quantity={crewQty.hoes}
+          hireCost={dashboard.crewReport.hireHoeCost}
+          cash={dashboard.cash}
+          busy={busy}
+          canHire={dashboard.hoeHappiness >= dashboard.crewReport.minHoeMoraleToHire}
+          canFire={dashboard.hoes >= crewQty.hoes}
+          onQuantity={quantity => setCrewQty(value => ({ ...value, hoes: quantity }))}
+          onHire={() => void act(() => api.hireCrew('hoes', crewQty.hoes))}
+          onFire={() => void act(() => api.fireCrew('hoes', crewQty.hoes))}
+          note={`${dashboard.hoeHappiness.toFixed(0)}% morale, ${dashboard.crewReport.minHoeMoraleToHire.toFixed(0)}% needed to hire`}
+        />
+        <CrewManageRow
+          label="Thugs"
+          owned={dashboard.thugs}
+          quantity={crewQty.thugs}
+          hireCost={dashboard.crewReport.hireThugCost}
+          cash={dashboard.cash}
+          busy={busy}
+          canHire={dashboard.thugHappiness >= dashboard.crewReport.minThugMoraleToHire}
+          canFire={dashboard.thugs >= crewQty.thugs}
+          onQuantity={quantity => setCrewQty(value => ({ ...value, thugs: quantity }))}
+          onHire={() => void act(() => api.hireCrew('thugs', crewQty.thugs))}
+          onFire={() => void act(() => api.fireCrew('thugs', crewQty.thugs))}
+          note={`${dashboard.crewReport.armedThugs}/${dashboard.thugs} armed`}
+        />
+      </div>
+    </section>
+  </div>
+}
+
+function MarketPage(ctx: PageContext) {
+  const { dashboard, busy, productionTurns, bankAmount, storeQty, sellQty, setProductionTurns, setBankAmount, setStoreQty, setSellQty, act } = ctx
+  return <div className="market-page">
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>Inventory</h2><span>Supplies + product</span></div>
+      <div className="inventory-grid">
+        <InventoryCard name="Condoms" count={dashboard.condoms} note="Hoe upkeep" />
+        <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
+        <InventoryCard name="Weapons" count={dashboard.weapons} note="Permanent security" />
+        <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} street price`} />
+        <InventoryCard name="Coke" count={dashboard.coke} note={`${money.format(dashboard.cokeSellPrice)} street price`} />
+      </div>
+    </section>
+
+    <section className="panel market-store">
+      <div className="panel-title"><h2>Street Store</h2><span>Cash on hand only</span></div>
+      <div className="store-list">
+        {dashboard.store.map(item => {
+          const qty = storeQty[item.key] ?? 1
+          return <div className="store-row" key={item.key}>
+            <div className="store-copy">
+              <div><strong>{item.name}</strong><span>{item.category}</span></div>
+              <p>{item.description}</p>
+            </div>
+            <div className="store-purchase">
+              <div className="store-price">
+                <span>Unit</span>
+                <strong>{money.format(item.price)}</strong>
+              </div>
+              <label>Qty<input aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
+              <div className="store-total">
+                <span>Total</span>
+                <strong>{money.format(qty * item.price)}</strong>
+              </div>
+              <button className="primary compact" disabled={busy || qty < 1 || dashboard.cash < qty * item.price} onClick={() => void act(() => api.buyStoreItem(item.key, qty))}>Buy</button>
+            </div>
+          </div>
+        })}
+      </div>
+    </section>
+
+    <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" />
+
+    <section className="panel market-production">
+      <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
+      <div className="production-command">
+        <p>Turn cash-on-hand into inventory, then sell product at fixed 0.2.1 street prices.</p>
+        <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
+      </div>
+      <div className="product-grid">
+        <ProductTradeCard
+          name="Weed"
+          owned={dashboard.weed}
+          price={dashboard.weedSellPrice}
+          quantity={sellQty.weed}
+          disabled={busy}
+          canProduce={productionTurns >= 1 && productionTurns <= dashboard.turns && productionTurns <= dashboard.maxActionTurns}
+          onProduce={() => void act(() => api.produce('weed', productionTurns))}
+          onQuantity={q => setSellQty(v => ({ ...v, weed: q }))}
+          onSell={() => void act(() => api.sellProduct('weed', sellQty.weed))}
+        />
+        <ProductTradeCard
+          name="Coke"
+          owned={dashboard.coke}
+          price={dashboard.cokeSellPrice}
+          quantity={sellQty.coke}
+          disabled={busy}
+          canProduce={productionTurns >= 1 && productionTurns <= dashboard.turns && productionTurns <= dashboard.maxActionTurns}
+          onProduce={() => void act(() => api.produce('coke', productionTurns))}
+          onQuantity={q => setSellQty(v => ({ ...v, coke: q }))}
+          onSell={() => void act(() => api.sellProduct('coke', sellQty.coke))}
+        />
+      </div>
+    </section>
+  </div>
+}
+
+function ReconPage(ctx: PageContext) {
+  return <div className="page-grid two-column">
+    <TargetReconPanel
+      targets={ctx.targets}
+      selectedTarget={ctx.selectedTarget}
+      query={ctx.targetQuery}
+      busy={ctx.busy}
+      currentPlayerId={ctx.dashboard.playerId}
+      combatMissions={ctx.combatMissions}
+      dashboard={ctx.dashboard}
+      attackCrew={ctx.attackCrew}
+      setAttackCrew={ctx.setAttackCrew}
+      onQuery={ctx.setTargetQuery}
+      onSearch={ctx.searchTargets}
+      onInspect={ctx.inspectTarget}
+      onAttack={ctx.attackTarget}
+    />
+    <CombatMissionsPanel ctx={ctx} />
+    <CombatHistoryPanel entries={ctx.combatLogs} currentPlayerId={ctx.dashboard.playerId} />
+    <section className="panel">
+      <div className="panel-title"><h2>Top Players</h2><span>Net worth</span></div>
+      <Leaderboard leaders={ctx.leaders} currentPlayer={ctx.dashboard.name} />
+    </section>
+  </div>
+}
+
+function CombatMissionsPanel({ ctx }: { ctx: PageContext }) {
+  const active = ctx.combatMissions.filter(mission => mission.status !== 'Complete')
+  const completed = ctx.combatMissions.filter(mission => mission.status === 'Complete').slice(0, 8)
+  const crew = ctx.dashboard.combatCrew
+  return <>
+    <section className="panel combat-missions-panel">
+      <div className="panel-title"><h2>Active Missions</h2><span>{active.length} active</span></div>
+      <div className="war-readiness">
+        <AdminMetric label="Available pimps" value={number.format(crew.availablePimps)} />
+        <AdminMetric label="Available thugs" value={number.format(crew.availableThugs)} />
+        <AdminMetric label="Available weapons" value={number.format(crew.availableWeapons)} />
+        <AdminMetric label="Active missions" value={`${crew.activeAttackMissions}/${crew.maxActiveAttackMissions}`} />
+      </div>
+      <div className="mission-list">
+        {active.length === 0 && <p className="coming">No active missions.</p>}
+        {active.map(mission => <MissionCard mission={mission} currentPlayerId={ctx.dashboard.playerId} busy={ctx.busy} onCancel={ctx.cancelMission} key={mission.id} />)}
+      </div>
+    </section>
+
+    <section className="panel">
+      <div className="panel-title"><h2>Recent Results</h2><span>Completed</span></div>
+      <div className="mission-list compact">
+        {completed.length === 0 && <p className="coming">No completed missions yet.</p>}
+        {completed.map(mission => <MissionCard mission={mission} currentPlayerId={ctx.dashboard.playerId} compact key={mission.id} />)}
+      </div>
+    </section>
+  </>
+}
+
+function MissionCard({ mission, currentPlayerId, compact = false, busy = false, onCancel }: { mission: CombatMission, currentPlayerId: string, compact?: boolean, busy?: boolean, onCancel?: (missionId: number) => void }) {
+  const attacking = mission.attackerId === currentPlayerId
+  const nextAt = nextMissionTime(mission)
+  const title = attacking ? `${mission.attackerName} -> ${mission.defenderName}` : `${mission.attackerName} attacking you`
+  const canCancel = attacking && !compact && mission.canCancel && onCancel
+  return <div className={`mission-card ${mission.status.toLowerCase()}`}>
+    <div className="mission-head">
+      <div><strong>{title}</strong><span>{mission.status} / {mission.outcome}</span></div>
+      <b>{mission.status === 'Complete' ? 'Done' : timeUntil(nextAt)}</b>
+    </div>
+    {!compact && <div className="mission-stats">
+      <AdminMetric label="Sent" value={`${mission.assignedPimps} P / ${mission.assignedThugs} T / ${mission.assignedWeapons} W`} />
+      <AdminMetric label="Remaining" value={`${mission.remainingAttackers} T / ${mission.remainingWeapons} W`} />
+      <AdminMetric label="Round" value={`${mission.currentRound}/${mission.maxRounds}`} />
+      <AdminMetric label="Morale" value={`${mission.attackerMorale.toFixed(0)} / ${mission.defenderMorale.toFixed(0)}`} />
+    </div>}
+    <p>{mission.summary}</p>
+    {canCancel && <div className="mission-actions">
+      <span>Call the crew back now for {money.format(mission.cancelCashCost)} cash on hand.</span>
+      <button
+        className="secondary compact"
+        disabled={busy}
+        onClick={() => {
+          if (window.confirm(`Cancel this attack for ${money.format(mission.cancelCashCost)}?`))
+            onCancel(mission.id)
+        }}
+      >Cancel Mission</button>
+    </div>}
+    <div className="mission-events">
+      {mission.events.length === 0 && <small>No updates yet.</small>}
+      {mission.events.map(event => <div className="mission-event" key={event.id}>
+        <strong>{event.kind}{event.round > 0 ? ` ${event.round}` : ''}</strong>
+        <span>{new Date(event.createdAtUtc).toLocaleTimeString()}</span>
+        <p>{event.summary}</p>
+      </div>)}
+    </div>
+  </div>
+}
+
+function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
+  return <AdminPanel
+    overview={ctx.overview}
+    busy={ctx.busy}
+    onCheat={ctx.runAdminCheat}
+    onSeedBots={ctx.seedBots}
+    onRunBots={ctx.runBots}
+    onSetBotAutomation={ctx.setBotAutomation}
+  />
+}
+
+function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
+  return <section className="status-strip">
+    <Stat label="Cash" value={money.format(dashboard.cash)} />
+    <Stat label="Bank" value={money.format(dashboard.bankCash)} />
+    <Stat label="Net Worth" value={money.format(dashboard.netWorth)} />
+    <Stat label="Turns" value={`${dashboard.turns} / ${dashboard.maxTurns}`} sub={nextTurn === 'MAX' ? 'Turn bank full' : `+${dashboard.turnsPerTick} in ${nextTurn}`} />
+    <Stat label="Rank" value={`#${dashboard.rank}`} />
+    <Stat label="City" value={dashboard.city} />
+  </section>
+}
+
+function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty, act, onMarket }: {
+  dashboard: Dashboard
+  busy: boolean
+  streetTurns: number
+  storeQty: Record<string, number>
+  setStoreQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
+  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+  onMarket: () => void
+}) {
+  const plannedTurns = Math.max(1, Math.min(streetTurns, dashboard.maxActionTurns))
+  const turnLabel = `${plannedTurns} turn${plannedTurns === 1 ? '' : 's'}`
+  const report = dashboard.crewReport
+  const forPlannedTurns = (maxActionNeed: number) => Math.ceil(maxActionNeed * plannedTurns / dashboard.maxActionTurns)
+  const catalog = new Map(dashboard.store.map(item => [item.key, item] as const))
+  const supplies = [
+    { key: 'condoms', owned: dashboard.condoms, needed: forPlannedTurns(report.condomsNeededForMaxStreetAction), basis: `to work ${turnLabel}` },
+    { key: 'beer', owned: dashboard.beer, needed: forPlannedTurns(report.beerNeededForMaxStreetAction), basis: `to work ${turnLabel}` },
+    // Weapons are permanent coverage, so their requirement is the crew size rather than the turns.
+    { key: 'weapons', owned: dashboard.weapons, needed: dashboard.thugs, basis: 'to arm every thug' },
+  ].filter(supply => catalog.has(supply.key))
+  if (supplies.length === 0) return null
+
+  return <div className="supply-panel">
+    <div className="supply-head">
+      <div><strong>Supplies</strong><span>Checked against {turnLabel}</span></div>
+      <button className="primary" type="button" onClick={onMarket}>Open Market</button>
+    </div>
+    <div className="supply-list">
+      {supplies.map(supply => {
+        const item = catalog.get(supply.key)!
+        const short = Math.max(0, supply.needed - supply.owned)
+        // Falls back to the shortfall, so the quantity tracks what this action actually needs.
+        const qty = storeQty[supply.key] ?? Math.max(1, short)
+        const total = qty * item.price
+        return <div className={short > 0 ? 'supply-row short' : 'supply-row'} key={supply.key}>
+          <div className="supply-copy">
+            <strong>{item.name}</strong>
+            <span>{number.format(supply.owned)} on hand / {number.format(supply.needed)} {supply.basis}</span>
+          </div>
+          <em>{short > 0 ? `${number.format(short)} short` : 'Covered'}</em>
+          <label>Qty<input aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={event => setStoreQty(value => ({ ...value, [supply.key]: Number(event.target.value) }))} /></label>
+          <button
+            className="primary"
+            disabled={busy || qty < 1 || dashboard.cash < total}
+            onClick={() => void act(() => api.buyStoreItem(supply.key, qty))}
+          >
+            Buy {money.format(total)}
+          </button>
+        </div>
+      })}
+    </div>
+    <div className="supply-carry">
+      <span>Street work also turns up product.</span>
+      <small>Carrying {number.format(dashboard.weed)} weed / {number.format(dashboard.coke)} coke</small>
+    </div>
+  </div>
+}
+
+function NextMovePanel({ dashboard, weaponCoverage, managementCapacity, onPage }: {
+  dashboard: Dashboard
+  weaponCoverage: number
+  managementCapacity: number
+  onPage: (page: AppPage) => void
+}) {
+  const moves: { label: string, detail: string, page: AppPage, urgent?: boolean }[] = [
+    {
+      label: dashboard.turns > 0 ? 'Spend turns' : 'Wait for turns',
+      detail: dashboard.turns > 0 ? `${dashboard.turns} turn${dashboard.turns === 1 ? '' : 's'} ready for street work or production.` : 'Your turn bank is empty.',
+      page: dashboard.turns > 0 ? 'street' : 'overview',
+      urgent: dashboard.turns >= dashboard.maxActionTurns,
+    },
+    {
+      label: 'Crew pressure',
+      detail: dashboard.hoes > managementCapacity ? `${dashboard.hoes - managementCapacity} unmanaged hoes need more pimps.` : `Management is stable at ${dashboard.hoes}/${managementCapacity} hoes.`,
+      page: 'crew',
+      urgent: dashboard.hoes > managementCapacity,
+    },
+    {
+      label: 'Supply reserve',
+      detail: `${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction} condoms, ${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction} beer for a max street action.`,
+      page: 'market',
+      urgent: dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction || dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction,
+    },
+    {
+      label: 'Combat posture',
+      detail: `${weaponCoverage.toFixed(0)}% thug weapon coverage for combat.`,
+      page: 'recon',
+      urgent: weaponCoverage < 75,
+    },
+  ]
+
+  return <section className="panel">
+    <div className="panel-title"><h2>Next Moves</h2><span>Flow</span></div>
+    <div className="flow-list">
+      {moves.map(move => <button className={move.urgent ? 'flow-row urgent' : 'flow-row'} type="button" key={move.label} onClick={() => onPage(move.page)}>
+        <strong>{move.label}</strong>
+        <span>{move.detail}</span>
+      </button>)}
+    </div>
+  </section>
 }
 
 function moraleTone(value: number) {
   if (value < 30) return 'danger'
   if (value < 60) return 'warn'
   return 'good'
+}
+
+function HideoutMoralePanel({ dashboard, busy, act }: {
+  dashboard: Dashboard
+  busy: boolean
+  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+}) {
+  const report = dashboard.crewReport
+  const moraleFull = dashboard.hoeHappiness >= 100 && dashboard.thugHappiness >= 100
+  const canRest = !busy
+    && !moraleFull
+    && dashboard.turns >= report.hqRestTurnCost
+    && dashboard.cash >= report.hqRestCashCost
+  const canParty = !busy
+    && !moraleFull
+    && dashboard.turns >= report.hqPartyTurnCost
+    && dashboard.cash >= report.hqPartyCashCost
+    && dashboard.beer >= report.hqPartyBeerCost
+    && dashboard.weed >= report.hqPartyWeedCost
+
+  return <section className="panel wide-panel hideout-panel">
+    <div className="panel-title"><h2>Trap House</h2><span>Hideout morale</span></div>
+    <div className="hideout-layout">
+      <div className="hideout-copy">
+        <strong>Current hideout</strong>
+        <p>Your crew comes back here after street work and fights. Low morale heals slowly over time, or you can spend turns and supplies to stabilize them faster.</p>
+      </div>
+      <div className="hideout-actions">
+        <button className="secondary" disabled={!canRest} onClick={() => void act(() => api.recoverMorale('rest'))}>
+          Rest Crew
+          <span>{report.hqRestTurnCost} turns / {money.format(report.hqRestCashCost)} / +{report.hqRestMoraleGain.toFixed(0)}%</span>
+        </button>
+        <button className="primary" disabled={!canParty} onClick={() => void act(() => api.recoverMorale('party'))}>
+          Throw Party
+          <span>{report.hqPartyTurnCost} turns / {money.format(report.hqPartyCashCost)} / {report.hqPartyBeerCost} beer / {report.hqPartyWeedCost} weed</span>
+        </button>
+      </div>
+    </div>
+  </section>
+}
+
+function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerId, combatMissions, dashboard, attackCrew, setAttackCrew, onQuery, onSearch, onInspect, onAttack }: {
+  targets: PlayerTarget[]
+  selectedTarget: PlayerProfile | null
+  query: string
+  busy: boolean
+  currentPlayerId: string
+  combatMissions: CombatMission[]
+  dashboard: Dashboard
+  attackCrew: { pimps: number, thugs: number, weapons: number }
+  setAttackCrew: React.Dispatch<React.SetStateAction<{ pimps: number, thugs: number, weapons: number }>>
+  onQuery: (query: string) => void
+  onSearch: (event: FormEvent<HTMLFormElement>) => void
+  onInspect: (playerId: string) => void
+  onAttack: (playerId: string) => void
+}) {
+  const profile = selectedTarget
+  const activeOutgoingMissions = combatMissions.filter(mission => mission.attackerId === currentPlayerId && mission.status !== 'Complete')
+  const activeAgainstProfile = profile
+    ? activeOutgoingMissions.find(mission => mission.defenderId === profile.playerId)
+    : undefined
+  const crew = dashboard.combatCrew
+  const attackReady = attackCrew.pimps >= 1
+    && attackCrew.thugs >= 1
+    && attackCrew.weapons >= 0
+    && attackCrew.weapons <= attackCrew.thugs
+    && attackCrew.pimps <= crew.availablePimps
+    && attackCrew.thugs <= crew.availableThugs
+    && attackCrew.weapons <= crew.availableWeapons
+    && crew.activeAttackMissions < crew.maxActiveAttackMissions
+  return <div className="panel target-panel">
+    <div className="panel-title"><h2>Combat Targets</h2><span>Scout + launch</span></div>
+    <form className="target-search" onSubmit={onSearch}>
+      <label>Search<input value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
+      <button className="secondary compact" disabled={busy}>Search</button>
+    </form>
+    <div className="target-layout">
+      <div className="target-list">
+        {targets.length === 0 && <p className="coming">No targets found.</p>}
+        {targets.map(target => <button
+          className={profile?.playerId === target.playerId ? 'target-row active' : 'target-row'}
+          key={target.playerId}
+          type="button"
+          disabled={busy}
+          onClick={() => onInspect(target.playerId)}
+        >
+          <span>#{target.rank}</span>
+          <strong>{target.name}</strong>
+          <small>{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
+          <em>{target.combatStatus.eligibility} / {target.combatReadiness.riskBand}</em>
+          <b>{money.format(target.netWorth)}</b>
+        </button>)}
+      </div>
+      {profile && <div className="target-profile">
+        <div className="target-profile-head">
+          <div><strong>{profile.name}</strong><span>{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span></div>
+          <b>#{profile.rank}</b>
+        </div>
+        <div className="attack-assign">
+          <StatusRow label="Available" value={`${crew.availablePimps} P / ${crew.availableThugs} T / ${crew.availableWeapons} W`} warn={crew.availablePimps < 1 || crew.availableThugs < 1} />
+          <StatusRow label="Committed" value={`${crew.committedPimps} P / ${crew.committedThugs} T / ${crew.committedWeapons} W`} warn={crew.committedThugs > 0} />
+          <div className="attack-inputs">
+            <label>Pimps<input type="number" min={1} max={Math.max(1, crew.availablePimps)} value={attackCrew.pimps} onChange={e => setAttackCrew(value => ({ ...value, pimps: Number(e.target.value) }))} /></label>
+            <label>Thugs<input type="number" min={1} max={Math.max(1, crew.availableThugs)} value={attackCrew.thugs} onChange={e => setAttackCrew(value => ({ ...value, thugs: Number(e.target.value), weapons: Math.min(value.weapons, Number(e.target.value)) }))} /></label>
+            <label>Weapons<input type="number" min={0} max={Math.max(0, Math.min(crew.availableWeapons, attackCrew.thugs))} value={attackCrew.weapons} onChange={e => setAttackCrew(value => ({ ...value, weapons: Number(e.target.value) }))} /></label>
+          </div>
+        </div>
+        <div className="target-actions">
+          <button
+            className="primary"
+            type="button"
+            disabled={busy || !!activeAgainstProfile || !attackReady || !profile.combatStatus.canAttackNow}
+            onClick={() => onAttack(profile.playerId)}
+          >
+            Attack Target
+          </button>
+          <span>{attackStatusText(
+            profile.combatStatus,
+            activeAgainstProfile,
+            activeOutgoingMissions[0],
+            attackReady)}</span>
+        </div>
+        <div className="target-metrics">
+          <AdminMetric label="Net worth" value={money.format(profile.netWorth)} />
+          <AdminMetric label="Cash" value={money.format(profile.cash)} />
+          <AdminMetric label="Bank" value={money.format(profile.bankCash)} />
+          <AdminMetric label="Attack" value={number.format(profile.combatReadiness.attackPower)} />
+          <AdminMetric label="Defense" value={number.format(profile.combatReadiness.defensePower)} />
+          <AdminMetric label="Risk" value={profile.combatReadiness.riskBand} />
+          <AdminMetric label="Combat" value={profile.combatStatus.eligibility} />
+        </div>
+        <div className="target-readiness">
+          <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
+          <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
+          <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
+          <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
+          <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defenses`} />
+          <StatusRow label="Hoe morale" value={`${profile.hoeHappiness.toFixed(0)}%`} warn={profile.hoeHappiness < 50} />
+          <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
+          <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
+        </div>
+        <div className="target-activity">
+          <strong>Public Activity</strong>
+          {profile.publicActivity.length === 0 && <p className="coming">No public activity yet.</p>}
+          <ActivityList entries={profile.publicActivity} />
+        </div>
+      </div>}
+    </div>
+  </div>
+}
+
+function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className }: {
+  dashboard: Dashboard
+  busy: boolean
+  bankAmount: number
+  setBankAmount: (amount: number) => void
+  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+  className?: string
+}) {
+  return <section className={`panel ${className ?? ''}`}>
+    <div className="panel-title"><h2>Bank</h2><span>Cash handling</span></div>
+    <p>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+    <div className="action-row wrap">
+      <label>Amount<input type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
+      <button className="secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
+      <button className="secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+    </div>
+  </section>
+}
+
+function CombatHistoryPanel({ entries, currentPlayerId }: { entries: CombatLog[], currentPlayerId: string }) {
+  return <section className="panel combat-history-panel">
+    <div className="panel-title"><h2>Combat History</h2><span>Last {entries.length}</span></div>
+    <div className="combat-history">
+      {entries.length === 0 && <p className="coming">No fights yet.</p>}
+      {entries.map(entry => {
+        const attacking = entry.attackerId === currentPlayerId
+        const pending = entry.outcome === 'Pending'
+        return <div className={`${attacking ? 'combat-entry attack' : 'combat-entry defense'}${pending ? ' pending' : ''}`} key={entry.id}>
+          <div><strong>{attacking ? 'Attack' : 'Defense'} / {entry.outcome}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
+          <p>{entry.summary}</p>
+          <small>{entry.attackerName} vs {entry.defenderName} / {pending && entry.resolvesAtUtc ? `ETA ${timeUntil(entry.resolvesAtUtc)}` : `${entry.attackerPower}-${entry.defenderPower} power`}</small>
+        </div>
+      })}
+    </div>
+  </section>
+}
+
+function ProductTradeCard({ name, owned, price, quantity, canProduce, disabled, onProduce, onQuantity, onSell }: {
+  name: 'Weed' | 'Coke'
+  owned: number
+  price: number
+  quantity: number
+  canProduce: boolean
+  disabled: boolean
+  onProduce: () => void
+  onQuantity: (quantity: number) => void
+  onSell: () => void
+}) {
+  return <div className="product-card">
+    <div className="product-card-head">
+      <div><strong>{name}</strong><span>{number.format(owned)} owned</span></div>
+      <b>{money.format(price)}</b>
+    </div>
+    <button className="primary compact" disabled={disabled || !canProduce} onClick={onProduce}>Produce {name}</button>
+    <div className="product-sell">
+      <label>Sell Qty<input type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} /></label>
+      <button className="secondary compact" disabled={disabled || quantity < 1 || quantity > owned} onClick={onSell}>Sell</button>
+    </div>
+  </div>
 }
 
 function AdminPanel({ overview, busy, onCheat, onSeedBots, onRunBots, onSetBotAutomation }: {
@@ -371,7 +1036,7 @@ function AdminPanel({ overview, busy, onCheat, onSeedBots, onRunBots, onSetBotAu
   const game = overview.economy
   return <div className="panel admin-panel">
     <div className="panel-title admin-title">
-      <div><h2>Admin Control Center</h2><span>0.1.10 economy</span></div>
+      <div><h2>Admin Control Center</h2><span>0.2.1 war room</span></div>
       <button
         className="secondary compact admin-toggle"
         type="button"
@@ -404,6 +1069,7 @@ function AdminPanel({ overview, busy, onCheat, onSeedBots, onRunBots, onSetBotAu
         <StatusRow label="Recruit odds" value={`P ${percent(game.streetAction.pimpRecruitChance)} / H ${percent(game.streetAction.hoeRecruitChance)} / T ${percent(game.streetAction.thugRecruitChance)}`} />
         <StatusRow label="Production" value={`Weed ${money.format(game.production.weed.costPerTurn)} ${game.production.weed.unitsMin}-${game.production.weed.unitsMax}, coke ${money.format(game.production.coke.costPerTurn)} ${game.production.coke.unitsMin}-${game.production.coke.unitsMax}`} />
         <StatusRow label="Morale rules" value={`${game.morale.hoesManagedPerPimp} hoes/pimp, desertion below ${game.morale.desertionThreshold}%`} />
+        <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
       </div>
       <div className="admin-cheats">
         <div className="admin-subtitle"><strong>Cheats</strong><span>Admin-only, audited as ADMIN actions</span></div>
@@ -456,12 +1122,40 @@ function AdminPanel({ overview, busy, onCheat, onSeedBots, onRunBots, onSetBotAu
   </div>
 }
 
+function MiniInventory({ dashboard }: { dashboard: Dashboard }) {
+  return <div className="mini-inventory">
+    <StatusRow label="Condoms" value={number.format(dashboard.condoms)} />
+    <StatusRow label="Beer" value={number.format(dashboard.beer)} />
+    <StatusRow label="Weapons" value={number.format(dashboard.weapons)} warn={dashboard.weapons < dashboard.thugs} />
+    <StatusRow label="Weed" value={number.format(dashboard.weed)} />
+    <StatusRow label="Coke" value={number.format(dashboard.coke)} />
+  </div>
+}
+
+function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], currentPlayer: string }) {
+  return <div className="leaderboard">
+    {leaders.map(l => <div className={l.playerName === currentPlayer ? 'leader me' : 'leader'} key={l.rank}>
+      <span>#{l.rank}</span><strong>{l.playerName}</strong><span>{money.format(l.netWorth)}</span>
+    </div>)}
+  </div>
+}
+
+function ActivityList({ entries }: { entries: { id: number, action: string, createdAtUtc: string, summary: string }[] }) {
+  return <div className="activity-list">
+    {entries.length === 0 && <p className="coming">No activity yet.</p>}
+    {entries.map(a => <div className="activity" key={a.id}>
+      <div><strong>{a.action}</strong><span>{new Date(a.createdAtUtc).toLocaleString()}</span></div>
+      <p>{a.summary}</p>
+    </div>)}
+  </div>
+}
+
 function AdminMetric({ label, value }: { label: string, value: string }) {
   return <div className="admin-metric"><span>{label}</span><strong>{value}</strong></div>
 }
 
 function WorldNewsPanel({ entries, currentPlayer }: { entries: WorldNewsEntry[], currentPlayer: string }) {
-  return <div className="panel">
+  return <div className="panel world-panel">
     <div className="panel-title"><h2>World News</h2><span>Last {entries.length}</span></div>
     <div className="world-news">
       {entries.length === 0 && <p className="coming">No citywide activity yet.</p>}
@@ -476,6 +1170,37 @@ function WorldNewsPanel({ entries, currentPlayer }: { entries: WorldNewsEntry[],
 
 function percent(value: number) {
   return `${(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`
+}
+
+function combatProtectionText(status: { isProtected: boolean, protectionUntilUtc?: string | null }) {
+  if (!status.isProtected || !status.protectionUntilUtc) return 'None'
+  return `Until ${new Date(status.protectionUntilUtc).toLocaleString()}`
+}
+
+function attackStatusText(status: { canAttackNow: boolean, eligibility: string, attackTurnCost: number, attackCooldownUntilUtc?: string | null }, missionAgainstTarget?: CombatMission, activeMission?: CombatMission, attackReady = true) {
+  if (missionAgainstTarget) return `Mission active, next update in ${timeUntil(nextMissionTime(missionAgainstTarget))}`
+  if (!attackReady) return 'Assign available crew'
+  if (activeMission) return `Crew already out, next update in ${timeUntil(nextMissionTime(activeMission))}`
+  if (status.canAttackNow) return `${status.attackTurnCost} turns to attack`
+  if (status.attackCooldownUntilUtc && status.eligibility === 'Cooldown') return `Cooldown until ${new Date(status.attackCooldownUntilUtc).toLocaleString()}`
+  return status.eligibility
+}
+
+function nextMissionTime(mission: CombatMission) {
+  return mission.status === 'Traveling'
+    ? mission.arrivesAtUtc
+    : mission.status === 'Fighting'
+      ? mission.nextRoundAtUtc ?? mission.arrivesAtUtc
+      : mission.status === 'Returning'
+        ? mission.returnsAtUtc ?? mission.arrivesAtUtc
+        : mission.completedAtUtc ?? mission.returnsAtUtc ?? mission.arrivesAtUtc
+}
+
+function timeUntil(value: string) {
+  const seconds = Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return minutes <= 0 ? `${seconds}s` : `${minutes}m ${String(remainder).padStart(2, '0')}s`
 }
 
 function formatBreakdownKey(key: string) {
@@ -500,35 +1225,12 @@ function DismissibleMessage({ className, children, onClose }: { className: strin
   </div>
 }
 
-function Stat({ icon, label, value, sub }: { icon: ReactNode, label: string, value: string, sub?: string }) {
+function Stat({ label, value, sub }: { label: string, value: string, sub?: string }) {
   return <div className="stat">
-    <div className="stat-icon" aria-hidden="true">{icon}</div>
-    <div className="stat-copy"><span>{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}</div>
+    <span>{label}</span>
+    <strong>{value}</strong>
+    {sub && <small>{sub}</small>}
   </div>
-}
-
-function CashIcon() {
-  return <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="10" rx="1.5" /><path d="M7 10h1.5M15.5 14H17M12 10.2a2 2 0 1 1 0 3.6 2 2 0 0 1 0-3.6Z" /><path d="M6 5.5 18 3l.8 3.8M6 18.5 18 21l.8-3.8" /></svg>
-}
-
-function BankIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M4 10h16L12 5 4 10Z" /><path d="M6 10v7M10 10v7M14 10v7M18 10v7M4 19h16" /></svg>
-}
-
-function WorthIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M5 19V12M10 19V8M15 19V5M20 19V10" /><path d="M3 19h18" /></svg>
-}
-
-function TurnsIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M18.5 8.5a7 7 0 1 0 1.2 6.1" /><path d="M19 4v5h-5" /><path d="M13.8 12.8 17 16M10.2 11.2 7 8" /></svg>
-}
-
-function RankIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M8 5h8v4a4 4 0 0 1-8 0V5Z" /><path d="M8 7H5a3 3 0 0 0 3 3M16 7h3a3 3 0 0 1-3 3M12 13v4M8.5 19h7M10 17h4" /></svg>
-}
-
-function CityIcon() {
-  return <svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-10a6 6 0 0 0-12 0c0 4.9 6 10 6 10Z" /><path d="M12 8.5a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z" /></svg>
 }
 
 function CrewCard({ name, count, desc, tone }: { name: string, count: number, desc: string, tone?: string }) {
@@ -572,7 +1274,7 @@ function SellRow({ name, owned, price, quantity, onQuantity, onSell, disabled }:
   disabled: boolean
 }) {
   return <div className="sell-row">
-    <div><strong>{name}</strong><span>{number.format(owned)} owned · {money.format(price)} each</span></div>
+    <div><strong>{name}</strong><span>{number.format(owned)} owned | {money.format(price)} each</span></div>
     <input type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} />
     <button className="secondary compact" disabled={disabled || quantity < 1 || quantity > owned} onClick={onSell}>Sell</button>
   </div>

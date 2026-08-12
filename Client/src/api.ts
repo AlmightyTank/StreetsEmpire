@@ -31,6 +31,15 @@ export type CrewReport = {
   hireThugCost: number
   minHoeMoraleToHire: number
   minThugMoraleToHire: number
+  hqRestTurnCost: number
+  hqRestCashCost: number
+  hqRestMoraleGain: number
+  hqPartyTurnCost: number
+  hqPartyCashCost: number
+  hqPartyBeerCost: number
+  hqPartyWeedCost: number
+  hqPartyHoeMoraleGain: number
+  hqPartyThugMoraleGain: number
 }
 
 export type Dashboard = {
@@ -62,6 +71,8 @@ export type Dashboard = {
   weedSellPrice: number
   cokeSellPrice: number
   crewReport: CrewReport
+  combatCrew: CombatCrew
+  combatStatus: CombatStatus
   store: StoreItem[]
   recentActivity: Activity[]
 }
@@ -78,6 +89,67 @@ export type LeaderboardEntry = {
   thugs: number
 }
 
+export type CombatReadiness = {
+  attackPower: number
+  defensePower: number
+  armedThugs: number
+  uncoveredThugs: number
+  weaponCoveragePercent: number
+  averageMorale: number
+  riskBand: string
+}
+
+export type CombatStatus = {
+  isProtected: boolean
+  protectionUntilUtc?: string | null
+  lastAttackAtUtc?: string | null
+  lastAttackedAtUtc?: string | null
+  attackCooldownUntilUtc?: string | null
+  canAttackNow: boolean
+  attackTurnCost: number
+  recentAttacksMade: number
+  recentDefenses: number
+  eligibility: string
+}
+
+export type CombatCrew = {
+  committedPimps: number
+  committedThugs: number
+  committedWeapons: number
+  availablePimps: number
+  availableThugs: number
+  availableWeapons: number
+  activeAttackMissions: number
+  maxActiveAttackMissions: number
+}
+
+export type PlayerTarget = {
+  playerId: string
+  name: string
+  city: string
+  isBot: boolean
+  aiPersonality?: string | null
+  rank: number
+  netWorth: number
+  pimps: number
+  hoes: number
+  thugs: number
+  weapons: number
+  averageMorale: number
+  combatReadiness: CombatReadiness
+  combatStatus: CombatStatus
+}
+
+export type PlayerProfile = PlayerTarget & {
+  cash: number
+  bankCash: number
+  weed: number
+  coke: number
+  hoeHappiness: number
+  thugHappiness: number
+  publicActivity: Activity[]
+}
+
 export type WorldNewsEntry = {
   id: number
   playerName: string
@@ -86,6 +158,85 @@ export type WorldNewsEntry = {
   summary: string
   turnsSpent: number
   createdAtUtc: string
+}
+
+export type CombatLog = {
+  id: number
+  attackerId: string
+  attackerName: string
+  defenderId: string
+  defenderName: string
+  outcome: string
+  summary: string
+  turnsSpent: number
+  attackerPower: number
+  defenderPower: number
+  cashStolen: number
+  weedStolen: number
+  cokeStolen: number
+  attackerPimpsLost: number
+  attackerHoesLost: number
+  attackerThugsLost: number
+  attackerWeaponsLost: number
+  defenderPimpsLost: number
+  defenderHoesLost: number
+  defenderThugsLost: number
+  defenderWeaponsLost: number
+  defenderProtectionUntilUtc?: string | null
+  resolvesAtUtc?: string | null
+  resolvedAtUtc?: string | null
+  createdAtUtc: string
+}
+
+export type CombatMissionEvent = {
+  id: number
+  round: number
+  kind: string
+  summary: string
+  attackRoll: number
+  defenseRoll: number
+  attackerMorale: number
+  defenderMorale: number
+  attackerThugsLost: number
+  defenderThugsLost: number
+  attackerWeaponsLost: number
+  defenderWeaponsLost: number
+  createdAtUtc: string
+}
+
+export type CombatMission = {
+  id: number
+  attackerId: string
+  attackerName: string
+  defenderId: string
+  defenderName: string
+  status: string
+  outcome: string
+  summary: string
+  turnsSpent: number
+  assignedPimps: number
+  assignedThugs: number
+  assignedWeapons: number
+  remainingAttackers: number
+  remainingWeapons: number
+  attackerMorale: number
+  defenderMorale: number
+  currentRound: number
+  maxRounds: number
+  attackerPower: number
+  defenderPower: number
+  cashStolen: number
+  weedStolen: number
+  cokeStolen: number
+  startedAtUtc: string
+  arrivesAtUtc: string
+  nextRoundAtUtc?: string | null
+  returnsAtUtc?: string | null
+  completedAtUtc?: string | null
+  defenderProtectionUntilUtc?: string | null
+  canCancel: boolean
+  cancelCashCost: number
+  events: CombatMissionEvent[]
 }
 
 export type ActionResult = {
@@ -123,6 +274,16 @@ export type GameOptions = {
     turnsPerBeer: number
     desertionThreshold: number
     maxDesertionChance: number
+    passiveRecoveryPerTick: number
+    hqRestTurnCost: number
+    hqRestCashPerCrew: number
+    hqRestMoraleGain: number
+    hqPartyTurnCost: number
+    hqPartyCashPerCrew: number
+    hqPartyBeerPerThug: number
+    hqPartyWeedPerHoes: number
+    hqPartyHoeMoraleGain: number
+    hqPartyThugMoraleGain: number
   }
   crew: {
     maxCrewTransactionQuantity: number
@@ -131,6 +292,27 @@ export type GameOptions = {
     hireThugCost: number
     minHoeMoraleToHire: number
     minThugMoraleToHire: number
+  }
+  combat: {
+    attackTurnCost: number
+    attackCooldownMinutes: number
+    attackTravelSecondsMin: number
+    attackTravelSecondsMax: number
+    returnTravelSecondsMin: number
+    returnTravelSecondsMax: number
+    fightRoundSeconds: number
+    maxFightRounds: number
+    maxActiveAttackMissions: number
+    moraleBreakThreshold: number
+    defenderProtectionMinutes: number
+    powerRandomnessPercent: number
+    minCashLootPercent: number
+    maxCashLootPercent: number
+    minProductLootPercent: number
+    maxProductLootPercent: number
+    winnerCrewLossPercent: number
+    loserCrewLossPercent: number
+    weaponLossPercent: number
   }
 }
 
@@ -191,6 +373,15 @@ export const api = {
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   leaderboard: () => request<LeaderboardEntry[]>('/api/game/leaderboard'),
+  targets: (query = '') => request<PlayerTarget[]>(`/api/game/targets${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+  playerProfile: (playerId: string) => request<PlayerProfile>(`/api/game/players/${encodeURIComponent(playerId)}/profile`),
+  combatLogs: () => request<CombatLog[]>('/api/game/combat/logs'),
+  combatMissions: () => request<CombatMission[]>('/api/game/combat/missions'),
+  attack: (defenderId: string, pimps: number, thugs: number, weapons: number) => request<ActionResult>('/api/game/combat/attack', {
+    method: 'POST',
+    body: JSON.stringify({ defenderId, pimps, thugs, weapons }),
+  }),
+  cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNewsEntry[]>('/api/world/news'),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
   adminCheat: (cheat: string, amount: number) => request<ActionResult>('/api/admin/cheats', {
@@ -224,6 +415,10 @@ export const api = {
   buyStoreItem: (itemKey: string, quantity: number) => request<ActionResult>('/api/game/store/buy', {
     method: 'POST',
     body: JSON.stringify({ itemKey, quantity }),
+  }),
+  recoverMorale: (strategy: 'rest' | 'party') => request<ActionResult>('/api/game/hideout/recover', {
+    method: 'POST',
+    body: JSON.stringify({ strategy }),
   }),
   deposit: (amount: number) => request<ActionResult>('/api/game/bank/deposit', {
     method: 'POST',

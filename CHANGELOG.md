@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.2.1
+
+### Added
+- Live combat mission schema with `CombatMissions` and `CombatMissionEvents`.
+- Assigned-crew attack launches for pimps, thugs, and weapons.
+- Combined Combat page with target scouting, active missions, round updates, morale, remaining attackers, and recent results.
+- Combat mission resolver for travel, fight rounds, return travel, and final history logs.
+- Combat crew availability in dashboard responses.
+
+### Changed
+- Attacks now use available/committed crew instead of one global pending attack.
+- Players can run multiple attack missions if they have enough free pimps and crew.
+- Defenders use home crew while their outgoing crews are away.
+- Health check, browser UI, package metadata, and README now report 0.2.1.
+
+## 0.2.0
+
+### Added
+- Player attack endpoint with turn cost, attacker cooldown, defender protection, delayed mission resolution, loot, and combat losses.
+- Pending combat timing columns and resolver for attacks that finish after their travel timer.
+- Server-side mission lock preventing street work and stacked attacks while an outgoing attack is pending.
+- Combat resolution service using crew, weapons, pimps, morale, and configurable randomness.
+- Recon attack button for inspected targets.
+- Combat History panel showing recent attacks and defenses.
+- Combat History pending-state display with ETA refresh.
+- Street page mission-lock notice while the crew is out attacking.
+- Backend combat rule tests for self-attacks, protected targets, loot, turn spending, and log creation.
+
+### Changed
+- Health check, browser UI, package metadata, and README now report 0.2.0.
+- Combat loot tuning now allows a configured 0% loot rate to steal nothing.
+
+## 0.1.12
+
+### Added
+- Combat schema migration with player protection timestamps and `CombatLogs`.
+- Read-only combat status contracts for dashboard, target recon, and player profiles.
+- Authenticated `/api/game/combat/logs` endpoint for future attack history.
+- Browser combat protection and eligibility hints in Overview and Target Recon.
+
+### Changed
+- Health check, browser UI, and package metadata now report 0.1.12.
+
+## 0.1.11
+
+### Added
+- Authenticated target-recon endpoint with search by player name or city.
+- Public player profile endpoint with rank, net worth, visible economy, recent public activity, and combat-readiness hints.
+- Browser Target Recon panel for searching and inspecting future combat targets.
+- Stable random AI brains that make rivals manage resources, spend cash, ignore morale, build crew, run product, or bank differently.
+- Browser app-shell redesign with page navigation for Overview, Street, Crew, Market, Recon, World, and Admin.
+
+### Changed
+- Leaderboard and target recon now share the same server-side rank calculation.
+- Target recon now shows AI personality labels for bot rivals.
+- Health check, browser UI, and package metadata now report 0.1.11.
+
 ## 0.1.10
 
 ### Added

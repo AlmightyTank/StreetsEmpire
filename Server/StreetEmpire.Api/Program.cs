@@ -19,6 +19,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentPlayerService>();
 builder.Services.AddScoped<TurnService>();
 builder.Services.AddScoped<EconomyService>();
+builder.Services.AddScoped<CombatService>();
+builder.Services.AddScoped<CombatMissionService>();
+builder.Services.AddScoped<CombatResolutionService>();
 builder.Services.AddScoped<BotSimulationService>();
 builder.Services.AddSingleton<BotAutomationState>();
 builder.Services.AddHostedService<BotAutomationService>();
@@ -57,7 +60,7 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.1.10" }));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.1" }));
 
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
@@ -157,18 +160,28 @@ app.MapGet("/api/game/dashboard", async (
     TurnService turns,
     EconomyService economy,
     IOptions<GameOptions> gameOptions,
+    CombatMissionService combatMissions,
+    CombatResolutionService combatResolver,
     CancellationToken ct) =>
 {
     var player = await current.GetAsync(ct);
     if (player is null) return Results.Unauthorized();
 
     var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
     if (turns.Refresh(player, now))
         await db.SaveChangesAsync(ct);
 
     var netWorth = economy.CalculateNetWorth(player);
-    var allPlayers = await db.Players.AsNoTracking().ToListAsync(ct);
-    var rank = allPlayers.Count(x => economy.CalculateNetWorth(x) > netWorth) + 1;
+    var combatSince = now.AddDays(-1);
+    var recentAttacksMade = await db.CombatLogs.AsNoTracking()
+        .CountAsync(x => x.AttackerId == player.Id && x.CreatedAtUtc >= combatSince, ct);
+    var recentDefenses = await db.CombatLogs.AsNoTracking()
+        .CountAsync(x => x.DefenderId == player.Id && x.CreatedAtUtc >= combatSince, ct);
+    var combatCrew = await combatMissions.CommitmentAsync(player, ct);
+    var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
+    var rank = await db.Players.AsNoTracking()
+        .CountAsync(economy.RanksAbove(netWorth, player.CreatedAtUtc), ct) + 1;
     var activity = await db.ActionLogs.AsNoTracking()
         .Where(x => x.PlayerId == player.Id)
         .OrderByDescending(x => x.CreatedAtUtc)
@@ -207,6 +220,8 @@ app.MapGet("/api/game/dashboard", async (
         opts.WeedSellPrice,
         opts.CokeSellPrice,
         economy.GetCrewReport(player),
+        ToCombatCrewResponse(combatCrew),
+        ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
         economy.GetStore(),
         activity));
 }).RequireAuthorization();
@@ -217,12 +232,19 @@ app.MapPost("/api/game/street", async (
     GameDbContext db,
     TurnService turns,
     EconomyService economy,
+    CombatResolutionService combatResolver,
     CancellationToken ct) =>
 {
     var player = await current.GetAsync(ct);
     if (player is null) return Results.Unauthorized();
 
-    turns.Refresh(player, DateTime.UtcNow);
+    var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
+    var pendingAttack = await ActiveOutgoingMissionAsync(db, player.Id, ct);
+    if (pendingAttack is not null)
+        return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
+
+    turns.Refresh(player, now);
     var before = Snapshot(player);
     try
     {
@@ -244,12 +266,19 @@ app.MapPost("/api/game/scout", async (
     GameDbContext db,
     TurnService turns,
     EconomyService economy,
+    CombatResolutionService combatResolver,
     CancellationToken ct) =>
 {
     var player = await current.GetAsync(ct);
     if (player is null) return Results.Unauthorized();
 
-    turns.Refresh(player, DateTime.UtcNow);
+    var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
+    var pendingAttack = await ActiveOutgoingMissionAsync(db, player.Id, ct);
+    if (pendingAttack is not null)
+        return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
+
+    turns.Refresh(player, now);
     var before = Snapshot(player);
     try
     {
@@ -461,35 +490,277 @@ app.MapPost("/api/game/crew/fire", async (
     }
 }).RequireAuthorization();
 
+app.MapPost("/api/game/hideout/recover", async (
+    MoraleRecoveryRequest request,
+    CurrentPlayerService current,
+    GameDbContext db,
+    TurnService turns,
+    EconomyService economy,
+    CancellationToken ct) =>
+{
+    var player = await current.GetAsync(ct);
+    if (player is null) return Results.Unauthorized();
+
+    var now = DateTime.UtcNow;
+    turns.Refresh(player, now);
+    var before = Snapshot(player);
+    try
+    {
+        var result = economy.RecoverCrewMorale(player, request.Strategy);
+        AddLog(db, player, before, "HIDEOUT", result.Breakdown is not null && result.Breakdown.TryGetValue("turnsSpent", out var turnsSpent)
+            ? Convert.ToInt32(turnsSpent)
+            : 0,
+            result.Summary);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(result);
+    }
+    catch (GameRuleException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
 app.MapGet("/api/game/leaderboard", async (
     GameDbContext db,
     EconomyService economy,
     CancellationToken ct) =>
 {
-    var players = await db.Players.AsNoTracking().ToListAsync(ct);
-    var result = players
-        .Select(x => new { Player = x, NetWorth = economy.CalculateNetWorth(x) })
-        .OrderByDescending(x => x.NetWorth)
-        .ThenBy(x => x.Player.CreatedAtUtc)
+    // Ordered and capped by the database: rank is the row's position in the global order.
+    var top = await db.Players.AsNoTracking()
+        .OrderByDescending(economy.NetWorthExpression)
+        .ThenBy(x => x.CreatedAtUtc)
         .Take(50)
+        .ToListAsync(ct);
+    var result = top
         .Select((x, index) => new LeaderboardEntryResponse(
             index + 1,
-            x.Player.Name,
-            x.Player.City,
-            x.NetWorth,
-            x.Player.Cash,
-            x.Player.BankCash,
-            x.Player.Pimps,
-            x.Player.Hoes,
-            x.Player.Thugs))
+            x.Name,
+            x.City,
+            economy.CalculateNetWorth(x),
+            x.Cash,
+            x.BankCash,
+            x.Pimps,
+            x.Hoes,
+            x.Thugs))
         .ToList();
     return Results.Ok(result);
 }).RequireAuthorization();
 
-app.MapGet("/api/world/news", async (
+app.MapGet("/api/game/targets", async (
+    string? query,
+    CurrentPlayerService current,
     GameDbContext db,
+    EconomyService economy,
+    IOptions<GameOptions> gameOptions,
+    CombatMissionService combatMissions,
+    CombatResolutionService combatResolver,
     CancellationToken ct) =>
 {
+    var player = await current.GetAsync(ct);
+    if (player is null) return Results.Unauthorized();
+
+    var normalizedQuery = query?.Trim() ?? string.Empty;
+    var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
+    var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
+
+    var candidates = db.Players
+        .Include(x => x.Account)
+        .AsNoTracking()
+        .Where(x => x.Id != player.Id);
+    if (normalizedQuery.Length > 0)
+    {
+        // ILIKE keeps the search case-insensitive the way the old in-memory Contains was.
+        var pattern = ToLikePattern(normalizedQuery);
+        candidates = candidates.Where(x =>
+            EF.Functions.ILike(x.Name, pattern, "\\")
+            || EF.Functions.ILike(x.City, pattern, "\\"));
+    }
+
+    var page = await candidates
+        .OrderByDescending(economy.NetWorthExpression)
+        .ThenBy(x => x.CreatedAtUtc)
+        .Take(20)
+        .ToListAsync(ct);
+    var ranked = await RankPageAsync(page, db, economy, ct);
+    var targets = ranked
+        .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt))
+        .ToList();
+
+    return Results.Ok(targets);
+}).RequireAuthorization();
+
+app.MapGet("/api/game/players/{playerId:guid}/profile", async (
+    Guid playerId,
+    CurrentPlayerService current,
+    GameDbContext db,
+    EconomyService economy,
+    IOptions<GameOptions> gameOptions,
+    CombatMissionService combatMissions,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    var viewer = await current.GetAsync(ct);
+    if (viewer is null) return Results.Unauthorized();
+
+    var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
+    var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(viewer.Id, now, ct);
+    var subject = await db.Players
+        .Include(x => x.Account)
+        .AsNoTracking()
+        .SingleOrDefaultAsync(x => x.Id == playerId, ct);
+    if (subject is null) return Results.NotFound(new { error = "Player not found." });
+
+    var subjectNetWorth = economy.CalculateNetWorth(subject);
+    var subjectRank = await db.Players.AsNoTracking()
+        .CountAsync(economy.RanksAbove(subjectNetWorth, subject.CreatedAtUtc), ct) + 1;
+    var target = new RankedPlayer(subject, subjectNetWorth, subjectRank);
+
+    var activity = await db.ActionLogs.AsNoTracking()
+        .Where(x => x.PlayerId == playerId && x.Action != "ADMIN" && x.Action != "STORE")
+        .OrderByDescending(x => x.CreatedAtUtc)
+        .ThenByDescending(x => x.Id)
+        .Take(8)
+        .Select(x => new ActivityResponse(
+            x.Id,
+            x.Action,
+            x.Summary,
+            x.TurnsSpent,
+            x.CashDelta,
+            x.BankDelta,
+            x.CreatedAtUtc))
+        .ToListAsync(ct);
+    var combatSince = now.AddDays(-1);
+    var recentAttacksMade = await db.CombatLogs.AsNoTracking()
+        .CountAsync(x => x.AttackerId == playerId && x.CreatedAtUtc >= combatSince, ct);
+    var recentDefenses = await db.CombatLogs.AsNoTracking()
+        .CountAsync(x => x.DefenderId == playerId && x.CreatedAtUtc >= combatSince, ct);
+
+    return Results.Ok(ToProfileResponse(target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt));
+}).RequireAuthorization();
+
+app.MapGet("/api/game/combat/logs", async (
+    CurrentPlayerService current,
+    GameDbContext db,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    var player = await current.GetAsync(ct);
+    if (player is null) return Results.Unauthorized();
+
+    await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+    var combatLogs = await db.CombatLogs.AsNoTracking()
+        .Include(x => x.Attacker)
+        .Include(x => x.Defender)
+        .Where(x => x.AttackerId == player.Id || x.DefenderId == player.Id)
+        .OrderByDescending(x => x.CreatedAtUtc)
+        .ThenByDescending(x => x.Id)
+        .Take(100)
+        .ToListAsync(ct);
+
+    var logs = combatLogs
+        .DistinctBy(CombatLogDedupeKey)
+        .Take(30)
+        .Select(ToCombatLogResponse)
+        .ToList();
+    return Results.Ok(logs);
+}).RequireAuthorization();
+
+app.MapGet("/api/game/combat/missions", async (
+    CurrentPlayerService current,
+    CombatMissionService combatMissions,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    var player = await current.GetAsync(ct);
+    if (player is null) return Results.Unauthorized();
+
+    await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+    var missions = await combatMissions.VisibleMissions(player.Id).ToListAsync(ct);
+    return Results.Ok(missions.Select(ToCombatMissionResponse).ToList());
+}).RequireAuthorization();
+
+app.MapPost("/api/game/combat/attack", async (
+    CombatAttackRequest request,
+    CurrentPlayerService current,
+    GameDbContext db,
+    TurnService turns,
+    CombatMissionService combatMissions,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    var attacker = await current.GetAsync(ct);
+    if (attacker is null) return Results.Unauthorized();
+
+    var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
+
+    var defender = await db.Players
+        .Include(x => x.Account)
+        .SingleOrDefaultAsync(x => x.Id == request.DefenderId, ct);
+    if (defender is null) return Results.NotFound(new { error = "Target not found." });
+
+    turns.Refresh(attacker, now);
+    var before = Snapshot(attacker);
+    try
+    {
+        var mission = await combatMissions.LaunchAsync(attacker, defender, request, now, ct);
+        AddLog(db, attacker, before, "ATTACK", mission.TurnsSpent, mission.Summary);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new ActionResultResponse(mission.Summary, attacker.Turns, new Dictionary<string, object?>
+        {
+            ["missionId"] = mission.Id,
+            ["status"] = mission.Status,
+            ["assignedPimps"] = mission.AssignedPimps,
+            ["assignedThugs"] = mission.AssignedThugs,
+            ["assignedWeapons"] = mission.AssignedWeapons,
+            ["arrivesAtUtc"] = mission.ArrivesAtUtc
+        }));
+    }
+    catch (GameRuleException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
+app.MapPost("/api/game/combat/missions/{missionId:long}/cancel", async (
+    long missionId,
+    CurrentPlayerService current,
+    CombatMissionService combatMissions,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    var attacker = await current.GetAsync(ct);
+    if (attacker is null) return Results.Unauthorized();
+
+    var now = DateTime.UtcNow;
+    await combatResolver.ResolveDueAsync(now, ct);
+
+    try
+    {
+        var result = await combatMissions.CancelAsync(attacker, missionId, now, ct);
+        var mission = result.Mission;
+        return Results.Ok(new ActionResultResponse(mission.Summary, attacker.Turns, new Dictionary<string, object?>
+        {
+            ["missionId"] = mission.Id,
+            ["status"] = mission.Status,
+            ["outcome"] = mission.Outcome,
+            ["cancelCashCost"] = result.Cost
+        }));
+    }
+    catch (GameRuleException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
+app.MapGet("/api/world/news", async (
+    GameDbContext db,
+    CombatResolutionService combatResolver,
+    CancellationToken ct) =>
+{
+    await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
     var result = await db.ActionLogs.AsNoTracking()
         .Where(x => x.Action != "ADMIN" && x.Action != "STORE")
         .OrderByDescending(x => x.CreatedAtUtc)
@@ -521,25 +792,37 @@ app.MapGet("/api/admin/overview", async (
     if (admin is null) return Results.Unauthorized();
     if (!admin.Account.IsAdmin) return Results.Forbid();
 
-    var players = await db.Players.AsNoTracking().ToListAsync(ct);
     var totalAccounts = await db.Accounts.AsNoTracking().CountAsync(ct);
     var adminAccounts = await db.Accounts.AsNoTracking().CountAsync(x => x.IsAdmin, ct);
     var botAccounts = await db.Accounts.AsNoTracking().CountAsync(x => x.IsBot, ct);
-    var totalNetWorth = players.Sum(economy.CalculateNetWorth);
+    // Totalled by the database rather than by loading every player row.
+    var totals = await db.Players.AsNoTracking()
+        .GroupBy(x => 1)
+        .Select(g => new
+        {
+            Players = g.Count(),
+            Cash = g.Sum(x => x.Cash),
+            BankCash = g.Sum(x => x.BankCash),
+            Turns = g.Sum(x => x.Turns),
+            HoeMorale = g.Average(x => x.HoeHappiness),
+            ThugMorale = g.Average(x => x.ThugHappiness)
+        })
+        .SingleOrDefaultAsync(ct);
+    var totalNetWorth = await db.Players.AsNoTracking().SumAsync(economy.NetWorthExpression, ct);
 
     return Results.Ok(new AdminOverviewResponse(
         DateTime.UtcNow,
         totalAccounts,
         adminAccounts,
         botAccounts,
-        players.Count,
-        players.Sum(x => x.Cash),
-        players.Sum(x => x.BankCash),
-        players.Sum(x => x.Cash + x.BankCash),
+        totals?.Players ?? 0,
+        totals?.Cash ?? 0,
+        totals?.BankCash ?? 0,
+        (totals?.Cash ?? 0) + (totals?.BankCash ?? 0),
         totalNetWorth,
-        players.Sum(x => x.Turns),
-        players.Count == 0 ? 0 : Math.Round(players.Average(x => x.HoeHappiness), 2),
-        players.Count == 0 ? 0 : Math.Round(players.Average(x => x.ThugHappiness), 2),
+        totals?.Turns ?? 0,
+        totals is null ? 0 : Math.Round(totals.HoeMorale, 2),
+        totals is null ? 0 : Math.Round(totals.ThugMorale, 2),
         new BotAutomationStatusResponse(
             botAutomation.Enabled,
             Math.Clamp(botOptions.Value.TickSeconds, 15, 3600),
@@ -594,9 +877,19 @@ app.MapPost("/api/admin/bots/seed", async (
     var templates = BotTemplates();
     var count = Math.Clamp(request.Count, 1, templates.Count);
     var now = DateTime.UtcNow;
-    var existingUsernames = (await db.Accounts.AsNoTracking().Select(x => x.Username).ToListAsync(ct))
+    // Only the seed templates can collide, so ask about those names instead of reading every
+    // account and player. lower() keeps the match case-insensitive, as the hash sets below are.
+    var templateUsernames = templates.Select(x => x.Username.ToLowerInvariant()).ToList();
+    var templateNames = templates.Select(x => x.Name.ToLowerInvariant()).ToList();
+    var existingUsernames = (await db.Accounts.AsNoTracking()
+            .Where(x => templateUsernames.Contains(x.Username.ToLower()))
+            .Select(x => x.Username)
+            .ToListAsync(ct))
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    var existingNames = (await db.Players.AsNoTracking().Select(x => x.Name).ToListAsync(ct))
+    var existingNames = (await db.Players.AsNoTracking()
+            .Where(x => templateNames.Contains(x.Name.ToLower()))
+            .Select(x => x.Name)
+            .ToListAsync(ct))
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
     var created = 0;
 
@@ -748,6 +1041,297 @@ static void AddLog(
     });
 }
 
+static Task<CombatMission?> ActiveOutgoingMissionAsync(GameDbContext db, Guid playerId, CancellationToken cancellationToken)
+    => db.CombatMissions.AsNoTracking()
+        .Where(x => x.AttackerId == playerId && x.Status != "Complete")
+        .OrderBy(x => x.ReturnsAtUtc ?? x.NextRoundAtUtc ?? x.ArrivesAtUtc)
+        .ThenBy(x => x.Id)
+        .FirstOrDefaultAsync(cancellationToken);
+
+static string PendingAttackMessage(CombatMission mission)
+{
+    var nextAt = mission.Status switch
+    {
+        "Traveling" => mission.ArrivesAtUtc,
+        "Fighting" => mission.NextRoundAtUtc,
+        "Returning" => mission.ReturnsAtUtc,
+        _ => null
+    };
+    return nextAt is { } value
+        ? $"Your crew is out on an attack mission. Next update in {FormatDuration(Math.Max(0, (int)Math.Ceiling((value - DateTime.UtcNow).TotalSeconds)))}."
+        : "Your crew is out on an attack mission.";
+}
+
+static string FormatDuration(int seconds)
+{
+    var minutes = seconds / 60;
+    var remainder = seconds % 60;
+    return minutes <= 0
+        ? $"{seconds} second{(seconds == 1 ? string.Empty : "s")}"
+        : $"{minutes}m {remainder:00}s";
+}
+
+/// <summary>
+/// Assigns global ranks to an already ordered and capped page of players. Only the players who
+/// outrank the weakest row on the page are read back, and only as bare standings, so an unfiltered
+/// page costs about as many rows as the page itself.
+/// </summary>
+static async Task<List<RankedPlayer>> RankPageAsync(
+    List<Player> page,
+    GameDbContext db,
+    EconomyService economy,
+    CancellationToken cancellationToken)
+{
+    if (page.Count == 0)
+        return [];
+
+    var standings = page
+        .Select(x => new PlayerStanding(economy.CalculateNetWorth(x), x.CreatedAtUtc))
+        .ToList();
+    var weakest = standings[^1];
+    var contenders = await db.Players.AsNoTracking()
+        .Where(economy.RanksAbove(weakest.NetWorth, weakest.CreatedAtUtc))
+        .Select(economy.StandingExpression())
+        .ToListAsync(cancellationToken);
+
+    return page
+        .Select((x, index) => new RankedPlayer(
+            x,
+            standings[index].NetWorth,
+            EconomyService.RankOf(standings[index], contenders)))
+        .ToList();
+}
+
+// Escapes a search term so ILIKE treats its wildcards as literal characters. Callers pass "\" as
+// the ESCAPE character to match.
+static string ToLikePattern(string query)
+    => $"%{query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%";
+
+static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null)
+{
+    var player = ranked.Player;
+    return new PlayerTargetResponse(
+        player.Id,
+        player.Name,
+        player.City,
+        player.Account.IsBot,
+        player.Account.IsBot ? BotBrain.For(player).Name : null,
+        ranked.Rank,
+        ranked.NetWorth,
+        player.Pimps,
+        player.Hoes,
+        player.Thugs,
+        player.Weapons,
+        AverageMorale(player),
+        ToCombatReadiness(player),
+        ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc));
+}
+
+static PlayerProfileResponse ToProfileResponse(
+    RankedPlayer ranked,
+    IReadOnlyList<ActivityResponse> publicActivity,
+    DateTime nowUtc,
+    Player? viewer,
+    GameOptions options,
+    int recentAttacksMade,
+    int recentDefenses,
+    DateTime? viewerLaneReadyAtUtc)
+{
+    var player = ranked.Player;
+    return new PlayerProfileResponse(
+        player.Id,
+        player.Name,
+        player.City,
+        player.Account.IsBot,
+        player.Account.IsBot ? BotBrain.For(player).Name : null,
+        ranked.Rank,
+        ranked.NetWorth,
+        player.Cash,
+        player.BankCash,
+        player.Pimps,
+        player.Hoes,
+        player.Thugs,
+        player.Weapons,
+        player.Weed,
+        player.Coke,
+        Math.Round(player.HoeHappiness, 2),
+        Math.Round(player.ThugHappiness, 2),
+        AverageMorale(player),
+        ToCombatReadiness(player),
+        ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc),
+        publicActivity);
+}
+
+static CombatReadinessResponse ToCombatReadiness(Player player)
+{
+    var armedThugs = Math.Min(player.Weapons, player.Thugs);
+    var uncoveredThugs = Math.Max(0, player.Thugs - player.Weapons);
+    var weaponCoverage = player.Thugs == 0 ? 100 : Math.Round(armedThugs * 100.0 / player.Thugs, 2);
+    var averageMorale = AverageMorale(player);
+    var attackPower = Math.Max(1, player.Thugs * 12 + armedThugs * 8 + player.Pimps * 2 + (int)Math.Round(averageMorale / 2));
+    var defensePower = Math.Max(1, player.Thugs * 14 + armedThugs * 10 + player.Pimps * 3 + (int)Math.Round(averageMorale));
+    var riskBand = (averageMorale, weaponCoverage, uncoveredThugs) switch
+    {
+        (< 35, _, _) => "Fragile",
+        (_, < 50, _) => "Exposed",
+        (_, _, > 0) => "Underarmed",
+        (>= 80, >= 90, 0) => "Ready",
+        _ => "Mixed"
+    };
+
+    return new CombatReadinessResponse(
+        attackPower,
+        defensePower,
+        armedThugs,
+        uncoveredThugs,
+        weaponCoverage,
+        averageMorale,
+        riskBand);
+}
+
+static CombatCrewResponse ToCombatCrewResponse(CombatCommitment commitment)
+    => new(
+        commitment.CommittedPimps,
+        commitment.CommittedThugs,
+        commitment.CommittedWeapons,
+        commitment.AvailablePimps,
+        commitment.AvailableThugs,
+        commitment.AvailableWeapons,
+        commitment.ActiveAttackMissions,
+        commitment.MaxActiveAttackMissions);
+
+static double AverageMorale(Player player)
+    => Math.Round((player.HoeHappiness + player.ThugHappiness) / 2, 2);
+
+static CombatStatusResponse ToCombatStatus(
+    Player player,
+    DateTime nowUtc,
+    Player? viewer,
+    GameOptions options,
+    int recentAttacksMade = 0,
+    int recentDefenses = 0,
+    DateTime? viewerLaneReadyAtUtc = null)
+{
+    var combat = options.Combat;
+    var isProtected = player.CombatProtectionUntilUtc is { } protectionUntil && protectionUntil > nowUtc;
+    var isOnCooldown = viewerLaneReadyAtUtc is { } readyAt && readyAt > nowUtc;
+    var hasViewer = viewer is not null;
+    var isSelf = viewer?.Id == player.Id;
+    var hasTurns = viewer?.Turns >= combat.AttackTurnCost;
+    var eligibility = isSelf
+        ? "Self"
+        : isProtected
+            ? "Protected"
+            : isOnCooldown
+                ? "Cooldown"
+                : !hasTurns
+                    ? "Need Turns"
+                    : "Eligible";
+
+    return new CombatStatusResponse(
+        isProtected,
+        player.CombatProtectionUntilUtc,
+        player.LastAttackAtUtc,
+        player.LastAttackedAtUtc,
+        viewerLaneReadyAtUtc,
+        hasViewer && !isSelf && !isProtected && !isOnCooldown && hasTurns,
+        combat.AttackTurnCost,
+        recentAttacksMade,
+        recentDefenses,
+        eligibility);
+}
+
+static CombatLogResponse ToCombatLogResponse(CombatLog log)
+    => new(
+        log.Id,
+        log.AttackerId,
+        log.Attacker.Name,
+        log.DefenderId,
+        log.Defender.Name,
+        log.Outcome,
+        log.Summary,
+        log.TurnsSpent,
+        log.AttackerPower,
+        log.DefenderPower,
+        log.CashStolen,
+        log.WeedStolen,
+        log.CokeStolen,
+        log.AttackerPimpsLost,
+        log.AttackerHoesLost,
+        log.AttackerThugsLost,
+        log.AttackerWeaponsLost,
+        log.DefenderPimpsLost,
+        log.DefenderHoesLost,
+        log.DefenderThugsLost,
+        log.DefenderWeaponsLost,
+        log.DefenderProtectionUntilUtc,
+        log.ResolvesAtUtc,
+        log.ResolvedAtUtc,
+        log.CreatedAtUtc);
+
+static CombatMissionResponse ToCombatMissionResponse(CombatMission mission)
+    => new(
+        mission.Id,
+        mission.AttackerId,
+        mission.Attacker.Name,
+        mission.DefenderId,
+        mission.Defender.Name,
+        mission.Status,
+        mission.Outcome,
+        mission.Summary,
+        mission.TurnsSpent,
+        mission.AssignedPimps,
+        mission.AssignedThugs,
+        mission.AssignedWeapons,
+        mission.RemainingAttackers,
+        mission.RemainingWeapons,
+        Math.Round(mission.AttackerMorale, 2),
+        Math.Round(mission.DefenderMorale, 2),
+        mission.CurrentRound,
+        mission.MaxRounds,
+        mission.AttackerPower,
+        mission.DefenderPower,
+        mission.CashStolen,
+        mission.WeedStolen,
+        mission.CokeStolen,
+        mission.StartedAtUtc,
+        mission.ArrivesAtUtc,
+        mission.NextRoundAtUtc,
+        mission.ReturnsAtUtc,
+        mission.CompletedAtUtc,
+        mission.DefenderProtectionUntilUtc,
+        CombatMissionService.CanCancel(mission),
+        CombatMissionService.CancelCashCost(mission),
+        mission.Events
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .DistinctBy(CombatMissionEventDedupeKey)
+            .Take(8)
+            .Select(ToCombatMissionEventResponse)
+            .ToList());
+
+static (Guid AttackerId, Guid DefenderId, string Outcome, string Summary, DateTime CreatedAtUtc) CombatLogDedupeKey(CombatLog log)
+    => (log.AttackerId, log.DefenderId, log.Outcome, log.Summary, log.CreatedAtUtc);
+
+static (int Round, string Kind, string Summary, DateTime CreatedAtUtc) CombatMissionEventDedupeKey(CombatMissionEvent entry)
+    => (entry.Round, entry.Kind, entry.Summary, entry.CreatedAtUtc);
+
+static CombatMissionEventResponse ToCombatMissionEventResponse(CombatMissionEvent entry)
+    => new(
+        entry.Id,
+        entry.Round,
+        entry.Kind,
+        entry.Summary,
+        Math.Round(entry.AttackRoll, 2),
+        Math.Round(entry.DefenseRoll, 2),
+        Math.Round(entry.AttackerMorale, 2),
+        Math.Round(entry.DefenderMorale, 2),
+        entry.AttackerThugsLost,
+        entry.DefenderThugsLost,
+        entry.AttackerWeaponsLost,
+        entry.DefenderWeaponsLost,
+        entry.CreatedAtUtc);
+
 static string ApplyAdminCheat(Player player, AdminCheatRequest request, GameOptions options)
 {
     var cheat = request.Cheat?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -874,6 +1458,8 @@ internal sealed record PlayerSnapshot(
     int Weapons,
     int Weed,
     int Coke);
+
+internal sealed record RankedPlayer(Player Player, long NetWorth, int Rank);
 
 internal sealed record BotTemplate(
     string Username,

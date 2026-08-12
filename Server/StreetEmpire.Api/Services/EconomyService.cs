@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
@@ -7,6 +8,76 @@ namespace StreetEmpire.Api.Services;
 public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom random)
 {
     private readonly GameOptions _options = options.Value;
+
+    /// <summary>
+    /// The net worth formula as an expression tree so the database can sort, count, and total by it
+    /// instead of the API loading every player to rank them. Kept in step with
+    /// <see cref="CalculateNetWorth"/> by a rule test that compares the two.
+    /// </summary>
+    public Expression<Func<Player, long>> NetWorthExpression { get; } = BuildNetWorthExpression(options.Value);
+
+    private static Expression<Func<Player, long>> BuildNetWorthExpression(GameOptions options)
+        => player => player.Cash
+                     + player.BankCash
+                     + (long)player.Pimps * options.PimpNetWorth
+                     + (long)player.Hoes * options.HoeNetWorth
+                     + (long)player.Thugs * options.ThugNetWorth
+                     + (long)player.Condoms * options.CondomPrice
+                     + (long)player.Beer * options.BeerPrice
+                     + (long)player.Weapons * options.WeaponPrice
+                     + (long)player.Weed * options.WeedNetWorth
+                     + (long)player.Coke * options.CokeNetWorth;
+
+    /// <summary>
+    /// Players ranked above the given standing, for turning a net worth into a rank without
+    /// materializing the player table. Mirrors the leaderboard's net worth then oldest-first order.
+    /// </summary>
+    public Expression<Func<Player, bool>> RanksAbove(long netWorth, DateTime createdAtUtc)
+    {
+        var player = NetWorthExpression.Parameters[0];
+        var theirNetWorth = NetWorthExpression.Body;
+        var standing = Expression.Constant(netWorth);
+        var outranked = Expression.OrElse(
+            Expression.GreaterThan(theirNetWorth, standing),
+            Expression.AndAlso(
+                Expression.Equal(theirNetWorth, standing),
+                Expression.LessThan(
+                    Expression.Property(player, nameof(Player.CreatedAtUtc)),
+                    Expression.Constant(createdAtUtc))));
+
+        return Expression.Lambda<Func<Player, bool>>(outranked, player);
+    }
+
+    /// <summary>
+    /// Projects a player down to just their position in the net worth order, so ranking a page does
+    /// not drag whole player rows back with it.
+    /// </summary>
+    public Expression<Func<Player, PlayerStanding>> StandingExpression()
+    {
+        var player = NetWorthExpression.Parameters[0];
+        var standing = Expression.New(
+            typeof(PlayerStanding).GetConstructor([typeof(long), typeof(DateTime)])!,
+            NetWorthExpression.Body,
+            Expression.Property(player, nameof(Player.CreatedAtUtc)));
+
+        return Expression.Lambda<Func<Player, PlayerStanding>>(standing, player);
+    }
+
+    /// <summary>
+    /// The in-memory twin of <see cref="RanksAbove"/>, for ranking a page of players against the
+    /// contenders already fetched for it. A rule test keeps the two in agreement.
+    /// </summary>
+    public static bool Outranks(PlayerStanding contender, PlayerStanding standing)
+        => contender.NetWorth > standing.NetWorth
+           || (contender.NetWorth == standing.NetWorth && contender.CreatedAtUtc < standing.CreatedAtUtc);
+
+    /// <summary>
+    /// Ranks one standing against every player known to outrank the weakest member of its page.
+    /// That set is a superset of the players outranking this standing, so the count is the true
+    /// global rank.
+    /// </summary>
+    public static int RankOf(PlayerStanding standing, IReadOnlyList<PlayerStanding> contenders)
+        => contenders.Count(x => Outranks(x, standing)) + 1;
 
     public IReadOnlyList<StoreItemResponse> GetStore() =>
     [
@@ -39,6 +110,9 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
         var beerNeeded = RequiredUpkeep(player.Thugs, _options.MaxActionTurns, morale.TurnsPerBeer);
         var condomCost = (long)condomsNeeded * _options.CondomPrice;
         var beerCost = (long)beerNeeded * _options.BeerPrice;
+        var totalCrew = TotalCrew(player);
+        var hqRestCashCost = HqCashCost(totalCrew, morale.HqRestCashPerCrew);
+        var hqPartyCashCost = HqCashCost(totalCrew, morale.HqPartyCashPerCrew);
 
         return new CrewReportResponse(
             managementCapacity,
@@ -54,7 +128,16 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             crew.HireHoeCost,
             crew.HireThugCost,
             crew.MinHoeMoraleToHire,
-            crew.MinThugMoraleToHire);
+            crew.MinThugMoraleToHire,
+            morale.HqRestTurnCost,
+            hqRestCashCost,
+            morale.HqRestMoraleGain,
+            morale.HqPartyTurnCost,
+            hqPartyCashCost,
+            RequiredRecoverySupply(player.Thugs, morale.HqPartyBeerPerThug),
+            RequiredRecoverySupply(player.Hoes, morale.HqPartyWeedPerHoes),
+            morale.HqPartyHoeMoraleGain,
+            morale.HqPartyThugMoraleGain);
     }
 
     public ActionResultResponse Scout(Player player, int turns)
@@ -402,6 +485,61 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
             new Dictionary<string, object?> { ["hoeCutPercent"] = hoeCutPercent });
     }
 
+    public ActionResultResponse RecoverCrewMorale(Player player, string? strategy)
+    {
+        var morale = _options.Morale;
+        var key = strategy?.Trim().ToLowerInvariant() ?? "rest";
+        var hoeBefore = player.HoeHappiness;
+        var thugBefore = player.ThugHappiness;
+        var totalCrew = TotalCrew(player);
+
+        if (key == "rest")
+        {
+            ValidateTurns(player, morale.HqRestTurnCost, _options.MaxActionTurns, "HQ rest");
+            var cashCost = HqCashCost(totalCrew, morale.HqRestCashPerCrew);
+            if (player.Cash < cashCost)
+                throw new GameRuleException($"You need ${cashCost:N0} cash on hand to rest the crew.");
+
+            player.Turns -= morale.HqRestTurnCost;
+            player.Cash -= cashCost;
+            player.HoeHappiness = ClampHappiness(player.HoeHappiness + morale.HqRestMoraleGain);
+            player.ThugHappiness = ClampHappiness(player.ThugHappiness + morale.HqRestMoraleGain);
+
+            return new ActionResultResponse(
+                $"Opened the Trap House for crew downtime. Morale rose by up to {morale.HqRestMoraleGain:N0}%.",
+                player.Turns,
+                MoraleBreakdown(key, morale.HqRestTurnCost, cashCost, 0, 0, hoeBefore, thugBefore, player));
+        }
+
+        if (key == "party")
+        {
+            ValidateTurns(player, morale.HqPartyTurnCost, _options.MaxActionTurns, "HQ party");
+            var cashCost = HqCashCost(totalCrew, morale.HqPartyCashPerCrew);
+            var beerCost = RequiredRecoverySupply(player.Thugs, morale.HqPartyBeerPerThug);
+            var weedCost = RequiredRecoverySupply(player.Hoes, morale.HqPartyWeedPerHoes);
+            if (player.Cash < cashCost)
+                throw new GameRuleException($"You need ${cashCost:N0} cash on hand to throw a Trap House party.");
+            if (player.Beer < beerCost)
+                throw new GameRuleException($"You need {beerCost:N0} beer for the thugs.");
+            if (player.Weed < weedCost)
+                throw new GameRuleException($"You need {weedCost:N0} weed for the crew.");
+
+            player.Turns -= morale.HqPartyTurnCost;
+            player.Cash -= cashCost;
+            player.Beer -= beerCost;
+            player.Weed -= weedCost;
+            player.HoeHappiness = ClampHappiness(player.HoeHappiness + morale.HqPartyHoeMoraleGain);
+            player.ThugHappiness = ClampHappiness(player.ThugHappiness + morale.HqPartyThugMoraleGain);
+
+            return new ActionResultResponse(
+                $"Threw a Trap House party and let the crew burn off pressure. Hoe morale rose by up to {morale.HqPartyHoeMoraleGain:N0}%; thug morale rose by up to {morale.HqPartyThugMoraleGain:N0}%.",
+                player.Turns,
+                MoraleBreakdown(key, morale.HqPartyTurnCost, cashCost, beerCost, weedCost, hoeBefore, thugBefore, player));
+        }
+
+        throw new GameRuleException("Morale recovery strategy must be 'rest' or 'party'.");
+    }
+
     private ProductProductionOptions GetProduction(string product)
         => product switch
         {
@@ -481,7 +619,43 @@ public sealed class EconomyService(IOptions<GameOptions> options, IGameRandom ra
 
     private static double ClampHappiness(double value) => Math.Clamp(value, 0, 100);
 
+    private static int TotalCrew(Player player)
+        => Math.Max(1, player.Pimps + player.Hoes + player.Thugs);
+
+    private static long HqCashCost(int totalCrew, long cashPerCrew)
+        => Math.Max(0, totalCrew * Math.Max(0, cashPerCrew));
+
+    private static int RequiredRecoverySupply(int crewCount, int crewPerSupply)
+        => crewCount <= 0 || crewPerSupply <= 0 ? 0 : (int)Math.Ceiling(crewCount / (double)crewPerSupply);
+
+    private static Dictionary<string, object?> MoraleBreakdown(
+        string strategy,
+        int turnsSpent,
+        long cashCost,
+        int beerCost,
+        int weedCost,
+        double hoeBefore,
+        double thugBefore,
+        Player player)
+        => new()
+        {
+            ["strategy"] = strategy,
+            ["turnsSpent"] = turnsSpent,
+            ["cashCost"] = cashCost,
+            ["beerCost"] = beerCost,
+            ["weedCost"] = weedCost,
+            ["hoeHappinessBefore"] = Math.Round(hoeBefore, 2),
+            ["hoeHappinessAfter"] = Math.Round(player.HoeHappiness, 2),
+            ["hoeHappinessDelta"] = Math.Round(player.HoeHappiness - hoeBefore, 2),
+            ["thugHappinessBefore"] = Math.Round(thugBefore, 2),
+            ["thugHappinessAfter"] = Math.Round(player.ThugHappiness, 2),
+            ["thugHappinessDelta"] = Math.Round(player.ThugHappiness - thugBefore, 2)
+        };
+
     private static string Plural(int value) => value == 1 ? string.Empty : "s";
 }
 
 public sealed class GameRuleException(string message) : Exception(message);
+
+/// <summary>A player's position in the net worth order, without the rest of the player row.</summary>
+public sealed record PlayerStanding(long NetWorth, DateTime CreatedAtUtc);

@@ -9,13 +9,6 @@ public sealed class TurnService(IOptions<GameOptions> options)
 
     public bool Refresh(Player player, DateTime nowUtc)
     {
-        if (player.Turns >= _options.MaxTurns)
-        {
-            // Reset the clock while capped so old elapsed time cannot be banked.
-            player.LastTurnUpdateUtc = nowUtc;
-            return false;
-        }
-
         var tick = TimeSpan.FromMinutes(_options.TurnTickMinutes);
         var elapsed = nowUtc - player.LastTurnUpdateUtc;
         if (elapsed < tick)
@@ -26,11 +19,21 @@ public sealed class TurnService(IOptions<GameOptions> options)
             return false;
 
         var turnsToAdd = completedTicks * _options.TurnsPerTick;
+        var moraleRecovery = completedTicks * Math.Max(0, _options.Morale.PassiveRecoveryPerTick);
+        var turnsBefore = player.Turns;
+        var hoeBefore = player.HoeHappiness;
+        var thugBefore = player.ThugHappiness;
+        var clockBefore = player.LastTurnUpdateUtc;
         player.Turns = Math.Min(_options.MaxTurns, player.Turns + turnsToAdd);
+        player.HoeHappiness = RecoverMorale(player.HoeHappiness, moraleRecovery);
+        player.ThugHappiness = RecoverMorale(player.ThugHappiness, moraleRecovery);
         player.LastTurnUpdateUtc = player.Turns >= _options.MaxTurns
             ? nowUtc
             : player.LastTurnUpdateUtc.AddMinutes(completedTicks * _options.TurnTickMinutes);
-        return true;
+        return turnsBefore != player.Turns
+            || !DoubleEquals(hoeBefore, player.HoeHappiness)
+            || !DoubleEquals(thugBefore, player.ThugHappiness)
+            || clockBefore != player.LastTurnUpdateUtc;
     }
 
     public int SecondsUntilNextTick(Player player, DateTime nowUtc)
@@ -41,4 +44,10 @@ public sealed class TurnService(IOptions<GameOptions> options)
         var next = player.LastTurnUpdateUtc.AddMinutes(_options.TurnTickMinutes);
         return Math.Max(0, (int)Math.Ceiling((next - nowUtc).TotalSeconds));
     }
+
+    private static double RecoverMorale(double current, double amount)
+        => Math.Round(Math.Clamp(current + amount, 0, 100), 2);
+
+    private static bool DoubleEquals(double left, double right)
+        => Math.Abs(left - right) < 0.001;
 }

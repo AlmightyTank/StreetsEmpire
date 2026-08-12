@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using StreetEmpire.Api.Data;
 using StreetEmpire.Api.Models;
+using StreetEmpire.Api.Support;
 
 namespace StreetEmpire.Api.Services;
 

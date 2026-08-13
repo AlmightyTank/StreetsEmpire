@@ -53,6 +53,7 @@ public sealed record DashboardResponse(
     IReadOnlyList<PimpResponse> FallenCrew,
     CombatCrewResponse CombatCrew,
     CombatStatusResponse CombatStatus,
+    int UnreadDefenceAlerts,
     IReadOnlyList<StoreItemResponse> Store,
     IReadOnlyList<ActivityResponse> RecentActivity);
 
@@ -214,7 +215,8 @@ public sealed record CombatStatusResponse(
     int AttackTurnCost,
     int RecentAttacksMade,
     int RecentDefenses,
-    string Eligibility);
+    string Eligibility,
+    string? MismatchReason);
 
 public sealed record CombatLogResponse(
     long Id,
@@ -266,6 +268,9 @@ public sealed record CombatMissionResponse(
     int MaxRounds,
     int AttackerPower,
     int DefenderPower,
+    int LootMultiplierPercent,
+    int DefenderRecentHits,
+    int DefenderProtectionMinutes,
     long CashStolen,
     int WeedStolen,
     int CokeStolen,
@@ -448,3 +453,23 @@ public sealed record AdminConfigResponse(
     int Version,
     int OverrideCount,
     IReadOnlyList<AdminConfigEntryResponse> Settings);
+
+public sealed record DefenceAlertResponse(
+    long Id,
+    string AttackerName,
+    string Outcome,
+    bool HeldTheHouse,
+    string Headline,
+    string Detail,
+    long CashLost,
+    int WeedLost,
+    int CokeLost,
+    int ThugsLost,
+    int PimpsLost,
+    bool IsUnread,
+    DateTime CreatedAtUtc);
+
+public sealed record DefenceAlertsResponse(
+    int UnreadCount,
+    DateTime? LastSeenAtUtc,
+    IReadOnlyList<DefenceAlertResponse> Alerts);

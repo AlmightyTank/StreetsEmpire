@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.2.2
+
+### Added
+- Hideout capacity: the Trap House tier caps crew, a storage room caps goods, and a safe caps cash on hand.
+- Upgradeable storage and safe, plus turn-fed weed and coke labs that raise production yield.
+- Named pimps with Enforcer and Hustler specialties, loyalty, and a record of missions led.
+- Player-chosen mission commanders, with the commander's specialty bonus frozen onto the mission at launch.
+- Pimp mortality: killed commanding a defeat, killed defending a broken house, or walking out at low loyalty.
+- Optional auto-buy of street upkeep, bounded by storage room and cash on hand.
+- Admin panel: player search and detail, signed resource adjustments, ban, suspend, force-logout, rename, and admin rights.
+- Admin audit trail recording actor, target, before and after values, and a reason.
+- Oversight dashboards: wealth distribution and concentration, fastest movers, in-flight missions with stuck ones flagged, and AI idle times.
+- Maintenance mode and site-wide announcements, both persisted.
+- Runtime editing of 127 scalar tuning values, layered over appsettings and reversible to it.
+- Anti-farm protections: a net worth floor and ratio on who may be attacked, decaying loot for repeat
+  victories, protection that widens with each hit taken, and a cap on simultaneous incoming attacks.
+- AI rivals now launch attacks, choosing the richest target they should beat and committing a share of
+  crew that matches their personality.
+- Defender alerts with an unread count, written from the defender's point of view.
+
+### Changed
+- Attack cooldowns are per lane rather than per player, so two attacks can run at once; cancelling refunds the lane.
+- Ranking is computed by the database instead of loading every player into memory.
+- Combat polling dropped from 26 queries over 6 requests per tick to 9 over 2.
+- Condom upkeep and storage now line up: each storage level supplies 4, 10, then 20 turns at the crew caps.
+- Starting supplies fit a level 1 storage room, so a new player is never over capacity.
+- Program.cs split into endpoint groups, response mappers, and support classes.
+- Combat strength is one configurable formula rather than four hardcoded copies that could disagree.
+- Rebalanced combat: an attacker needs roughly 10-20% more armed crew instead of 36-80%, and round
+  resolution is configurable. Previously a fully built defender needed 34 attacking thugs against a
+  crew cap of 25, so they could not be beaten at all.
+- The drawn-round band narrowed from 10% to 6%, so a modest edge produces a result instead of six
+  drawn rounds and no loot.
+
+### Removed
+- `/api/admin/cheats`, which could only add resources, only to the acting admin, and left no audit record. Its quick grants now work on any player through the audited adjust endpoint.
+
+### Fixed
+- Admin endpoints returned 302 to an HTML page instead of 403 for a non-admin.
+- Hideout tuning tables were bound twice, so edits to appsettings had no effect.
+- Bots could not restock once their supply targets exceeded storage capacity.
+- Target search was case-sensitive after moving the filter into the database.
+- The attacker cooldown was not enforced on the live mission path at all.
+- Simultaneous attackers bypassed defender protection entirely, since protection is only set once a
+  mission finishes.
+
 ## 0.2.1
 
 ### Added

@@ -37,6 +37,13 @@ public sealed class Player
     public DateTime? LastAttackAtUtc { get; set; }
     public DateTime? LastAttackedAtUtc { get; set; }
 
+    /// <summary>
+    /// Watermark for defence alerts: anything that happened to this player after it is unread. A single
+    /// column rather than a notifications table, because the events already exist in CombatLogs and only
+    /// the read position is missing.
+    /// </summary>
+    public DateTime? CombatAlertsSeenAtUtc { get; set; }
+
     public Hideout? Hideout { get; set; }
 
     /// <summary>Named pimps, active and fallen. <see cref="Pimps"/> counts the active ones.</summary>

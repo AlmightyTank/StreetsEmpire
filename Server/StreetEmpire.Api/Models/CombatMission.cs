@@ -34,6 +34,15 @@ public sealed class CombatMission
 
     public int AttackerPower { get; set; }
     public int DefenderPower { get; set; }
+    /// <summary>Anti-farm share of the haul this mission earned, as a percent. 100 means a first hit.</summary>
+    public int LootMultiplierPercent { get; set; } = 100;
+
+    /// <summary>Hits the defender had taken in the window when this mission landed.</summary>
+    public int DefenderRecentHits { get; set; }
+
+    /// <summary>Minutes of protection the defender earned, after escalation.</summary>
+    public int DefenderProtectionMinutes { get; set; }
+
     public long CashStolen { get; set; }
     public int WeedStolen { get; set; }
     public int CokeStolen { get; set; }

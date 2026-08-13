@@ -147,14 +147,14 @@ public sealed class CombatService(IOptionsSnapshot<GameOptions> options, IGameRa
     {
         var armedThugs = Math.Min(player.Weapons, player.Thugs);
         var averageMorale = AverageMorale(player);
-        return Math.Max(1, player.Thugs * 12 + armedThugs * 8 + player.Pimps * 2 + (int)Math.Round(averageMorale / 2));
+        return CombatPower.Attack(player.Pimps, player.Thugs, player.Weapons, averageMorale, _options.Combat.Power);
     }
 
     public int DefensePower(Player player)
     {
         var armedThugs = Math.Min(player.Weapons, player.Thugs);
         var averageMorale = AverageMorale(player);
-        return Math.Max(1, player.Thugs * 14 + armedThugs * 10 + player.Pimps * 3 + (int)Math.Round(averageMorale));
+        return CombatPower.Defence(player.Pimps, player.Thugs, player.Weapons, averageMorale, _options.Combat.Power);
     }
 
     private void ValidateAttack(Player attacker, Player defender, DateTime nowUtc, CombatOptions combat)

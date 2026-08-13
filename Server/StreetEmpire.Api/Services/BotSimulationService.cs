@@ -12,7 +12,8 @@ public sealed class BotSimulationService(
     TurnService turns,
     IGameRandom random,
     IOptionsSnapshot<GameOptions> options,
-    HideoutService hideouts)
+    HideoutService hideouts,
+    CombatMissionService missions)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -50,7 +51,9 @@ public sealed class BotSimulationService(
                     continue;
 
                 turns.Refresh(bot, nowUtc);
-                var botActions = RunBotRound(bot, brain, nowUtc);
+                var botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
+                if (botActions == 0)
+                    botActions = RunBotRound(bot, brain, nowUtc);
                 if (botActions > 0)
                 {
                     lastBotActivityTimes[bot.Id] = nowUtc;
@@ -64,6 +67,100 @@ public sealed class BotSimulationService(
         await db.SaveChangesAsync(ct);
         return new BotSimulationResult(bots.Count, activeBotIds.Count, activeBotRounds, actions, rounds);
     }
+
+    /// <summary>
+    /// Considers starting a fight. Separate from the synchronous action chain because launching a
+    /// mission needs the database, and an attack replaces the round's other action rather than adding
+    /// to it. Every rule still applies: LaunchAsync validates turns, lanes, crew, and the anti-farm
+    /// matchup, and a refusal is swallowed the same way the other bot actions swallow theirs.
+    /// </summary>
+    private async Task<int> TryAttackAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var profile = BotAttackProfile.For(brain.Focus);
+        if (random.NextDouble() >= profile.AttackChance)
+            return 0;
+
+        var combat = _options.Combat;
+        if (bot.Turns < combat.AttackTurnCost)
+            return 0;
+
+        var committed = await missions.CommitmentAsync(bot, ct);
+        if (committed.AvailablePimps < 1 || committed.AvailableThugs < profile.MinThugsToAttack)
+            return 0;
+        if (committed.ActiveAttackMissions >= committed.MaxActiveAttackMissions)
+            return 0;
+        if (await missions.LaneReadyAtUtcAsync(bot.Id, nowUtc, ct) is { } readyAt && readyAt > nowUtc)
+            return 0;
+
+        var botNetWorth = economy.CalculateNetWorth(bot);
+        var antiFarm = _options.AntiFarm;
+        // Only pull the band the anti-farm ratio actually permits, rather than the whole table.
+        var floor = Math.Max(antiFarm.MinDefenderNetWorth, (long)(botNetWorth / Math.Max(1, antiFarm.MaxNetWorthRatio)));
+        // Whole rows rather than a projection: net worth spans ten columns, and rebuilding a partial
+        // Player to compute it would understate every target and skew both the anti-farm check and
+        // the choice of who is worth hitting. Bounded to 25, so the cost is trivial.
+        var candidates = await db.Players.AsNoTracking()
+            .Where(x => x.Id != bot.Id)
+            .Where(economy.NetWorthAtLeast(floor))
+            .OrderByDescending(economy.NetWorthExpression)
+            .Take(25)
+            .ToListAsync(ct);
+
+        // One grouped read of who is already under attack, so bots spread out instead of all choosing
+        // the same victim and having every launch after the second refused.
+        var candidateIds = candidates.Select(x => x.Id).ToList();
+        var incoming = await db.CombatMissions.AsNoTracking()
+            .Where(x => candidateIds.Contains(x.DefenderId) && x.Status != "Complete")
+            .GroupBy(x => x.DefenderId)
+            .Select(g => new { DefenderId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.DefenderId, x => x.Count, ct);
+
+        var targets = candidates
+            .Select(x => new BotTarget(
+                x.Id,
+                x.Name,
+                economy.CalculateNetWorth(x),
+                DefensePower(x.Pimps, x.Thugs, x.Weapons, (x.HoeHappiness + x.ThugHappiness) / 2),
+                x.CombatProtectionUntilUtc is { } until && until > nowUtc,
+                incoming.TryGetValue(x.Id, out var count) ? count : 0))
+            .ToList();
+
+        // Decide the force first, then judge the fight with it. Sizing the raid after choosing a target
+        // meant the bot compared its whole roster against the defence and then attacked with a fraction
+        // of it, so it reliably picked fights it could not win.
+        var thugs = Math.Clamp((int)Math.Round(committed.AvailableThugs * profile.ThugCommitShare), profile.MinThugsToAttack, committed.AvailableThugs);
+        var weapons = Math.Min(thugs, committed.AvailableWeapons);
+        var attackPower = AttackPower(CombatMissionService.CommandingPimps, thugs, weapons, (bot.HoeHappiness + bot.ThugHappiness) / 2);
+
+        var target = BotTargeting.Choose(targets, botNetWorth, attackPower, antiFarm, profile.WinMargin);
+        if (target is null)
+            return 0;
+
+        var defender = await db.Players
+            .Include(x => x.Account)
+            .Include(x => x.Crew)
+            .SingleOrDefaultAsync(x => x.Id == target.PlayerId, ct);
+        if (defender is null)
+            return 0;
+
+        var before = Snapshot(bot);
+        try
+        {
+            var mission = await missions.LaunchAsync(bot, defender, new CombatAttackRequest(defender.Id, thugs, weapons), nowUtc, ct);
+            AddLog(bot, before, "ATTACK", mission.TurnsSpent, nowUtc, $"AI: {mission.Summary}");
+            return 1;
+        }
+        catch (GameRuleException)
+        {
+            return 0;
+        }
+    }
+
+    private int AttackPower(int pimps, int thugs, int weapons, double morale)
+        => CombatPower.Attack(pimps, thugs, weapons, morale, _options.Combat.Power);
+
+    private int DefensePower(int pimps, int thugs, int weapons, double morale)
+        => CombatPower.Defence(pimps, thugs, weapons, morale, _options.Combat.Power);
 
     private int RunBotRound(Player bot, BotBrain brain, DateTime actionTimeUtc)
     {

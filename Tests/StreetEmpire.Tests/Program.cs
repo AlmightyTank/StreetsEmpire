@@ -33,6 +33,14 @@ var tests = new (string Name, Action Test)[]
     ("wealth stats describe the distribution", WealthStatsDescribeTheDistribution),
     ("option paths discover and write scalar tuning", OptionPathsDiscoverAndWriteScalars),
     ("option overrides layer over appsettings values", OptionOverridesLayerOverAppsettings),
+    ("anti-farm refuses mismatched fights", AntiFarmRefusesMismatchedFights),
+    ("anti-farm decays loot for repeat victories", AntiFarmDecaysRepeatLoot),
+    ("anti-farm widens protection under repeated hits", AntiFarmWidensProtection),
+    ("bot targeting picks the richest beatable target", BotTargetingPicksRichestBeatable),
+    ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
+    ("defence alerts flip the outcome to the defender's view", DefenceAlertsFlipPerspective),
+    ("defence alerts count only what is unread", DefenceAlertsCountUnread),
+    ("combat power keeps a defender edge without killing attacks", CombatPowerBalanceTarget),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
@@ -853,6 +861,257 @@ static void OptionOverridesLayerOverAppsettings()
     var reset = new GameOptions();
     overrides.Apply(reset);
     AssertEqual(10, reset.Combat.AttackTurnCost);
+}
+
+static void AntiFarmRefusesMismatchedFights()
+{
+    var options = new AntiFarmOptions { MinDefenderNetWorth = 25_000, MaxNetWorthRatio = 5 };
+
+    // A fair fight passes. The ratio boundary is tested above the floor, since the floor is checked
+    // first and would otherwise mask it.
+    AssertTrue(AntiFarm.RejectReason(100_000, 50_000, options) is null, "similar sizes may fight");
+    AssertTrue(AntiFarm.RejectReason(150_000, 30_000, options) is null, "exactly at the ratio is allowed");
+
+    // Too small to be touched at all.
+    var floored = AntiFarm.RejectReason(100_000, 24_999, options);
+    AssertTrue(floored is not null && floored.Contains("floor"), "a target under the floor is protected");
+    // The floor applies even between two small players.
+    AssertTrue(AntiFarm.RejectReason(9_830, 9_830, options) is not null, "brand new players cannot be farmed");
+
+    // Outweighing the target by more than the ratio.
+    var outmatched = AntiFarm.RejectReason(150_001, 30_000, options);
+    AssertTrue(outmatched is not null && outmatched.Contains("outweigh"), "a heavyweight cannot pick on the weak");
+
+    // Punching up is always fine.
+    AssertTrue(AntiFarm.RejectReason(30_000, 5_000_000, options) is null, "the weak may attack the strong");
+}
+
+static void AntiFarmDecaysRepeatLoot()
+{
+    var options = new AntiFarmOptions { LootDecayPerRepeat = 0.4, MinLootMultiplier = 0.1 };
+
+    AssertEqual(1d, AntiFarm.LootMultiplier(0, options));
+    AssertEqual(0.6, Math.Round(AntiFarm.LootMultiplier(1, options), 4));
+    AssertEqual(0.36, Math.Round(AntiFarm.LootMultiplier(2, options), 4));
+
+    // Never reaches zero: a repeat attack becomes pointless, not forbidden.
+    AssertEqual(0.1, Math.Round(AntiFarm.LootMultiplier(20, options), 4));
+    AssertTrue(AntiFarm.LootMultiplier(100, options) >= options.MinLootMultiplier, "the floor always holds");
+
+    // Decay is monotonic, so there is never an incentive to hit again sooner.
+    var previous = 1d;
+    for (var wins = 1; wins <= 6; wins++)
+    {
+        var current = AntiFarm.LootMultiplier(wins, options);
+        AssertTrue(current <= previous, "each repeat is worth no more than the last");
+        previous = current;
+    }
+}
+
+static void AntiFarmWidensProtection()
+{
+    var options = new AntiFarmOptions { ProtectionEscalationPerHit = 0.5, MaxProtectionMinutes = 360 };
+
+    // A first hit earns the plain window.
+    AssertEqual(60, AntiFarm.ProtectionMinutes(0, 60, options));
+    AssertEqual(90, AntiFarm.ProtectionMinutes(1, 60, options));
+    AssertEqual(120, AntiFarm.ProtectionMinutes(2, 60, options));
+
+    // Capped, so a heavily farmed player is not made permanently untouchable.
+    AssertEqual(360, AntiFarm.ProtectionMinutes(100, 60, options));
+
+    // A base longer than the cap still wins, so lowering the cap cannot shorten the base window.
+    AssertEqual(600, AntiFarm.ProtectionMinutes(0, 600, options));
+    AssertEqual(600, AntiFarm.ProtectionMinutes(5, 600, options));
+}
+
+static void BotTargetingPicksRichestBeatable()
+{
+    var antiFarm = new AntiFarmOptions { MinDefenderNetWorth = 25_000, MaxNetWorthRatio = 5 };
+    var attackerNetWorth = 200_000L;
+    var attackPower = 500;
+
+    var weakAndPoor = new BotTarget(Guid.NewGuid(), "Poor", 40_000, 100, false, 0);
+    var richAndBeatable = new BotTarget(Guid.NewGuid(), "Rich", 180_000, 300, false, 0);
+    var richButStrong = new BotTarget(Guid.NewGuid(), "Fortress", 400_000, 900, false, 0);
+    var protectedTarget = new BotTarget(Guid.NewGuid(), "Shielded", 300_000, 100, true, 0);
+    var belowFloor = new BotTarget(Guid.NewGuid(), "Newbie", 9_830, 10, false, 0);
+
+    var chosen = BotTargeting.Choose(
+        [weakAndPoor, richAndBeatable, richButStrong, protectedTarget, belowFloor],
+        attackerNetWorth, attackPower, antiFarm, winMargin: 1.25);
+
+    // Richest of the ones it can actually beat and is allowed to hit.
+    AssertTrue(chosen is not null, "a beatable target should be found");
+    AssertEqual("Rich", chosen!.Name);
+
+    // Each exclusion holds on its own.
+    AssertTrue(BotTargeting.Choose([protectedTarget], attackerNetWorth, attackPower, antiFarm, 1.25) is null,
+        "protected targets are skipped");
+    AssertTrue(BotTargeting.Choose([belowFloor], attackerNetWorth, attackPower, antiFarm, 1.25) is null,
+        "targets under the anti-farm floor are skipped");
+    AssertTrue(BotTargeting.Choose([richButStrong], attackerNetWorth, attackPower, antiFarm, 1.25) is null,
+        "a fight it would lose is skipped");
+    AssertTrue(BotTargeting.Choose([weakAndPoor], 5_000_000, attackPower, antiFarm, 1.25) is null,
+        "a target it outweighs past the ratio is skipped");
+    AssertTrue(BotTargeting.Choose([], attackerNetWorth, attackPower, antiFarm, 1.25) is null,
+        "an empty ladder yields nothing");
+
+    // Already being swarmed: piling on is exactly what the incoming cap prevents.
+    var swarmed = new BotTarget(Guid.NewGuid(), "Swarmed", 180_000, 300, false, antiFarm.MaxIncomingAttacks);
+    AssertTrue(BotTargeting.Choose([swarmed], attackerNetWorth, attackPower, antiFarm, 1.25) is null,
+        "a target at the incoming cap is skipped");
+    var oneIncoming = new BotTarget(Guid.NewGuid(), "Busy", 180_000, 300, false, antiFarm.MaxIncomingAttacks - 1);
+    AssertTrue(BotTargeting.Choose([oneIncoming], attackerNetWorth, attackPower, antiFarm, 1.25) is not null,
+        "a target below the cap is still fair game");
+
+    // A larger win margin makes the bot pickier, never bolder.
+    AssertTrue(BotTargeting.Choose([richAndBeatable], attackerNetWorth, attackPower, antiFarm, 2.0) is null,
+        "a cautious bot passes on a fight a reckless one takes");
+}
+
+static void BotAttackProfilesScaleWithPersonality()
+{
+    var reckless = BotAttackProfile.For(BotBrainFocus.MoraleNeglecter);
+    var banker = BotAttackProfile.For(BotBrainFocus.Banker);
+
+    AssertTrue(reckless.AttackChance > banker.AttackChance, "hard chargers fight more than bankers");
+    AssertTrue(reckless.WinMargin < banker.WinMargin, "hard chargers accept thinner odds");
+    AssertTrue(reckless.ThugCommitShare > banker.ThugCommitShare, "hard chargers commit more crew");
+
+    // Every personality is sane: it fights sometimes, never commits everything, and wants an edge.
+    foreach (var focus in Enum.GetValues<BotBrainFocus>())
+    {
+        var profile = BotAttackProfile.For(focus);
+        AssertTrue(profile.AttackChance is > 0 and <= 1, $"{focus} has a usable attack chance");
+        AssertTrue(profile.ThugCommitShare is > 0 and < 1, $"{focus} keeps some crew at home");
+        AssertTrue(profile.WinMargin >= 1, $"{focus} does not seek fights it loses");
+        AssertTrue(profile.MinThugsToAttack > 0, $"{focus} needs a crew to attack");
+    }
+}
+
+// A CombatLog stores the attacker's outcome, so telling the defender "Victory" would say they won a
+// fight they lost. This is the flip, and it is the whole reason the describer exists.
+static void DefenceAlertsFlipPerspective()
+{
+    var attacker = new Player { Name = "Lucky Voss" };
+    var at = new DateTime(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
+
+    var robbed = DefenceAlerts.Describe(new CombatLog
+    {
+        Id = 1, Attacker = attacker, Outcome = "Victory", CreatedAtUtc = at,
+        CashStolen = 12_500, WeedStolen = 8, DefenderThugsLost = 3, DefenderPimpsLost = 1
+    }, seenAtUtc: null);
+
+    AssertTrue(!robbed.HeldTheHouse, "an attacker victory means the defender did not hold");
+    AssertTrue(robbed.Headline.Contains("broke through"), "the headline reads from the defender's side");
+    AssertTrue(robbed.Headline.Contains("Lucky Voss"), "the attacker is named");
+    AssertTrue(robbed.Detail.Contains("$12,500"), "stolen cash is reported");
+    AssertTrue(robbed.Detail.Contains("1 pimp"), "a lost pimp is called out");
+    AssertEqual(12_500L, robbed.CashLost);
+
+    // The attacker losing is good news for the reader.
+    var held = DefenceAlerts.Describe(new CombatLog
+    {
+        Id = 2, Attacker = attacker, Outcome = "Defeat", CreatedAtUtc = at
+    }, seenAtUtc: null);
+    AssertTrue(held.HeldTheHouse, "an attacker defeat means the defender held");
+    AssertTrue(held.Headline.Contains("held"), "the headline says they held");
+    AssertTrue(held.Detail.Contains("Nothing was taken"), "a clean defence says so");
+
+    var standstill = DefenceAlerts.Describe(new CombatLog { Id = 3, Attacker = attacker, Outcome = "Standstill", CreatedAtUtc = at }, null);
+    AssertTrue(standstill.HeldTheHouse, "a standstill is not a loss");
+
+    var called = DefenceAlerts.Describe(new CombatLog { Id = 4, Attacker = attacker, Outcome = "Canceled", CreatedAtUtc = at }, null);
+    AssertTrue(called.Headline.Contains("called off"), "a cancelled raid is described as such");
+
+    // A missing attacker row must not blow up the alert.
+    var orphan = DefenceAlerts.Describe(new CombatLog { Id = 5, Outcome = "Victory", CreatedAtUtc = at }, null);
+    AssertTrue(orphan.AttackerName == "Someone", "an unnamed attacker still produces an alert");
+}
+
+static void DefenceAlertsCountUnread()
+{
+    var attacker = new Player { Name = "Brass Knox" };
+    var seen = new DateTime(2026, 8, 12, 12, 0, 0, DateTimeKind.Utc);
+    CombatLog At(long id, DateTime when) => new() { Id = id, Attacker = attacker, Outcome = "Victory", CreatedAtUtc = when };
+
+    var older = DefenceAlerts.Describe(At(1, seen.AddMinutes(-5)), seen);
+    var exactlyAtWatermark = DefenceAlerts.Describe(At(2, seen), seen);
+    var newer = DefenceAlerts.Describe(At(3, seen.AddMinutes(5)), seen);
+
+    AssertTrue(!older.IsUnread, "anything before the watermark is read");
+    AssertTrue(!exactlyAtWatermark.IsUnread, "the watermark moment itself is read");
+    AssertTrue(newer.IsUnread, "anything after the watermark is unread");
+    AssertEqual(1, DefenceAlerts.UnreadCount([older, exactlyAtWatermark, newer]));
+
+    // A player who has never opened their alerts sees all of them as unread.
+    var neverLooked = new[] { At(1, seen.AddDays(-9)), At(2, seen) }
+        .Select(x => DefenceAlerts.Describe(x, null))
+        .ToList();
+    AssertEqual(2, DefenceAlerts.UnreadCount(neverLooked));
+    AssertEqual(0, DefenceAlerts.UnreadCount([]));
+}
+
+// The balance target, stated as a test so retuning cannot quietly break it: a defender holds at equal
+// armed crew, and an attacker needs a modest edge rather than an overwhelming one.
+static void CombatPowerBalanceTarget()
+{
+    var power = new CombatPowerOptions();
+    const double morale = 100;
+
+    foreach (var (thugs, pimps) in new[] { (5, 2), (10, 3), (20, 5), (25, 6) })
+    {
+        var attackAtParity = CombatPower.Attack(1, thugs, thugs, morale, power);
+        var defence = CombatPower.Defence(pimps, thugs, thugs, morale, power);
+        AssertTrue(attackAtParity < defence,
+            $"at {thugs} armed each, the defender should hold ({attackAtParity} vs {defence})");
+
+        // The edge required stays modest across the whole scale, so attacking is viable.
+        var needed = CombatPower.ThugsNeededToMatch(thugs, pimps, morale, power);
+        var edge = (needed - thugs) / (double)thugs;
+        AssertTrue(edge > 0, $"matching {thugs} defenders needs more than {thugs} attackers");
+        AssertTrue(edge <= 0.30,
+            $"matching {thugs} defenders should need no more than 30% extra crew, needed {needed} ({edge:P0})");
+    }
+
+    // Weapons matter to both sides, and unarmed crew is worth strictly less.
+    AssertTrue(CombatPower.Attack(1, 10, 10, morale, power) > CombatPower.Attack(1, 10, 0, morale, power),
+        "arming the raid helps");
+    AssertTrue(CombatPower.Defence(3, 10, 10, morale, power) > CombatPower.Defence(3, 10, 0, morale, power),
+        "arming the house helps");
+
+    // Morale counts for both, and more for the defender.
+    AssertTrue(CombatPower.Attack(1, 10, 10, 100, power) > CombatPower.Attack(1, 10, 10, 0, power),
+        "morale lifts an attack");
+    AssertTrue(
+        CombatPower.Defence(3, 10, 10, 100, power) - CombatPower.Defence(3, 10, 10, 0, power)
+        > CombatPower.Attack(1, 10, 10, 100, power) - CombatPower.Attack(1, 10, 10, 0, power),
+        "morale is worth more at home than on the road");
+
+    // The commander bonus scales the whole figure and never drops it below one.
+    AssertEqual(CombatPower.Attack(1, 10, 10, morale, power) * 2,
+        CombatPower.Attack(1, 10, 10, morale, power, bonusPercent: 100));
+    AssertTrue(CombatPower.Attack(0, 0, 0, 0, power) >= 1, "power never falls below one");
+
+    // The ceiling matchup. Under the previous weights a maxed defender needed 34 attacking thugs to
+    // crack while the crew cap was 25, so a fully built house was literally unbeatable. Now brute force
+    // alone still falls short, and the counterplay is a top Enforcer commanding or catching the crew away.
+    var tier = new GameOptions().Hideout;
+    tier.ApplyDefaultsWhereEmpty();
+    var maxThugs = tier.Tiers[0].MaxThugs;
+    var maxPimps = tier.Tiers[0].MaxPimps;
+    var bestBonus = new PimpOptions().MaxBonusPercent;
+
+    var fortress = CombatPower.Defence(maxPimps, maxThugs, maxThugs, morale, power);
+    var maxedRaid = CombatPower.Attack(1, maxThugs, maxThugs, morale, power);
+    AssertTrue(maxedRaid < fortress, "a full raid alone should not crack a fully built house");
+    AssertTrue(CombatPower.Attack(1, maxThugs, maxThugs, morale, power, bestBonus) >= fortress,
+        "a top Enforcer commander should bring a full raid level with a fully built house");
+
+    // And a house with crew out attacking is beatable without any commander bonus at all.
+    var stretched = CombatPower.Defence(maxPimps, maxThugs - 5, maxThugs - 5, morale, power);
+    AssertTrue(maxedRaid > stretched, "a house with its crew away is exposed");
 }
 
 static void CombatBlocksSelfAttacks()

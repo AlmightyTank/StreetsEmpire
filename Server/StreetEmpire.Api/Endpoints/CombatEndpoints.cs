@@ -44,6 +44,7 @@ internal static class CombatEndpoints
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
+            var viewerNetWorth = economy.CalculateNetWorth(player);
 
             var candidates = db.Players
                 .Include(x => x.Account)
@@ -65,7 +66,7 @@ internal static class CombatEndpoints
                 .ToListAsync(ct);
             var ranked = await RankPageAsync(page, db, economy, ct);
             var targets = ranked
-                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt))
+                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt, viewerNetWorth: viewerNetWorth))
                 .ToList();
 
             return Results.Ok(targets);
@@ -119,7 +120,7 @@ internal static class CombatEndpoints
             var recentDefenses = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.DefenderId == playerId && x.CreatedAtUtc >= combatSince, ct);
 
-            return Results.Ok(ToProfileResponse(target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt));
+            return Results.Ok(ToProfileResponse(target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt, economy.CalculateNetWorth(viewer)));
         }).RequireAuthorization();
 
 
@@ -165,6 +166,47 @@ internal static class CombatEndpoints
             return Results.Ok(missions.Select(ToCombatMissionResponse).ToList());
         }).RequireAuthorization();
 
+
+        // ----- Defender alerts -----
+
+        app.MapGet("/api/game/alerts", async (
+            CurrentPlayerService current,
+            GameDbContext db,
+            CombatResolutionService combatResolver,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+            var logs = await db.CombatLogs.AsNoTracking()
+                .Include(x => x.Attacker)
+                .Where(x => x.DefenderId == player.Id && x.Outcome != "Pending")
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
+                .Take(25)
+                .ToListAsync(ct);
+
+            var alerts = logs.Select(x => DefenceAlerts.Describe(x, player.CombatAlertsSeenAtUtc)).ToList();
+            return Results.Ok(new DefenceAlertsResponse(
+                DefenceAlerts.UnreadCount(alerts),
+                player.CombatAlertsSeenAtUtc,
+                alerts));
+        }).RequireAuthorization();
+
+        app.MapPost("/api/game/alerts/seen", async (
+            CurrentPlayerService current,
+            GameDbContext db,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            // Moving the watermark forward is all "mark read" means.
+            player.CombatAlertsSeenAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new DefenceAlertsResponse(0, player.CombatAlertsSeenAtUtc, []));
+        }).RequireAuthorization();
 
         app.MapPost("/api/game/combat/attack", async (
             CombatAttackRequest request,

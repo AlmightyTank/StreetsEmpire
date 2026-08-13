@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, LeaderboardEntry, LiveOps, Pimp, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
+import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, LeaderboardEntry, LiveOps, Pimp, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -279,7 +279,7 @@ function App() {
 
   return <main className="game-shell">
     <aside className="app-nav">
-      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.1</small></div>
+      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.2</small></div>
       <nav>
         {visiblePages.map(page => <button
           className={activePage === page ? 'active' : ''}
@@ -300,9 +300,12 @@ function App() {
           <span>{pageMeta[activePage].kicker}</span>
           <h1>{pageMeta[activePage].label}</h1>
         </div>
-        <div className="player-plate">
-          <strong>{dashboard.name}</strong>
-          <span>{dashboard.city} / Rank #{dashboard.rank}</span>
+        <div className="header-right">
+          <AlertBell unread={dashboard.unreadDefenceAlerts} onRead={() => void refresh()} />
+          <div className="player-plate">
+            <strong>{dashboard.name}</strong>
+            <span>{dashboard.city} / Rank #{dashboard.rank}</span>
+          </div>
         </div>
       </header>
 
@@ -709,7 +712,7 @@ function MarketPage(ctx: PageContext) {
     <section className="panel market-production">
       <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
       <div className="production-command">
-        <p>Turn cash-on-hand into inventory, then sell product at fixed 0.2.1 street prices.</p>
+        <p>Turn cash-on-hand into inventory, then sell product at fixed street prices.</p>
         <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
       </div>
       <div className="product-grid">
@@ -825,6 +828,7 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
       <AdminMetric label="Remaining" value={`${mission.remainingAttackers} T / ${mission.remainingWeapons} W`} />
       <AdminMetric label="Round" value={`${mission.currentRound}/${mission.maxRounds}`} />
       <AdminMetric label="Morale" value={`${mission.attackerMorale.toFixed(0)} / ${mission.defenderMorale.toFixed(0)}`} />
+      {mission.lootMultiplierPercent < 100 && <AdminMetric label="Haul" value={`${mission.lootMultiplierPercent}% (repeat target)`} />}
     </div>}
     <p>{mission.summary}</p>
     {canCancel && <div className="mission-actions">
@@ -1344,6 +1348,59 @@ function AdminBotsAndConfig({ ctx }: { ctx: PageContext & { overview: AdminOverv
   />
 }
 
+/**
+ * Defence alerts. Opening the panel marks everything read by moving the server-side watermark, then
+ * refreshes so the badge clears. The count itself rides on the dashboard, so the bell costs no extra
+ * request until it is opened.
+ */
+function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [alerts, setAlerts] = useState<DefenceAlert[]>([])
+  const [error, setError] = useState('')
+
+  const toggle = async () => {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    setOpen(true)
+    setError('')
+    try {
+      const loaded = await api.alerts()
+      setAlerts(loaded.alerts)
+      if (loaded.unreadCount > 0) {
+        await api.markAlertsSeen()
+        onRead()
+      }
+    } catch (e) { setError((e as Error).message) }
+  }
+
+  return <div className="alert-bell">
+    <button className={unread > 0 ? 'bell unread' : 'bell'} type="button" onClick={() => void toggle()} aria-expanded={open}>
+      Alerts
+      {unread > 0 && <b>{unread > 99 ? '99+' : unread}</b>}
+    </button>
+    {open && <div className="alert-panel">
+      <div className="alert-panel-head">
+        <strong>Attacks on you</strong>
+        <button className="dismiss" type="button" aria-label="Close alerts" onClick={() => setOpen(false)}>x</button>
+      </div>
+      {error && <p className="coming">{error}</p>}
+      {!error && alerts.length === 0 && <p className="coming">Nobody has come for you yet.</p>}
+      {alerts.map(alert => <div className={alertClass(alert)} key={alert.id}>
+        <strong>{alert.headline}</strong>
+        <span>{alert.detail}</span>
+        <small>{new Date(alert.createdAtUtc).toLocaleString()}</small>
+      </div>)}
+    </div>}
+  </div>
+}
+
+function alertClass(alert: DefenceAlert) {
+  const base = alert.heldTheHouse ? 'alert-row held' : 'alert-row hit'
+  return alert.isUnread ? `${base} fresh` : base
+}
+
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
   return <section className="status-strip">
     <Stat label="Cash" value={money.format(dashboard.cash)} />
@@ -1622,7 +1679,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <span>#{target.rank}</span>
           <strong>{target.name}</strong>
           <small>{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
-          <em>{target.combatStatus.eligibility} / {target.combatReadiness.riskBand}</em>
+          <em className={target.combatStatus.mismatchReason ? 'blocked' : undefined}>{target.combatStatus.eligibility} / {target.combatReadiness.riskBand}</em>
           <b>{money.format(target.netWorth)}</b>
         </button>)}
       </div>
@@ -1681,6 +1738,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
           <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
           <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defenses`} />
+          {profile.combatStatus.mismatchReason && <StatusRow label="Blocked" value={profile.combatStatus.mismatchReason} warn />}
           <StatusRow label="Hoe morale" value={`${profile.hoeHappiness.toFixed(0)}%`} warn={profile.hoeHappiness < 50} />
           <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
           <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
@@ -1769,7 +1827,7 @@ function AdminPanel({ overview, busy, onSeedBots, onRunBots, onSetBotAutomation 
   const game = overview.economy
   return <div className="panel admin-panel">
     <div className="panel-title admin-title">
-      <div><h2>Admin Control Center</h2><span>0.2.1 war room</span></div>
+      <div><h2>Admin Control Center</h2><span>0.2.2 war room</span></div>
       <button
         className="secondary compact admin-toggle"
         type="button"
@@ -1805,7 +1863,7 @@ function AdminPanel({ overview, busy, onSeedBots, onRunBots, onSetBotAutomation 
         <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
       </div>
       <div className="admin-bots">
-        <div className="admin-subtitle"><strong>AI Rivals</strong><span>Seed test opponents for 0.2.0</span></div>
+        <div className="admin-subtitle"><strong>AI Rivals</strong><span>Seed test opponents for combat</span></div>
         <div className="admin-bot-controls">
           <label>Count<input type="number" min={1} max={15} value={botSeedCount} onChange={event => setBotSeedCount(Number(event.target.value))} /></label>
           <button className="secondary compact" disabled={busy} onClick={() => setBotSeedCount(5)}>5</button>
@@ -1893,8 +1951,10 @@ function combatProtectionText(status: { isProtected: boolean, protectionUntilUtc
   return `Until ${new Date(status.protectionUntilUtc).toLocaleString()}`
 }
 
-function attackStatusText(status: { canAttackNow: boolean, eligibility: string, attackTurnCost: number, attackCooldownUntilUtc?: string | null }, missionAgainstTarget?: CombatMission, activeMission?: CombatMission, attackReady = true) {
+function attackStatusText(status: { canAttackNow: boolean, eligibility: string, attackTurnCost: number, attackCooldownUntilUtc?: string | null, mismatchReason?: string | null }, missionAgainstTarget?: CombatMission, activeMission?: CombatMission, attackReady = true) {
   if (missionAgainstTarget) return `Mission active, next update in ${timeUntil(nextMissionTime(missionAgainstTarget))}`
+  // A mismatch is a hard block, so say why before anything else the player could act on.
+  if (status.mismatchReason) return status.mismatchReason
   if (!attackReady) return 'Assign available crew'
   if (activeMission) return `Crew already out, next update in ${timeUntil(nextMissionTime(activeMission))}`
   if (status.canAttackNow) return `${status.attackTurnCost} turns to attack`

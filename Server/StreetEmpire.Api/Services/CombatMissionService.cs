@@ -12,7 +12,8 @@ public sealed class CombatMissionService(
     IGameRandom random,
     HideoutService hideout,
     CombatSchedule schedule,
-    PimpRoster pimps)
+    PimpRoster pimps,
+    EconomyService economy)
 {
     // Shared so the cancel path and the lane query cannot drift apart on the spelling.
     private const string CanceledOutcome = "Canceled";
@@ -31,6 +32,27 @@ public sealed class CombatMissionService(
         var laneReadyAt = await LaneReadyAtUtcAsync(attacker.Id, nowUtc, cancellationToken);
 
         ValidateLaunch(attacker, defender, request, nowUtc, committed, combat, laneReadyAt);
+
+        // Anti-farm gate: a heavyweight cannot pick on a newcomer, and the very new cannot be touched.
+        var mismatch = AntiFarm.RejectReason(
+            economy.CalculateNetWorth(attacker),
+            economy.CalculateNetWorth(defender),
+            _options.AntiFarm);
+        if (mismatch is not null)
+            throw new GameRuleException(mismatch);
+
+        // Caps a dogpile. Protection only exists once a mission finishes, so without this a crowd can
+        // all launch at the same moment and every hit lands unshielded.
+        var maxIncoming = Math.Max(1, _options.AntiFarm.MaxIncomingAttacks);
+        var saved = await db.CombatMissions.AsNoTracking()
+            .CountAsync(x => x.DefenderId == defender.Id && x.Status != "Complete", cancellationToken);
+        // Missions added but not yet saved count too. The bot simulator launches many per batch and
+        // saves once at the end, so a database-only count let extra attacks slip past the cap.
+        var pending = db.ChangeTracker.Entries<CombatMission>()
+            .Count(x => x.State == EntityState.Added && x.Entity.DefenderId == defender.Id);
+        var incoming = saved + pending;
+        if (incoming >= maxIncoming)
+            throw new GameRuleException($"{defender.Name} is already fighting off {incoming:N0} attack(s). Wait your turn.");
 
         // Whoever is already out leading another mission cannot lead this one too.
         var commanding = activeMissions.Where(x => x.CommanderPimpId is not null).Select(x => x.CommanderPimpId!.Value).ToList();
@@ -346,7 +368,8 @@ public sealed class CombatMissionService(
         var attackRoll = ApplyPowerVariance(attackerPower, combat.PowerRandomnessPercent);
         var defenseRoll = ApplyPowerVariance(defenderPower, combat.PowerRandomnessPercent);
         var difference = attackRoll - defenseRoll;
-        var close = Math.Abs(difference) <= Math.Max(8, Math.Max(attackRoll, defenseRoll) * 0.10);
+        var round = combat.Round;
+        var close = Math.Abs(difference) <= Math.Max(round.CloseMinimumGap, Math.Max(attackRoll, defenseRoll) * round.ClosePercent);
 
         var attackerLosses = 0;
         var defenderLosses = 0;
@@ -356,17 +379,17 @@ public sealed class CombatMissionService(
 
         if (close)
         {
-            var moraleLoss = random.NextInclusive(6, 12);
+            var moraleLoss = random.NextInclusive(round.DrawMoraleLossMin, round.DrawMoraleLossMax);
             mission.AttackerMorale = ClampMorale(mission.AttackerMorale - moraleLoss);
             mission.DefenderMorale = ClampMorale(mission.DefenderMorale - moraleLoss);
             summary = $"Round {mission.CurrentRound}: both crews trade pressure and neither side breaks.";
         }
         else if (difference > 0)
         {
-            var defenderMoraleLoss = random.NextInclusive(12, 22);
-            var attackerMoraleLoss = random.NextInclusive(4, 9);
-            defenderLosses = LossCount(defenderHomeThugs, 0.06);
-            defenderWeaponLosses = Math.Min(LossCount(defenderHomeWeapons, 0.04), defenderLosses + 1);
+            var defenderMoraleLoss = random.NextInclusive(round.LosingSideMoraleLossMin, round.LosingSideMoraleLossMax);
+            var attackerMoraleLoss = random.NextInclusive(round.WinningSideMoraleLossMin, round.WinningSideMoraleLossMax);
+            defenderLosses = LossCount(defenderHomeThugs, round.CrewLossRate);
+            defenderWeaponLosses = Math.Min(LossCount(defenderHomeWeapons, round.WeaponLossRate), defenderLosses + 1);
             mission.DefenderMorale = ClampMorale(mission.DefenderMorale - defenderMoraleLoss);
             mission.AttackerMorale = ClampMorale(mission.AttackerMorale - attackerMoraleLoss);
             ApplyDefenderLosses(mission, defenderLosses, defenderWeaponLosses);
@@ -374,10 +397,10 @@ public sealed class CombatMissionService(
         }
         else
         {
-            var attackerMoraleLoss = random.NextInclusive(12, 22);
-            var defenderMoraleLoss = random.NextInclusive(4, 9);
-            attackerLosses = LossCount(mission.RemainingAttackers, 0.06);
-            attackerWeaponLosses = Math.Min(LossCount(mission.RemainingWeapons, 0.04), attackerLosses + 1);
+            var attackerMoraleLoss = random.NextInclusive(round.LosingSideMoraleLossMin, round.LosingSideMoraleLossMax);
+            var defenderMoraleLoss = random.NextInclusive(round.WinningSideMoraleLossMin, round.WinningSideMoraleLossMax);
+            attackerLosses = LossCount(mission.RemainingAttackers, round.CrewLossRate);
+            attackerWeaponLosses = Math.Min(LossCount(mission.RemainingWeapons, round.WeaponLossRate), attackerLosses + 1);
             mission.AttackerMorale = ClampMorale(mission.AttackerMorale - attackerMoraleLoss);
             mission.DefenderMorale = ClampMorale(mission.DefenderMorale - defenderMoraleLoss);
             ApplyAttackerLosses(mission, attackerLosses, attackerWeaponLosses);
@@ -408,6 +431,21 @@ public sealed class CombatMissionService(
         }
         else if (mission.DefenderMorale <= combat.MoraleBreakThreshold || defenderHomeThugs <= defenderLosses)
         {
+            // Repeat wins against the same victim are worth progressively less, and a defender who has
+            // been hit repeatedly by anyone earns a wider shield.
+            var windowStart = nowUtc.AddHours(-Math.Max(1, _options.AntiFarm.RepeatWindowHours));
+            var priorVictories = await db.CombatLogs.AsNoTracking()
+                .CountAsync(x => x.AttackerId == mission.AttackerId
+                                 && x.DefenderId == mission.DefenderId
+                                 && x.Outcome == "Victory"
+                                 && x.CreatedAtUtc >= windowStart, cancellationToken);
+            var recentHits = await db.CombatLogs.AsNoTracking()
+                .CountAsync(x => x.DefenderId == mission.DefenderId
+                                 && x.Outcome == "Victory"
+                                 && x.CreatedAtUtc >= windowStart, cancellationToken);
+            mission.LootMultiplierPercent = (int)Math.Round(AntiFarm.LootMultiplier(priorVictories, _options.AntiFarm) * 100);
+            mission.DefenderRecentHits = recentHits;
+
             var lootOverflow = ApplyLoot(mission);
             // The house fell, so a pimp who stayed behind to hold it may not have survived it.
             var defenderCommanding = await ActiveAttackMissions(mission.DefenderId)
@@ -442,7 +480,12 @@ public sealed class CombatMissionService(
         mission.NextRoundAtUtc = null;
         mission.ReturnsAtUtc = nowUtc.AddSeconds(returnSeconds);
         mission.Defender.LastAttackedAtUtc = nowUtc;
-        mission.DefenderProtectionUntilUtc = nowUtc.AddMinutes(Math.Max(1, combat.DefenderProtectionMinutes));
+        var protectionMinutes = AntiFarm.ProtectionMinutes(
+            Math.Max(0, mission.DefenderRecentHits - 1),
+            combat.DefenderProtectionMinutes,
+            _options.AntiFarm);
+        mission.DefenderProtectionMinutes = protectionMinutes;
+        mission.DefenderProtectionUntilUtc = nowUtc.AddMinutes(protectionMinutes);
         mission.Defender.CombatProtectionUntilUtc = mission.DefenderProtectionUntilUtc;
         mission.Events.Add(new CombatMissionEvent
         {
@@ -565,9 +608,10 @@ public sealed class CombatMissionService(
     private StorageOverflow ApplyLoot(CombatMission mission)
     {
         var combat = _options.Combat;
-        mission.CashStolen = LootCash(mission.Defender.Cash, combat.MinCashLootPercent, combat.MaxCashLootPercent);
-        mission.WeedStolen = LootProduct(mission.Defender.Weed, combat.MinProductLootPercent, combat.MaxProductLootPercent);
-        mission.CokeStolen = LootProduct(mission.Defender.Coke, combat.MinProductLootPercent, combat.MaxProductLootPercent);
+        var share = Math.Clamp(mission.LootMultiplierPercent, 0, 100) / 100.0;
+        mission.CashStolen = Scale(LootCash(mission.Defender.Cash, combat.MinCashLootPercent, combat.MaxCashLootPercent), share);
+        mission.WeedStolen = (int)Scale(LootProduct(mission.Defender.Weed, combat.MinProductLootPercent, combat.MaxProductLootPercent), share);
+        mission.CokeStolen = (int)Scale(LootProduct(mission.Defender.Coke, combat.MinProductLootPercent, combat.MaxProductLootPercent), share);
         mission.Defender.Cash -= mission.CashStolen;
         mission.Defender.Weed -= mission.WeedStolen;
         mission.Defender.Coke -= mission.CokeStolen;
@@ -601,18 +645,10 @@ public sealed class CombatMissionService(
     }
 
     private int AttackPower(int pimps, int thugs, int weapons, double morale, int commanderBonusPercent = 0)
-    {
-        var armedThugs = Math.Min(weapons, thugs);
-        var raw = thugs * 12 + armedThugs * 8 + pimps * 2 + (int)Math.Round(morale / 2);
-        return Math.Max(1, WithBonus(raw, commanderBonusPercent));
-    }
+        => CombatPower.Attack(pimps, thugs, weapons, morale, _options.Combat.Power, commanderBonusPercent);
 
     private int DefensePower(int pimps, int thugs, int weapons, double morale, int enforcerBonusPercent = 0)
-    {
-        var armedThugs = Math.Min(weapons, thugs);
-        var raw = thugs * 14 + armedThugs * 10 + pimps * 3 + (int)Math.Round(morale);
-        return Math.Max(1, WithBonus(raw, enforcerBonusPercent));
-    }
+        => CombatPower.Defence(pimps, thugs, weapons, morale, _options.Combat.Power, enforcerBonusPercent);
 
     private static int WithBonus(int power, int bonusPercent)
         => bonusPercent <= 0 ? power : (int)Math.Round(power * (1 + bonusPercent / 100.0), MidpointRounding.AwayFromZero);
@@ -630,7 +666,7 @@ public sealed class CombatMissionService(
         var max = Math.Max(1, (int)Math.Ceiling(count * rate));
         var losses = 0;
         for (var i = 0; i < max; i++)
-            if (random.NextDouble() < 0.55) losses++;
+            if (random.NextDouble() < _options.Combat.Round.LossRollChance) losses++;
         return Math.Min(count, losses);
     }
 
@@ -663,6 +699,10 @@ public sealed class CombatMissionService(
         var max = Math.Clamp(Math.Max(minSeconds, maxSeconds), 10, 3600);
         return random.NextInclusive(min, max);
     }
+
+    /// <summary>Applies the anti-farm share, keeping at least one unit when the base haul was non-zero.</summary>
+    private static long Scale(long amount, double share)
+        => amount <= 0 ? 0 : Math.Max(1, (long)Math.Floor(amount * share));
 
     private static double AverageMorale(Player player)
         => Math.Round((player.HoeHappiness + player.ThugHappiness) / 2, 2);

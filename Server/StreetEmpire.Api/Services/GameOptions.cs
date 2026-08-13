@@ -357,6 +357,12 @@ public sealed class MoraleOptions
     public double ThugStreetWorkGainPerTurn { get; set; } = 0.12;
     public double HoeCutMoraleScalePerTurn { get; set; } = 0.025;
     public double BaselineHoeCutPercent { get; set; } = 30;
+    /// <summary>
+    /// Morale lost per turn by a crew sent out wholly unsupplied, scaled by the share of upkeep that
+    /// was actually missing. These used to be charged per missing unit, which grew with the crew while
+    /// the morale a shift earns did not, so a mid-sized crew a little short lost more morale in one
+    /// action than ten good ones earned.
+    /// </summary>
     public double CondomShortagePenalty { get; set; } = 2.25;
     public double BeerShortagePenalty { get; set; } = 2.0;
     public double UnmanagedHoePenalty { get; set; } = 0.20;

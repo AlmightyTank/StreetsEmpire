@@ -20,6 +20,7 @@ var tests = new (string Name, Action Test)[]
     ("fire crew updates counts and morale", FireCrewUpdatesCountsAndMorale),
     ("trap house recovery spends resources and boosts morale", TrapHouseRecoverySpendsResourcesAndBoostsMorale),
     ("street auto-buy tops up upkeep within cash and storage", StreetAutoBuyToppsUpWithinLimits),
+    ("supply shortage costs a share of upkeep, not a flat charge per unit", ShortagePenaltyScalesWithTheShareMissed),
     ("pimp roster stays in step with the pimp counter", PimpRosterStaysInStepWithCounter),
     ("pimp specialties bonus the right activity", PimpSpecialtiesBonusTheRightActivity),
     ("pimp commander selection honours the request", PimpCommanderSelectionHonoursRequest),
@@ -514,6 +515,70 @@ static void StreetAutoBuyToppsUpWithinLimits()
 
 // Player.Pimps is what the economy and the leaderboard's net worth expression read, so it must
 // always equal the number of living pimps on the roster.
+/// <summary>
+/// Reported from a live game: morale fell about 29 points per shift while the summary said the crew
+/// had been auto-supplied. The crew had outgrown the storage room, auto-buy topped up to the room
+/// rather than to the requirement, and the missing condoms were charged at a flat rate each.
+///
+/// The penalty is now a share of the upkeep missed, so it means the same thing at any crew size.
+/// </summary>
+static void ShortagePenaltyScalesWithTheShareMissed()
+{
+    static GameOptions Tuning() => new()
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 0,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0,
+            ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Morale = new MoraleOptions
+        {
+            HoesManagedPerPimp = 10,
+            TurnsPerCondom = 12,
+            HoeStreetWorkGainPerTurn = 0.14,
+            HoeCutMoraleScalePerTurn = 0,
+            CondomShortagePenalty = 2.25,
+            UnmanagedHoePenalty = 0,
+            UncoveredThugPenalty = 0,
+            DesertionThreshold = 0,
+            MaxDesertionChance = 0
+        }
+    };
+
+    // The reported case: 59 hoes need 99 condoms for a 20 turn shift, a level 3 room holds 84.
+    var reported = new Player { Turns = 20, Pimps = 9, Hoes = 59, Condoms = 84, HoeHappiness = 93.8, Hideout = new Hideout { StorageLevel = 3 } };
+    CreateEconomy(Tuning()).Scout(reported, 20, false);
+    // 15 of 99 missing is 15% of a 45 point full-shortage penalty, against the +2.8 the shift earns.
+    AssertTrue(reported.HoeHappiness > 89 && reported.HoeHappiness < 91,
+        $"a 14% shortfall should cost a few points, not thirty. Was {reported.HoeHappiness:F1}");
+
+    // Going out with nothing still craters morale, which is the pressure worth keeping.
+    var unsupplied = new Player { Turns = 20, Pimps = 9, Hoes = 59, Condoms = 0, HoeHappiness = 93.8, Hideout = new Hideout { StorageLevel = 3 } };
+    CreateEconomy(Tuning()).Scout(unsupplied, 20, false);
+    AssertTrue(unsupplied.HoeHappiness > 50 && unsupplied.HoeHappiness < 53,
+        $"an entirely unsupplied shift should cost about 45. Was {unsupplied.HoeHappiness:F1}");
+
+    // Same share missed, very different crew sizes: the cost has to be the same, which is the whole
+    // point of charging a share rather than a count.
+    var small = new Player { Turns = 20, Pimps = 9, Hoes = 24, Condoms = 20, HoeHappiness = 80, Hideout = new Hideout { StorageLevel = 6 } };
+    var large = new Player { Turns = 20, Pimps = 20, Hoes = 192, Condoms = 160, HoeHappiness = 80, Hideout = new Hideout { StorageLevel = 6 } };
+    CreateEconomy(Tuning()).Scout(small, 20, false);
+    CreateEconomy(Tuning()).Scout(large, 20, false);
+    AssertTrue(Math.Abs(small.HoeHappiness - large.HoeHappiness) < 0.5,
+        $"half the crew size should not change what being equally short costs. {small.HoeHappiness:F1} vs {large.HoeHappiness:F1}");
+
+    // A fully supplied shift still earns morale.
+    var supplied = new Player { Turns = 20, Pimps = 9, Hoes = 59, Condoms = 99, HoeHappiness = 50, Hideout = new Hideout { StorageLevel = 6 } };
+    CreateEconomy(Tuning()).Scout(supplied, 20, false);
+    AssertEqual(52.8, Math.Round(supplied.HoeHappiness, 1));
+}
+
 static void PimpRosterStaysInStepWithCounter()
 {
     var service = CreateEconomy();

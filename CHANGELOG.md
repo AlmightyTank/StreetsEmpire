@@ -24,6 +24,11 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- Running short on condoms or beer was charged per missing unit, so the penalty grew with the crew
+  while the morale a shift earns did not. A crew of 59 needing 99 condoms with a level 3 storage room
+  holding 84 lost about 29 morale a shift and walked out within four, despite auto-buy reporting a
+  successful restock. The cost is now the share of upkeep missed: the same shortfall costs about 4,
+  and going out wholly unsupplied still costs 45.
 - The crew morale panel and its rest and party messages were hardcoded to the Trap House, so a player
   who had moved up was still being told about a building they left behind.
 - Seeded rivals were given the deepest storage room and safe in the table, which after tiers existed

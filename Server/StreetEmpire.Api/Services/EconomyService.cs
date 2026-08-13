@@ -233,10 +233,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var cutEffect = (player.HoeCutPercent - morale.BaselineHoeCutPercent) * turns * morale.HoeCutMoraleScalePerTurn;
         var hoeDelta = morale.HoeStreetWorkGainPerTurn * turns
             + cutEffect
-            - condomShortage * morale.CondomShortagePenalty
+            - ShortagePenalty(condomShortage, condomsNeeded, turns, morale.CondomShortagePenalty)
             - unmanagedHoes * morale.UnmanagedHoePenalty;
         var thugDelta = morale.ThugStreetWorkGainPerTurn * turns
-            - beerShortage * morale.BeerShortagePenalty
+            - ShortagePenalty(beerShortage, beerNeeded, turns, morale.BeerShortagePenalty)
             - uncoveredThugs * morale.UncoveredThugPenalty;
 
         player.HoeHappiness = ClampHappiness(player.HoeHappiness + hoeDelta);
@@ -769,6 +769,23 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             if (RollChance(chance)) deserters++;
         return deserters;
     }
+
+    /// <summary>
+    /// What running short on upkeep costs, as a share of the upkeep that was missed rather than a flat
+    /// charge per missing unit.
+    ///
+    /// Charged per unit, the penalty grew with the crew while the morale a shift earns did not, so the
+    /// two came apart as a player got bigger. A crew of 59 needs 98 condoms for a full shift and a
+    /// level 3 storage room holds 84, which is a 14 unit shortfall: at 2.25 each that was -31.5 morale
+    /// against the +2.8 the same shift earned, so being 14% under-supplied cost eleven shifts of
+    /// progress and the crew walked out inside four actions. Proportional, the same 14% costs -6.4 and
+    /// reads as a slide the player can correct, while going out with nothing still craters morale.
+    ///
+    /// The coefficient is now "morale lost per turn when wholly unsupplied", so a full 20 turn shift
+    /// with no condoms at all costs 45. It behaves the same at any crew size, which is the point.
+    /// </summary>
+    private static double ShortagePenalty(int shortage, int needed, int turns, double penaltyPerTurn)
+        => shortage <= 0 || needed <= 0 ? 0 : penaltyPerTurn * turns * ((double)shortage / needed);
 
     private static int RequiredUpkeep(int crewCount, int turns, double turnsPerSupply)
     {

@@ -1,6 +1,61 @@
-# Street Empire 0.2.1
+# Street Empire 0.2.2
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
+
+## What changed in 0.2.2
+
+0.2.2 gives the operation a base, gives the crew names, gives the game a real admin panel, and makes
+combat something you can lose as well as win.
+
+### Hideout
+
+- Every player has a hideout. The tier caps crew, a storage room caps goods, and a safe caps cash on hand.
+- The Trap House holds **6 pimps, 50 hoes, and 25 thugs**.
+- The storage room upgrades through three levels, and level 3 is what makes a full-length street action supplyable at the crew caps.
+- The safe upgrades from $50,000 to $100,000 of cash on hand. Bank cash stays uncapped and stays safe from theft.
+- Weed and coke labs are turn-fed: they raise what each production turn yields rather than producing on their own.
+- Earned income over the safe is swept into the bank, and goods over storage spill. Deliberate purchases are refused up front instead, so you never lose something you paid for.
+- Stock a player already held is never taken away, so saves from before the caps drain down through upkeep instead of being confiscated.
+
+### Named pimps
+
+- Pimps are tracked individually with a name, a specialty, loyalty, and a record of missions led. Hoes and thugs stay as counts; they churn too fast to be worth naming.
+- **Enforcers** sharpen the attack they command and the defence of the house while they are home. **Hustlers** lift street income while they are home. The two never apply at once.
+- Exactly one pimp commands each attack, chosen by the player or fielded by the server.
+- A pimp can die commanding a defeat, die defending a broken house, or walk out when loyalty bottoms out. Never the last one.
+
+### Combat and economy
+
+- Attack cooldowns are per lane: two lanes, each held for the cooldown window, so two attacks can run at once. Cancelling a mission refunds its lane.
+- Street work can auto-buy the upkeep an action needs, bounded by both storage room and cash.
+- Ranking moved into the database. The dashboard, leaderboard, targets, profiles, and admin overview no longer load every player to sort them.
+- Combat polling dropped from 26 queries over 6 requests per tick to 9 over 2.
+
+### Admin panel
+
+- Search any player, open their full detail, and adjust any resource up or down. Every action is recorded in an audit trail with the actor, the target, before and after values, and a reason.
+- Ban, suspend with an expiry, lift, force-logout, rename, and grant or revoke admin. All reversible, and a ban ends live sessions rather than waiting for the cookie to lapse.
+- Oversight shows wealth distribution rather than bare totals, the fastest movers, every in-flight mission with stuck ones flagged, and AI idle times.
+- Maintenance mode blocks gameplay while leaving reads and admin access open. Announcements post a site-wide banner.
+- 127 scalar tuning values are editable at runtime without a restart, layered over `appsettings.json` and reversible to it.
+
+### Combat refinement
+
+- **Anti-farm protections.** A player under $25,000 net worth cannot be attacked at all, and nobody may
+  hit a target worth less than a fifth of their own. Repeat victories against the same defender inside a
+  day decay the haul 40% each time, down to a tenth, so farming becomes pointless rather than forbidden.
+  Protection widens with every hit a defender has already taken, and at most two attacks may be in
+  flight against one player at once.
+- **AI rivals attack.** Bots pick the richest target they should still beat, skipping anyone protected,
+  mismatched, or already swarmed. Aggression follows personality: Hard Chargers raid readily on thin
+  odds, Bankers rarely and only with a clear edge.
+- **Defender alerts.** A bell shows how many attacks you have not read, with each one written from the
+  defender's side: what was taken, which crew died, and whether you held the house.
+- **Combat balance.** Strength is one configurable formula instead of four hardcoded copies. Defence
+  used to earn 24 per armed thug against attack's 20 and counted morale twice as heavily, which meant
+  beating a fully built house needed 34 armed thugs when the crew cap is 25: it was unbeatable by
+  arithmetic. An attacker now needs roughly 10-20% more armed crew, and cracking a maxed defender takes
+  a top Enforcer commanding or catching their crew away.
 
 ## What changed in 0.2.1
 
@@ -207,7 +262,7 @@ Working the streets for 1-20 turns can now:
 - Per-player economy/action history.
 - Responsive React browser UI.
 
-Travel, organizations, player-to-player markets, and territory are intentionally not part of 0.2.0.
+Travel, organizations, player-to-player markets, and territory are intentionally not part of 0.2.2.
 
 ## Stack
 
@@ -266,7 +321,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.1`.
+It should report version `0.2.2`.
 
 ### 4. Run the browser client
 
@@ -320,7 +375,7 @@ The product net-worth value is deliberately below its fixed sale value so invent
 
 ## Economy tuning
 
-The server remains authoritative, and 0.2.1 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
+The server remains authoritative, and 0.2.2 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
 
 The configurable tables now include:
 
@@ -388,4 +443,5 @@ That rule becomes especially important once PvP and a player market are introduc
 - **0.1.12 - Done:** combat schema, protection status, and combat log contracts.
 - **0.2.0 - Done:** player search, attack/defense strength, combat, theft, losses, protection windows, and attack logs.
 - **0.2.1 - Done:** live combat missions, assigned crew, round events, combined Combat page, and committed-crew vulnerability.
-- **0.2.2 - Next:** combat balance pass, AI attack behavior, anti-farm protections, and better defender alerts.
+- **0.2.2 - Done:** hideout capacity, named pimps, the admin panel, database-side ranking, anti-farm protections, AI attack behavior, defender alerts, and a combat balance pass.
+- **0.2.3 - Next:** hideout tiers beyond the Trap House, passive lab production, and richer world news.

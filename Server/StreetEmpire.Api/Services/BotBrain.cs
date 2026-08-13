@@ -119,6 +119,35 @@ internal sealed record BotBrain(
     }
 }
 
+/// <summary>
+/// How willing a personality is to start a fight. Derived from the focus rather than added to the
+/// BotBrain record, which is already a 57-field positional type: seven more constructor arguments
+/// across seven variants would be far easier to get wrong than a lookup.
+/// </summary>
+internal sealed record BotAttackProfile(
+    double AttackChance,
+    int MinThugsToAttack,
+    double ThugCommitShare,
+    double WinMargin)
+{
+    internal static BotAttackProfile For(BotBrainFocus focus)
+        => focus switch
+        {
+            // Shares are high because defence outweighs attack for the same crew: a raid that holds
+            // most of its thugs back cannot win, so a bot either commits properly or stays home.
+            // Margins stay at or above parity, since a persistently weaker attacker loses on rounds.
+            BotBrainFocus.MoraleNeglecter => new(0.45, 4, 0.95, 1.00),
+            BotBrainFocus.BigSpender => new(0.35, 4, 0.90, 1.05),
+            BotBrainFocus.CrewBuilder => new(0.22, 6, 0.85, 1.15),
+            BotBrainFocus.BalancedOperator => new(0.20, 5, 0.85, 1.10),
+            BotBrainFocus.ProductRunner => new(0.12, 6, 0.80, 1.25),
+            BotBrainFocus.ResourceManager => new(0.10, 8, 0.75, 1.35),
+            // Bankers would rather hold cash than risk crew.
+            BotBrainFocus.Banker => new(0.06, 8, 0.70, 1.45),
+            _ => new(0.20, 5, 0.85, 1.10)
+        };
+}
+
 internal enum BotBrainFocus
 {
     BalancedOperator,

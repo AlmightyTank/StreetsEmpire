@@ -53,6 +53,10 @@ internal static class GameEndpoints
                 .CountAsync(x => x.AttackerId == player.Id && x.CreatedAtUtc >= combatSince, ct);
             var recentDefenses = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.DefenderId == player.Id && x.CreatedAtUtc >= combatSince, ct);
+            var unreadAlerts = await db.CombatLogs.AsNoTracking()
+                .CountAsync(x => x.DefenderId == player.Id
+                                 && x.Outcome != "Pending"
+                                 && (player.CombatAlertsSeenAtUtc == null || x.CreatedAtUtc > player.CombatAlertsSeenAtUtc), ct);
             var combatCrew = await combatMissions.CommitmentAsync(player, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
             var commandingPimpIds = await combatMissions.ActiveAttackMissions(player.Id)
@@ -104,6 +108,7 @@ internal static class GameEndpoints
                 pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 ToCombatCrewResponse(combatCrew),
                 ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
+                unreadAlerts,
                 economy.GetStore(),
                 activity));
         }).RequireAuthorization();

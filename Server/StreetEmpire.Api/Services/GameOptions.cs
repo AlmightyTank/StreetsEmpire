@@ -38,6 +38,100 @@ public sealed class GameOptions
     public CombatOptions Combat { get; set; } = new();
     public HideoutOptions Hideout { get; set; } = new();
     public PimpOptions Pimps { get; set; } = new();
+    public AntiFarmOptions AntiFarm { get; set; } = new();
+}
+
+/// <summary>
+/// Weights behind attack and defence strength. Tuned so a defender holds at equal armed crew while an
+/// attacker with roughly 12-20% more armed thugs gets through: wide enough that defence is worth
+/// investing in, narrow enough that attacking is a real option rather than a losing bet.
+///
+/// Before this pass, defence earned 24 per armed thug against attack's 20 and counted morale twice as
+/// heavily, so an attacker needed about 1.4x the crew and bots correctly refused nearly every fight.
+/// </summary>
+/// <summary>
+/// What happens inside a fight round. These were hardcoded, which made the round outcome impossible to
+/// tune and hid two problems: a 10% band counted as a draw, so a modest edge produced six drawn rounds
+/// and no result, and 12-22 morale damage barely broke a 95-morale defender inside the round cap. Both
+/// meant an attacker could win on paper and still come home with nothing.
+/// </summary>
+public sealed class CombatRoundOptions
+{
+    /// <summary>Within this fraction of each other, a round is a draw and neither side breaks.</summary>
+    public double ClosePercent { get; set; } = 0.06;
+    public int CloseMinimumGap { get; set; } = 8;
+
+    /// <summary>Morale both sides lose in a drawn round.</summary>
+    public int DrawMoraleLossMin { get; set; } = 6;
+    public int DrawMoraleLossMax { get; set; } = 12;
+
+    /// <summary>
+    /// Morale the losing side of a round gives up. Left at the original range on purpose: raising it to
+    /// 16-26 alongside the narrower draw band turned every simulated fight into an attacker victory,
+    /// because a side that starts losing rounds also loses crew and morale and cannot recover. The band
+    /// was the real cause of drawn-out stalemates, so only the band moved.
+    /// </summary>
+    public int LosingSideMoraleLossMin { get; set; } = 12;
+    public int LosingSideMoraleLossMax { get; set; } = 22;
+
+    /// <summary>Morale the winning side of a round still gives up.</summary>
+    public int WinningSideMoraleLossMin { get; set; } = 4;
+    public int WinningSideMoraleLossMax { get; set; } = 9;
+
+    public double CrewLossRate { get; set; } = 0.06;
+    public double WeaponLossRate { get; set; } = 0.04;
+    public double LossRollChance { get; set; } = 0.55;
+}
+
+public sealed class CombatPowerOptions
+{
+    public int ThugAttack { get; set; } = 13;
+    public int ArmedThugAttack { get; set; } = 9;
+    public int PimpAttack { get; set; } = 2;
+    /// <summary>
+    /// Close to the defender's weight on purpose. A crew's morale matters wherever it fights, and a
+    /// large gap here swamps small crews: at 0.75 an attacker needed 40% more thugs to match five
+    /// defenders, because the flat morale difference dwarfed a five-thug base.
+    /// </summary>
+    public double MoraleAttackWeight { get; set; } = 0.9;
+
+    public int ThugDefence { get; set; } = 14;
+    public int ArmedThugDefence { get; set; } = 9;
+    public int PimpDefence { get; set; } = 3;
+    public double MoraleDefenceWeight { get; set; } = 1;
+}
+
+public sealed class AntiFarmOptions
+{
+    /// <summary>
+    /// Below this net worth a player cannot be attacked at all. Self-limiting as a shield: bank cash
+    /// counts toward net worth, so a player cannot hide wealth to stay permanently untouchable.
+    /// </summary>
+    public long MinDefenderNetWorth { get; set; } = 25_000;
+
+    /// <summary>An attacker may not hit a target worth less than their own net worth over this ratio.</summary>
+    public double MaxNetWorthRatio { get; set; } = 5;
+
+    /// <summary>How far back repeat victories and hits are counted.</summary>
+    public int RepeatWindowHours { get; set; } = 24;
+
+    /// <summary>Share of the haul lost per prior victory against the same defender in the window.</summary>
+    public double LootDecayPerRepeat { get; set; } = 0.4;
+
+    /// <summary>Floor on the decay, so a repeat attack is pointless rather than forbidden.</summary>
+    public double MinLootMultiplier { get; set; } = 0.1;
+
+    /// <summary>Extra protection per hit the defender already took in the window, as a multiple of the base.</summary>
+    public double ProtectionEscalationPerHit { get; set; } = 0.5;
+
+    public int MaxProtectionMinutes { get; set; } = 360;
+
+    /// <summary>
+    /// How many attacks may be in flight against one defender at once. Escalating protection is
+    /// reactive: it is set when a mission finishes, so without this cap any number of attackers can
+    /// launch simultaneously and every one lands before the first shield exists.
+    /// </summary>
+    public int MaxIncomingAttacks { get; set; } = 2;
 }
 
 public sealed class PimpOptions
@@ -243,6 +337,9 @@ public sealed class CrewOptions
 
 public sealed class CombatOptions
 {
+    public CombatPowerOptions Power { get; set; } = new();
+    public CombatRoundOptions Round { get; set; } = new();
+
     public int AttackTurnCost { get; set; } = 10;
     public int AttackCooldownMinutes { get; set; } = 30;
     public int AttackTravelSecondsMin { get; set; } = 75;

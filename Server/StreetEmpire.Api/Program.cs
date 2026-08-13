@@ -179,7 +179,7 @@ app.Use(async (context, next) =>
     }, context.RequestAborted);
 });
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.1" }));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.2" }));
 
 app.MapAuthEndpoints();
 app.MapGameEndpoints();

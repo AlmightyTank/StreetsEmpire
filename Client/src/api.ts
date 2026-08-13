@@ -116,6 +116,7 @@ export type Dashboard = {
   fallenCrew: Pimp[]
   combatCrew: CombatCrew
   combatStatus: CombatStatus
+  unreadDefenceAlerts: number
   store: StoreItem[]
   recentActivity: Activity[]
 }
@@ -153,6 +154,7 @@ export type CombatStatus = {
   recentAttacksMade: number
   recentDefenses: number
   eligibility: string
+  mismatchReason?: string | null
 }
 
 export type CombatCrew = {
@@ -270,6 +272,9 @@ export type CombatMission = {
   maxRounds: number
   attackerPower: number
   defenderPower: number
+  lootMultiplierPercent: number
+  defenderRecentHits: number
+  defenderProtectionMinutes: number
   cashStolen: number
   weedStolen: number
   cokeStolen: number
@@ -282,6 +287,28 @@ export type CombatMission = {
   canCancel: boolean
   cancelCashCost: number
   events: CombatMissionEvent[]
+}
+
+export type DefenceAlert = {
+  id: number
+  attackerName: string
+  outcome: string
+  heldTheHouse: boolean
+  headline: string
+  detail: string
+  cashLost: number
+  weedLost: number
+  cokeLost: number
+  thugsLost: number
+  pimpsLost: number
+  isUnread: boolean
+  createdAtUtc: string
+}
+
+export type DefenceAlerts = {
+  unreadCount: number
+  lastSeenAtUtc?: string | null
+  alerts: DefenceAlert[]
 }
 
 export type ActionResult = {
@@ -431,6 +458,8 @@ export const api = {
     }),
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNewsEntry[]>('/api/world/news'),
+  alerts: () => request<DefenceAlerts>('/api/game/alerts'),
+  markAlertsSeen: () => request<DefenceAlerts>('/api/game/alerts/seen', { method: 'POST' }),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
   adminSeedBots: (count: number) => request<ActionResult>('/api/admin/bots/seed', {
     method: 'POST',

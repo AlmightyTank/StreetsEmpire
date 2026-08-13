@@ -40,9 +40,12 @@ internal static class ResponseMappers
             player.Thugs,
             player.CreatedAtUtc);
 
-    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null)
+    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerNetWorth = 0)
     {
         var player = ranked.Player;
+        var mismatch = viewer is null || viewer.Id == player.Id
+            ? null
+            : AntiFarm.RejectReason(viewerNetWorth, ranked.NetWorth, options.AntiFarm);
         return new PlayerTargetResponse(
             player.Id,
             player.Name,
@@ -56,8 +59,8 @@ internal static class ResponseMappers
             player.Thugs,
             player.Weapons,
             AverageMorale(player),
-            ToCombatReadiness(player),
-            ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc));
+            ToCombatReadiness(player, options),
+            ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch));
     }
 
     internal static PlayerProfileResponse ToProfileResponse(
@@ -68,9 +71,13 @@ internal static class ResponseMappers
         GameOptions options,
         int recentAttacksMade,
         int recentDefenses,
-        DateTime? viewerLaneReadyAtUtc)
+        DateTime? viewerLaneReadyAtUtc,
+        long viewerNetWorth = 0)
     {
         var player = ranked.Player;
+        var mismatch = viewer is null || viewer.Id == player.Id
+            ? null
+            : AntiFarm.RejectReason(viewerNetWorth, ranked.NetWorth, options.AntiFarm);
         return new PlayerProfileResponse(
             player.Id,
             player.Name,
@@ -90,19 +97,20 @@ internal static class ResponseMappers
             Math.Round(player.HoeHappiness, 2),
             Math.Round(player.ThugHappiness, 2),
             AverageMorale(player),
-            ToCombatReadiness(player),
-            ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc),
+            ToCombatReadiness(player, options),
+            ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch),
             publicActivity);
     }
 
-    internal static CombatReadinessResponse ToCombatReadiness(Player player)
+    internal static CombatReadinessResponse ToCombatReadiness(Player player, GameOptions options)
     {
         var armedThugs = Math.Min(player.Weapons, player.Thugs);
         var uncoveredThugs = Math.Max(0, player.Thugs - player.Weapons);
         var weaponCoverage = player.Thugs == 0 ? 100 : Math.Round(armedThugs * 100.0 / player.Thugs, 2);
         var averageMorale = AverageMorale(player);
-        var attackPower = Math.Max(1, player.Thugs * 12 + armedThugs * 8 + player.Pimps * 2 + (int)Math.Round(averageMorale / 2));
-        var defensePower = Math.Max(1, player.Thugs * 14 + armedThugs * 10 + player.Pimps * 3 + (int)Math.Round(averageMorale));
+        var power = options.Combat.Power;
+        var attackPower = CombatPower.Attack(player.Pimps, player.Thugs, player.Weapons, averageMorale, power);
+        var defensePower = CombatPower.Defence(player.Pimps, player.Thugs, player.Weapons, averageMorale, power);
         var riskBand = (averageMorale, weaponCoverage, uncoveredThugs) switch
         {
             (< 35, _, _) => "Fragile",
@@ -181,7 +189,8 @@ internal static class ResponseMappers
         GameOptions options,
         int recentAttacksMade = 0,
         int recentDefenses = 0,
-        DateTime? viewerLaneReadyAtUtc = null)
+        DateTime? viewerLaneReadyAtUtc = null,
+        string? mismatchReason = null)
     {
         var combat = options.Combat;
         var isProtected = player.CombatProtectionUntilUtc is { } protectionUntil && protectionUntil > nowUtc;
@@ -193,11 +202,13 @@ internal static class ResponseMappers
             ? "Self"
             : isProtected
                 ? "Protected"
-                : isOnCooldown
-                    ? "Cooldown"
-                    : !hasTurns
-                        ? "Need Turns"
-                        : "Eligible";
+                : mismatchReason is not null
+                    ? "Mismatched"
+                    : isOnCooldown
+                        ? "Cooldown"
+                        : !hasTurns
+                            ? "Need Turns"
+                            : "Eligible";
 
         return new CombatStatusResponse(
             isProtected,
@@ -205,11 +216,12 @@ internal static class ResponseMappers
             player.LastAttackAtUtc,
             player.LastAttackedAtUtc,
             viewerLaneReadyAtUtc,
-            hasViewer && !isSelf && !isProtected && !isOnCooldown && hasTurns,
+            hasViewer && !isSelf && !isProtected && !isOnCooldown && hasTurns && mismatchReason is null,
             combat.AttackTurnCost,
             recentAttacksMade,
             recentDefenses,
-            eligibility);
+            eligibility,
+            mismatchReason);
     }
 
     internal static CombatLogResponse ToCombatLogResponse(CombatLog log)
@@ -264,6 +276,9 @@ internal static class ResponseMappers
             mission.MaxRounds,
             mission.AttackerPower,
             mission.DefenderPower,
+            mission.LootMultiplierPercent,
+            mission.DefenderRecentHits,
+            mission.DefenderProtectionMinutes,
             mission.CashStolen,
             mission.WeedStolen,
             mission.CokeStolen,

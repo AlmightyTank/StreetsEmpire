@@ -964,3 +964,69 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   .config-row { grid-template-columns: minmax(0, 1fr) auto; }
   .config-row input { grid-column: 1 / -1; }
 }
+
+.target-row em.blocked { color: #d97a52; }
+
+.header-right { display: flex; align-items: stretch; gap: 10px; }
+.alert-bell { position: relative; display: flex; align-items: stretch; }
+.alert-bell .bell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(13, 16, 17, .8);
+  border: 1px solid #303532;
+  color: #bdb4aa;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-weight: 700;
+  font-size: .82rem;
+}
+.alert-bell .bell:hover { border-color: #4a524f; color: #f4eadc; }
+.alert-bell .bell.unread { border-color: #8b6532; color: #f0c875; }
+.alert-bell .bell b {
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d4574a, #a33a30);
+  color: #fff;
+  font-size: .7rem;
+  text-align: center;
+}
+.alert-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(380px, 82vw);
+  max-height: 420px;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+  background: linear-gradient(180deg, #191a19, #0f1112);
+  border: 1px solid #3a4240;
+  border-radius: 8px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  padding: 12px;
+}
+.alert-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.alert-panel-head strong { color: #f4eee5; font-size: .88rem; }
+.alert-row {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #262b2a;
+  border-left-width: 3px;
+  background: #0b0d0e;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.alert-row.hit { border-left-color: #a33a30; }
+.alert-row.held { border-left-color: #3f7a54; }
+.alert-row.fresh { background: #14181a; }
+.alert-row strong { color: #f4eee5; font-size: .82rem; }
+.alert-row span { color: #aea59a; font-size: .78rem; }
+.alert-row small { color: #6f6862; font-size: .7rem; }
+
+@media (max-width: 700px) {
+  .header-right { flex-direction: column; align-items: stretch; }
+  .alert-bell .bell { justify-content: space-between; padding: 10px 14px; }
+}

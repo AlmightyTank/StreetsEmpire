@@ -49,6 +49,17 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     }
 
     /// <summary>
+    /// Players worth at least a threshold, so a caller can pull a band of the ladder without reading
+    /// the whole table. Built off the same expression body as everything else here.
+    /// </summary>
+    public Expression<Func<Player, bool>> NetWorthAtLeast(long threshold)
+    {
+        var player = NetWorthExpression.Parameters[0];
+        var body = Expression.GreaterThanOrEqual(NetWorthExpression.Body, Expression.Constant(threshold));
+        return Expression.Lambda<Func<Player, bool>>(body, player);
+    }
+
+    /// <summary>
     /// Projects a player down to just their position in the net worth order, so ranking a page does
     /// not drag whole player rows back with it.
     /// </summary>

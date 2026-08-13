@@ -13,8 +13,10 @@ activity log into something worth reading.
   ending at 22 pimps, 200 hoes, and 110 thugs.
 - A tier is paid for in cash and turns up front and then takes time to build, from 30 minutes to six
   hours. The old caps hold until it lands, so nobody buys a bigger crew mid-fight.
-- Builds are paid from the bank first, then cash on hand. A tier costs more than the safe below it
-  holds, so charging cash on hand alone would put every tier permanently out of reach.
+- Every upgrade is paid from the bank first, then cash on hand. The safe is one of the things being
+  bought, so charging cash on hand would cap what a player can spend at the safe they already own, and
+  several upgrades cost more than the safe one level below them holds. A rule test now walks the whole
+  ladder and buys every tier and room level in order, so no level can be stranded again.
 - Storage rooms, safes, and labs now run deeper than the Trap House can hold. Each one names the tier
   it needs, and each storage level holds exactly what a full-length street action consumes at the crew
   caps of the tier that unlocks it. A rule test pins that relationship down.

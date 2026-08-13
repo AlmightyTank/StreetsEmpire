@@ -591,14 +591,14 @@ function HideoutPage(ctx: PageContext) {
     <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
 
     <section className="panel wide-panel">
-      <div className="panel-title"><h2>Rooms</h2><span>Spend cash on hand</span></div>
+      <div className="panel-title"><h2>Rooms</h2><span>Paid from the bank first</span></div>
       <div className="room-list">
         <RoomRow
           name="Storage Room"
           level={hideout.storageLevel}
           detail={`Holds ${number.format(hideout.maxCondoms)} condoms, ${number.format(hideout.maxBeer)} beer, ${number.format(hideout.maxWeapons)} weapons, ${number.format(hideout.maxWeed)} weed, ${number.format(hideout.maxCoke)} coke`}
           upgrade={hideout.storageUpgrade}
-          cash={dashboard.cash}
+          funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('storage'))}
         />
@@ -607,7 +607,7 @@ function HideoutPage(ctx: PageContext) {
           level={hideout.safeLevel}
           detail={`Holds ${money.format(hideout.maxCash)} cash on hand`}
           upgrade={hideout.safeUpgrade}
-          cash={dashboard.cash}
+          funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('safe'))}
         />
@@ -618,7 +618,7 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Raises weed production turns and makes weed on its own.'
             : `+${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own`}
           upgrade={hideout.weedLabUpgrade}
-          cash={dashboard.cash}
+          funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('weedlab'))}
         />
@@ -629,7 +629,7 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Raises coke production turns and makes coke on its own.'
             : `+${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own`}
           upgrade={hideout.cokeLabUpgrade}
-          cash={dashboard.cash}
+          funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
         />
@@ -662,6 +662,10 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
   const hideout = dashboard.hideout
   const building = hideout.building
   const next = hideout.nextTier
+  // Cash and bank together, matching what the server charges. Checking cash on hand alone greyed the
+  // button out for exactly the players who could afford it, since a tier costs more than any safe below
+  // it holds and the rest of their money is necessarily in the bank.
+  const canAffordTier = !next || dashboard.cash + dashboard.bankCash >= next.cost
 
   // The panel keeps its own second hand. The app-wide one stops once turns are maxed, which would
   // otherwise freeze the countdown for exactly the players most likely to be building something.
@@ -689,15 +693,18 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
           <div className="room-row">
             <div className="room-copy">
               <strong>{next.name}</strong>
-              <span>{money.format(next.cost)} and {next.turns} turns. Takes {next.buildMinutes} minutes to build.</span>
+              <span>
+                {money.format(next.cost)} and {next.turns} turns. Takes {next.buildMinutes} minutes to build.
+                Paid from the bank first, then cash on hand.
+              </span>
             </div>
             <em>Tier {next.level}</em>
             <button
               className="primary"
-              disabled={busy || dashboard.cash < next.cost || dashboard.turns < next.turns}
+              disabled={busy || !canAffordTier || dashboard.turns < next.turns}
               onClick={() => void act(() => api.upgradeHideout('tier'))}
             >
-              {dashboard.cash < next.cost ? 'Not enough cash' : dashboard.turns < next.turns ? 'Not enough turns' : 'Start building'}
+              {!canAffordTier ? 'Not enough money' : dashboard.turns < next.turns ? 'Not enough turns' : 'Start building'}
             </button>
           </div>
         </>
@@ -705,12 +712,14 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
   </section>
 }
 
-function RoomRow({ name, level, detail, upgrade, cash, busy, onUpgrade }: {
+// funds, not cash on hand: the server pays for a room from the bank first, because the safe is one of
+// the things being bought and several rooms cost more than the safe below them holds.
+function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
   name: string
   level: number
   detail: string
   upgrade?: HideoutRoomUpgrade | null
-  cash: number
+  funds: number
   busy: boolean
   onUpgrade: () => void
 }) {
@@ -722,7 +731,7 @@ function RoomRow({ name, level, detail, upgrade, cash, busy, onUpgrade }: {
       {locked && <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better.</small>}
     </div>
     <em>{level === 0 ? 'Not built' : `Level ${level}`}</em>
-    <button className="primary" disabled={busy || !upgrade || locked || cash < upgrade.cost} onClick={onUpgrade}>
+    <button className="primary" disabled={busy || !upgrade || locked || funds < upgrade.cost} onClick={onUpgrade}>
       {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
     </button>
   </div>

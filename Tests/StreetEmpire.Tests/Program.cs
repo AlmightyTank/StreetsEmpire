@@ -21,6 +21,7 @@ var tests = new (string Name, Action Test)[]
     ("trap house recovery spends resources and boosts morale", TrapHouseRecoverySpendsResourcesAndBoostsMorale),
     ("street auto-buy tops up upkeep within cash and storage", StreetAutoBuyToppsUpWithinLimits),
     ("supply shortage costs a share of upkeep, not a flat charge per unit", ShortagePenaltyScalesWithTheShareMissed),
+    ("crew report names the storage level a crew actually needs", CrewReportNamesTheStorageLevelNeeded),
     ("pimp roster stays in step with the pimp counter", PimpRosterStaysInStepWithCounter),
     ("pimp specialties bonus the right activity", PimpSpecialtiesBonusTheRightActivity),
     ("pimp commander selection honours the request", PimpCommanderSelectionHonoursRequest),
@@ -577,6 +578,34 @@ static void ShortagePenaltyScalesWithTheShareMissed()
     var supplied = new Player { Turns = 20, Pimps = 9, Hoes = 59, Condoms = 99, HoeHappiness = 50, Hideout = new Hideout { StorageLevel = 6 } };
     CreateEconomy(Tuning()).Scout(supplied, 20, false);
     AssertEqual(52.8, Math.Round(supplied.HoeHappiness, 1));
+}
+
+/// <summary>
+/// A full storage room is a harder limit than what a player currently holds: past it there is nothing
+/// left to buy and every shift runs a shortage. The report has to state that limit and name the room
+/// that would fix it, because the trap is invisible otherwise.
+/// </summary>
+static void CrewReportNamesTheStorageLevelNeeded()
+{
+    var service = CreateEconomy();
+
+    // A level 3 room holds 84 condoms, which carries 50 hoes through a 20 turn shift and no more.
+    var supplied = new Player { Pimps = 6, Hoes = 50, Thugs = 25, Hideout = new Hideout { StorageLevel = 3 } };
+    var fine = service.GetCrewReport(supplied);
+    AssertEqual(50, fine.HoesStorageCanSupply);
+    AssertEqual(25, fine.ThugsStorageCanSupply);
+    AssertTrue(fine.StorageLevelToSupplyCrew is null, "a room that already covers the crew needs no upgrade named");
+
+    // One hoe past it and the room is the constraint, not the stock on the shelf.
+    var stretched = new Player { Pimps = 6, Hoes = 59, Thugs = 25, Condoms = 84, Hideout = new Hideout { StorageLevel = 3 } };
+    var warned = service.GetCrewReport(stretched);
+    AssertEqual(50, warned.HoesStorageCanSupply);
+    AssertEqual(4, warned.StorageLevelToSupplyCrew ?? 0);
+
+    // Nothing in the table carries a crew past the top room, and that has to be said rather than
+    // pointing at a level that does not exist.
+    var enormous = new Player { Pimps = 22, Hoes = 500, Thugs = 110, Hideout = new Hideout { StorageLevel = 6 } };
+    AssertTrue(service.GetCrewReport(enormous).StorageLevelToSupplyCrew is null, "no room covers a crew this size");
 }
 
 static void PimpRosterStaysInStepWithCounter()

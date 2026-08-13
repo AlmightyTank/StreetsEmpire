@@ -298,6 +298,19 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         }
     }
 
+    /// <summary>
+    /// The lowest storage level that would hold this much upkeep, or null when no room in the table is
+    /// big enough. Used to tell a player which room they need rather than only that they are short.
+    /// </summary>
+    public int? StorageLevelThatHolds(int condoms, int beer)
+    {
+        int? best = null;
+        foreach (var level in _options.Hideout.Storage)
+            if (level.Condoms >= condoms && level.Beer >= beer && (best is null || level.Level < best))
+                best = level.Level;
+        return best;
+    }
+
     /// <summary>The tier a hideout can move up to next, or null once it is the biggest there is.</summary>
     public HideoutTierOptions? NextTier(Hideout? hideout)
         => Level(_options.Hideout.Tiers, (hideout?.Tier ?? 1) + 1, x => x.Level);

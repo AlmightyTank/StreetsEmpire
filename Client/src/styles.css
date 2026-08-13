@@ -637,6 +637,18 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .build-progress span { color: #938b82; font-size: .8rem; }
 .hint { color: #8e877f; font-size: .78rem; margin-top: 12px; }
 .crew-card strong small { color: #938b82; font-size: .9rem; font-weight: 700; }
+.supply-warning {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  border: 1px solid #4a3226;
+  border-left: 3px solid #b4534a;
+  background: #16100e;
+  border-radius: 6px;
+  padding: 11px 13px;
+}
+.supply-warning strong { color: #e08a7e; font-size: .86rem; }
+.supply-warning span { color: #a89f96; font-size: .8rem; line-height: 1.45; }
 .morale-arrow {
   font-style: normal;
   margin-left: 6px;

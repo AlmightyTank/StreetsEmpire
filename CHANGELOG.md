@@ -13,6 +13,9 @@
   being the constraint.
 - A curated world news feed with headlines for who leads, the biggest take, the best score, and new
   arrivals.
+- A warning on the crew and street pages when a completely full storage room still cannot supply the
+  crew through a full-length action, naming the storage level that would. Warning only: a crew built
+  for fighting does not have to be supplyable for street work.
 - Morale trend arrows on the overview and crew pages, measured over a configurable window, with the
   exact movement on hover and no arrow at all when there is nothing recent to compare against.
 

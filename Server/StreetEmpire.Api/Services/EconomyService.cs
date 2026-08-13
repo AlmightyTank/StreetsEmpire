@@ -125,6 +125,15 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var hqRestCashCost = HqCashCost(totalCrew, morale.HqRestCashPerCrew);
         var hqPartyCashCost = HqCashCost(totalCrew, morale.HqPartyCashPerCrew);
 
+        // What the room could carry if it were completely full, which is the limit a player cannot buy
+        // their way past. Beyond it every full-length shift runs a shortage until the room is bigger.
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var hoesStorageCanSupply = SupportableCrew(capacity.MaxCondoms, _options.MaxActionTurns, morale.TurnsPerCondom);
+        var thugsStorageCanSupply = SupportableCrew(capacity.MaxBeer, _options.MaxActionTurns, morale.TurnsPerBeer);
+        var storageLevelToSupplyCrew = player.Hoes <= hoesStorageCanSupply && player.Thugs <= thugsStorageCanSupply
+            ? null
+            : hideout.StorageLevelThatHolds(condomsNeeded, beerNeeded);
+
         return new CrewReportResponse(
             managementCapacity,
             unmanagedHoes,
@@ -132,6 +141,9 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             uncoveredThugs,
             condomsNeeded,
             beerNeeded,
+            hoesStorageCanSupply,
+            thugsStorageCanSupply,
+            storageLevelToSupplyCrew,
             condomCost,
             beerCost,
             condomCost + beerCost,
@@ -786,6 +798,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// </summary>
     private static double ShortagePenalty(int shortage, int needed, int turns, double penaltyPerTurn)
         => shortage <= 0 || needed <= 0 ? 0 : penaltyPerTurn * turns * ((double)shortage / needed);
+
+    /// <summary>How much crew a given stock of upkeep carries through an action of this length.</summary>
+    private static int SupportableCrew(int supplyHeld, int turns, double turnsPerSupply)
+        => turns <= 0 ? 0 : (int)Math.Floor(supplyHeld * turnsPerSupply / turns);
 
     private static int RequiredUpkeep(int crewCount, int turns, double turnsPerSupply)
     {

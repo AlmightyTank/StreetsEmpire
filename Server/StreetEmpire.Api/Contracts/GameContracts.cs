@@ -65,6 +65,15 @@ public sealed record CrewReportResponse(
     int UncoveredThugs,
     int CondomsNeededForMaxStreetAction,
     int BeerNeededForMaxStreetAction,
+    /// <summary>
+    /// How much crew a completely full storage room can carry through a full-length action. This is a
+    /// harder limit than what a player currently holds: past it they cannot buy their way out, and
+    /// every shift runs a shortage until the room itself is bigger.
+    /// </summary>
+    int HoesStorageCanSupply,
+    int ThugsStorageCanSupply,
+    /// <summary>The storage level that would cover the crew, or null when the room already does.</summary>
+    int? StorageLevelToSupplyCrew,
     long CondomCostForMaxStreetAction,
     long BeerCostForMaxStreetAction,
     long SupplyCostForMaxStreetAction,

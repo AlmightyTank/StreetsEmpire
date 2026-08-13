@@ -23,6 +23,9 @@ export type CrewReport = {
   uncoveredThugs: number
   condomsNeededForMaxStreetAction: number
   beerNeededForMaxStreetAction: number
+  hoesStorageCanSupply: number
+  thugsStorageCanSupply: number
+  storageLevelToSupplyCrew?: number | null
   condomCostForMaxStreetAction: number
   beerCostForMaxStreetAction: number
   supplyCostForMaxStreetAction: number

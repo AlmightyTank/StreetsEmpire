@@ -471,6 +471,7 @@ function StreetPage(ctx: PageContext) {
         <strong>Crew is out</strong>
         <span>Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
       </div>}
+      <StorageSupplyNotice dashboard={dashboard} />
       <StreetSupplyPanel
         dashboard={dashboard}
         busy={busy}
@@ -513,6 +514,7 @@ function CrewPage(ctx: PageContext) {
   return <div className="page-grid">
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
+      <StorageSupplyNotice dashboard={dashboard} />
       <div className="crew-grid">
         <CrewCard name="Pimps" count={dashboard.pimps} cap={dashboard.hideout.maxPimps} desc={`Manage up to ${number.format(managementCapacity)} hoes.`} />
         <CrewCard name="Hoes" count={dashboard.hoes} cap={dashboard.hideout.maxHoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} trend={<MoraleArrow trend={dashboard.moraleTrend} crew="hoe" />} />
@@ -2111,6 +2113,31 @@ function Stat({ label, value, sub }: { label: string, value: string, sub?: strin
     <span>{label}</span>
     <strong>{value}</strong>
     {sub && <small>{sub}</small>}
+  </div>
+}
+
+// A full storage room is a harder limit than what you currently hold: past it there is nothing to buy,
+// and every full-length shift runs a shortage until the room itself is bigger. Warning only, never
+// blocking, since a crew built for fighting does not have to be supplyable for street work.
+function StorageSupplyNotice({ dashboard }: { dashboard: Dashboard }) {
+  const report = dashboard.crewReport
+  const hoesOver = dashboard.hoes > report.hoesStorageCanSupply
+  const thugsOver = dashboard.thugs > report.thugsStorageCanSupply
+  if (!hoesOver && !thugsOver) return null
+
+  const over: string[] = []
+  if (hoesOver) over.push(`${number.format(report.hoesStorageCanSupply)} of your ${number.format(dashboard.hoes)} hoes`)
+  if (thugsOver) over.push(`${number.format(report.thugsStorageCanSupply)} of your ${number.format(dashboard.thugs)} thugs`)
+
+  return <div className="supply-warning">
+    <strong>Your storage room cannot supply this crew</strong>
+    <span>
+      Even completely full, a level {dashboard.hideout.storageLevel} room carries {over.join(' and ')} through a
+      full-length street action. Every shift past that runs a shortage and morale falls.
+      {report.storageLevelToSupplyCrew
+        ? ` A level ${report.storageLevelToSupplyCrew} storage room would cover them.`
+        : ' No storage room in the game is big enough for a crew this size.'}
+    </span>
   </div>
 }
 

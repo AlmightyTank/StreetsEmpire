@@ -234,13 +234,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         if (player.Turns < next.UpgradeTurns)
             throw new GameRuleException($"Moving up to the {next.Name} takes {next.UpgradeTurns} turns of work.");
 
-        // Paid from the bank first, then cash on hand. A building costs more than any safe at the tier
-        // below it holds, so charging cash on hand alone would price every tier out of reach: earnings
-        // over the safe are swept into the bank, and the safe that could hold the price is itself
-        // locked behind the tier being bought.
-        var fromBank = Math.Min(player.BankCash, next.UpgradeCost);
-        player.BankCash -= fromBank;
-        player.Cash -= next.UpgradeCost - fromBank;
+        var fromBank = ChargeCapital(player, next.UpgradeCost);
         player.Turns -= next.UpgradeTurns;
         hideout.UpgradingToTier = next.Level;
         hideout.UpgradeCompletesAtUtc = nowUtc.AddMinutes(next.BuildMinutes);
@@ -336,10 +330,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             ?? throw new GameRuleException($"Your {label} is already at its highest level.");
         if (next.TierLocked)
             throw new GameRuleException($"A level {next.Level} {label} needs the {TierName(next.RequiredTier)} or better.");
-        if (player.Cash < next.Cost)
-            throw new GameRuleException($"You need {next.Cost:C0} cash on hand to upgrade the {label}.");
+        if (player.Cash + player.BankCash < next.Cost)
+            throw new GameRuleException($"You need {next.Cost:C0} across your cash and bank to upgrade the {label}.");
 
-        player.Cash -= next.Cost;
+        var fromBank = ChargeCapital(player, next.Cost);
         setLevel(next.Level);
 
         return new ActionResultResponse(
@@ -350,8 +344,29 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 ["room"] = label,
                 ["level"] = next.Level,
                 ["cost"] = next.Cost,
-                ["cashRemaining"] = player.Cash
+                ["paidFromBank"] = fromBank,
+                ["cashRemaining"] = player.Cash,
+                ["bankRemaining"] = player.BankCash
             });
+    }
+
+    /// <summary>
+    /// Takes the price of an upgrade out of the bank first, then cash on hand, and returns how much the
+    /// bank covered. The caller checks the combined total first.
+    ///
+    /// Every hideout price has to be paid this way, because the safe is itself one of the things being
+    /// bought. Charging cash on hand would cap what a player can spend at the safe they already own,
+    /// and several upgrades cost more than the safe one level below them holds: a level 3 safe costs
+    /// $120,000 against a level 2 safe that holds $100,000, so it could never be bought, and everything
+    /// gated behind it was unreachable too. Earnings over the safe are swept into the bank anyway, so
+    /// the bank is where the money for a large purchase actually is.
+    /// </summary>
+    private static long ChargeCapital(Player player, long cost)
+    {
+        var fromBank = Math.Min(player.BankCash, cost);
+        player.BankCash -= fromBank;
+        player.Cash -= cost - fromBank;
+        return fromBank;
     }
 
     private static NextRoomUpgrade? Next<T>(

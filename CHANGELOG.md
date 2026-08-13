@@ -19,13 +19,17 @@
   matter, instead of every action anyone took.
 - Turn accrual, hideout builds, and lab output are settled together by one player clock rather than a
   turn refresh repeated across seven endpoints.
-- Tier builds are paid from the bank first and cash on hand second.
+- Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
 - Seeded rivals were given the deepest storage room and safe in the table, which after tiers existed
   meant a Trap House holding a Penthouse-sized safe.
-- A tier priced above the safe of the tier below it could never be paid for, since earnings over the
-  safe are swept into the bank.
+- Hideout upgrades priced above the safe that holds them could never be paid for, since earnings over
+  the safe are swept into the bank. A level 3 safe cost $120,000 against a level 2 safe holding
+  $100,000, which stranded every room gated behind it, and a level 3 coke lab has been unbuyable at
+  $150,000 against the same $100,000 since 0.2.2.
+- The hideout page greyed out the tier button for players whose money was in the bank, which after the
+  charge moved to the bank was everyone who could actually afford it.
 
 ## 0.2.2
 

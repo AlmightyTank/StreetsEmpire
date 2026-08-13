@@ -32,6 +32,7 @@ var tests = new (string Name, Action Test)[]
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
     ("hideout tier gates the rooms it is too small to hold", HideoutTierGatesDeeperRooms),
     ("storage levels hold a full action at the crew caps they unlock", StorageLevelsMatchTheCrewCapsTheyUnlock),
+    ("every hideout upgrade in the shipped tables can be paid for", EveryHideoutUpgradeIsReachable),
     ("labs produce while away, bounded by storage and the offline ceiling", LabsProduceWhileAway),
     ("labs start their clock when built rather than backdating", LabsStartTheirClockWhenBuilt),
     ("world news keeps fights and drops routine noise", WorldNewsKeepsFightsAndDropsNoise),
@@ -818,6 +819,55 @@ static void StorageLevelsMatchTheCrewCapsTheyUnlock()
         AssertEqual(beerNeeded, unlocked.Beer);
         AssertEqual(tier.MaxThugs, unlocked.Weapons);
     }
+}
+
+/// <summary>
+/// Walks the whole hideout ladder with the money in the bank, buying every tier and every room level
+/// in order. Nothing may refuse.
+///
+/// This exists because prices and the safe that holds them are tuned in the same table, and it is easy
+/// to price a room above the safe one level below it. A level 3 safe cost $120,000 against a level 2
+/// safe holding $100,000, and a level 3 coke lab cost $150,000 against the same $100,000, so both were
+/// unbuyable and everything gated behind the safe was unreachable. Charging the bank fixed it; this
+/// test is what stops it coming back.
+/// </summary>
+static void EveryHideoutUpgradeIsReachable()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var now = new DateTime(2026, 8, 14, 0, 0, 0, DateTimeKind.Utc);
+    var player = new Player { BankCash = 100_000_000, Turns = 200, Hideout = new Hideout() };
+
+    var rooms = new[] { "storage", "safe", "weedlab", "cokelab" };
+    var topTier = options.Hideout.Tiers.Max(x => x.Level);
+
+    for (var tier = 1; ; tier++)
+    {
+        foreach (var room in rooms)
+            while (hideouts.NextUpgrade(player.Hideout, room) is { TierLocked: false })
+            {
+                var before = hideouts.NextUpgrade(player.Hideout, room)!.Level;
+                hideouts.Upgrade(player, room, now);
+                AssertTrue(
+                    hideouts.NextUpgrade(player.Hideout, room)?.Level != before,
+                    $"buying {room} level {before} should move it along");
+            }
+
+        if (tier >= topTier) break;
+
+        player.Turns = 200;
+        hideouts.Upgrade(player, "tier", now);
+        AssertTrue(hideouts.CompleteBuild(player.Hideout, now.AddDays(1)), $"the tier {tier + 1} build should land");
+        AssertEqual(tier + 1, player.Hideout!.Tier);
+    }
+
+    // Everything in the tables is now owned, which is the point: no level is stranded.
+    AssertEqual(topTier, player.Hideout!.Tier);
+    AssertEqual(options.Hideout.Storage.Max(x => x.Level), player.Hideout.StorageLevel);
+    AssertEqual(options.Hideout.Safe.Max(x => x.Level), player.Hideout.SafeLevel);
+    AssertEqual(options.Hideout.WeedLab.Max(x => x.Level), player.Hideout.WeedLabLevel);
+    AssertEqual(options.Hideout.CokeLab.Max(x => x.Level), player.Hideout.CokeLabLevel);
+    AssertTrue(player.Cash >= 0 && player.BankCash >= 0, "nothing should have been bought on credit");
 }
 
 static void LabsProduceWhileAway()

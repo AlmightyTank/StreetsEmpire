@@ -9,8 +9,9 @@ activity log into something worth reading.
 
 ### Hideout tiers
 
-- Three tiers above the Trap House: the **Row House**, the **Corner Club**, and the **Penthouse**,
-  ending at 22 pimps, 200 hoes, and 110 thugs.
+- Three tiers above the Trap House: the **Warehouse**, the **Nightclub**, and the **Penthouse**,
+  ending at 22 pimps, 200 hoes, and 110 thugs. Each name matches what the tier buys you: a warehouse
+  holds more, a club employs more, a penthouse puts you out of reach.
 - A tier is paid for in cash and turns up front and then takes time to build, from 30 minutes to six
   hours. The old caps hold until it lands, so nobody buys a bigger crew mid-fight.
 - Every upgrade is paid from the bank first, then cash on hand. The safe is one of the things being

@@ -3,7 +3,7 @@
 ## 0.2.3
 
 ### Added
-- Hideout tiers above the Trap House: the Row House, Corner Club, and Penthouse, each raising crew caps
+- Hideout tiers above the Trap House: the Warehouse, Nightclub, and Penthouse, each raising crew caps
   and unlocking deeper rooms.
 - Tier builds cost cash and turns up front and take time to finish, with the old caps holding until the
   build lands.
@@ -24,6 +24,8 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- The crew morale panel and its rest and party messages were hardcoded to the Trap House, so a player
+  who had moved up was still being told about a building they left behind.
 - Seeded rivals were given the deepest storage room and safe in the table, which after tiers existed
   meant a Trap House holding a Penthouse-sized safe.
 - Hideout upgrades priced above the safe that holds them could never be paid for, since earnings over

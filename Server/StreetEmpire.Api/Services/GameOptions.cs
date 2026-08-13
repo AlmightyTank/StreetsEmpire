@@ -201,8 +201,8 @@ public sealed class HideoutOptions
             Tiers =
             [
                 new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25 },
-                new HideoutTierOptions { Level = 2, Name = "Row House", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, UpgradeCost = 200_000, UpgradeTurns = 40, BuildMinutes = 30 },
-                new HideoutTierOptions { Level = 3, Name = "Corner Club", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, UpgradeCost = 600_000, UpgradeTurns = 80, BuildMinutes = 120 },
+                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, UpgradeCost = 200_000, UpgradeTurns = 40, BuildMinutes = 30 },
+                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, UpgradeCost = 600_000, UpgradeTurns = 80, BuildMinutes = 120 },
                 new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, UpgradeCost = 1_800_000, UpgradeTurns = 120, BuildMinutes = 360 }
             ];
 

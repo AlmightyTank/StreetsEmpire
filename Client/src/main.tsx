@@ -2210,8 +2210,8 @@ function MoraleArrow({ trend, crew }: { trend: MoraleTrend, crew: 'hoe' | 'thug'
 
   const sign = delta !== null && delta !== undefined && delta > 0 ? '+' : ''
   const title = direction === 'steady'
-    ? `Steady over the last ${trend.windowHours} hours`
-    : `${sign}${delta?.toFixed(1)} over the last ${trend.windowHours} hours`
+    ? 'Steady since your last action'
+    : `${sign}${delta?.toFixed(1)} since your last action`
   return <em className={`morale-arrow ${direction}`} title={title}>{MORALE_ARROWS[direction]}</em>
 }
 

@@ -342,14 +342,18 @@ public sealed class MoraleOptions
 {
     public int HoesManagedPerPimp { get; set; } = 10;
 
-    /// <summary>
-    /// How far back the morale trend arrow looks. Long enough that a single action does not define the
-    /// direction, short enough that yesterday's slump is not still showing.
+/// <summary>
+    /// How stale a trend baseline may be before the arrow is withheld. It is not the measurement
+    /// period: the arrow reads from the most recent action, not across the whole window.
     /// </summary>
     public int TrendWindowHours { get; set; } = 3;
 
-    /// <summary>Movement smaller than this reads as steady, so the arrow does not flicker on drift.</summary>
-    public double TrendFlatBand { get; set; } = 1;
+    /// <summary>
+    /// Movement smaller than this reads as steady, so the arrow does not flicker on drift. Sized for
+    /// the change across one action, which is often well under a point: at a full point a crew
+    /// climbing 0.7 a shift was reported as steady while it visibly recovered.
+    /// </summary>
+    public double TrendFlatBand { get; set; } = 0.25;
 
     public double TurnsPerCondom { get; set; } = 12;
     public double TurnsPerBeer { get; set; } = 10;

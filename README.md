@@ -37,11 +37,12 @@ activity log into something worth reading.
 
 ### Morale trend
 
-- Hoe and thug morale carry an arrow showing which way they have moved over the last three hours, with
-  the exact figure on hover.
-- The baseline is the morale going into the oldest action still inside the window, recorded before the
-  action rather than after. Taken after, the oldest row already contains the damage its own action did,
-  so a player who crashed morale in one shift and looked straight away would be told it was steady.
+- Hoe and thug morale carry an arrow showing which way they are moving, with the exact figure on hover.
+- The baseline is the morale going into your most recent action, recorded before the action rather than
+  after. Taken after, a row already contains the damage its own action did, so a player who crashed
+  morale in one shift and looked straight away would be told it was steady. Measured across a fixed
+  window instead, the arrow kept reporting a crash for hours after it was over, pointing down while
+  morale climbed.
 - With nothing recent to compare against the arrow is absent rather than flat. A steady arrow on a
   player who has not acted in hours would be a claim the server cannot support.
 

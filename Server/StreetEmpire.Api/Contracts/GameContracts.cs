@@ -227,8 +227,9 @@ public sealed record HideoutBuildResponse(
     int SecondsRemaining);
 
 /// <summary>
-/// Which way crew morale has moved over the trend window. Null means there is nothing recent enough to
-/// compare against, which is a different thing from steady and is shown differently.
+/// Which way crew morale is moving, measured from the player's most recent action to now. Null means
+/// there is nothing recent enough to compare against, which is a different thing from steady and is
+/// shown differently.
 /// </summary>
 public sealed record MoraleTrendResponse(
     double? HoeDelta,

@@ -93,9 +93,11 @@ internal static class AdminOpsEndpoints
             if (!admin.Account.IsAdmin) return Results.Forbid();
 
             var templates = BotTemplates();
-            var hideoutConfig = gameOptions.Value.Hideout;
-            var maxStorageLevel = hideoutConfig.Storage.Count == 0 ? 1 : hideoutConfig.Storage.Max(x => x.Level);
-            var maxSafeLevel = hideoutConfig.Safe.Count == 0 ? 1 : hideoutConfig.Safe.Max(x => x.Level);
+            // Rivals start in a Trap House like everyone else, so their rooms can only be as deep as a
+            // Trap House holds. Taking the table maximum would hand a starting rival a safe that a
+            // player cannot own until the fourth tier.
+            var maxStorageLevel = hideouts.HighestLevelForTier("storage", 1);
+            var maxSafeLevel = hideouts.HighestLevelForTier("safe", 1);
             var count = Math.Clamp(request.Count, 1, templates.Count);
             var now = DateTime.UtcNow;
             // Only the seed templates can collide, so ask about those names instead of reading every

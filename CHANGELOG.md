@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.3
+
+### Added
+- Hideout tiers above the Trap House: the Row House, Corner Club, and Penthouse, each raising crew caps
+  and unlocking deeper rooms.
+- Tier builds cost cash and turns up front and take time to finish, with the old caps holding until the
+  build lands.
+- Storage, safe, and lab levels beyond what the Trap House can hold, each gated on the tier it needs.
+- Weed and coke labs produce passively, bounded by the storage room and by a 12 hour offline ceiling.
+- AI rivals invest in their hideout: safe, storage, tier, and labs, each gated on that room already
+  being the constraint.
+- A curated world news feed with headlines for who leads, the biggest take, the best score, and new
+  arrivals.
+
+### Changed
+- World news now reports fights, buildings, arrivals, and only the money and crew moves large enough to
+  matter, instead of every action anyone took.
+- Turn accrual, hideout builds, and lab output are settled together by one player clock rather than a
+  turn refresh repeated across seven endpoints.
+- Tier builds are paid from the bank first and cash on hand second.
+
+### Fixed
+- Seeded rivals were given the deepest storage room and safe in the table, which after tiers existed
+  meant a Trap House holding a Penthouse-sized safe.
+- A tier priced above the safe of the tier below it could never be paid for, since earnings over the
+  safe are swept into the bank.
+
 ## 0.2.2
 
 ### Added

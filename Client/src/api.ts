@@ -60,13 +60,44 @@ export type Hideout = {
   maxCoke: number
   weedLabYieldBonusPercent: number
   cokeLabYieldBonusPercent: number
-  storageUpgradeCost?: number | null
-  safeUpgradeCost?: number | null
-  weedLabUpgradeCost?: number | null
-  cokeLabUpgradeCost?: number | null
+  weedLabPassivePerHour: number
+  cokeLabPassivePerHour: number
+  maxOfflineProductionHours: number
+  storageUpgrade?: HideoutRoomUpgrade | null
+  safeUpgrade?: HideoutRoomUpgrade | null
+  weedLabUpgrade?: HideoutRoomUpgrade | null
+  cokeLabUpgrade?: HideoutRoomUpgrade | null
+  nextTier?: HideoutTierUpgrade | null
+  building?: HideoutBuild | null
 }
 
-export type HideoutRoom = 'storage' | 'safe' | 'weedlab' | 'cokelab'
+export type HideoutRoomUpgrade = {
+  level: number
+  cost: number
+  requiredTier: number
+  requiredTierName: string
+  tierLocked: boolean
+}
+
+export type HideoutTierUpgrade = {
+  level: number
+  name: string
+  cost: number
+  turns: number
+  buildMinutes: number
+  maxPimps: number
+  maxHoes: number
+  maxThugs: number
+}
+
+export type HideoutBuild = {
+  tier: number
+  name: string
+  completesAtUtc: string
+  secondsRemaining: number
+}
+
+export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab'
 
 export type Pimp = {
   id: number
@@ -200,9 +231,21 @@ export type WorldNewsEntry = {
   playerName: string
   city: string
   action: string
+  category: 'combat' | 'build' | 'arrival' | 'crew' | 'money'
   summary: string
   turnsSpent: number
   createdAtUtc: string
+}
+
+export type WorldHeadline = {
+  kind: string
+  title: string
+  detail: string
+}
+
+export type WorldNews = {
+  headlines: WorldHeadline[]
+  feed: WorldNewsEntry[]
 }
 
 export type CombatLog = {
@@ -457,7 +500,7 @@ export const api = {
       body: JSON.stringify({ defenderId, thugs, weapons, commanderPimpId }),
     }),
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
-  worldNews: () => request<WorldNewsEntry[]>('/api/world/news'),
+  worldNews: () => request<WorldNews>('/api/world/news'),
   alerts: () => request<DefenceAlerts>('/api/game/alerts'),
   markAlertsSeen: () => request<DefenceAlerts>('/api/game/alerts/seen', { method: 'POST' }),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),

@@ -10,8 +10,15 @@ public sealed class Hideout
     public Guid PlayerId { get; set; }
     public Player Player { get; set; } = null!;
 
-    /// <summary>Tier 1 is the Trap House. Higher tiers are reserved for later versions.</summary>
+    /// <summary>Tier 1 is the Trap House. Each tier above raises crew caps and unlocks deeper rooms.</summary>
     public int Tier { get; set; } = 1;
+
+    /// <summary>
+    /// The tier being built, and when it lands. Set together or not at all: a build is paid for up
+    /// front but the old caps hold until it finishes, so nobody buys their way past a cap instantly.
+    /// </summary>
+    public int? UpgradingToTier { get; set; }
+    public DateTime? UpgradeCompletesAtUtc { get; set; }
 
     public int StorageLevel { get; set; } = 1;
     public int SafeLevel { get; set; } = 1;
@@ -19,6 +26,12 @@ public sealed class Hideout
     /// <summary>Level 0 means the lab has not been built yet.</summary>
     public int WeedLabLevel { get; set; }
     public int CokeLabLevel { get; set; }
+
+    /// <summary>
+    /// When passive lab output was last banked. Null means the labs have never run, and accrual starts
+    /// from the moment the first one is built rather than from the hideout's creation.
+    /// </summary>
+    public DateTime? LabsCollectedAtUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

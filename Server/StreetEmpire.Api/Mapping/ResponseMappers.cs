@@ -130,9 +130,18 @@ internal static class ResponseMappers
             riskBand);
     }
 
-    internal static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts)
+    internal static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts, DateTime nowUtc, GameOptions options)
     {
         var capacity = hideouts.CapacityFor(player.Hideout);
+        var nextTier = hideouts.NextTier(player.Hideout);
+        var building = player.Hideout is { UpgradingToTier: { } tier, UpgradeCompletesAtUtc: { } due }
+            ? new HideoutBuildResponse(
+                tier,
+                hideouts.TierName(tier),
+                due,
+                Math.Max(0, (int)Math.Ceiling((due - nowUtc).TotalSeconds)))
+            : null;
+
         return new HideoutResponse(
             capacity.TierName,
             capacity.Tier,
@@ -151,11 +160,31 @@ internal static class ResponseMappers
             capacity.MaxCoke,
             hideouts.ProductionYieldBonusPercent(player.Hideout, "weed"),
             hideouts.ProductionYieldBonusPercent(player.Hideout, "coke"),
-            hideouts.NextUpgradeCost(player.Hideout, "storage"),
-            hideouts.NextUpgradeCost(player.Hideout, "safe"),
-            hideouts.NextUpgradeCost(player.Hideout, "weedlab"),
-            hideouts.NextUpgradeCost(player.Hideout, "cokelab"));
+            hideouts.PassivePerHour(player.Hideout, "weed"),
+            hideouts.PassivePerHour(player.Hideout, "coke"),
+            options.Hideout.MaxOfflineProductionHours,
+            ToRoomUpgrade(hideouts, player.Hideout, "storage"),
+            ToRoomUpgrade(hideouts, player.Hideout, "safe"),
+            ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),
+            ToRoomUpgrade(hideouts, player.Hideout, "cokelab"),
+            nextTier is null
+                ? null
+                : new HideoutTierUpgradeResponse(
+                    nextTier.Level,
+                    nextTier.Name,
+                    nextTier.UpgradeCost,
+                    nextTier.UpgradeTurns,
+                    nextTier.BuildMinutes,
+                    nextTier.MaxPimps,
+                    nextTier.MaxHoes,
+                    nextTier.MaxThugs),
+            building);
     }
+
+    private static HideoutRoomUpgradeResponse? ToRoomUpgrade(HideoutService hideouts, Hideout? hideout, string room)
+        => hideouts.NextUpgrade(hideout, room) is { } next
+            ? new HideoutRoomUpgradeResponse(next.Level, next.Cost, next.RequiredTier, hideouts.TierName(next.RequiredTier), next.TierLocked)
+            : null;
 
     internal static PimpResponse ToPimpResponse(Pimp pimp, IReadOnlyCollection<long> commandingPimpIds)
         => new(

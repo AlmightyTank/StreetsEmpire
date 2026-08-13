@@ -794,7 +794,7 @@ static void HideoutTierGatesDeeperRooms()
     AssertEqual(5_000_000L, player.Cash);
 
     player.Hideout.Tier = 2;
-    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.TierLocked, "the Row House holds a level 4 room");
+    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.TierLocked, "the second tier holds a level 4 room");
     hideouts.Upgrade(player, "storage", DateTime.UtcNow);
     AssertEqual(4, player.Hideout.StorageLevel);
 }

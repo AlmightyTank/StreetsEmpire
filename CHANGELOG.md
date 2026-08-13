@@ -3,7 +3,7 @@
 ## 0.2.3
 
 ### Added
-- Hideout tiers above the Trap House: the Row House, Corner Club, and Penthouse, each raising crew caps
+- Hideout tiers above the Trap House: the Warehouse, Nightclub, and Penthouse, each raising crew caps
   and unlocking deeper rooms.
 - Tier builds cost cash and turns up front and take time to finish, with the old caps holding until the
   build lands.

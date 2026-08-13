@@ -65,14 +65,19 @@ internal static class GameEndpoints
                 .ToListAsync(ct);
             var rank = await db.Players.AsNoTracking()
                 .CountAsync(economy.RanksAbove(netWorth, player.CreatedAtUtc), ct) + 1;
-            // Baseline is the morale going into the oldest action still inside the window. Comparing
-            // live morale against it catches both what their actions cost and what idle time recovered,
-            // which a diff between two consecutive rows would miss.
+            // Baseline is the morale going into the player's most recent action, so the arrow reports
+            // the direction morale is moving now: the last action's own effect plus whatever has
+            // recovered since. Measured from the oldest row in the window instead, the arrow kept
+            // reporting a crash for hours after it was over, pointing down while morale climbed.
+            //
+            // The window is now only a staleness bound. A baseline older than it says nothing useful
+            // about the present, so the arrow is withheld rather than guessed.
             var opts = gameOptions.Value;
             var trendSince = now.AddHours(-Math.Max(1, opts.Morale.TrendWindowHours));
             var moraleBaseline = await db.ActionLogs.AsNoTracking()
                 .Where(x => x.PlayerId == player.Id && x.CreatedAtUtc >= trendSince && x.HoeMoraleBefore != null)
-                .OrderBy(x => x.CreatedAtUtc)
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
                 .Select(x => new { Hoe = x.HoeMoraleBefore, Thug = x.ThugMoraleBefore })
                 .FirstOrDefaultAsync(ct);
             var moraleTrend = ToMoraleTrend(player, moraleBaseline?.Hoe, moraleBaseline?.Thug, opts.Morale);

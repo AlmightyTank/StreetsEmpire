@@ -137,11 +137,13 @@ internal static class ResponseMappers
     /// </summary>
     internal static MoraleTrendResponse ToMoraleTrend(Player player, double? hoeBaseline, double? thugBaseline, MoraleOptions options)
     {
-        var hoeDelta = hoeBaseline is null ? (double?)null : Math.Round(player.HoeHappiness - hoeBaseline.Value, 1);
-        var thugDelta = thugBaseline is null ? (double?)null : Math.Round(player.ThugHappiness - thugBaseline.Value, 1);
+        // Classified on the raw movement and only rounded for display. Rounding first decided direction
+        // by the display format: a delta of exactly the band rounded to a tenth and fell under it.
+        var hoeDelta = hoeBaseline is null ? (double?)null : player.HoeHappiness - hoeBaseline.Value;
+        var thugDelta = thugBaseline is null ? (double?)null : player.ThugHappiness - thugBaseline.Value;
         return new MoraleTrendResponse(
-            hoeDelta,
-            thugDelta,
+            hoeDelta is null ? null : Math.Round(hoeDelta.Value, 1),
+            thugDelta is null ? null : Math.Round(thugDelta.Value, 1),
             Direction(hoeDelta, options.TrendFlatBand),
             Direction(thugDelta, options.TrendFlatBand),
             options.TrendWindowHours);

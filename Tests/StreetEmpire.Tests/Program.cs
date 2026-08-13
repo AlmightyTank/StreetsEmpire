@@ -1020,7 +1020,7 @@ static void LabsStartTheirClockWhenBuilt()
 
 static void MoraleTrendReportsDirection()
 {
-    var options = new MoraleOptions { TrendWindowHours = 3, TrendFlatBand = 1 };
+    var options = new MoraleOptions { TrendWindowHours = 3, TrendFlatBand = 0.25 };
     var player = new Player { HoeHappiness = 72, ThugHappiness = 44 };
 
     var rising = ToMoraleTrend(player, 60, 50, options);
@@ -1031,13 +1031,17 @@ static void MoraleTrendReportsDirection()
     AssertEqual(3, rising.WindowHours);
 
     // Inside the flat band the arrow reads steady, so ordinary drift does not make it flicker.
-    var drift = ToMoraleTrend(player, 71.4, 44.5, options);
+    var drift = ToMoraleTrend(player, 71.9, 43.9, options);
     AssertEqual("steady", drift.HoeDirection);
     AssertEqual("steady", drift.ThugDirection);
 
     // Exactly on the band counts as movement, so the band is a floor rather than a dead zone.
-    AssertEqual("up", ToMoraleTrend(player, 71, 44, options).HoeDirection);
-    AssertEqual("down", ToMoraleTrend(player, 73, 45, options).HoeDirection);
+    AssertEqual("up", ToMoraleTrend(player, 71.75, 44, options).HoeDirection);
+    AssertEqual("down", ToMoraleTrend(player, 72.25, 45, options).HoeDirection);
+
+    // Reported from a live game: a crew recovering 0.7 an action read as steady on a one point band,
+    // so the arrow sat still while morale visibly climbed.
+    AssertEqual("up", ToMoraleTrend(new Player { HoeHappiness = 47.9 }, 47.2, 47.2, options).HoeDirection);
 
     // No baseline is not the same as steady, and must not be dressed up as one.
     var unknown = ToMoraleTrend(player, null, null, options);

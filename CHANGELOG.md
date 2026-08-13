@@ -16,7 +16,7 @@
 - A warning on the crew and street pages when a completely full storage room still cannot supply the
   crew through a full-length action, naming the storage level that would. Warning only: a crew built
   for fighting does not have to be supplyable for street work.
-- Morale trend arrows on the overview and crew pages, measured over a configurable window, with the
+- Morale trend arrows on the overview and crew pages, measured from your most recent action, with the
   exact movement on hover and no arrow at all when there is nothing recent to compare against.
 
 ### Changed
@@ -27,6 +27,10 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- The morale arrow measured net change across a three hour window, so it kept pointing down for hours
+  after a crash was over while morale visibly climbed. It reads from the most recent action instead,
+  and the steady band narrowed from a full point to a quarter, which a crew recovering 0.7 an action
+  had been falling inside.
 - Running short on condoms or beer was charged per missing unit, so the penalty grew with the crew
   while the morale a shift earns did not. A crew of 59 needing 99 condoms with a level 3 storage room
   holding 84 lost about 29 morale a shift and walked out within four, despite auto-buy reporting a

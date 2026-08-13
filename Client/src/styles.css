@@ -623,6 +623,19 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   letter-spacing: .08em;
 }
 .room-row button { min-width: 148px; }
+.room-copy small { color: #c08a4a; font-size: .73rem; }
+.build-progress {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  border: 1px solid #3c3320;
+  background: #14110b;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.build-progress strong { color: #e8c07a; }
+.build-progress span { color: #938b82; font-size: .8rem; }
+.hint { color: #8e877f; font-size: .78rem; margin-top: 12px; }
 .crew-card strong small { color: #938b82; font-size: .9rem; font-weight: 700; }
 .rule-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .rule-strip span { border: 1px solid #303532; background: #0d1011; border-radius: 999px; color: #8e877f; padding: 6px 9px; font-size: .75rem; }
@@ -724,6 +737,33 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .leader strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .leader > span { color: #918981; }
 .leader.me { background: #1e271f; }
+.headline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+.headline {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #2c302e;
+  border-left: 3px solid #4a5350;
+  background: #0d1011;
+  border-radius: 5px;
+  padding: 10px 12px;
+}
+.headline strong { color: #f4eee5; font-size: .84rem; }
+.headline span { color: #938b82; font-size: .76rem; }
+.headline.leader { border-left-color: #d9a441; }
+.headline.robbery { border-left-color: #b4534a; }
+.headline.score { border-left-color: #4f8f6a; }
+.headline.arrival { border-left-color: #5b7c9c; }
+.news-tag { text-transform: uppercase; letter-spacing: .07em; font-size: .72rem !important; }
+.news-tag.combat { color: #d4756a; }
+.news-tag.build { color: #e8c07a; }
+.news-tag.arrival { color: #7fa8cc; }
+.news-tag.crew { color: #8fbf9e; }
+.news-tag.money { color: #c9bd8f; }
 .world-news { display: grid; max-height: 680px; overflow-y: auto; padding-right: 3px; }
 .world-news-item { padding: 10px 0; border-top: 1px solid #2c302e; }
 .world-news-item:first-child { border-top: 0; padding-top: 0; }

@@ -39,6 +39,7 @@ public sealed class GameOptions
     public HideoutOptions Hideout { get; set; } = new();
     public PimpOptions Pimps { get; set; } = new();
     public AntiFarmOptions AntiFarm { get; set; } = new();
+    public WorldNewsOptions WorldNews { get; set; } = new();
 }
 
 /// <summary>
@@ -186,11 +187,27 @@ public sealed class HideoutOptions
     public List<LabLevelOptions> WeedLab { get; set; } = [];
     public List<LabLevelOptions> CokeLab { get; set; } = [];
 
+    /// <summary>
+    /// How much passive lab output can pile up while a player is away. Past this the labs sit idle, so
+    /// the hideout is a reason to come back rather than a reason to stay gone.
+    /// </summary>
+    public int MaxOfflineProductionHours { get; set; } = 12;
+
     public void ApplyDefaultsWhereEmpty()
     {
+        // Each tier's crew caps are what the storage level it unlocks is sized against, so a full-length
+        // action is always exactly supplyable at the top of a tier and never more than that.
         if (Tiers.Count == 0)
-            Tiers = [new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25 }];
+            Tiers =
+            [
+                new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25 },
+                new HideoutTierOptions { Level = 2, Name = "Row House", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, UpgradeCost = 200_000, UpgradeTurns = 40, BuildMinutes = 30 },
+                new HideoutTierOptions { Level = 3, Name = "Corner Club", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, UpgradeCost = 600_000, UpgradeTurns = 80, BuildMinutes = 120 },
+                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, UpgradeCost = 1_800_000, UpgradeTurns = 120, BuildMinutes = 360 }
+            ];
 
+        // Condoms hold a full 20-turn action at the tier's hoe cap (one per 12 turns each), beer the same
+        // for thugs (one per 10), and weapons cover every thug. Weed and coke stay at 2x and 1x the hoe cap.
         if (Storage.Count == 0)
             Storage =
             [
@@ -200,30 +217,43 @@ public sealed class HideoutOptions
                 new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, UpgradeCost = 15_000 },
                 // Level 3 holds exactly what a full-length action consumes: 84 condoms for 50 hoes at
                 // 12 turns each, 50 beer for 25 thugs at 10. It drains the room dry each time.
-                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, UpgradeCost = 50_000 }
+                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, UpgradeCost = 50_000 },
+                new StorageLevelOptions { Level = 4, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, UpgradeCost = 150_000 },
+                new StorageLevelOptions { Level = 5, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, UpgradeCost = 400_000 },
+                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, UpgradeCost = 1_000_000 }
             ];
 
         if (Safe.Count == 0)
             Safe =
             [
                 new SafeLevelOptions { Level = 1, MaxCash = 50_000 },
-                new SafeLevelOptions { Level = 2, MaxCash = 100_000, UpgradeCost = 40_000 }
+                new SafeLevelOptions { Level = 2, MaxCash = 100_000, UpgradeCost = 40_000 },
+                new SafeLevelOptions { Level = 3, MinTier = 2, MaxCash = 350_000, UpgradeCost = 120_000 },
+                new SafeLevelOptions { Level = 4, MinTier = 3, MaxCash = 1_000_000, UpgradeCost = 300_000 },
+                new SafeLevelOptions { Level = 5, MinTier = 4, MaxCash = 3_000_000, UpgradeCost = 900_000 }
             ];
 
+        // PassivePerHour is deliberately below what the same lab yields through production turns: about
+        // half a day of accrual matches one full-length production run, so being away is worth something
+        // without being worth more than playing.
         if (WeedLab.Count == 0)
             WeedLab =
             [
-                new LabLevelOptions { Level = 1, YieldBonusPercent = 25, UpgradeCost = 10_000 },
-                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, UpgradeCost = 30_000 },
-                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, UpgradeCost = 75_000 }
+                new LabLevelOptions { Level = 1, YieldBonusPercent = 25, PassivePerHour = 2, UpgradeCost = 10_000 },
+                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, PassivePerHour = 4, UpgradeCost = 30_000 },
+                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, PassivePerHour = 7, UpgradeCost = 75_000 },
+                new LabLevelOptions { Level = 4, MinTier = 3, YieldBonusPercent = 170, PassivePerHour = 11, UpgradeCost = 250_000 },
+                new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 16, UpgradeCost = 700_000 }
             ];
 
         if (CokeLab.Count == 0)
             CokeLab =
             [
-                new LabLevelOptions { Level = 1, YieldBonusPercent = 25, UpgradeCost = 25_000 },
-                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, UpgradeCost = 60_000 },
-                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, UpgradeCost = 150_000 }
+                new LabLevelOptions { Level = 1, YieldBonusPercent = 25, PassivePerHour = 1, UpgradeCost = 25_000 },
+                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, PassivePerHour = 2, UpgradeCost = 60_000 },
+                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, PassivePerHour = 3, UpgradeCost = 150_000 },
+                new LabLevelOptions { Level = 4, MinTier = 3, YieldBonusPercent = 170, PassivePerHour = 5, UpgradeCost = 450_000 },
+                new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 7, UpgradeCost = 1_200_000 }
             ];
     }
 }
@@ -235,11 +265,20 @@ public sealed class HideoutTierOptions
     public int MaxPimps { get; set; }
     public int MaxHoes { get; set; }
     public int MaxThugs { get; set; }
+
+    /// <summary>What moving up to this tier costs. Tier 1 is where everyone starts, so it costs nothing.</summary>
+    public long UpgradeCost { get; set; }
+    public int UpgradeTurns { get; set; }
+
+    /// <summary>How long the build takes once paid for. The hideout keeps its old caps until it finishes.</summary>
+    public int BuildMinutes { get; set; }
 }
 
 public sealed class StorageLevelOptions
 {
     public int Level { get; set; }
+    /// <summary>The hideout tier this level needs. A bigger room needs a bigger building to put it in.</summary>
+    public int MinTier { get; set; } = 1;
     public int Condoms { get; set; }
     public int Beer { get; set; }
     public int Weapons { get; set; }
@@ -251,6 +290,7 @@ public sealed class StorageLevelOptions
 public sealed class SafeLevelOptions
 {
     public int Level { get; set; }
+    public int MinTier { get; set; } = 1;
     public long MaxCash { get; set; }
     public long UpgradeCost { get; set; }
 }
@@ -258,7 +298,11 @@ public sealed class SafeLevelOptions
 public sealed class LabLevelOptions
 {
     public int Level { get; set; }
+    public int MinTier { get; set; } = 1;
     public int YieldBonusPercent { get; set; }
+
+    /// <summary>Units the lab makes on its own each hour, capped by storage and by offline hours.</summary>
+    public int PassivePerHour { get; set; }
     public long UpgradeCost { get; set; }
 }
 

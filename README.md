@@ -1,6 +1,46 @@
-# Street Empire 0.2.2
+# Street Empire 0.2.3
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
+
+## What changed in 0.2.3
+
+0.2.3 gives the hideout somewhere to go, makes the labs work while you are logged out, and turns the
+activity log into something worth reading.
+
+### Hideout tiers
+
+- Three tiers above the Trap House: the **Row House**, the **Corner Club**, and the **Penthouse**,
+  ending at 22 pimps, 200 hoes, and 110 thugs.
+- A tier is paid for in cash and turns up front and then takes time to build, from 30 minutes to six
+  hours. The old caps hold until it lands, so nobody buys a bigger crew mid-fight.
+- Builds are paid from the bank first, then cash on hand. A tier costs more than the safe below it
+  holds, so charging cash on hand alone would put every tier permanently out of reach.
+- Storage rooms, safes, and labs now run deeper than the Trap House can hold. Each one names the tier
+  it needs, and each storage level holds exactly what a full-length street action consumes at the crew
+  caps of the tier that unlocks it. A rule test pins that relationship down.
+- AI rivals grow their base the same way. Without this they sat at the Trap House forever: rich enough
+  to be worth raiding, capped too low to fight back, and eventually walled off by the anti-farm ratio,
+  which would have left a maxed player with nobody to attack.
+
+### Labs that work while you are away
+
+- Weed and coke labs now produce on their own, between 1 and 16 units an hour depending on the lab and
+  its level, on top of the bonus they give production turns.
+- Output stops at the storage room rather than spilling, so time away can never destroy stock you
+  already had, and it stops again after 12 hours, so the hideout is a reason to come back rather than a
+  reason to stay gone.
+- What the labs made while you were out is written into your activity, so it is still there whichever
+  page you open first.
+
+### World news worth reading
+
+- The feed was every action anyone took. With rivals acting on a timer that meant thirty rows of
+  somebody buying condoms, and the one attack that mattered fell off the page within a minute.
+- Fights, buildings, and arrivals are news whatever their size. Everything else has to move real money
+  or real crew. Money is judged on cash and bank together, so moving your own money between two pockets
+  no longer reads as a story.
+- Above the feed are the standing facts: who runs the city, the biggest take of the last two days, the
+  best single score, and anyone who just arrived.
 
 ## What changed in 0.2.2
 
@@ -37,7 +77,7 @@ combat something you can lose as well as win.
 - Ban, suspend with an expiry, lift, force-logout, rename, and grant or revoke admin. All reversible, and a ban ends live sessions rather than waiting for the cookie to lapse.
 - Oversight shows wealth distribution rather than bare totals, the fastest movers, every in-flight mission with stuck ones flagged, and AI idle times.
 - Maintenance mode blocks gameplay while leaving reads and admin access open. Announcements post a site-wide banner.
-- 127 scalar tuning values are editable at runtime without a restart, layered over `appsettings.json` and reversible to it.
+- 159 scalar tuning values are editable at runtime without a restart, layered over `appsettings.json` and reversible to it.
 
 ### Combat refinement
 
@@ -262,7 +302,7 @@ Working the streets for 1-20 turns can now:
 - Per-player economy/action history.
 - Responsive React browser UI.
 
-Travel, organizations, player-to-player markets, and territory are intentionally not part of 0.2.2.
+Travel, organizations, player-to-player markets, and territory are intentionally not part of 0.2.3.
 
 ## Stack
 
@@ -321,7 +361,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.2`.
+It should report version `0.2.3`.
 
 ### 4. Run the browser client
 
@@ -375,7 +415,7 @@ The product net-worth value is deliberately below its fixed sale value so invent
 
 ## Economy tuning
 
-The server remains authoritative, and 0.2.2 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
+The server remains authoritative, and 0.2.3 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
 
 The configurable tables now include:
 
@@ -385,6 +425,9 @@ The configurable tables now include:
 - `Morale` upkeep rates, management capacity, pressure penalties, and desertion thresholds
 - `Crew` hire costs, morale hire requirements, and firing penalties
 - `Combat` turn costs, travel timers, cooldowns, defender protection, power randomness, loot rates, and loss rates
+- `AntiFarm` net worth floor and ratio, loot decay, protection escalation, and the incoming attack cap
+- `Hideout` tiers, storage rooms, safes, labs, and the offline production ceiling
+- `WorldNews` feed size, window, and the money and crew thresholds that make an action newsworthy
 
 ## Verification
 
@@ -398,6 +441,7 @@ npm run build
 ## API surface
 
 ```text
+GET  /api/game/dashboard
 POST /api/game/street
 POST /api/game/production
 POST /api/game/product/sell
@@ -408,14 +452,28 @@ POST /api/game/bank/withdraw
 PUT  /api/game/crew/settings
 POST /api/game/crew/hire
 POST /api/game/crew/fire
+POST /api/game/hideout/upgrade
+POST /api/game/hideout/recover
 GET  /api/world/news
+GET  /api/game/leaderboard
 GET  /api/game/targets
 GET  /api/game/players/{playerId}/profile
+GET  /api/game/alerts
+POST /api/game/alerts/seen
 GET  /api/game/combat/logs
 GET  /api/game/combat/missions
 POST /api/game/combat/attack
+POST /api/game/combat/missions/{missionId}/cancel
 GET  /api/admin/overview
-POST /api/admin/cheats
+GET  /api/admin/oversight
+GET  /api/admin/players
+GET  /api/admin/players/{playerId}
+POST /api/admin/players/{playerId}/adjust
+POST /api/admin/players/{playerId}/enforcement
+GET  /api/admin/audit
+GET  /api/admin/config
+PUT  /api/admin/config
+PUT  /api/admin/live-ops
 POST /api/admin/bots/seed
 POST /api/admin/bots/run
 ```
@@ -444,4 +502,5 @@ That rule becomes especially important once PvP and a player market are introduc
 - **0.2.0 - Done:** player search, attack/defense strength, combat, theft, losses, protection windows, and attack logs.
 - **0.2.1 - Done:** live combat missions, assigned crew, round events, combined Combat page, and committed-crew vulnerability.
 - **0.2.2 - Done:** hideout capacity, named pimps, the admin panel, database-side ranking, anti-farm protections, AI attack behavior, defender alerts, and a combat balance pass.
-- **0.2.3 - Next:** hideout tiers beyond the Trap House, passive lab production, and richer world news.
+- **0.2.3 - Done:** hideout tiers beyond the Trap House, passive lab production, and a curated world news feed.
+- **0.2.4 - Next:** player-to-player markets, organizations, and territory.

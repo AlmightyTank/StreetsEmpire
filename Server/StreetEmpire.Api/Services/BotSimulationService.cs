@@ -9,7 +9,7 @@ namespace StreetEmpire.Api.Services;
 public sealed class BotSimulationService(
     GameDbContext db,
     EconomyService economy,
-    TurnService turns,
+    PlayerClock clock,
     IGameRandom random,
     IOptionsSnapshot<GameOptions> options,
     HideoutService hideouts,
@@ -50,7 +50,7 @@ public sealed class BotSimulationService(
                 if (nextEligibleAtUtc > nowUtc)
                     continue;
 
-                turns.Refresh(bot, nowUtc);
+                clock.Advance(bot, nowUtc);
                 var botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = RunBotRound(bot, brain, nowUtc);
@@ -168,6 +168,9 @@ public sealed class BotSimulationService(
             return 0;
 
         var action = TrySellProduct(bot, brain, actionTimeUtc);
+        if (action > 0) return action;
+
+        action = TryUpgradeHideout(bot, brain, actionTimeUtc);
         if (action > 0) return action;
 
         return brain.Focus switch
@@ -301,6 +304,55 @@ public sealed class BotSimulationService(
             if (quantity > 0)
                 return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "weapons", quantity));
         }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Rivals grow their base the way a player does. Without this they sit at the Trap House caps
+    /// forever: rich enough on paper to be worth raiding, capped too low to put up a fight, and
+    /// eventually walled off by the anti-farm net-worth ratio, which leaves a maxed player with
+    /// nobody left to attack.
+    ///
+    /// Every branch is gated on the room already being the constraint, so a bot never spends on a
+    /// bigger safe it has no cash to fill.
+    /// </summary>
+    private int TryUpgradeHideout(Player bot, BotBrain brain, DateTime actionTimeUtc)
+    {
+        var hideout = bot.Hideout;
+        if (hideout is null || hideout.UpgradingToTier is not null)
+            return 0;
+
+        var reserve = CashReserve(bot, brain);
+        var capacity = hideouts.CapacityFor(hideout);
+
+        // The safe first. Cash over it is swept into the bank, and a bot that cannot hold cash on hand
+        // can never save up for anything larger.
+        if (hideouts.NextUpgrade(hideout, "safe") is { TierLocked: false } safe
+            && bot.Cash >= safe.Cost + reserve
+            && bot.Cash >= capacity.MaxCash * 3 / 4)
+            return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "safe", actionTimeUtc));
+
+        var report = economy.GetCrewReport(bot);
+        if (hideouts.NextUpgrade(hideout, "storage") is { TierLocked: false } storage
+            && bot.Cash >= storage.Cost + reserve
+            && (report.CondomsNeededForMaxStreetAction > capacity.MaxCondoms || bot.Condoms >= capacity.MaxCondoms))
+            return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "storage", actionTimeUtc));
+
+        // Then the building itself, once the crew is pressed against its caps and there are turns to
+        // spare. The turn reserve is what stops a bot from building instead of earning.
+        if ((bot.Hoes >= capacity.MaxHoes || bot.Thugs >= capacity.MaxThugs)
+            && hideouts.NextTier(hideout) is { } tier
+            // Cash and bank together, because that is how the build is paid for.
+            && bot.Cash + bot.BankCash >= tier.UpgradeCost + reserve
+            && bot.Turns >= tier.UpgradeTurns + TurnReserve(brain))
+            return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "tier", actionTimeUtc));
+
+        // Labs last, and only for the brain that actually runs product.
+        if (brain.Focus == BotBrainFocus.ProductRunner)
+            foreach (var lab in new[] { "weedlab", "cokelab" })
+                if (hideouts.NextUpgrade(hideout, lab) is { TierLocked: false } next && bot.Cash >= next.Cost + reserve * 2)
+                    return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, lab, actionTimeUtc));
 
         return 0;
     }

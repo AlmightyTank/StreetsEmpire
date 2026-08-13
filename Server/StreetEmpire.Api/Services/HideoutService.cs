@@ -12,6 +12,69 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 {
     private readonly GameOptions _options = options.Value;
 
+    /// <summary>
+    /// Lands a finished tier build. Called wherever a player is refreshed, so the new caps appear the
+    /// first time they look rather than waiting for them to take an action.
+    /// </summary>
+    public bool CompleteBuild(Hideout? hideout, DateTime nowUtc)
+    {
+        if (hideout?.UpgradingToTier is not { } tier || hideout.UpgradeCompletesAtUtc is not { } due)
+            return false;
+        if (nowUtc < due)
+            return false;
+
+        hideout.Tier = tier;
+        hideout.UpgradingToTier = null;
+        hideout.UpgradeCompletesAtUtc = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Banks what the labs made while nobody was looking. Output stops at the storage cap rather than
+    /// spilling, so time away can never destroy stock a player already had, and stops again at the
+    /// offline ceiling. Whole hours only: the remainder stays on the clock and is paid next time.
+    /// </summary>
+    public LabYield AccrueLabs(Player player, DateTime nowUtc)
+    {
+        var hideout = player.Hideout;
+        if (hideout is null || (hideout.WeedLabLevel <= 0 && hideout.CokeLabLevel <= 0))
+            return LabYield.None;
+
+        // A lab built just now starts its clock now, so building one never pays out for the hours
+        // before it existed.
+        if (hideout.LabsCollectedAtUtc is not { } since)
+        {
+            hideout.LabsCollectedAtUtc = nowUtc;
+            return LabYield.None with { ClockMoved = true };
+        }
+
+        var hours = (int)Math.Floor((nowUtc - since).TotalHours);
+        if (hours <= 0)
+            return LabYield.None;
+
+        var chargedHours = Math.Min(hours, Math.Max(0, _options.Hideout.MaxOfflineProductionHours));
+        // Advance by every elapsed hour, not just the charged ones. Otherwise a player who stays away
+        // for a week banks the ceiling and still has six days of credit waiting behind it.
+        hideout.LabsCollectedAtUtc = since.AddHours(hours);
+        if (chargedHours <= 0)
+            return LabYield.None with { ClockMoved = true };
+
+        var capacity = CapacityFor(hideout);
+        var weed = Produce(player.Weed, capacity.MaxWeed, PassivePerHour(hideout, "weed") * chargedHours);
+        var coke = Produce(player.Coke, capacity.MaxCoke, PassivePerHour(hideout, "coke") * chargedHours);
+        player.Weed += weed;
+        player.Coke += coke;
+
+        return new LabYield(weed, coke, chargedHours, hours > chargedHours, true);
+    }
+
+    /// <summary>What a lab makes per hour on its own, before storage limits.</summary>
+    public int PassivePerHour(Hideout? hideout, string product)
+    {
+        var (levels, level) = LabFor(hideout, product);
+        return level <= 0 ? 0 : Level(levels, level, x => x.Level)?.PassivePerHour ?? 0;
+    }
+
     public HideoutCapacity CapacityFor(Hideout? hideout)
     {
         var config = _options.Hideout;
@@ -45,12 +108,18 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public int ProductionYieldBonusPercent(Hideout? hideout, string product)
     {
-        var config = _options.Hideout;
-        var (levels, level) = product == "coke"
-            ? (config.CokeLab, hideout?.CokeLabLevel ?? 0)
-            : (config.WeedLab, hideout?.WeedLabLevel ?? 0);
+        var (levels, level) = LabFor(hideout, product);
         return level <= 0 ? 0 : Level(levels, level, x => x.Level)?.YieldBonusPercent ?? 0;
     }
+
+    private (List<LabLevelOptions> Levels, int Level) LabFor(Hideout? hideout, string product)
+        => product == "coke"
+            ? (_options.Hideout.CokeLab, hideout?.CokeLabLevel ?? 0)
+            : (_options.Hideout.WeedLab, hideout?.WeedLabLevel ?? 0);
+
+    /// <summary>How much of a passive run actually fits, never taking away what is already held.</summary>
+    private static int Produce(int held, int cap, int produced)
+        => Math.Max(0, Math.Min(produced, cap - held));
 
     /// <summary>
     /// How many more of a crew role the hideout has room for. Zero once the cap is reached, and zero
@@ -124,7 +193,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         }
     }
 
-    public ActionResultResponse Upgrade(Player player, string? room)
+    public ActionResultResponse Upgrade(Player player, string? room, DateTime nowUtc)
     {
         var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
         var key = room?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -132,47 +201,141 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 
         return key switch
         {
-            "storage" => ApplyUpgrade(player, config.Storage, hideout.StorageLevel, x => x.Level, x => x.UpgradeCost,
+            "tier" => StartTierUpgrade(player, hideout, nowUtc),
+            "storage" => ApplyUpgrade(player, hideout, config.Storage, hideout.StorageLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.StorageLevel = level, "storage room"),
-            "safe" => ApplyUpgrade(player, config.Safe, hideout.SafeLevel, x => x.Level, x => x.UpgradeCost,
+            "safe" => ApplyUpgrade(player, hideout, config.Safe, hideout.SafeLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.SafeLevel = level, "safe"),
-            "weedlab" => ApplyUpgrade(player, config.WeedLab, hideout.WeedLabLevel, x => x.Level, x => x.UpgradeCost,
-                level => hideout.WeedLabLevel = level, "weed lab"),
-            "cokelab" => ApplyUpgrade(player, config.CokeLab, hideout.CokeLabLevel, x => x.Level, x => x.UpgradeCost,
-                level => hideout.CokeLabLevel = level, "coke lab"),
-            _ => throw new GameRuleException("Room must be 'storage', 'safe', 'weedlab', or 'cokelab'.")
+            "weedlab" => ApplyUpgrade(player, hideout, config.WeedLab, hideout.WeedLabLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => BuildLab(hideout, nowUtc, () => hideout.WeedLabLevel = level), "weed lab"),
+            "cokelab" => ApplyUpgrade(player, hideout, config.CokeLab, hideout.CokeLabLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => BuildLab(hideout, nowUtc, () => hideout.CokeLabLevel = level), "coke lab"),
+            _ => throw new GameRuleException("Room must be 'tier', 'storage', 'safe', 'weedlab', or 'cokelab'.")
         };
     }
 
-    /// <summary>The cost of the next level for a room, or null when it is already maxed.</summary>
-    public long? NextUpgradeCost(Hideout? hideout, string room)
+    /// <summary>
+    /// Pays for the next tier and starts the clock. The cash and turns go now; the caps arrive when the
+    /// build finishes, which is what keeps a rich player from buying a bigger crew mid-fight.
+    /// </summary>
+    private ActionResultResponse StartTierUpgrade(Player player, Hideout hideout, DateTime nowUtc)
+    {
+        if (hideout.UpgradingToTier is { } pending)
+        {
+            var name = TierName(pending);
+            var minutes = Math.Max(1, (int)Math.Ceiling(((hideout.UpgradeCompletesAtUtc ?? nowUtc) - nowUtc).TotalMinutes));
+            throw new GameRuleException($"The {name} is already being built. It is ready in about {minutes} minute(s).");
+        }
+
+        var next = Level(_options.Hideout.Tiers, hideout.Tier + 1, x => x.Level)
+            ?? throw new GameRuleException("Your hideout is already the biggest there is.");
+        if (player.Cash + player.BankCash < next.UpgradeCost)
+            throw new GameRuleException($"Moving up to the {next.Name} costs {next.UpgradeCost:C0} across your cash and bank.");
+        if (player.Turns < next.UpgradeTurns)
+            throw new GameRuleException($"Moving up to the {next.Name} takes {next.UpgradeTurns} turns of work.");
+
+        // Paid from the bank first, then cash on hand. A building costs more than any safe at the tier
+        // below it holds, so charging cash on hand alone would price every tier out of reach: earnings
+        // over the safe are swept into the bank, and the safe that could hold the price is itself
+        // locked behind the tier being bought.
+        var fromBank = Math.Min(player.BankCash, next.UpgradeCost);
+        player.BankCash -= fromBank;
+        player.Cash -= next.UpgradeCost - fromBank;
+        player.Turns -= next.UpgradeTurns;
+        hideout.UpgradingToTier = next.Level;
+        hideout.UpgradeCompletesAtUtc = nowUtc.AddMinutes(next.BuildMinutes);
+
+        return new ActionResultResponse(
+            $"Started building the {next.Name} for {next.UpgradeCost:C0} and {next.UpgradeTurns} turns. It is ready in {next.BuildMinutes} minute(s).",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["room"] = "hideout",
+                ["tier"] = next.Level,
+                ["tierName"] = next.Name,
+                ["cost"] = next.UpgradeCost,
+                ["turns"] = next.UpgradeTurns,
+                ["paidFromBank"] = fromBank,
+                ["readyAtUtc"] = hideout.UpgradeCompletesAtUtc,
+                ["cashRemaining"] = player.Cash,
+                ["bankRemaining"] = player.BankCash
+            });
+    }
+
+    /// <summary>The next level available for a room, whether or not the tier allows it yet.</summary>
+    public NextRoomUpgrade? NextUpgrade(Hideout? hideout, string room)
     {
         var config = _options.Hideout;
+        var currentTier = hideout?.Tier ?? 1;
         return room switch
         {
-            "storage" => NextCost(config.Storage, hideout?.StorageLevel ?? 1, x => x.Level, x => x.UpgradeCost),
-            "safe" => NextCost(config.Safe, hideout?.SafeLevel ?? 1, x => x.Level, x => x.UpgradeCost),
-            "weedlab" => NextCost(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost),
-            "cokelab" => NextCost(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost),
+            "storage" => Next(config.Storage, hideout?.StorageLevel ?? 1, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "safe" => Next(config.Safe, hideout?.SafeLevel ?? 1, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "weedlab" => Next(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "cokelab" => Next(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             _ => null
         };
     }
 
+    /// <summary>
+    /// The deepest level of a room a tier is allowed to hold. Seeded rivals use this so they start
+    /// inside the same rules a player builds under: before the tier gates existed, seeding simply took
+    /// the highest level in the table, which now means a Trap House with a Penthouse-sized safe.
+    /// </summary>
+    public int HighestLevelForTier(string room, int tier)
+    {
+        var config = _options.Hideout;
+        return room switch
+        {
+            "storage" => Highest(config.Storage.Where(x => x.MinTier <= tier).Select(x => x.Level)),
+            "safe" => Highest(config.Safe.Where(x => x.MinTier <= tier).Select(x => x.Level)),
+            "weedlab" => Highest(config.WeedLab.Where(x => x.MinTier <= tier).Select(x => x.Level)),
+            "cokelab" => Highest(config.CokeLab.Where(x => x.MinTier <= tier).Select(x => x.Level)),
+            _ => 1
+        };
+
+        static int Highest(IEnumerable<int> levels)
+        {
+            var highest = 1;
+            foreach (var level in levels)
+                if (level > highest)
+                    highest = level;
+            return highest;
+        }
+    }
+
+    /// <summary>The tier a hideout can move up to next, or null once it is the biggest there is.</summary>
+    public HideoutTierOptions? NextTier(Hideout? hideout)
+        => Level(_options.Hideout.Tiers, (hideout?.Tier ?? 1) + 1, x => x.Level);
+
+    public string TierName(int tier)
+        => Level(_options.Hideout.Tiers, tier, x => x.Level)?.Name ?? $"Tier {tier}";
+
+    /// <summary>
+    /// Starts the lab clock when the first lab goes up, so accrual runs from the build rather than
+    /// paying out for every hour since the hideout was founded.
+    /// </summary>
+    private static void BuildLab(Hideout hideout, DateTime nowUtc, Action setLevel)
+    {
+        setLevel();
+        hideout.LabsCollectedAtUtc ??= nowUtc;
+    }
+
     private ActionResultResponse ApplyUpgrade<T>(
         Player player,
+        Hideout hideout,
         List<T> levels,
         int currentLevel,
         Func<T, int> levelOf,
         Func<T, long> costOf,
+        Func<T, int> minTierOf,
         Action<int> setLevel,
         string label)
     {
-        var next = levels
-            .Where(x => levelOf(x) == currentLevel + 1)
-            .Select(x => (Level: levelOf(x), Cost: costOf(x)))
-            .FirstOrDefault();
-        if (next.Level == 0)
-            throw new GameRuleException($"Your {label} is already at its highest level.");
+        var next = Next(levels, currentLevel, levelOf, costOf, minTierOf, hideout.Tier)
+            ?? throw new GameRuleException($"Your {label} is already at its highest level.");
+        if (next.TierLocked)
+            throw new GameRuleException($"A level {next.Level} {label} needs the {TierName(next.RequiredTier)} or better.");
         if (player.Cash < next.Cost)
             throw new GameRuleException($"You need {next.Cost:C0} cash on hand to upgrade the {label}.");
 
@@ -191,11 +354,17 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             });
     }
 
-    private static long? NextCost<T>(List<T> levels, int currentLevel, Func<T, int> levelOf, Func<T, long> costOf)
+    private static NextRoomUpgrade? Next<T>(
+        List<T> levels,
+        int currentLevel,
+        Func<T, int> levelOf,
+        Func<T, long> costOf,
+        Func<T, int> minTierOf,
+        int currentTier)
     {
         foreach (var level in levels)
             if (levelOf(level) == currentLevel + 1)
-                return costOf(level);
+                return new NextRoomUpgrade(levelOf(level), costOf(level), minTierOf(level), minTierOf(level) > currentTier);
         return null;
     }
 
@@ -210,6 +379,34 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// <summary>How much of an amount does not fit, never dipping below what was already held.</summary>
     private static int Spill(int amount, int cap, int before)
         => Math.Max(0, amount - Math.Max(cap, before));
+}
+
+/// <summary>The next level of a room, and whether the hideout is big enough to hold it yet.</summary>
+public sealed record NextRoomUpgrade(int Level, long Cost, int RequiredTier, bool TierLocked);
+
+/// <summary>What the labs banked on their own, and whether the offline ceiling cut it short.</summary>
+/// <param name="ClockMoved">
+/// True when the lab clock itself was written, which happens even on a run that produced nothing.
+/// The caller has to save in that case or the same hours are paid for twice.
+/// </param>
+public sealed record LabYield(int Weed, int Coke, int Hours, bool HitOfflineCeiling, bool ClockMoved)
+{
+    public static readonly LabYield None = new(0, 0, 0, false, false);
+
+    public bool Any => Weed > 0 || Coke > 0;
+
+    /// <summary>A sentence for the dashboard, or empty when the labs made nothing worth mentioning.</summary>
+    public string Describe()
+    {
+        if (!Any)
+            return string.Empty;
+
+        var made = new List<string>();
+        if (Weed > 0) made.Add($"{Weed:N0} weed");
+        if (Coke > 0) made.Add($"{Coke:N0} coke");
+        var ceiling = HitOfflineCeiling ? $" They only stack up {Hours} hour(s) of work, so the rest of your time away was idle." : string.Empty;
+        return $"Your labs made {string.Join(" and ", made)} while you were away.{ceiling}";
+    }
 }
 
 public sealed record HideoutCapacity(

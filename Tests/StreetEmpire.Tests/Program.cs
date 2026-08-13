@@ -29,6 +29,12 @@ var tests = new (string Name, Action Test)[]
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
     ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
+    ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
+    ("hideout tier gates the rooms it is too small to hold", HideoutTierGatesDeeperRooms),
+    ("storage levels hold a full action at the crew caps they unlock", StorageLevelsMatchTheCrewCapsTheyUnlock),
+    ("labs produce while away, bounded by storage and the offline ceiling", LabsProduceWhileAway),
+    ("labs start their clock when built rather than backdating", LabsStartTheirClockWhenBuilt),
+    ("world news keeps fights and drops routine noise", WorldNewsKeepsFightsAndDropsNoise),
     ("account lockout blocks banned and suspended players", AccountLockoutBlocksBannedAndSuspended),
     ("wealth stats describe the distribution", WealthStatsDescribeTheDistribution),
     ("option paths discover and write scalar tuning", OptionPathsDiscoverAndWriteScalars),
@@ -732,6 +738,166 @@ static void HideoutLabRaisesProductionYield()
     AssertEqual(20, Value<int>(RequiredBreakdown(boosted), "baseUnits"));
     AssertEqual(110, Value<int>(RequiredBreakdown(boosted), "labBonusPercent"));
     AssertEqual(42, Value<int>(RequiredBreakdown(boosted), "unitsProduced"));
+}
+
+static void HideoutTierBuildChargesUpFrontAndLandsOnTime()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var tier2 = options.Hideout.Tiers.Single(x => x.Level == 2);
+    var start = new DateTime(2026, 8, 13, 9, 0, 0, DateTimeKind.Utc);
+    // Cash and bank together, and the bank pays first. A tier costs more than the safe below it holds,
+    // so charging cash on hand alone would put every tier permanently out of reach.
+    var player = new Player
+    {
+        Cash = 30_000,
+        BankCash = tier2.UpgradeCost - 25_000,
+        Turns = tier2.UpgradeTurns + 3,
+        Hideout = new Hideout()
+    };
+
+    AssertEqual(tier2.UpgradeCost + 5_000, player.Cash + player.BankCash);
+    hideouts.Upgrade(player, "tier", start);
+
+    AssertEqual(0L, player.BankCash);
+    AssertEqual(5_000L, player.Cash);
+    AssertEqual(3, player.Turns);
+    // Paid for, but not yet built: the caps are what a player would otherwise buy their way past.
+    AssertEqual(1, player.Hideout!.Tier);
+    AssertEqual(2, player.Hideout.UpgradingToTier ?? 0);
+    AssertEqual(50, hideouts.CapacityFor(player.Hideout).MaxHoes);
+
+    AssertRuleError(() => hideouts.Upgrade(player, "tier", start), "starting a second build while one runs");
+
+    AssertTrue(!hideouts.CompleteBuild(player.Hideout, start.AddMinutes(tier2.BuildMinutes - 1)), "an unfinished build does not land");
+    AssertEqual(1, player.Hideout.Tier);
+
+    AssertTrue(hideouts.CompleteBuild(player.Hideout, start.AddMinutes(tier2.BuildMinutes)), "a due build lands");
+    AssertEqual(2, player.Hideout.Tier);
+    AssertTrue(player.Hideout.UpgradingToTier is null, "the pending tier is cleared once it lands");
+    AssertEqual(tier2.MaxHoes, hideouts.CapacityFor(player.Hideout).MaxHoes);
+}
+
+static void HideoutTierGatesDeeperRooms()
+{
+    var hideouts = CreateHideouts();
+    var player = new Player { Cash = 5_000_000, Hideout = new Hideout { StorageLevel = 3 } };
+
+    var locked = hideouts.NextUpgrade(player.Hideout, "storage");
+    AssertEqual(4, locked!.Level);
+    AssertTrue(locked.TierLocked, "a level 4 storage room needs a bigger building");
+    AssertRuleError(() => hideouts.Upgrade(player, "storage", DateTime.UtcNow), "upgrading a room past the tier");
+    AssertEqual(3, player.Hideout!.StorageLevel);
+    AssertEqual(5_000_000L, player.Cash);
+
+    player.Hideout.Tier = 2;
+    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.TierLocked, "the Row House holds a level 4 room");
+    hideouts.Upgrade(player, "storage", DateTime.UtcNow);
+    AssertEqual(4, player.Hideout.StorageLevel);
+}
+
+/// <summary>
+/// The rule the storage table is built on: every level that a tier unlocks holds exactly what a
+/// full-length street action consumes at that tier's crew caps. Without this the tables drift apart
+/// silently and a maxed player finds they cannot supply the crew their building allows.
+/// </summary>
+static void StorageLevelsMatchTheCrewCapsTheyUnlock()
+{
+    var options = Resolve(null);
+    var morale = options.Morale;
+
+    foreach (var tier in options.Hideout.Tiers)
+    {
+        var unlocked = options.Hideout.Storage.Where(x => x.MinTier == tier.Level).MaxBy(x => x.Level);
+        AssertTrue(unlocked is not null, $"tier {tier.Level} should unlock a storage level");
+
+        var condomsNeeded = (int)Math.Ceiling(tier.MaxHoes * options.MaxActionTurns / morale.TurnsPerCondom);
+        var beerNeeded = (int)Math.Ceiling(tier.MaxThugs * options.MaxActionTurns / morale.TurnsPerBeer);
+
+        AssertEqual(condomsNeeded, unlocked!.Condoms);
+        AssertEqual(beerNeeded, unlocked.Beer);
+        AssertEqual(tier.MaxThugs, unlocked.Weapons);
+    }
+}
+
+static void LabsProduceWhileAway()
+{
+    var options = Resolve(null);
+    options.Hideout.MaxOfflineProductionHours = 12;
+    var hideouts = CreateHideouts(options);
+    var start = new DateTime(2026, 8, 13, 0, 0, 0, DateTimeKind.Utc);
+    // Level 1 weed lab makes 2 an hour; storage level 3 holds 100 weed.
+    var player = new Player
+    {
+        Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 1, LabsCollectedAtUtc = start }
+    };
+
+    // Part of an hour pays nothing and leaves the clock alone, so the remainder is not thrown away.
+    AssertTrue(!hideouts.AccrueLabs(player, start.AddMinutes(59)).ClockMoved, "a partial hour is not banked");
+    AssertEqual(0, player.Weed);
+
+    var threeHours = hideouts.AccrueLabs(player, start.AddHours(3));
+    AssertEqual(6, threeHours.Weed);
+    AssertEqual(6, player.Weed);
+
+    // The same instant a second time pays nothing: the clock moved with the first run.
+    AssertEqual(0, hideouts.AccrueLabs(player, start.AddHours(3)).Weed);
+    AssertEqual(6, player.Weed);
+
+    // A week away is charged at the ceiling, and the leftover days are not owed later.
+    var week = hideouts.AccrueLabs(player, start.AddDays(7));
+    AssertEqual(24, week.Weed);
+    AssertTrue(week.HitOfflineCeiling, "the offline ceiling should be reported");
+    AssertEqual(0, hideouts.AccrueLabs(player, start.AddDays(7)).Weed);
+
+    // Storage is a wall, not a spill: a full room stops production instead of destroying stock.
+    player.Weed = 99;
+    var full = hideouts.AccrueLabs(player, start.AddDays(8));
+    AssertEqual(1, full.Weed);
+    AssertEqual(100, player.Weed);
+}
+
+static void LabsStartTheirClockWhenBuilt()
+{
+    var hideouts = CreateHideouts();
+    var built = new DateTime(2026, 8, 13, 6, 0, 0, DateTimeKind.Utc);
+    // A hideout founded long ago that only just built a lab.
+    var player = new Player { Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3, CreatedAtUtc = built.AddDays(-30) } };
+
+    var first = hideouts.AccrueLabs(player, built);
+    AssertEqual(0, first.Weed);
+    AssertTrue(first.ClockMoved, "the first run starts the clock and has to be saved");
+    AssertEqual(built, player.Hideout!.LabsCollectedAtUtc);
+
+    AssertEqual(7, hideouts.AccrueLabs(player, built.AddHours(1)).Weed);
+}
+
+static void WorldNewsKeepsFightsAndDropsNoise()
+{
+    var options = new WorldNewsOptions { MinCashSwing = 25_000, MinCrewChange = 5 };
+    var since = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc);
+    var newsworthy = WorldNews.IsNewsworthy(options, since).Compile();
+    var now = since.AddHours(1);
+
+    AssertTrue(newsworthy(new GameActionLog { Action = "ATTACK", CreatedAtUtc = now }), "fights are always news");
+    AssertTrue(newsworthy(new GameActionLog { Action = "HIDEOUT", CreatedAtUtc = now }), "buildings are always news");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "ATTACK", CreatedAtUtc = since.AddHours(-1) }), "old rows fall out of the window");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "STREET", CreatedAtUtc = now, CashDelta = 900 }), "an ordinary shift is not news");
+    AssertTrue(newsworthy(new GameActionLog { Action = "SALE", CreatedAtUtc = now, CashDelta = 40_000 }), "a big score is news");
+    AssertTrue(newsworthy(new GameActionLog { Action = "STREET", CreatedAtUtc = now, CashDelta = -30_000 }), "a big loss is news too");
+
+    // A deposit moves cash into the bank and nets zero. Moving your own money is not a story.
+    AssertTrue(!newsworthy(new GameActionLog { Action = "BANK", CreatedAtUtc = now, CashDelta = -80_000, BankDelta = 80_000 }), "a deposit is bookkeeping");
+
+    AssertTrue(newsworthy(new GameActionLog { Action = "CREW", CreatedAtUtc = now, HoesDelta = 6 }), "a real hiring run is news");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "CREW", CreatedAtUtc = now, HoesDelta = 2 }), "hiring two is not");
+    AssertTrue(newsworthy(new GameActionLog { Action = "CREW", CreatedAtUtc = now, PimpsDelta = -1 }), "a named pimp leaving is news");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "LAB", CreatedAtUtc = now, WeedDelta = 84 }), "passive lab output is not news");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "ADMIN", CreatedAtUtc = now, CashDelta = 500_000 }), "admin action never reaches the feed");
+
+    AssertEqual("combat", WorldNews.Category("ATTACK"));
+    AssertEqual("build", WorldNews.Category("HIDEOUT"));
+    AssertEqual("money", WorldNews.Category("SALE"));
 }
 
 // The lockout check is what a ban actually means, so it has to be exact about the boundaries.

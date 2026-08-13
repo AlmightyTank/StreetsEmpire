@@ -36,6 +36,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentPlayerService>();
 builder.Services.AddScoped<TurnService>();
 builder.Services.AddScoped<HideoutService>();
+builder.Services.AddScoped<PlayerClock>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();
@@ -179,7 +180,7 @@ app.Use(async (context, next) =>
     }, context.RequestAborted);
 });
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.2" }));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.3" }));
 
 app.MapAuthEndpoints();
 app.MapGameEndpoints();

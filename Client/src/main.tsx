@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, LeaderboardEntry, LiveOps, Pimp, PlayerProfile, PlayerTarget, WorldNewsEntry } from './api'
+import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -44,7 +44,7 @@ function App() {
   const [selectedTarget, setSelectedTarget] = useState<PlayerProfile | null>(null)
   const [combatLogs, setCombatLogs] = useState<CombatLog[]>([])
   const [combatMissions, setCombatMissions] = useState<CombatMission[]>([])
-  const [worldNews, setWorldNews] = useState<WorldNewsEntry[]>([])
+  const [worldNews, setWorldNews] = useState<WorldNews>({ headlines: [], feed: [] })
   const [targetQuery, setTargetQuery] = useState('')
   const [activePage, setActivePage] = useState<AppPage>('overview')
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
@@ -87,7 +87,7 @@ function App() {
       if ((e as Error).message === 'Unauthorized') {
         setDashboard(null)
         setAdminOverview(null)
-        setWorldNews([])
+        setWorldNews({ headlines: [], feed: [] })
         setCombatLogs([])
         setCombatMissions([])
         setTargets([])
@@ -146,6 +146,14 @@ function App() {
     if (hadActiveMission.current && !hasActiveMission) void refresh()
     hadActiveMission.current = hasActiveMission
   }, [hasActiveMission])
+  useEffect(() => {
+    // A hideout build lands server-side on the next refresh. Without this the new caps wait for the
+    // turn tick, so a 30 minute build can read as finished for another ten.
+    const readyAt = dashboard?.hideout.building?.completesAtUtc
+    if (!readyAt) return
+    const timer = window.setTimeout(() => void refresh(), Math.max(1000, new Date(readyAt).getTime() - Date.now() + 1000))
+    return () => window.clearTimeout(timer)
+  }, [dashboard?.hideout.building?.completesAtUtc])
 
   const nextTurn = useMemo(() => {
     if (!dashboard || dashboard.turns >= dashboard.maxTurns) return 'MAX'
@@ -279,7 +287,7 @@ function App() {
 
   return <main className="game-shell">
     <aside className="app-nav">
-      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.2</small></div>
+      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.3</small></div>
       <nav>
         {visiblePages.map(page => <button
           className={activePage === page ? 'active' : ''}
@@ -335,7 +343,7 @@ type PageContext = {
   leaders: LeaderboardEntry[]
   targets: PlayerTarget[]
   selectedTarget: PlayerProfile | null
-  worldNews: WorldNewsEntry[]
+  worldNews: WorldNews
   combatLogs: CombatLog[]
   combatMissions: CombatMission[]
   targetQuery: string
@@ -437,7 +445,7 @@ function OverviewPage(ctx: PageContext) {
       </section>
     </div>
 
-    <WorldNewsPanel entries={worldNews.slice(0, 5)} currentPlayer={dashboard.name} />
+    <WorldNewsPanel news={worldNews} currentPlayer={dashboard.name} />
   </div>
 }
 
@@ -580,6 +588,8 @@ function HideoutPage(ctx: PageContext) {
       </div>
     </section>
 
+    <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
+
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Rooms</h2><span>Spend cash on hand</span></div>
       <div className="room-list">
@@ -587,7 +597,7 @@ function HideoutPage(ctx: PageContext) {
           name="Storage Room"
           level={hideout.storageLevel}
           detail={`Holds ${number.format(hideout.maxCondoms)} condoms, ${number.format(hideout.maxBeer)} beer, ${number.format(hideout.maxWeapons)} weapons, ${number.format(hideout.maxWeed)} weed, ${number.format(hideout.maxCoke)} coke`}
-          cost={hideout.storageUpgradeCost}
+          upgrade={hideout.storageUpgrade}
           cash={dashboard.cash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('storage'))}
@@ -596,7 +606,7 @@ function HideoutPage(ctx: PageContext) {
           name="Safe"
           level={hideout.safeLevel}
           detail={`Holds ${money.format(hideout.maxCash)} cash on hand`}
-          cost={hideout.safeUpgradeCost}
+          upgrade={hideout.safeUpgrade}
           cash={dashboard.cash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('safe'))}
@@ -605,9 +615,9 @@ function HideoutPage(ctx: PageContext) {
           name="Weed Lab"
           level={hideout.weedLabLevel}
           detail={hideout.weedLabLevel === 0
-            ? 'Not built. Raises the yield of every weed production turn.'
-            : `+${hideout.weedLabYieldBonusPercent}% yield per weed production turn`}
-          cost={hideout.weedLabUpgradeCost}
+            ? 'Not built. Raises weed production turns and makes weed on its own.'
+            : `+${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own`}
+          upgrade={hideout.weedLabUpgrade}
           cash={dashboard.cash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('weedlab'))}
@@ -616,14 +626,18 @@ function HideoutPage(ctx: PageContext) {
           name="Coke Lab"
           level={hideout.cokeLabLevel}
           detail={hideout.cokeLabLevel === 0
-            ? 'Not built. Raises the yield of every coke production turn.'
-            : `+${hideout.cokeLabYieldBonusPercent}% yield per coke production turn`}
-          cost={hideout.cokeLabUpgradeCost}
+            ? 'Not built. Raises coke production turns and makes coke on its own.'
+            : `+${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own`}
+          upgrade={hideout.cokeLabUpgrade}
           cash={dashboard.cash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
         />
       </div>
+      {(hideout.weedLabLevel > 0 || hideout.cokeLabLevel > 0) && <p className="hint">
+        Labs keep running while you are away, up to {hideout.maxOfflineProductionHours} hours of work at a time,
+        and stop at whatever your storage room holds.
+      </p>}
     </section>
 
     <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
@@ -644,24 +658,72 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
   </div>
 }
 
-function RoomRow({ name, level, detail, cost, cash, busy, onUpgrade }: {
+function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const hideout = dashboard.hideout
+  const building = hideout.building
+  const next = hideout.nextTier
+
+  // The panel keeps its own second hand. The app-wide one stops once turns are maxed, which would
+  // otherwise freeze the countdown for exactly the players most likely to be building something.
+  const [, setNow] = useState(0)
+  useEffect(() => {
+    if (!building) return
+    const timer = window.setInterval(() => setNow(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [building?.completesAtUtc])
+
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>The Building</h2><span>Crew capacity</span></div>
+    {building
+      ? <div className="build-progress">
+        <strong>Building the {building.name}</strong>
+        <span>Ready in {timeUntil(building.completesAtUtc)}. Your crew caps stay where they are until it lands.</span>
+      </div>
+      : next
+        ? <>
+          <p>
+            Moving up to the <strong>{next.name}</strong> raises your crew caps to {number.format(next.maxPimps)} pimps,{' '}
+            {number.format(next.maxHoes)} hoes, and {number.format(next.maxThugs)} thugs, and unlocks the rooms your
+            current building is too small to hold.
+          </p>
+          <div className="room-row">
+            <div className="room-copy">
+              <strong>{next.name}</strong>
+              <span>{money.format(next.cost)} and {next.turns} turns. Takes {next.buildMinutes} minutes to build.</span>
+            </div>
+            <em>Tier {next.level}</em>
+            <button
+              className="primary"
+              disabled={busy || dashboard.cash < next.cost || dashboard.turns < next.turns}
+              onClick={() => void act(() => api.upgradeHideout('tier'))}
+            >
+              {dashboard.cash < next.cost ? 'Not enough cash' : dashboard.turns < next.turns ? 'Not enough turns' : 'Start building'}
+            </button>
+          </div>
+        </>
+        : <p>The {hideout.tierName} is the biggest building there is. Nothing left to move up to.</p>}
+  </section>
+}
+
+function RoomRow({ name, level, detail, upgrade, cash, busy, onUpgrade }: {
   name: string
   level: number
   detail: string
-  cost?: number | null
+  upgrade?: HideoutRoomUpgrade | null
   cash: number
   busy: boolean
   onUpgrade: () => void
 }) {
-  const maxed = cost === null || cost === undefined
+  const locked = upgrade?.tierLocked ?? false
   return <div className="room-row">
     <div className="room-copy">
       <strong>{name}</strong>
       <span>{detail}</span>
+      {locked && <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better.</small>}
     </div>
     <em>{level === 0 ? 'Not built' : `Level ${level}`}</em>
-    <button className="primary" disabled={busy || maxed || cash < cost} onClick={onUpgrade}>
-      {maxed ? 'Maxed' : `Upgrade ${money.format(cost)}`}
+    <button className="primary" disabled={busy || !upgrade || locked || cash < upgrade.cost} onClick={onUpgrade}>
+      {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
     </button>
   </div>
 }
@@ -1827,7 +1889,7 @@ function AdminPanel({ overview, busy, onSeedBots, onRunBots, onSetBotAutomation 
   const game = overview.economy
   return <div className="panel admin-panel">
     <div className="panel-title admin-title">
-      <div><h2>Admin Control Center</h2><span>0.2.2 war room</span></div>
+      <div><h2>Admin Control Center</h2><span>0.2.3 war room</span></div>
       <button
         className="secondary compact admin-toggle"
         type="button"
@@ -1928,13 +1990,28 @@ function AdminMetric({ label, value }: { label: string, value: string }) {
   return <div className="admin-metric"><span>{label}</span><strong>{value}</strong></div>
 }
 
-function WorldNewsPanel({ entries, currentPlayer }: { entries: WorldNewsEntry[], currentPlayer: string }) {
+const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
+  combat: 'Fight',
+  build: 'Built',
+  arrival: 'Arrival',
+  crew: 'Crew',
+  money: 'Money'
+}
+
+function WorldNewsPanel({ news, currentPlayer }: { news: WorldNews, currentPlayer: string }) {
+  const entries = news.feed.slice(0, 8)
   return <div className="panel world-panel">
-    <div className="panel-title"><h2>World News</h2><span>Last {entries.length}</span></div>
+    <div className="panel-title"><h2>World News</h2><span>What is worth knowing</span></div>
+    {news.headlines.length > 0 && <div className="headline-grid">
+      {news.headlines.map(headline => <div className={`headline ${headline.kind}`} key={headline.kind}>
+        <strong>{headline.title}</strong>
+        <span>{headline.detail}</span>
+      </div>)}
+    </div>}
     <div className="world-news">
-      {entries.length === 0 && <p className="coming">No citywide activity yet.</p>}
+      {entries.length === 0 && <p className="coming">Nothing worth reporting yet. Small moves stay off the page.</p>}
       {entries.map(entry => <div className={entry.playerName === currentPlayer ? 'world-news-item me' : 'world-news-item'} key={entry.id}>
-        <div><strong>{entry.action}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
+        <div><strong className={`news-tag ${entry.category}`}>{NEWS_LABELS[entry.category] ?? entry.action}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
         <p>{entry.summary}</p>
         <small>{entry.playerName} / {entry.city}{entry.turnsSpent > 0 ? ` / ${entry.turnsSpent} turn${entry.turnsSpent === 1 ? '' : 's'}` : ''}</small>
       </div>)}
@@ -1983,6 +2060,8 @@ function timeUntil(value: string) {
   const seconds = Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 1000))
   const minutes = Math.floor(seconds / 60)
   const remainder = seconds % 60
+  // Hideout builds run for hours, where a bare minute count stops being readable.
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
   return minutes <= 0 ? `${seconds}s` : `${minutes}m ${String(remainder).padStart(2, '0')}s`
 }
 

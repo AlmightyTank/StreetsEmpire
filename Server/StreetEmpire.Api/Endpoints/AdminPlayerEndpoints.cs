@@ -57,6 +57,7 @@ internal static class AdminPlayerEndpoints
             EconomyService economy,
             HideoutService hideouts,
             PimpRoster pimps,
+            IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
         {
             var admin = await current.GetAsync(ct);
@@ -92,7 +93,7 @@ internal static class AdminPlayerEndpoints
                 target.LastAttackAtUtc,
                 target.LastAttackedAtUtc,
                 target.CombatProtectionUntilUtc,
-                ToHideoutResponse(target, hideouts),
+                ToHideoutResponse(target, hideouts, DateTime.UtcNow, gameOptions.Value),
                 pimps.Active(target).Select(x => ToPimpResponse(x, [])).ToList(),
                 activity,
                 audit,

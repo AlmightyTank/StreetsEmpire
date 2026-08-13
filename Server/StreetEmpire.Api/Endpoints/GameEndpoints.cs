@@ -30,7 +30,7 @@ internal static class GameEndpoints
         app.MapGet("/api/game/dashboard", async (
             CurrentPlayerService current,
             GameDbContext db,
-            TurnService turns,
+            PlayerClock clock,
             EconomyService economy,
             IOptionsSnapshot<GameOptions> gameOptions,
             HideoutService hideouts,
@@ -44,7 +44,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
-            if (turns.Refresh(player, now))
+            if (clock.Advance(player, now, db).Changed)
                 await db.SaveChangesAsync(ct);
 
             var netWorth = economy.CalculateNetWorth(player);
@@ -88,7 +88,7 @@ internal static class GameEndpoints
                 opts.MaxActionTurns,
                 opts.TurnsPerTick,
                 opts.TurnTickMinutes,
-                turns.SecondsUntilNextTick(player, now),
+                clock.SecondsUntilNextTick(player, now),
                 player.Pimps,
                 player.Hoes,
                 player.Thugs,
@@ -103,7 +103,7 @@ internal static class GameEndpoints
                 opts.WeedSellPrice,
                 opts.CokeSellPrice,
                 economy.GetCrewReport(player),
-                ToHideoutResponse(player, hideouts),
+                ToHideoutResponse(player, hideouts, now, opts),
                 pimps.Active(player).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 ToCombatCrewResponse(combatCrew),
@@ -118,7 +118,7 @@ internal static class GameEndpoints
             ScoutRequest request,
             CurrentPlayerService current,
             GameDbContext db,
-            TurnService turns,
+            PlayerClock clock,
             EconomyService economy,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
@@ -132,7 +132,7 @@ internal static class GameEndpoints
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
 
-            turns.Refresh(player, now);
+            clock.Advance(player, now, db);
             var before = Snapshot(player);
             try
             {
@@ -153,7 +153,7 @@ internal static class GameEndpoints
             ScoutRequest request,
             CurrentPlayerService current,
             GameDbContext db,
-            TurnService turns,
+            PlayerClock clock,
             EconomyService economy,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
@@ -167,7 +167,7 @@ internal static class GameEndpoints
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
 
-            turns.Refresh(player, now);
+            clock.Advance(player, now, db);
             var before = Snapshot(player);
             try
             {
@@ -187,14 +187,14 @@ internal static class GameEndpoints
             ProduceRequest request,
             CurrentPlayerService current,
             GameDbContext db,
-            TurnService turns,
+            PlayerClock clock,
             EconomyService economy,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
-            turns.Refresh(player, DateTime.UtcNow);
+            clock.Advance(player, DateTime.UtcNow, db);
             var before = Snapshot(player);
             try
             {
@@ -393,7 +393,7 @@ internal static class GameEndpoints
             MoraleRecoveryRequest request,
             CurrentPlayerService current,
             GameDbContext db,
-            TurnService turns,
+            PlayerClock clock,
             EconomyService economy,
             CancellationToken ct) =>
         {
@@ -401,7 +401,7 @@ internal static class GameEndpoints
             if (player is null) return Results.Unauthorized();
 
             var now = DateTime.UtcNow;
-            turns.Refresh(player, now);
+            clock.Advance(player, now, db);
             var before = Snapshot(player);
             try
             {
@@ -425,15 +425,19 @@ internal static class GameEndpoints
             CurrentPlayerService current,
             GameDbContext db,
             HideoutService hideouts,
+            PlayerClock clock,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
+            // Moving up a tier is paid for in turns, so bring the accrued ones in before charging.
+            var now = DateTime.UtcNow;
+            clock.Advance(player, now, db);
             var before = Snapshot(player);
             try
             {
-                var result = hideouts.Upgrade(player, request.Room);
+                var result = hideouts.Upgrade(player, request.Room, now);
                 AddLog(db, player, before, "HIDEOUT", 0, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

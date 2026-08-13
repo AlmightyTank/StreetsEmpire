@@ -181,10 +181,40 @@ public sealed record HideoutResponse(
     int MaxCoke,
     int WeedLabYieldBonusPercent,
     int CokeLabYieldBonusPercent,
-    long? StorageUpgradeCost,
-    long? SafeUpgradeCost,
-    long? WeedLabUpgradeCost,
-    long? CokeLabUpgradeCost);
+    int WeedLabPassivePerHour,
+    int CokeLabPassivePerHour,
+    int MaxOfflineProductionHours,
+    HideoutRoomUpgradeResponse? StorageUpgrade,
+    HideoutRoomUpgradeResponse? SafeUpgrade,
+    HideoutRoomUpgradeResponse? WeedLabUpgrade,
+    HideoutRoomUpgradeResponse? CokeLabUpgrade,
+    HideoutTierUpgradeResponse? NextTier,
+    HideoutBuildResponse? Building);
+
+/// <summary>The next level of a room. Null once the room is maxed out for good.</summary>
+public sealed record HideoutRoomUpgradeResponse(
+    int Level,
+    long Cost,
+    int RequiredTier,
+    string RequiredTierName,
+    bool TierLocked);
+
+public sealed record HideoutTierUpgradeResponse(
+    int Level,
+    string Name,
+    long Cost,
+    int Turns,
+    int BuildMinutes,
+    int MaxPimps,
+    int MaxHoes,
+    int MaxThugs);
+
+/// <summary>A tier build in progress. The hideout keeps its old caps until this lands.</summary>
+public sealed record HideoutBuildResponse(
+    int Tier,
+    string Name,
+    DateTime CompletesAtUtc,
+    int SecondsRemaining);
 
 public sealed record CombatReadinessResponse(
     int AttackPower,
@@ -299,11 +329,22 @@ public sealed record CombatMissionEventResponse(
     int DefenderWeaponsLost,
     DateTime CreatedAtUtc);
 
+public sealed record WorldNewsResponse(
+    IReadOnlyList<WorldHeadlineResponse> Headlines,
+    IReadOnlyList<WorldNewsEntryResponse> Feed);
+
+/// <summary>A standing fact about the world rather than a single event: who leads, who was hit hardest.</summary>
+public sealed record WorldHeadlineResponse(
+    string Kind,
+    string Title,
+    string Detail);
+
 public sealed record WorldNewsEntryResponse(
     long Id,
     string PlayerName,
     string City,
     string Action,
+    string Category,
     string Summary,
     int TurnsSpent,
     DateTime CreatedAtUtc);

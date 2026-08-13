@@ -212,7 +212,7 @@ internal static class CombatEndpoints
             CombatAttackRequest request,
             CurrentPlayerService current,
             GameDbContext db,
-            TurnService turns,
+            PlayerClock clock,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
@@ -228,7 +228,7 @@ internal static class CombatEndpoints
                 .SingleOrDefaultAsync(x => x.Id == request.DefenderId, ct);
             if (defender is null) return Results.NotFound(new { error = "Target not found." });
 
-            turns.Refresh(attacker, now);
+            clock.Advance(attacker, now, db);
             var before = Snapshot(attacker);
             try
             {

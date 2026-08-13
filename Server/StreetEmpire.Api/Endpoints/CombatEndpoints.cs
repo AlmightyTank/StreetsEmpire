@@ -169,6 +169,84 @@ internal static class CombatEndpoints
 
         // ----- Defender alerts -----
 
+        // Fetched once on arrival. Reading it advances the watermark, so a refresh does not replay a
+        // digest the player has already seen.
+        app.MapGet("/api/game/catch-up", async (
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            CombatResolutionService combatResolver,
+            IOptionsSnapshot<GameOptions> gameOptions,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await combatResolver.ResolveDueAsync(now, ct);
+            // Settle first, and save before reading. The labs and any finished build are usually
+            // settled by this very request, and the queries below go to the database: without the save
+            // they would miss rows sitting unsaved in the change tracker and the player would be told
+            // about their own lab run one visit late.
+            if (clock.Advance(player, now, db).Changed)
+                await db.SaveChangesAsync(ct);
+
+            // A player who has never had a digest has no "away" to report. Start their watermark and
+            // say nothing rather than summarising their whole history at them.
+            if (player.CatchUpSeenAtUtc is not { } since)
+            {
+                player.CatchUpSeenAtUtc = now;
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new CatchUpResponse(now, 0, false, []));
+            }
+
+            var defences = await db.CombatLogs.AsNoTracking()
+                .Where(x => x.DefenderId == player.Id && x.Outcome != "Pending" && x.CreatedAtUtc > since)
+                .Select(x => new
+                {
+                    x.Outcome,
+                    x.CashStolen,
+                    x.WeedStolen,
+                    x.CokeStolen,
+                    x.DefenderThugsLost,
+                    x.DefenderPimpsLost
+                })
+                .ToListAsync(ct);
+
+            var passive = await db.ActionLogs.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id && x.Action == "LAB" && x.CreatedAtUtc > since)
+                .GroupBy(x => 1)
+                .Select(g => new { Weed = g.Sum(x => x.WeedDelta), Coke = g.Sum(x => x.CokeDelta) })
+                .FirstOrDefaultAsync(ct);
+
+            var builds = await db.ActionLogs.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id && x.Action == "HIDEOUT" && x.CreatedAtUtc > since && x.Summary.EndsWith(" is finished."))
+                .OrderBy(x => x.CreatedAtUtc)
+                .Select(x => x.Summary)
+                .ToListAsync(ct);
+
+            var digest = CatchUp.Build(new CatchUpFacts(
+                since,
+                now,
+                defences.Count,
+                defences.Count(x => x.Outcome != "Victory"),
+                defences.Sum(x => x.CashStolen),
+                defences.Sum(x => x.WeedStolen),
+                defences.Sum(x => x.CokeStolen),
+                defences.Sum(x => x.DefenderThugsLost),
+                defences.Sum(x => x.DefenderPimpsLost),
+                passive?.Weed ?? 0,
+                passive?.Coke ?? 0,
+                builds,
+                player.Turns,
+                gameOptions.Value.MaxTurns,
+                player.CombatProtectionUntilUtc));
+
+            player.CatchUpSeenAtUtc = now;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(digest);
+        }).RequireAuthorization();
+
         app.MapGet("/api/game/alerts", async (
             CurrentPlayerService current,
             GameDbContext db,

@@ -351,6 +351,23 @@ public sealed record CombatMissionEventResponse(
     int DefenderWeaponsLost,
     DateTime CreatedAtUtc);
 
+/// <summary>
+/// What happened while the player was away. <see cref="HasNews"/> is what the client gates the popup
+/// on: a summary that says nothing happened is not worth interrupting anyone for.
+/// </summary>
+public sealed record CatchUpResponse(
+    DateTime SinceUtc,
+    int AwayMinutes,
+    bool HasNews,
+    IReadOnlyList<CatchUpItemResponse> Items);
+
+/// <param name="Tone">good, bad, or neutral. Styling only; the wording carries the meaning.</param>
+public sealed record CatchUpItemResponse(
+    string Kind,
+    string Headline,
+    string Detail,
+    string Tone);
+
 public sealed record WorldNewsResponse(
     IReadOnlyList<WorldHeadlineResponse> Headlines,
     IReadOnlyList<WorldNewsEntryResponse> Feed);

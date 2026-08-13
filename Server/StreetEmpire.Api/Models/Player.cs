@@ -44,6 +44,13 @@ public sealed class Player
     /// </summary>
     public DateTime? CombatAlertsSeenAtUtc { get; set; }
 
+    /// <summary>
+    /// Watermark for the catch-up digest shown on arrival. Kept separate from the alert watermark on
+    /// purpose: reading the bell should not silently swallow the summary of what happened while the
+    /// player was away, and seeing that summary should not mark every attack as read.
+    /// </summary>
+    public DateTime? CatchUpSeenAtUtc { get; set; }
+
     public Hideout? Hideout { get; set; }
 
     /// <summary>Named pimps, active and fallen. <see cref="Pimps"/> counts the active ones.</summary>

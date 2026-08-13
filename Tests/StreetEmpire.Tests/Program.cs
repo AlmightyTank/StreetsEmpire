@@ -50,6 +50,7 @@ var tests = new (string Name, Action Test)[]
     ("bot targeting picks the richest beatable target", BotTargetingPicksRichestBeatable),
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
     ("defence alerts flip the outcome to the defender's view", DefenceAlertsFlipPerspective),
+    ("catch-up reports what happened while away and stays quiet otherwise", CatchUpReportsWhatHappenedWhileAway),
     ("defence alerts count only what is unread", DefenceAlertsCountUnread),
     ("combat power keeps a defender edge without killing attacks", CombatPowerBalanceTarget),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
@@ -1372,6 +1373,63 @@ static void DefenceAlertsFlipPerspective()
     // A missing attacker row must not blow up the alert.
     var orphan = DefenceAlerts.Describe(new CombatLog { Id = 5, Outcome = "Victory", CreatedAtUtc = at }, null);
     AssertTrue(orphan.AttackerName == "Someone", "an unnamed attacker still produces an alert");
+}
+
+static void CatchUpReportsWhatHappenedWhileAway()
+{
+    var since = new DateTime(2026, 8, 13, 6, 0, 0, DateTimeKind.Utc);
+    var now = since.AddHours(9);
+    static CatchUpFacts Quiet(DateTime since, DateTime now)
+        => new(since, now, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], 40, 200, null);
+
+    // Nothing happened, so there is nothing to interrupt anyone with.
+    var quiet = CatchUp.Build(Quiet(since, now));
+    AssertTrue(!quiet.HasNews, "a quiet spell raises no popup");
+    AssertEqual(0, quiet.Items.Count);
+    AssertEqual(540, quiet.AwayMinutes);
+
+    // Robbed twice, held once.
+    var raided = CatchUp.Build(Quiet(since, now) with
+    {
+        AttacksAgainstYou = 3,
+        AttacksHeld = 1,
+        CashStolen = 12_400,
+        ThugsLost = 4
+    });
+    AssertTrue(raided.HasNews, "being attacked is news");
+    var attack = raided.Items.Single(x => x.Kind == "attacks");
+    AssertEqual("bad", attack.Tone);
+    AssertTrue(attack.Headline.Contains("attacked 3 times"), $"headline should count the attacks: {attack.Headline}");
+    AssertTrue(attack.Detail.Contains("held 1"), $"detail should credit the one that held: {attack.Detail}");
+    AssertTrue(attack.Detail.Contains("$12,400") && attack.Detail.Contains("4 thug"), $"detail should list the losses: {attack.Detail}");
+
+    // Attacked but nothing lost reads as a win, not a warning.
+    var repelled = CatchUp.Build(Quiet(since, now) with { AttacksAgainstYou = 2, AttacksHeld = 2 });
+    AssertEqual("good", repelled.Items.Single(x => x.Kind == "attacks").Tone);
+    AssertTrue(repelled.Items[0].Headline.Contains("held off 2"), $"headline should say they held: {repelled.Items[0].Headline}");
+
+    // Labs, a finished build, and a capped turn meter each earn their own line.
+    var busy = CatchUp.Build(Quiet(since, now) with
+    {
+        LabWeed = 84,
+        LabCoke = 24,
+        HideoutBuilds = ["The Warehouse is finished."],
+        TurnsNow = 200
+    });
+    AssertEqual(3, busy.Items.Count);
+    AssertTrue(busy.Items.Single(x => x.Kind == "labs").Detail.Contains("84 weed and 24 coke"), "labs should report both products");
+    AssertEqual("The Warehouse is finished.", busy.Items.Single(x => x.Kind == "hideout").Detail);
+    AssertTrue(busy.Items.Any(x => x.Kind == "turns"), "a capped turn meter is worth saying");
+
+    // Below the cap the turn meter is not worth a line, since nothing is being wasted.
+    AssertTrue(!CatchUp.Build(Quiet(since, now) with { TurnsNow = 199 }).Items.Any(x => x.Kind == "turns"),
+        "turns below the cap are not news");
+
+    // Protection still running is worth knowing; protection that has lapsed is not.
+    AssertTrue(CatchUp.Build(Quiet(since, now) with { ProtectedUntilUtc = now.AddMinutes(41) }).Items.Any(x => x.Kind == "protection"),
+        "live protection is worth saying");
+    AssertTrue(!CatchUp.Build(Quiet(since, now) with { ProtectedUntilUtc = now.AddMinutes(-1) }).Items.Any(x => x.Kind == "protection"),
+        "lapsed protection is not");
 }
 
 static void DefenceAlertsCountUnread()

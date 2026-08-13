@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry } from './api'
+import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -64,6 +64,7 @@ function App() {
   const [storeQty, setStoreQty] = useState<Record<string, number>>({})
   const [sellQty, setSellQty] = useState<Record<'weed' | 'coke', number>>({ weed: 10, coke: 5 })
   const [tickSeconds, setTickSeconds] = useState(0)
+  const [catchUp, setCatchUp] = useState<CatchUp | null>(null)
 
   /**
    * Full reload after an action. `pollMissions` instead re-reads only what a running mission changes,
@@ -100,6 +101,7 @@ function App() {
   // A boolean, not the mission array: depending on the array rebuilt the interval on every poll.
   const hasActiveMission = combatMissions.some(mission => mission.status !== 'Complete')
   const hadActiveMission = useRef(false)
+  const catchUpFetched = useRef(false)
 
   const pollMissions = async () => {
     try {
@@ -113,6 +115,13 @@ function App() {
   }
 
   useEffect(() => { void refresh() }, [])
+  useEffect(() => {
+    // Once per arrival, and never from refresh(): reading the digest advances the server's watermark,
+    // so calling it after every action would consume the news before it could be shown.
+    if (!dashboard || catchUpFetched.current) return
+    catchUpFetched.current = true
+    void api.catchUp().then(news => { if (news.hasNews) setCatchUp(news) }).catch(() => {})
+  }, [dashboard?.playerId])
   useEffect(() => {
     if (activePage === 'admin' && !adminOverview)
       setActivePage('overview')
@@ -286,6 +295,7 @@ function App() {
   }
 
   return <main className="game-shell">
+    {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
     <aside className="app-nav">
       <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.3</small></div>
       <nav>
@@ -1436,6 +1446,36 @@ function AdminBotsAndConfig({ ctx }: { ctx: PageContext & { overview: AdminOverv
  * refreshes so the badge clears. The count itself rides on the dashboard, so the bell costs no extra
  * request until it is opened.
  */
+// Shown once on arrival and only when something actually happened. A popup that says the world stood
+// still while you were out is an interruption with nothing behind it.
+function CatchUpDialog({ news, onClose }: { news: CatchUp, onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const away = news.awayMinutes < 60
+    ? `${news.awayMinutes} minute${news.awayMinutes === 1 ? '' : 's'}`
+    : `${Math.floor(news.awayMinutes / 60)} hour${Math.floor(news.awayMinutes / 60) === 1 ? '' : 's'}`
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal catch-up" role="dialog" aria-label="While you were away" onClick={event => event.stopPropagation()}>
+      <div className="modal-head">
+        <h2>While you were away</h2>
+        <span>{away} since you last looked in</span>
+      </div>
+      <div className="catch-up-items">
+        {news.items.map((item, index) => <div className={`catch-up-item ${item.tone}`} key={`${item.kind}-${index}`}>
+          <strong>{item.headline}</strong>
+          <span>{item.detail}</span>
+        </div>)}
+      </div>
+      <button className="primary" onClick={onClose}>Back to work</button>
+    </div>
+  </div>
+}
+
 function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
   const [open, setOpen] = useState(false)
   const [alerts, setAlerts] = useState<DefenceAlert[]>([])

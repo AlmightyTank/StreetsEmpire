@@ -1690,7 +1690,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
     && dashboard.weed >= report.hqPartyWeedCost
 
   return <section className="panel wide-panel hideout-panel">
-    <div className="panel-title"><h2>Trap House</h2><span>Hideout morale</span></div>
+    <div className="panel-title"><h2>{dashboard.hideout.tierName}</h2><span>Hideout morale</span></div>
     <div className="hideout-layout">
       <div className="hideout-copy">
         <strong>Current hideout</strong>

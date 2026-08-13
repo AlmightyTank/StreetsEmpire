@@ -609,6 +609,9 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var hoeBefore = player.HoeHappiness;
         var thugBefore = player.ThugHappiness;
         var totalCrew = TotalCrew(player);
+        // Named from the tier rather than hardcoded, so a player who moved up is not still being told
+        // about a Trap House they left behind.
+        var hideoutName = hideout.TierName(player.Hideout?.Tier ?? 1);
 
         if (key == "rest")
         {
@@ -624,7 +627,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             pimps.Recover(player, pimps.RestRecovery);
 
             return new ActionResultResponse(
-                $"Opened the Trap House for crew downtime. Morale rose by up to {morale.HqRestMoraleGain:N0}%.",
+                $"Opened the {hideoutName} for crew downtime. Morale rose by up to {morale.HqRestMoraleGain:N0}%.",
                 player.Turns,
                 MoraleBreakdown(key, morale.HqRestTurnCost, cashCost, 0, 0, hoeBefore, thugBefore, player));
         }
@@ -636,7 +639,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             var beerCost = RequiredRecoverySupply(player.Thugs, morale.HqPartyBeerPerThug);
             var weedCost = RequiredRecoverySupply(player.Hoes, morale.HqPartyWeedPerHoes);
             if (player.Cash < cashCost)
-                throw new GameRuleException($"You need ${cashCost:N0} cash on hand to throw a Trap House party.");
+                throw new GameRuleException($"You need ${cashCost:N0} cash on hand to throw a {hideoutName} party.");
             if (player.Beer < beerCost)
                 throw new GameRuleException($"You need {beerCost:N0} beer for the thugs.");
             if (player.Weed < weedCost)
@@ -651,7 +654,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             pimps.Recover(player, pimps.PartyRecovery);
 
             return new ActionResultResponse(
-                $"Threw a Trap House party and let the crew burn off pressure. Hoe morale rose by up to {morale.HqPartyHoeMoraleGain:N0}%; thug morale rose by up to {morale.HqPartyThugMoraleGain:N0}%.",
+                $"Threw a {hideoutName} party and let the crew burn off pressure. Hoe morale rose by up to {morale.HqPartyHoeMoraleGain:N0}%; thug morale rose by up to {morale.HqPartyThugMoraleGain:N0}%.",
                 player.Turns,
                 MoraleBreakdown(key, morale.HqPartyTurnCost, cashCost, beerCost, weedCost, hoeBefore, thugBefore, player));
         }

@@ -24,6 +24,8 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- The crew morale panel and its rest and party messages were hardcoded to the Trap House, so a player
+  who had moved up was still being told about a building they left behind.
 - Seeded rivals were given the deepest storage room and safe in the table, which after tiers existed
   meant a Trap House holding a Penthouse-sized safe.
 - Hideout upgrades priced above the safe that holds them could never be paid for, since earnings over

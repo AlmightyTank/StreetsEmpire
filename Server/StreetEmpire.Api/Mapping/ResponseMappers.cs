@@ -130,6 +130,31 @@ internal static class ResponseMappers
             riskBand);
     }
 
+    /// <summary>
+    /// Turns a morale baseline into a direction. A null baseline means nothing recent to compare
+    /// against, which is reported as "unknown" rather than dressed up as steady: a flat arrow on a
+    /// player who has not acted in hours would be a claim the server cannot support.
+    /// </summary>
+    internal static MoraleTrendResponse ToMoraleTrend(Player player, double? hoeBaseline, double? thugBaseline, MoraleOptions options)
+    {
+        var hoeDelta = hoeBaseline is null ? (double?)null : Math.Round(player.HoeHappiness - hoeBaseline.Value, 1);
+        var thugDelta = thugBaseline is null ? (double?)null : Math.Round(player.ThugHappiness - thugBaseline.Value, 1);
+        return new MoraleTrendResponse(
+            hoeDelta,
+            thugDelta,
+            Direction(hoeDelta, options.TrendFlatBand),
+            Direction(thugDelta, options.TrendFlatBand),
+            options.TrendWindowHours);
+
+        static string Direction(double? delta, double flatBand) => delta switch
+        {
+            null => "unknown",
+            var value when value >= flatBand => "up",
+            var value when value <= -flatBand => "down",
+            _ => "steady"
+        };
+    }
+
     internal static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts, DateTime nowUtc, GameOptions options)
     {
         var capacity = hideouts.CapacityFor(player.Hideout);

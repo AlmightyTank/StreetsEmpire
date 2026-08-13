@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry } from './api'
+import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -429,8 +429,18 @@ function OverviewPage(ctx: PageContext) {
     <div className="overview-stack">
       <section className="panel">
         <div className="panel-title"><h2>Readiness</h2><span>Combat prep</span></div>
-        <StatusRow label="Hoe morale" value={`${dashboard.hoeHappiness.toFixed(0)}%`} warn={dashboard.hoeHappiness < 40} />
-        <StatusRow label="Thug morale" value={`${dashboard.thugHappiness.toFixed(0)}%`} warn={dashboard.thugHappiness < 40} />
+        <StatusRow
+          label="Hoe morale"
+          value={`${dashboard.hoeHappiness.toFixed(0)}%`}
+          warn={dashboard.hoeHappiness < 40}
+          trend={<MoraleArrow trend={dashboard.moraleTrend} crew="hoe" />}
+        />
+        <StatusRow
+          label="Thug morale"
+          value={`${dashboard.thugHappiness.toFixed(0)}%`}
+          warn={dashboard.thugHappiness < 40}
+          trend={<MoraleArrow trend={dashboard.moraleTrend} crew="thug" />}
+        />
         <StatusRow label="Management" value={`${dashboard.hoes}/${managementCapacity} hoes`} warn={dashboard.hoes > managementCapacity} />
         <StatusRow label="Armed thugs" value={`${Math.min(dashboard.weapons, dashboard.thugs)}/${dashboard.thugs}`} warn={dashboard.weapons < dashboard.thugs} />
         <StatusRow label="Weapon coverage" value={`${weaponCoverage.toFixed(0)}%`} warn={weaponCoverage < 75} />
@@ -505,8 +515,8 @@ function CrewPage(ctx: PageContext) {
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
       <div className="crew-grid">
         <CrewCard name="Pimps" count={dashboard.pimps} cap={dashboard.hideout.maxPimps} desc={`Manage up to ${number.format(managementCapacity)} hoes.`} />
-        <CrewCard name="Hoes" count={dashboard.hoes} cap={dashboard.hideout.maxHoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} />
-        <CrewCard name="Thugs" count={dashboard.thugs} cap={dashboard.hideout.maxThugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale / ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} />
+        <CrewCard name="Hoes" count={dashboard.hoes} cap={dashboard.hideout.maxHoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} trend={<MoraleArrow trend={dashboard.moraleTrend} crew="hoe" />} />
+        <CrewCard name="Thugs" count={dashboard.thugs} cap={dashboard.hideout.maxThugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale / ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} trend={<MoraleArrow trend={dashboard.moraleTrend} crew="thug" />} />
       </div>
       <div className="crew-combat-strip">
         <AdminMetric label="Free pimps" value={number.format(combatCrew.availablePimps)} />
@@ -2104,11 +2114,11 @@ function Stat({ label, value, sub }: { label: string, value: string, sub?: strin
   </div>
 }
 
-function CrewCard({ name, count, desc, tone, cap }: { name: string, count: number, desc: string, tone?: string, cap?: number }) {
+function CrewCard({ name, count, desc, tone, cap, trend }: { name: string, count: number, desc: string, tone?: string, cap?: number, trend?: ReactNode }) {
   return <div className={`crew-card ${tone ?? ''}`}>
     <span>{name}</span>
     <strong>{number.format(count)}{cap !== undefined && <small> / {number.format(cap)}</small>}</strong>
-    <p>{desc}</p>
+    <p>{desc}{trend}</p>
   </div>
 }
 
@@ -2155,8 +2165,27 @@ function SellRow({ name, owned, price, quantity, onQuantity, onSell, disabled }:
   </div>
 }
 
-function StatusRow({ label, value, warn }: { label: string, value: string, warn?: boolean }) {
-  return <div className={`status-row ${warn ? 'warn' : ''}`}><span>{label}</span><strong>{value}</strong></div>
+function StatusRow({ label, value, warn, trend }: { label: string, value: string, warn?: boolean, trend?: ReactNode }) {
+  return <div className={`status-row ${warn ? 'warn' : ''}`}>
+    <span>{label}</span>
+    <strong>{value}{trend}</strong>
+  </div>
+}
+
+const MORALE_ARROWS: Record<MoraleDirection, string> = { up: '▲', down: '▼', steady: '–', unknown: '' }
+
+// An arrow is a claim about the past, so it only appears when the server actually has a baseline to
+// compare against. No recent activity reports nothing rather than a flat line nobody earned.
+function MoraleArrow({ trend, crew }: { trend: MoraleTrend, crew: 'hoe' | 'thug' }) {
+  const direction = crew === 'hoe' ? trend.hoeDirection : trend.thugDirection
+  const delta = crew === 'hoe' ? trend.hoeDelta : trend.thugDelta
+  if (direction === 'unknown') return null
+
+  const sign = delta !== null && delta !== undefined && delta > 0 ? '+' : ''
+  const title = direction === 'steady'
+    ? `Steady over the last ${trend.windowHours} hours`
+    : `${sign}${delta?.toFixed(1)} over the last ${trend.windowHours} hours`
+  return <em className={`morale-arrow ${direction}`} title={title}>{MORALE_ARROWS[direction]}</em>
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)

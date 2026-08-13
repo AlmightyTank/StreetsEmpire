@@ -40,6 +40,7 @@ public sealed record DashboardResponse(
     int HoeCutPercent,
     double HoeHappiness,
     double ThugHappiness,
+    MoraleTrendResponse MoraleTrend,
     int Condoms,
     int Beer,
     int Weapons,
@@ -215,6 +216,17 @@ public sealed record HideoutBuildResponse(
     string Name,
     DateTime CompletesAtUtc,
     int SecondsRemaining);
+
+/// <summary>
+/// Which way crew morale has moved over the trend window. Null means there is nothing recent enough to
+/// compare against, which is a different thing from steady and is shown differently.
+/// </summary>
+public sealed record MoraleTrendResponse(
+    double? HoeDelta,
+    double? ThugDelta,
+    string HoeDirection,
+    string ThugDirection,
+    int WindowHours);
 
 public sealed record CombatReadinessResponse(
     int AttackPower,

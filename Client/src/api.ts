@@ -134,6 +134,7 @@ export type Dashboard = {
   hoeCutPercent: number
   hoeHappiness: number
   thugHappiness: number
+  moraleTrend: MoraleTrend
   condoms: number
   beer: number
   weapons: number
@@ -150,6 +151,16 @@ export type Dashboard = {
   unreadDefenceAlerts: number
   store: StoreItem[]
   recentActivity: Activity[]
+}
+
+export type MoraleDirection = 'up' | 'down' | 'steady' | 'unknown'
+
+export type MoraleTrend = {
+  hoeDelta?: number | null
+  thugDelta?: number | null
+  hoeDirection: MoraleDirection
+  thugDirection: MoraleDirection
+  windowHours: number
 }
 
 export type LeaderboardEntry = {

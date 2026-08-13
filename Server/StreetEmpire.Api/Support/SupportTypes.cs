@@ -12,7 +12,9 @@ internal sealed record PlayerSnapshot(
     int Beer,
     int Weapons,
     int Weed,
-    int Coke);
+    int Coke,
+    double HoeMorale,
+    double ThugMorale);
 internal sealed record RankedPlayer(Player Player, long NetWorth, int Rank);
 internal sealed record BotTemplate(
     string Username,

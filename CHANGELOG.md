@@ -13,6 +13,8 @@
   being the constraint.
 - A curated world news feed with headlines for who leads, the biggest take, the best score, and new
   arrivals.
+- Morale trend arrows on the overview and crew pages, measured over a configurable window, with the
+  exact movement on hover and no arrow at all when there is nothing recent to compare against.
 
 ### Changed
 - World news now reports fights, buildings, arrivals, and only the money and crew moves large enough to

@@ -637,6 +637,15 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .build-progress span { color: #938b82; font-size: .8rem; }
 .hint { color: #8e877f; font-size: .78rem; margin-top: 12px; }
 .crew-card strong small { color: #938b82; font-size: .9rem; font-weight: 700; }
+.morale-arrow {
+  font-style: normal;
+  margin-left: 6px;
+  font-size: .78rem;
+  cursor: default;
+}
+.morale-arrow.up { color: #6fbf8a; }
+.morale-arrow.down { color: #d4756a; }
+.morale-arrow.steady { color: #77706a; }
 .rule-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .rule-strip span { border: 1px solid #303532; background: #0d1011; border-radius: 999px; color: #8e877f; padding: 6px 9px; font-size: .75rem; }
 .inventory-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }

@@ -34,6 +34,16 @@ activity log into something worth reading.
 - What the labs made while you were out is written into your activity, so it is still there whichever
   page you open first.
 
+### Morale trend
+
+- Hoe and thug morale carry an arrow showing which way they have moved over the last three hours, with
+  the exact figure on hover.
+- The baseline is the morale going into the oldest action still inside the window, recorded before the
+  action rather than after. Taken after, the oldest row already contains the damage its own action did,
+  so a player who crashed morale in one shift and looked straight away would be told it was steady.
+- With nothing recent to compare against the arrow is absent rather than flat. A steady arrow on a
+  player who has not acted in hours would be a claim the server cannot support.
+
 ### World news worth reading
 
 - The feed was every action anyone took. With rivals acting on a timer that meant thirty rows of
@@ -79,7 +89,7 @@ combat something you can lose as well as win.
 - Ban, suspend with an expiry, lift, force-logout, rename, and grant or revoke admin. All reversible, and a ban ends live sessions rather than waiting for the cookie to lapse.
 - Oversight shows wealth distribution rather than bare totals, the fastest movers, every in-flight mission with stuck ones flagged, and AI idle times.
 - Maintenance mode blocks gameplay while leaving reads and admin access open. Announcements post a site-wide banner.
-- 159 scalar tuning values are editable at runtime without a restart, layered over `appsettings.json` and reversible to it.
+- 161 scalar tuning values are editable at runtime without a restart, layered over `appsettings.json` and reversible to it.
 
 ### Combat refinement
 

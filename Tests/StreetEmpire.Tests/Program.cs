@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
 using StreetEmpire.Api.Services;
+using static StreetEmpire.Api.Mapping.ResponseMappers;
 
 var tests = new (string Name, Action Test)[]
 {
@@ -36,6 +37,7 @@ var tests = new (string Name, Action Test)[]
     ("labs produce while away, bounded by storage and the offline ceiling", LabsProduceWhileAway),
     ("labs start their clock when built rather than backdating", LabsStartTheirClockWhenBuilt),
     ("world news keeps fights and drops routine noise", WorldNewsKeepsFightsAndDropsNoise),
+    ("morale trend reports direction and admits when it cannot", MoraleTrendReportsDirection),
     ("account lockout blocks banned and suspended players", AccountLockoutBlocksBannedAndSuspended),
     ("wealth stats describe the distribution", WealthStatsDescribeTheDistribution),
     ("option paths discover and write scalar tuning", OptionPathsDiscoverAndWriteScalars),
@@ -920,6 +922,34 @@ static void LabsStartTheirClockWhenBuilt()
     AssertEqual(built, player.Hideout!.LabsCollectedAtUtc);
 
     AssertEqual(7, hideouts.AccrueLabs(player, built.AddHours(1)).Weed);
+}
+
+static void MoraleTrendReportsDirection()
+{
+    var options = new MoraleOptions { TrendWindowHours = 3, TrendFlatBand = 1 };
+    var player = new Player { HoeHappiness = 72, ThugHappiness = 44 };
+
+    var rising = ToMoraleTrend(player, 60, 50, options);
+    AssertEqual(12.0, rising.HoeDelta ?? 0);
+    AssertEqual("up", rising.HoeDirection);
+    AssertEqual(-6.0, rising.ThugDelta ?? 0);
+    AssertEqual("down", rising.ThugDirection);
+    AssertEqual(3, rising.WindowHours);
+
+    // Inside the flat band the arrow reads steady, so ordinary drift does not make it flicker.
+    var drift = ToMoraleTrend(player, 71.4, 44.5, options);
+    AssertEqual("steady", drift.HoeDirection);
+    AssertEqual("steady", drift.ThugDirection);
+
+    // Exactly on the band counts as movement, so the band is a floor rather than a dead zone.
+    AssertEqual("up", ToMoraleTrend(player, 71, 44, options).HoeDirection);
+    AssertEqual("down", ToMoraleTrend(player, 73, 45, options).HoeDirection);
+
+    // No baseline is not the same as steady, and must not be dressed up as one.
+    var unknown = ToMoraleTrend(player, null, null, options);
+    AssertEqual("unknown", unknown.HoeDirection);
+    AssertEqual("unknown", unknown.ThugDirection);
+    AssertTrue(unknown.HoeDelta is null && unknown.ThugDelta is null, "an unknown trend carries no delta");
 }
 
 static void WorldNewsKeepsFightsAndDropsNoise()

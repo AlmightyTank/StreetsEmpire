@@ -65,6 +65,18 @@ internal static class GameEndpoints
                 .ToListAsync(ct);
             var rank = await db.Players.AsNoTracking()
                 .CountAsync(economy.RanksAbove(netWorth, player.CreatedAtUtc), ct) + 1;
+            // Baseline is the morale going into the oldest action still inside the window. Comparing
+            // live morale against it catches both what their actions cost and what idle time recovered,
+            // which a diff between two consecutive rows would miss.
+            var opts = gameOptions.Value;
+            var trendSince = now.AddHours(-Math.Max(1, opts.Morale.TrendWindowHours));
+            var moraleBaseline = await db.ActionLogs.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id && x.CreatedAtUtc >= trendSince && x.HoeMoraleBefore != null)
+                .OrderBy(x => x.CreatedAtUtc)
+                .Select(x => new { Hoe = x.HoeMoraleBefore, Thug = x.ThugMoraleBefore })
+                .FirstOrDefaultAsync(ct);
+            var moraleTrend = ToMoraleTrend(player, moraleBaseline?.Hoe, moraleBaseline?.Thug, opts.Morale);
+
             var activity = await db.ActionLogs.AsNoTracking()
                 .Where(x => x.PlayerId == player.Id)
                 .OrderByDescending(x => x.CreatedAtUtc)
@@ -73,7 +85,6 @@ internal static class GameEndpoints
                     x.Id, x.Action, x.Summary, x.TurnsSpent, x.CashDelta, x.BankDelta, x.CreatedAtUtc))
                 .ToListAsync(ct);
 
-            var opts = gameOptions.Value;
             return Results.Ok(new DashboardResponse(
                 player.Id,
                 player.Name,
@@ -95,6 +106,7 @@ internal static class GameEndpoints
                 player.HoeCutPercent,
                 Math.Round(player.HoeHappiness, 2),
                 Math.Round(player.ThugHappiness, 2),
+                moraleTrend,
                 player.Condoms,
                 player.Beer,
                 player.Weapons,

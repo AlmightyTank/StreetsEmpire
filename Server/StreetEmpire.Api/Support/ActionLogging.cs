@@ -29,7 +29,9 @@ internal static class ActionLogging
         player.Beer,
         player.Weapons,
         player.Weed,
-        player.Coke);
+        player.Coke,
+        player.HoeHappiness,
+        player.ThugHappiness);
 
     internal static void AddLog(
         GameDbContext db,
@@ -54,6 +56,8 @@ internal static class ActionLogging
             WeaponsDelta = player.Weapons - before.Weapons,
             WeedDelta = player.Weed - before.Weed,
             CokeDelta = player.Coke - before.Coke,
+            HoeMoraleBefore = before.HoeMorale,
+            ThugMoraleBefore = before.ThugMorale,
             Summary = summary
         });
     }

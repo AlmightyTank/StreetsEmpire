@@ -341,6 +341,16 @@ public sealed class ProductionOptions
 public sealed class MoraleOptions
 {
     public int HoesManagedPerPimp { get; set; } = 10;
+
+    /// <summary>
+    /// How far back the morale trend arrow looks. Long enough that a single action does not define the
+    /// direction, short enough that yesterday's slump is not still showing.
+    /// </summary>
+    public int TrendWindowHours { get; set; } = 3;
+
+    /// <summary>Movement smaller than this reads as steady, so the arrow does not flicker on drift.</summary>
+    public double TrendFlatBand { get; set; } = 1;
+
     public double TurnsPerCondom { get; set; } = 12;
     public double TurnsPerBeer { get; set; } = 10;
     public double HoeStreetWorkGainPerTurn { get; set; } = 0.14;

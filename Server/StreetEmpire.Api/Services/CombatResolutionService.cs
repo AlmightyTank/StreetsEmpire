@@ -113,6 +113,8 @@ public sealed class CombatResolutionService(
             WeaponsDelta = player.Weapons - before.Weapons,
             WeedDelta = player.Weed - before.Weed,
             CokeDelta = player.Coke - before.Coke,
+            HoeMoraleBefore = before.HoeMorale,
+            ThugMoraleBefore = before.ThugMorale,
             Summary = summary,
             CreatedAtUtc = nowUtc
         });
@@ -128,5 +130,7 @@ public sealed class CombatResolutionService(
         player.Beer,
         player.Weapons,
         player.Weed,
-        player.Coke);
+        player.Coke,
+        player.HoeHappiness,
+        player.ThugHappiness);
 }

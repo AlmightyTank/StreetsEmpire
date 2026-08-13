@@ -540,6 +540,8 @@ public sealed class BotSimulationService(
             WeaponsDelta = bot.Weapons - before.Weapons,
             WeedDelta = bot.Weed - before.Weed,
             CokeDelta = bot.Coke - before.Coke,
+            HoeMoraleBefore = before.HoeMorale,
+            ThugMoraleBefore = before.ThugMorale,
             CreatedAtUtc = actionTimeUtc,
             Summary = summary
         });
@@ -555,7 +557,9 @@ public sealed class BotSimulationService(
         player.Beer,
         player.Weapons,
         player.Weed,
-        player.Coke);
+        player.Coke,
+        player.HoeHappiness,
+        player.ThugHappiness);
 
     private sealed record PlayerSnapshot(
         long Cash,
@@ -567,7 +571,9 @@ public sealed class BotSimulationService(
         int Beer,
         int Weapons,
         int Weed,
-        int Coke);
+        int Coke,
+        double HoeMorale,
+        double ThugMorale);
 
 }
 

@@ -43,7 +43,7 @@ public sealed record CombatAttackRequest(Guid DefenderId, int Thugs = 1, int Wea
 public sealed record MarketListRequest(string? Item, int Quantity, long PricePerUnit);
 public sealed record MarketBuyRequest(long ListingId, int Quantity);
 public sealed record MarketCancelRequest(long ListingId);
-public sealed record ForgeRequest(int Turns);
+public sealed record ForgeRequest(int Turns, string? Station = null);
 
 public sealed record MarketListingResponse(
     long Id,
@@ -145,6 +145,8 @@ public sealed record DashboardResponse(
     int Weapons,
     int Weed,
     int Coke,
+    int Moonshine,
+    int Cut,
     int WeedSellPrice,
     int CokeSellPrice,
     CrewReportResponse CrewReport,
@@ -314,6 +316,8 @@ public sealed record HideoutResponse(
     int MaxWeapons,
     int MaxWeed,
     int MaxCoke,
+    int MaxMoonshine,
+    int MaxCut,
     int WeedLabYieldBonusPercent,
     int CokeLabYieldBonusPercent,
     int WeedLabPassivePerHour,
@@ -324,7 +328,24 @@ public sealed record HideoutResponse(
     HideoutRoomUpgradeResponse? WeedLabUpgrade,
     HideoutRoomUpgradeResponse? CokeLabUpgrade,
     HideoutTierUpgradeResponse? NextTier,
-    HideoutBuildResponse? Building);
+    HideoutBuildResponse? Building,
+    IReadOnlyList<HideoutStationResponse> Stations);
+
+/// <summary>
+/// A making station: turns and materials in, one good out. Reported together because they are the
+/// same shape, so the page can list them without knowing which is which.
+/// </summary>
+public sealed record HideoutStationResponse(
+    string Key,
+    string Name,
+    string Good,
+    int Level,
+    int PerTurn,
+    long CostPerUnit,
+    long ComparePrice,
+    string CompareLabel,
+    bool Illegal,
+    HideoutRoomUpgradeResponse? Upgrade);
 
 /// <summary>The next level of a room. Null once the room is maxed out for good.</summary>
 public sealed record HideoutRoomUpgradeResponse(

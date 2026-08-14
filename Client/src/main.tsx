@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -622,6 +622,8 @@ function HideoutPage(ctx: PageContext) {
         <CapacityBar label="Weapons" used={dashboard.weapons} cap={hideout.maxWeapons} />
         <CapacityBar label="Weed" used={dashboard.weed} cap={hideout.maxWeed} />
         <CapacityBar label="Coke" used={dashboard.coke} cap={hideout.maxCoke} />
+        <CapacityBar label="Moonshine" used={dashboard.moonshine} cap={hideout.maxMoonshine} />
+        <CapacityBar label="Cut" used={dashboard.cut} cap={hideout.maxCut} />
       </div>
     </section>
 
@@ -677,6 +679,8 @@ function HideoutPage(ctx: PageContext) {
       </p>}
     </section>
 
+    <HideoutStationsPanel dashboard={dashboard} busy={busy} act={act} />
+
     <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
   </div>
 }
@@ -693,6 +697,68 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
     <div className="capacity-track"><div className="capacity-fill" style={{ width: `${Math.max(2, percent)}%` }} /></div>
     {over && <small>Over capacity. You keep this, but cannot take on more until it drains.</small>}
   </div>
+}
+
+/**
+ * The making stations. Each is shown next to the price it exists to beat, because a station whose
+ * output costs more than the thing it replaces has no reason to be built.
+ */
+function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const [turns, setTurns] = useState<Record<string, number>>({})
+  const stations = dashboard.hideout.stations ?? []
+  if (stations.length === 0) return null
+
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Production</h2><span>Turns and materials into goods</span></div>
+    <p>
+      What you make here is what the market has to trade. Each station is priced against the thing it
+      replaces, so building one only pays while its output costs less than buying the same thing.
+    </p>
+    <div className="room-list">
+      {stations.map(station => {
+        const runTurns = turns[station.key] ?? 5
+        const built = station.level > 0
+        return <div className={station.illegal ? 'room-row illegal' : 'room-row'} key={station.key}>
+          <div className="room-copy">
+            <strong>{station.name}{station.illegal && <small> contraband</small>}</strong>
+            <span>
+              {built
+                ? `${number.format(station.perTurn)} ${station.good} a turn at ${money.format(station.costPerUnit)} each, against ${money.format(station.comparePrice)} for ${station.compareLabel}`
+                : `Not built. Makes ${station.good} for less than ${money.format(station.comparePrice)}, the price of ${station.compareLabel}.`}
+            </span>
+            {station.illegal && built && <small>Holding it is a standing risk. Brew and sell rather than stockpile.</small>}
+            {station.upgrade?.tierLocked && <small>Level {station.upgrade.level} needs the {station.upgrade.requiredTierName} or better.</small>}
+          </div>
+          <em>{built ? `Level ${station.level}` : 'Not built'}</em>
+          <div className="territory-actions">
+            {built && <>
+              <label>Turns<input
+                type="number"
+                min={1}
+                max={dashboard.maxActionTurns}
+                value={runTurns}
+                onChange={e => setTurns(v => ({ ...v, [station.key]: Number(e.target.value) }))}
+              /></label>
+              <button
+                className="primary compact"
+                disabled={busy || runTurns < 1 || runTurns > dashboard.turns}
+                onClick={() => void act(() => api.forge(runTurns, station.key))}
+              >
+                Make {number.format(station.perTurn * runTurns)}
+              </button>
+            </>}
+            <button
+              className="secondary compact"
+              disabled={busy || !station.upgrade || station.upgrade.tierLocked || dashboard.cash + dashboard.bankCash < station.upgrade.cost}
+              onClick={() => void act(() => api.upgradeHideout(station.key as HideoutRoom))}
+            >
+              {!station.upgrade ? 'Maxed' : built ? `Upgrade ${money.format(station.upgrade.cost)}` : `Build ${money.format(station.upgrade.cost)}`}
+            </button>
+          </div>
+        </div>
+      })}
+    </div>
+  </section>
 }
 
 function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {

@@ -61,6 +61,8 @@ export type Hideout = {
   maxWeapons: number
   maxWeed: number
   maxCoke: number
+  maxMoonshine: number
+  maxCut: number
   weedLabYieldBonusPercent: number
   cokeLabYieldBonusPercent: number
   weedLabPassivePerHour: number
@@ -72,6 +74,20 @@ export type Hideout = {
   cokeLabUpgrade?: HideoutRoomUpgrade | null
   nextTier?: HideoutTierUpgrade | null
   building?: HideoutBuild | null
+  stations: HideoutStation[]
+}
+
+export type HideoutStation = {
+  key: string
+  name: string
+  good: string
+  level: number
+  perTurn: number
+  costPerUnit: number
+  comparePrice: number
+  compareLabel: string
+  illegal: boolean
+  upgrade?: HideoutRoomUpgrade | null
 }
 
 export type HideoutRoomUpgrade = {
@@ -100,7 +116,7 @@ export type HideoutBuild = {
   secondsRemaining: number
 }
 
-export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab'
+export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'still' | 'mix'
 
 export type Pimp = {
   id: number
@@ -146,6 +162,8 @@ export type Dashboard = {
   weapons: number
   weed: number
   coke: number
+  moonshine: number
+  cut: number
   weedSellPrice: number
   cokeSellPrice: number
   crewReport: CrewReport
@@ -562,7 +580,8 @@ export const api = {
     request<ActionResult>('/api/game/market/buy', { method: 'POST', body: JSON.stringify({ listingId, quantity }) }),
   cancelListing: (listingId: number) =>
     request<ActionResult>('/api/game/market/cancel', { method: 'POST', body: JSON.stringify({ listingId }) }),
-  forge: (turns: number) => request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns }) }),
+  forge: (turns: number, station: string) =>
+    request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns, station }) }),
   travel: (city: string) => request<ActionResult>('/api/game/travel', { method: 'POST', body: JSON.stringify({ city }) }),
   claimTerritory: (territoryId: number, thugs: number, pimpId: number | null) =>
     request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),

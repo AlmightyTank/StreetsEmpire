@@ -191,7 +191,8 @@ internal static class MarketEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Forge(player, request.Turns);
+                var station = request.Station?.Trim().ToLowerInvariant() ?? "workshop";
+                var result = economy.Make(player, station, request.Turns);
                 AddLog(db, player, before, "WORKSHOP", request.Turns, result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

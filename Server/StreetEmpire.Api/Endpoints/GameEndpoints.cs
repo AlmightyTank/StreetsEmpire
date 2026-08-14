@@ -140,6 +140,8 @@ internal static class GameEndpoints
                 player.Weapons,
                 player.Weed,
                 player.Coke,
+                player.Moonshine,
+                player.Cut,
                 economy.ProductSellPrice(player.City, "weed"),
                 economy.ProductSellPrice(player.City, "coke"),
                 economy.GetCrewReport(player),

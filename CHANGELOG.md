@@ -10,6 +10,8 @@
 - Holding moonshine risks a bust, rolled per hour it sits in storage, taking half the stash and a fine
   capped at cash on hand. It reaches the player as an alert.
 - AI rivals buy from and sell on the market.
+- A Production section on the hideout page for the workshop, still and mix house, each shown next to
+  the price it exists to beat.
 - A workshop hideout station that makes weapons from turns and materials below the store price, so the
   board has a good with real demand and room to undercut.
 - Territory: six pieces of ground per town, held by garrisoning thugs, who count as away from home
@@ -99,6 +101,8 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- The new storage caps and station tables were only added to the code defaults, which appsettings
+  overrides, so both goods had a cap of zero and could never be made.
 - A raid on your ground was counted as an attack on your house as well, so the arrival summary
   reported one fight twice and described a fight over a corner as a break-in.
 - Which log rows are notifications is decided by the action rather than how the sentence ends. The

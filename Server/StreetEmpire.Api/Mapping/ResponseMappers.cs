@@ -227,6 +227,8 @@ internal static class ResponseMappers
             capacity.MaxWeapons,
             capacity.MaxWeed,
             capacity.MaxCoke,
+            capacity.MaxMoonshine,
+            capacity.MaxCut,
             hideouts.ProductionYieldBonusPercent(player.Hideout, "weed"),
             hideouts.ProductionYieldBonusPercent(player.Hideout, "coke"),
             hideouts.PassivePerHour(player.Hideout, "weed"),
@@ -247,7 +249,45 @@ internal static class ResponseMappers
                     nextTier.MaxPimps,
                     nextTier.MaxHoes,
                     nextTier.MaxThugs),
-            building);
+            building,
+            Stations(player, hideouts, options));
+    }
+
+    /// <summary>
+    /// The three making stations, each next to the price it is meant to beat. A station whose output
+    /// costs more than the thing it replaces has no reason to exist, so the comparison is shown rather
+    /// than left for the player to work out.
+    /// </summary>
+    private static List<HideoutStationResponse> Stations(Player player, HideoutService hideouts, GameOptions options)
+    {
+        var cokePrice = options.CityMarkets.ProductPrice(player.City, "coke", options.CokeSellPrice);
+        (string Key, string Name, string Good, long Compare, string CompareLabel, bool Illegal)[] shapes =
+        [
+            ("workshop", "Workshop", "weapons", options.WeaponPrice, "store weapons", false),
+            ("still", "Still", "moonshine", options.BeerPrice, "store beer", true),
+            ("mix", "Mix House", "cut", Math.Max(1, cokePrice / 4), "what it stretches", false)
+        ];
+
+        return shapes.Select(shape =>
+        {
+            var level = hideouts.StationFor(player.Hideout, shape.Key);
+            return new HideoutStationResponse(
+                shape.Key,
+                shape.Name,
+                shape.Good,
+                shape.Key switch
+                {
+                    "still" => player.Hideout?.StillLevel ?? 0,
+                    "mix" => player.Hideout?.MixLevel ?? 0,
+                    _ => player.Hideout?.WorkshopLevel ?? 0
+                },
+                level?.WeaponsPerTurn ?? 0,
+                level?.CostPerWeapon ?? 0,
+                shape.Compare,
+                shape.CompareLabel,
+                shape.Illegal,
+                ToRoomUpgrade(hideouts, player.Hideout, shape.Key));
+        }).ToList();
     }
 
     private static HideoutRoomUpgradeResponse? ToRoomUpgrade(HideoutService hideouts, Hideout? hideout, string room)

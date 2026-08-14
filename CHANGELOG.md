@@ -3,14 +3,16 @@
 ## 0.2.4 (in progress)
 
 ### Added
-- Territory: ten pieces of ground held by garrisoning thugs, who count as away from home while they
-  hold it, capped per hideout tier.
+- Territory: six pieces of ground per town, held by garrisoning thugs, who count as away from home
+  while they hold it, capped per hideout tier.
 - Four ground types, each a percentage on an activity the player still spends turns on: Corner for
   street income, Docks for production yield, Club for passive morale recovery, Stash House for raid
   haul.
 - Empty ground is claimed with turns and a garrison; held ground is taken with a raid that uses an
   attack lane and fights the garrison rather than the holder's house.
-- A Territory page showing the map, who holds what, and why a piece cannot be acted on.
+- A Territory page showing your town's map, who holds what, and why a piece cannot be acted on.
+- Players choose their town at sign-up. Registration ignored the field before, so everyone ended up in
+  New York whatever they picked.
 - AI rivals claim and raid ground, judging a garrison by the holder's morale and committing the same
   share of crew they would send on a raid.
 - Ground changing hands reaches the catch-up digest, the alert bell, and world news.
@@ -19,11 +21,13 @@
 - One shared definition of which log rows are notifications rather than actions, with the activity
   list using its derived negation. It had been written out separately in three queries, so a new kind
   landed in both places or neither.
-- Cities stop being decoration and name the ground, though they do not gate who may contest it.
+- The territory map is per town. You see and contest your own city's ground and nowhere else, and
+  every town carries all four types so nowhere is short of an effect.
 - Anti-farm's wealth rules and house protection do not apply to fights over ground, which carries its
   own settling period after changing hands.
 - The player clock resolves morale recovery bonuses itself rather than asking every caller to pass
   them, so recovery still happens in one place.
+
 ## 0.2.3
 
 ### Added

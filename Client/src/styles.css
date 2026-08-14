@@ -804,6 +804,7 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 }
 .headline {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   border: 1px solid #2c302e;
   border-left: 3px solid #4a5350;
@@ -811,12 +812,14 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   border-radius: 5px;
   padding: 10px 12px;
 }
-.headline strong { color: #f4eee5; font-size: .84rem; }
+.headline strong { color: #f4eee5; font-size: .84rem; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .headline span { color: #938b82; font-size: .76rem; }
-.headline.leader { border-left-color: #d9a441; }
-.headline.robbery { border-left-color: #b4534a; }
-.headline.score { border-left-color: #4f8f6a; }
-.headline.arrival { border-left-color: #5b7c9c; }
+/* Namespaced rather than bare modifiers. "leader" alone collided with the leaderboard row class, whose
+   44px first column and nowrap ellipsis squeezed the headline title down to three characters. */
+.headline-leader { border-left-color: #d9a441; }
+.headline-robbery { border-left-color: #b4534a; }
+.headline-score { border-left-color: #4f8f6a; }
+.headline-arrival { border-left-color: #5b7c9c; }
 .news-tag { text-transform: uppercase; letter-spacing: .07em; font-size: .72rem !important; }
 .news-tag.combat { color: #d4756a; }
 .news-tag.build { color: #e8c07a; }
@@ -1049,6 +1052,8 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 }
 .admin-table td { color: #bbb4ac; padding: 8px 10px 8px 0; border-bottom: 1px solid #1d2221; white-space: nowrap; }
 .admin-table tr.stale td { color: #7f7770; }
+.admin-table tr.paused td { color: #6f6862; font-style: italic; }
+.admin-table-actions { display: flex; gap: 6px; }
 .admin-action-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 .admin-action-row label { width: 132px; font-size: .74rem; }
 .audit-list { display: grid; gap: 6px; }

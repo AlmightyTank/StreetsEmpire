@@ -12,6 +12,7 @@ public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);
 public sealed record AdminSeedBotsRequest(int Count);
 public sealed record AdminRunBotsRequest(int Rounds);
+public sealed record AdminBotPauseRequest(bool Paused);
 /// <summary>Null timings mean "leave as they are"; the reset flag restores the configured defaults.</summary>
 public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = null, int? RoundsPerTick = null, bool ResetTiming = false);
 /// <summary>
@@ -507,7 +508,8 @@ public sealed record AdminBotHealthResponse(
     string Personality,
     long NetWorth,
     DateTime? LastActionAtUtc,
-    int MinutesIdle);
+    int MinutesIdle,
+    bool IsPaused);
 
 public sealed record AdminOversightResponse(
     long MedianNetWorth,
@@ -556,7 +558,22 @@ public sealed record DefenceAlertResponse(
     bool IsUnread,
     DateTime CreatedAtUtc);
 
-public sealed record DefenceAlertsResponse(
+/// <summary>
+/// Anything that happened to a player rather than because of them: raids, lab output, a build landing.
+/// Passive lab output used to sit in the activity list, which is a record of what the player did, so a
+/// payout they had no hand in read as an action they took.
+/// </summary>
+/// <param name="Id">Namespaced by source, since combat logs and action logs number independently.</param>
+public sealed record AlertResponse(
+    string Id,
+    string Kind,
+    string Headline,
+    string Detail,
+    string Tone,
+    bool IsUnread,
+    DateTime CreatedAtUtc);
+
+public sealed record AlertsResponse(
     int UnreadCount,
     DateTime? LastSeenAtUtc,
-    IReadOnlyList<DefenceAlertResponse> Alerts);
+    IReadOnlyList<AlertResponse> Alerts);

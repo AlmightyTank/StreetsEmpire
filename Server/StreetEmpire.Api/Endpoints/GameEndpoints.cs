@@ -60,7 +60,11 @@ internal static class GameEndpoints
             var unreadAlerts = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.DefenderId == player.Id
                                  && x.Outcome != "Pending"
-                                 && (player.CombatAlertsSeenAtUtc == null || x.CreatedAtUtc > player.CombatAlertsSeenAtUtc), ct);
+                                 && (player.CombatAlertsSeenAtUtc == null || x.CreatedAtUtc > player.CombatAlertsSeenAtUtc), ct)
+                + await db.ActionLogs.AsNoTracking()
+                    .CountAsync(x => x.PlayerId == player.Id
+                                     && (x.Action == "LAB" || (x.Action == "HIDEOUT" && x.Summary.EndsWith(" is finished.")))
+                                     && (player.CombatAlertsSeenAtUtc == null || x.CreatedAtUtc > player.CombatAlertsSeenAtUtc), ct);
             var combatCrew = await combatMissions.CommitmentAsync(player, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
             var commandingPimpIds = await combatMissions.ActiveAttackMissions(player.Id)
@@ -86,8 +90,12 @@ internal static class GameEndpoints
                 .FirstOrDefaultAsync(ct);
             var moraleTrend = ToMoraleTrend(player, moraleBaseline?.Hoe, moraleBaseline?.Thug, opts.Morale);
 
+            // Notifications are excluded: this list is what the player did, and a lab payout they had
+            // no hand in reads as an action they took. They surface in the alert bell instead.
             var activity = await db.ActionLogs.AsNoTracking()
-                .Where(x => x.PlayerId == player.Id)
+                .Where(x => x.PlayerId == player.Id
+                            && x.Action != "LAB"
+                            && !(x.Action == "HIDEOUT" && x.Summary.EndsWith(" is finished.")))
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .Take(12)
                 .Select(x => new ActivityResponse(

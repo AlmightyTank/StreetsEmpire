@@ -195,6 +195,62 @@ internal static class AdminOpsEndpoints
         }).RequireAuthorization();
 
 
+        app.MapPut("/api/admin/bots/{playerId:guid}/pause", async (
+            Guid playerId,
+            AdminBotPauseRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            var bot = await db.Players.Include(x => x.Account).SingleOrDefaultAsync(x => x.Id == playerId, ct);
+            if (bot is null) return Results.NotFound(new { error = "Player not found." });
+            if (!bot.Account.IsBot) return Results.BadRequest(new { error = "That player is not an AI rival." });
+
+            bot.Account.IsBotPaused = request.Paused;
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new ActionResultResponse(
+                request.Paused ? $"{bot.Name} is paused and will sit out every run." : $"{bot.Name} is active again.",
+                admin.Turns,
+                new Dictionary<string, object?> { ["playerId"] = bot.Id, ["paused"] = request.Paused }));
+        }).RequireAuthorization();
+
+
+        // Runs one rival immediately, ignoring the cooldown that paces the loop. Useful for watching a
+        // specific brain make a decision rather than waiting for its turn to come round.
+        app.MapPost("/api/admin/bots/{playerId:guid}/act", async (
+            Guid playerId,
+            CurrentPlayerService current,
+            GameDbContext db,
+            BotSimulationService bots,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            var bot = await db.Players.AsNoTracking().Include(x => x.Account).SingleOrDefaultAsync(x => x.Id == playerId, ct);
+            if (bot is null) return Results.NotFound(new { error = "Player not found." });
+            if (!bot.Account.IsBot) return Results.BadRequest(new { error = "That player is not an AI rival." });
+            if (bot.Account.IsBotPaused) return Results.BadRequest(new { error = $"{bot.Name} is paused. Resume them first." });
+
+            var result = await bots.RunAsync(1, playerId, ct);
+            var summary = result.Actions > 0
+                ? $"{bot.Name} took {result.Actions:N0} action(s)."
+                : $"{bot.Name} had nothing worth doing.";
+
+            return Results.Ok(new ActionResultResponse(summary, admin.Turns, new Dictionary<string, object?>
+            {
+                ["playerId"] = bot.Id,
+                ["actions"] = result.Actions
+            }));
+        }).RequireAuthorization();
+
+
         app.MapPut("/api/admin/bots/automation", async (
             AdminBotAutomationRequest request,
             CurrentPlayerService current,
@@ -449,7 +505,8 @@ internal static class AdminOpsEndpoints
                         BotBrain.For(bot).Name,
                         economy.CalculateNetWorth(bot),
                         last,
-                        last is { } value ? (int)Math.Max(0, (now - value).TotalMinutes) : int.MaxValue);
+                        last is { } value ? (int)Math.Max(0, (now - value).TotalMinutes) : int.MaxValue,
+                        bot.Account.IsBotPaused);
                 })
                 .OrderByDescending(x => x.MinutesIdle)
                 .ToList();

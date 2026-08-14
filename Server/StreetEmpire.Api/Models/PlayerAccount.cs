@@ -8,6 +8,13 @@ public sealed class PlayerAccount
     public bool IsAdmin { get; set; }
     public bool IsBot { get; set; }
 
+    /// <summary>
+    /// A paused rival is skipped by the automatic loop and by manual runs, but is otherwise a normal
+    /// player: still rankable, still attackable, still holding whatever it had. Useful for freezing one
+    /// rival as a fixed target while the rest of the world keeps moving.
+    /// </summary>
+    public bool IsBotPaused { get; set; }
+
     /// <summary>Blocked indefinitely until an admin lifts it.</summary>
     public bool IsBanned { get; set; }
 

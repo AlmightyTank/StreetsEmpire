@@ -56,6 +56,37 @@ public static class DefenceAlerts
     }
 
     /// <summary>How many of these the player has not seen yet.</summary>
-    public static int UnreadCount(IEnumerable<DefenceAlertResponse> alerts)
+    public static int UnreadCount(IEnumerable<AlertResponse> alerts)
         => alerts.Count(x => x.IsUnread);
+
+    /// <summary>A fight as a general alert, so it can sit in one list with the non-combat notices.</summary>
+    public static AlertResponse ToAlert(DefenceAlertResponse defence)
+        => new(
+            $"combat-{defence.Id}",
+            "attack",
+            defence.Headline,
+            defence.Detail,
+            defence.HeldTheHouse ? "good" : "bad",
+            defence.IsUnread,
+            defence.CreatedAtUtc);
+
+    /// <summary>
+    /// A logged event the player did not cause. Only the kinds that are genuinely notifications belong
+    /// here: a build being started is an action, a build finishing while they were out is not.
+    /// </summary>
+    public static AlertResponse? ToAlert(long logId, string action, string summary, DateTime createdAtUtc, DateTime? seenAtUtc)
+    {
+        var unread = seenAtUtc is null || createdAtUtc > seenAtUtc;
+        return action switch
+        {
+            "LAB" => new AlertResponse($"log-{logId}", "labs", "Your labs kept working", summary, "good", unread, createdAtUtc),
+            "HIDEOUT" when summary.EndsWith(" is finished.", StringComparison.Ordinal)
+                => new AlertResponse($"log-{logId}", "hideout", "Building finished", summary, "good", unread, createdAtUtc),
+            _ => null
+        };
+    }
+
+    /// <summary>The log rows that are notifications rather than actions, for filtering both ways.</summary>
+    public static bool IsNotification(string action, string summary)
+        => action == "LAB" || (action == "HIDEOUT" && summary.EndsWith(" is finished.", StringComparison.Ordinal));
 }

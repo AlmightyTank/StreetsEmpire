@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -1536,7 +1536,7 @@ function CatchUpDialog({ news, onClose }: { news: CatchUp, onClose: () => void }
 
 function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
   const [open, setOpen] = useState(false)
-  const [alerts, setAlerts] = useState<DefenceAlert[]>([])
+  const [alerts, setAlerts] = useState<Alert[]>([])
   const [error, setError] = useState('')
 
   const toggle = async () => {
@@ -1563,11 +1563,11 @@ function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
     </button>
     {open && <div className="alert-panel">
       <div className="alert-panel-head">
-        <strong>Attacks on you</strong>
+        <strong>Alerts</strong>
         <button className="dismiss" type="button" aria-label="Close alerts" onClick={() => setOpen(false)}>x</button>
       </div>
       {error && <p className="coming">{error}</p>}
-      {!error && alerts.length === 0 && <p className="coming">Nobody has come for you yet.</p>}
+      {!error && alerts.length === 0 && <p className="coming">Nothing has happened to you yet.</p>}
       {alerts.map(alert => <div className={alertClass(alert)} key={alert.id}>
         <strong>{alert.headline}</strong>
         <span>{alert.detail}</span>
@@ -1577,8 +1577,8 @@ function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
   </div>
 }
 
-function alertClass(alert: DefenceAlert) {
-  const base = alert.heldTheHouse ? 'alert-row held' : 'alert-row hit'
+function alertClass(alert: Alert) {
+  const base = alert.tone === 'bad' ? 'alert-row hit' : 'alert-row held'
   return alert.isUnread ? `${base} fresh` : base
 }
 
@@ -2010,6 +2010,18 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
   const [roundsPerTick, setRoundsPerTick] = useState(auto.roundsPerTick)
   const [roster, setRoster] = useState<AdminBotHealth[]>([])
   const [rosterError, setRosterError] = useState('')
+  const [working, setWorking] = useState<string | null>(null)
+
+  // Re-reads the roster rather than patching it locally, so an action's real effect on net worth and
+  // idle time shows up instead of just the flag that was toggled.
+  const rivalAction = async (playerId: string, run: () => Promise<unknown>) => {
+    setWorking(playerId); setRosterError('')
+    try {
+      await run()
+      setRoster((await opsApi.oversight()).bots)
+    } catch (e) { setRosterError((e as Error).message) }
+    finally { setWorking(null) }
+  }
 
   // Follow the server whenever it reports different timings, so an edit made elsewhere does not leave
   // stale numbers sitting in the inputs.
@@ -2101,13 +2113,31 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
       {rosterError && <div className="error banner"><span>{rosterError}</span></div>}
       {roster.length === 0 && !rosterError && <p className="coming">No AI rivals yet.</p>}
       {roster.length > 0 && <div className="admin-table-scroll"><table className="admin-table">
-        <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th></tr></thead>
+        <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th><th>State</th><th /></tr></thead>
         <tbody>
-          {roster.map(bot => <tr key={bot.playerId} className={bot.minutesIdle > 120 ? 'stale' : ''}>
+          {roster.map(bot => <tr key={bot.playerId} className={bot.isPaused ? 'paused' : bot.minutesIdle > 120 ? 'stale' : ''}>
             <td>{bot.name}</td>
             <td>{bot.personality}</td>
             <td>{money.format(bot.netWorth)}</td>
             <td>{bot.lastActionAtUtc ? `${number.format(bot.minutesIdle)}m` : 'never acted'}</td>
+            <td>{bot.isPaused ? 'Paused' : 'Active'}</td>
+            <td className="admin-table-actions">
+              <button
+                className="secondary compact"
+                disabled={working === bot.playerId}
+                onClick={() => void rivalAction(bot.playerId, () => opsApi.setBotPaused(bot.playerId, !bot.isPaused))}
+              >
+                {bot.isPaused ? 'Resume' : 'Pause'}
+              </button>
+              <button
+                className="secondary compact"
+                disabled={working === bot.playerId || bot.isPaused}
+                title={bot.isPaused ? 'Resume them first' : 'Act now, ignoring the cooldown'}
+                onClick={() => void rivalAction(bot.playerId, () => opsApi.actNow(bot.playerId))}
+              >
+                Act now
+              </button>
+            </td>
           </tr>)}
         </tbody>
       </table></div>}
@@ -2160,7 +2190,7 @@ function WorldNewsPanel({ news, currentPlayer }: { news: WorldNews, currentPlaye
   return <div className="panel world-panel">
     <div className="panel-title"><h2>World News</h2><span>What is worth knowing</span></div>
     {news.headlines.length > 0 && <div className="headline-grid">
-      {news.headlines.map(headline => <div className={`headline ${headline.kind}`} key={headline.kind}>
+      {news.headlines.map(headline => <div className={`headline headline-${headline.kind}`} key={headline.kind}>
         <strong>{headline.title}</strong>
         <span>{headline.detail}</span>
       </div>)}

@@ -17,14 +17,22 @@ public sealed class BotSimulationService(
 {
     private readonly GameOptions _options = options.Value;
 
-    public async Task<BotSimulationResult> RunAsync(int requestedRounds, CancellationToken ct)
+    public Task<BotSimulationResult> RunAsync(int requestedRounds, CancellationToken ct)
+        => RunAsync(requestedRounds, null, ct);
+
+    /// <param name="onlyPlayerId">
+    /// Runs a single rival regardless of its cooldown, for the admin's "act now" button. A paused rival
+    /// stays paused even then: pausing is a statement about the rival, not about this run.
+    /// </param>
+    public async Task<BotSimulationResult> RunAsync(int requestedRounds, Guid? onlyPlayerId, CancellationToken ct)
     {
         var rounds = Math.Clamp(requestedRounds, 1, 10);
         var bots = await db.Players
             .Include(x => x.Account)
             .Include(x => x.Hideout)
             .Include(x => x.Crew)
-            .Where(x => x.Account.IsBot)
+            .Where(x => x.Account.IsBot && !x.Account.IsBotPaused)
+            .Where(x => onlyPlayerId == null || x.Id == onlyPlayerId)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
         var botIds = bots.Select(x => x.Id).ToList();
@@ -47,7 +55,9 @@ public sealed class BotSimulationService(
                     ? lastActionAtUtc
                     : bot.CreatedAtUtc;
                 var nextEligibleAtUtc = lastActivityAtUtc.AddMinutes(random.NextInclusive(brain.MinCooldownMinutes, brain.MaxCooldownMinutes));
-                if (nextEligibleAtUtc > nowUtc)
+                // A targeted run is an explicit instruction, so it ignores the cooldown that exists to
+                // pace the loop rather than to gate the admin.
+                if (onlyPlayerId is null && nextEligibleAtUtc > nowUtc)
                     continue;
 
                 clock.Advance(bot, nowUtc);

@@ -1504,14 +1504,31 @@ static void DefenceAlertsCountUnread()
     AssertTrue(!older.IsUnread, "anything before the watermark is read");
     AssertTrue(!exactlyAtWatermark.IsUnread, "the watermark moment itself is read");
     AssertTrue(newer.IsUnread, "anything after the watermark is unread");
-    AssertEqual(1, DefenceAlerts.UnreadCount([older, exactlyAtWatermark, newer]));
+    AssertEqual(1, DefenceAlerts.UnreadCount(new[] { older, exactlyAtWatermark, newer }.Select(DefenceAlerts.ToAlert)));
 
     // A player who has never opened their alerts sees all of them as unread.
     var neverLooked = new[] { At(1, seen.AddDays(-9)), At(2, seen) }
-        .Select(x => DefenceAlerts.Describe(x, null))
+        .Select(x => DefenceAlerts.ToAlert(DefenceAlerts.Describe(x, null)))
         .ToList();
     AssertEqual(2, DefenceAlerts.UnreadCount(neverLooked));
     AssertEqual(0, DefenceAlerts.UnreadCount([]));
+
+    // Non-combat notices share the bell and the same watermark. Only the kinds that are genuinely
+    // things done to the player belong there: starting a build is an action, it finishing is not.
+    AssertEqual("labs", DefenceAlerts.ToAlert(9, "LAB", "Your labs made 40 weed.", seen.AddMinutes(5), seen)!.Kind);
+    AssertTrue(DefenceAlerts.ToAlert(9, "LAB", "x", seen.AddMinutes(5), seen)!.IsUnread, "a notice after the watermark is unread");
+    AssertTrue(!DefenceAlerts.ToAlert(9, "LAB", "x", seen.AddMinutes(-5), seen)!.IsUnread, "a notice before it is read");
+    AssertEqual("hideout", DefenceAlerts.ToAlert(9, "HIDEOUT", "The Warehouse is finished.", seen, seen)!.Kind);
+    AssertTrue(DefenceAlerts.ToAlert(9, "HIDEOUT", "Started building the Warehouse for $200,000.", seen, seen) is null,
+        "starting a build is an action, not a notification");
+    AssertTrue(DefenceAlerts.ToAlert(9, "STREET", "Worked the streets.", seen, seen) is null, "ordinary actions are not alerts");
+
+    // The filter the activity list uses has to agree with the one the bell uses, or a row lands in
+    // both places or neither.
+    AssertTrue(DefenceAlerts.IsNotification("LAB", "anything"), "lab output is a notification");
+    AssertTrue(DefenceAlerts.IsNotification("HIDEOUT", "The Warehouse is finished."), "a finished build is");
+    AssertTrue(!DefenceAlerts.IsNotification("HIDEOUT", "Upgraded the safe to level 3."), "a room upgrade is not");
+    AssertTrue(!DefenceAlerts.IsNotification("STREET", "Worked the streets."), "street work is not");
 }
 
 // The balance target, stated as a test so retuning cannot quietly break it: a defender holds at equal

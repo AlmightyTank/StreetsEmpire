@@ -360,26 +360,21 @@ export type CombatMission = {
   events: CombatMissionEvent[]
 }
 
-export type DefenceAlert = {
-  id: number
-  attackerName: string
-  outcome: string
-  heldTheHouse: boolean
+// Anything that happened to you rather than because of you: raids, lab output, a build landing.
+export type Alert = {
+  id: string
+  kind: 'attack' | 'labs' | 'hideout'
   headline: string
   detail: string
-  cashLost: number
-  weedLost: number
-  cokeLost: number
-  thugsLost: number
-  pimpsLost: number
+  tone: 'good' | 'bad' | 'neutral'
   isUnread: boolean
   createdAtUtc: string
 }
 
-export type DefenceAlerts = {
+export type Alerts = {
   unreadCount: number
   lastSeenAtUtc?: string | null
-  alerts: DefenceAlert[]
+  alerts: Alert[]
 }
 
 export type ActionResult = {
@@ -536,8 +531,8 @@ export const api = {
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNews>('/api/world/news'),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
-  alerts: () => request<DefenceAlerts>('/api/game/alerts'),
-  markAlertsSeen: () => request<DefenceAlerts>('/api/game/alerts/seen', { method: 'POST' }),
+  alerts: () => request<Alerts>('/api/game/alerts'),
+  markAlertsSeen: () => request<Alerts>('/api/game/alerts/seen', { method: 'POST' }),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),
   adminSeedBots: (count: number) => request<ActionResult>('/api/admin/bots/seed', {
     method: 'POST',
@@ -716,6 +711,7 @@ export type AdminBotHealth = {
   netWorth: number
   lastActionAtUtc?: string | null
   minutesIdle: number
+  isPaused: boolean
 }
 export type AdminOversight = {
   medianNetWorth: number
@@ -737,6 +733,10 @@ export type LiveOps = {
 
 export const opsApi = {
   oversight: () => request<AdminOversight>('/api/admin/oversight'),
+  setBotPaused: (playerId: string, paused: boolean) =>
+    request<ActionResult>(`/api/admin/bots/${playerId}/pause`, { method: 'PUT', body: JSON.stringify({ paused }) }),
+  actNow: (playerId: string) =>
+    request<ActionResult>(`/api/admin/bots/${playerId}/act`, { method: 'POST' }),
   forceResolve: (missionId: number) =>
     request<ActionResult>(`/api/admin/missions/${missionId}/force-resolve`, { method: 'POST' }),
   liveOps: () => request<LiveOps>('/api/game/live-ops'),

@@ -318,8 +318,29 @@ internal static class CombatEndpoints
                 .Take(25)
                 .ToListAsync(ct);
 
-            var alerts = logs.Select(x => DefenceAlerts.Describe(x, player.CombatAlertsSeenAtUtc)).ToList();
-            return Results.Ok(new DefenceAlertsResponse(
+            // Non-combat notices come from the action log, which is where they are already recorded.
+            // Matching the notification kinds in the database keeps the page small rather than pulling
+            // a player's whole history back to filter it here.
+            var notices = await db.ActionLogs.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id
+                            && (x.Action == "LAB" || (x.Action == "HIDEOUT" && x.Summary.EndsWith(" is finished."))))
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
+                .Take(25)
+                .Select(x => new { x.Id, x.Action, x.Summary, x.CreatedAtUtc })
+                .ToListAsync(ct);
+
+            var alerts = logs
+                .Select(x => DefenceAlerts.ToAlert(DefenceAlerts.Describe(x, player.CombatAlertsSeenAtUtc)))
+                .Concat(notices
+                    .Select(x => DefenceAlerts.ToAlert(x.Id, x.Action, x.Summary, x.CreatedAtUtc, player.CombatAlertsSeenAtUtc))
+                    .Where(x => x is not null)
+                    .Select(x => x!))
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .Take(25)
+                .ToList();
+
+            return Results.Ok(new AlertsResponse(
                 DefenceAlerts.UnreadCount(alerts),
                 player.CombatAlertsSeenAtUtc,
                 alerts));
@@ -336,7 +357,7 @@ internal static class CombatEndpoints
             // Moving the watermark forward is all "mark read" means.
             player.CombatAlertsSeenAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new DefenceAlertsResponse(0, player.CombatAlertsSeenAtUtc, []));
+            return Results.Ok(new AlertsResponse(0, player.CombatAlertsSeenAtUtc, []));
         }).RequireAuthorization();
 
         app.MapPost("/api/game/combat/attack", async (

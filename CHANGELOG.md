@@ -13,6 +13,9 @@
   being the constraint.
 - A curated world news feed with headlines for who leads, the biggest take, the best score, and new
   arrivals.
+- Individual AI rivals can be paused or told to act immediately.
+- The alert bell carries non-combat notices as well as raids: passive lab output and a building
+  finishing, which are things done to a player rather than by them.
 - The admin panel is split into tabs, with the catch-all Admin Control Center dissolved into them and
   a dedicated AI Rivals tab covering seeding, manual runs, the automatic loop's timing, and a roster.
 - A catch-up summary on arrival covering attacks taken, passive lab output, finished buildings, a
@@ -34,6 +37,10 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- Passive lab output and finished builds appeared in the activity list, which is a record of what the
+  player did, so a payout they had no hand in read as an action they took. They are alerts now.
+- The world news leader headline was styled by a bare "leader" class that collided with the
+  leaderboard row's, squeezing the title into a 44px column and cutting it to three characters.
 - Automatic AI lived only in memory, so every restart silently reverted an admin's decision to the
   appsettings default. It is persisted now, and its tick and rounds no longer need a restart to change.
 - The morale arrow measured net change across a three hour window, so it kept pointing down for hours

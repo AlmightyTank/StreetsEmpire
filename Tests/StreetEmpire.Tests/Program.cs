@@ -40,7 +40,7 @@ var tests = new (string Name, Action Test)[]
     ("trade goods map keys to the piles they move", TradeGoodsMapKeysToPiles),
     ("workshop makes weapons under the store price", WorkshopMakesWeaponsUnderStorePrice),
     ("moonshine drinks like beer and cut stretches coke", ContrabandGoodsDoTheirJob),
-    ("holding moonshine risks a bust that never bankrupts", MoonshineBustTakesTheStashNotTheShirt),
+    ("heat comes from what you hold and what you do", HeatDrivesTheBust),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1325,46 +1325,62 @@ static void ContrabandGoodsDoTheirJob()
 }
 
 /// <summary>
-/// Moonshine is illegal to hold, so the risk is carried by the stash rather than by any action. The
-/// fine stops at cash on hand: a bust that could put a player into debt is a different and much
-/// nastier mechanic than losing the stash.
+/// Everything in this game is illegal, so being illegal distinguishes nothing. Heat is what differs:
+/// weighted by how much notice a good draws, earned by working, and cooling on its own.
 /// </summary>
-static void MoonshineBustTakesTheStashNotTheShirt()
+static void HeatDrivesTheBust()
 {
     var options = Resolve(new GameOptions());
-    options.Hideout.MoonshineBustChancePerHour = 1;
-    options.Hideout.MoonshineBustFloor = 10;
-    options.Hideout.MoonshineSeizedPercent = 0.5;
-    options.Hideout.MoonshineFinePerUnit = 40;
+    var config = options.Hideout;
+    config.HeatDecayPerHour = 0;
+    config.HeatBustFloor = 20;
+    config.BustChancePerHeat = 1;
+    config.SeizedPercent = 0.5;
+    config.FinePerSeizedUnit = 40;
     var hideouts = CreateHideouts(options);
 
-    // Below the floor the still is too small to be worth a raid.
-    var small = new Player { Moonshine = 9, Cash = 10_000 };
-    AssertTrue(!hideouts.RollMoonshineBust(small, 5, new AlwaysRandom()).Happened, "a small stash is beneath notice");
-    AssertEqual(9, small.Moonshine);
+    // Coke draws the most notice per unit and cut the least, despite where cut is made.
+    AssertEqual(100.0, hideouts.HeatFor(new Player { Coke = 100 }));
+    AssertEqual(70.0, hideouts.HeatFor(new Player { Moonshine = 100 }));
+    AssertEqual(35.0, hideouts.HeatFor(new Player { Weed = 100 }));
+    AssertEqual(10.0, hideouts.HeatFor(new Player { Cut = 100 }));
 
-    // No elapsed hours, no roll: the risk is carried over time, not over page loads.
-    var idle = new Player { Moonshine = 100, Cash = 10_000 };
-    AssertTrue(!hideouts.RollMoonshineBust(idle, 0, new AlwaysRandom()).Happened, "no time passed, no risk");
+    // Working the streets counts even with nothing held, which is the point: the core loop is illegal.
+    AssertEqual(25.0, hideouts.HeatFor(new Player { Heat = 25 }));
 
-    var caught = new Player { Moonshine = 100, Cash = 10_000 };
-    var bust = hideouts.RollMoonshineBust(caught, 1, new AlwaysRandom());
-    AssertEqual(50, bust.Seized);
-    AssertEqual(2_000L, bust.Fine);
-    AssertEqual(50, caught.Moonshine);
-    AssertEqual(8_000L, caught.Cash);
+    // Under the floor nobody is looking, however long they sit there.
+    var quiet = new Player { Weed = 20, Cash = 10_000 };
+    AssertTrue(!hideouts.RollBust(quiet, 24, new AlwaysRandom()).Happened, "a small stash draws nobody");
+    AssertEqual(20, quiet.Weed);
 
-    // The fine never reaches past what is on hand.
-    var broke = new Player { Moonshine = 100, Cash = 500 };
-    var pinched = hideouts.RollMoonshineBust(broke, 1, new AlwaysRandom());
-    AssertEqual(500L, pinched.Fine);
+    // Over it, a raid takes a share of every pile and fines them for the lot.
+    var loaded = new Player { Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Cash = 10_000 };
+    var bust = hideouts.RollBust(loaded, 1, new AlwaysRandom());
+    AssertEqual(20, bust.Coke);
+    AssertEqual(10, bust.Weed);
+    AssertEqual(5, bust.Moonshine);
+    AssertEqual(4, bust.Cut);
+    AssertEqual(39 * 40L, bust.Fine);
+    AssertEqual(20, loaded.Coke);
+    AssertTrue(bust.Describe().Contains("20 coke"), $"the notice names what went: {bust.Describe()}");
+
+    // The fine never reaches past cash on hand.
+    var broke = new Player { Coke = 100, Cash = 500 };
+    AssertEqual(500L, hideouts.RollBust(broke, 1, new AlwaysRandom()).Fine);
     AssertEqual(0L, broke.Cash);
 
-    // A lucky player keeps the lot.
-    var lucky = new Player { Moonshine = 100, Cash = 10_000 };
-    options.Hideout.MoonshineBustChancePerHour = 0;
-    AssertTrue(!CreateHideouts(options).RollMoonshineBust(lucky, 24, new AlwaysRandom()).Happened, "no chance, no bust");
-    AssertEqual(100, lucky.Moonshine);
+    // A raid clears the attention it was drawn by, or one bust guarantees the next.
+    var raided = new Player { Coke = 100, Heat = 90, Cash = 10_000 };
+    hideouts.RollBust(raided, 1, new AlwaysRandom());
+    AssertEqual(0.0, raided.Heat);
+
+    // Earned heat cools on its own, which is what makes laying low work.
+    var cooling = new Player { Heat = 30 };
+    var decaying = Resolve(new GameOptions());
+    decaying.Hideout.HeatDecayPerHour = 3;
+    decaying.Hideout.BustChancePerHeat = 0;
+    CreateHideouts(decaying).RollBust(cooling, 5, new AlwaysRandom());
+    AssertEqual(15.0, cooling.Heat);
 }
 
 static void TerritoryEffectsAddUp()

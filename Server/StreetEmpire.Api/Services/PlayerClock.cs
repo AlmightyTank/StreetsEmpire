@@ -44,13 +44,9 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         // here rather than on an action so it costs a player who stockpiles it whether or not they are
         // at the screen, which is the whole point of it being illegal to hold.
         var beforeBust = Snapshot(player);
-        var bust = hideouts.RollMoonshineBust(player, labs.Hours, random);
+        var bust = hideouts.RollBust(player, ClaimHeatHours(player, nowUtc), random);
         if (db is not null && bust.Happened)
-            AddLog(db, player, beforeBust, "BUST", 0,
-                bust.Fine > 0
-                    ? $"The law found the still. They took {bust.Seized:N0} moonshine and fined you {bust.Fine:C0}."
-                    : $"The law found the still and took {bust.Seized:N0} moonshine.",
-                nowUtc);
+            AddLog(db, player, beforeBust, "BUST", 0, bust.Describe(), nowUtc);
 
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
         return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened, built, labs);
@@ -63,6 +59,24 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
     /// Reads the club bonus off the held types directly. Deliberately not routed through
     /// TerritoryService: this runs on every player refresh, and a list of type strings is all it needs.
     /// </summary>
+    /// <summary>
+    /// Takes the whole hours owed to heat and leaves the remainder on the clock. Whole hours only,
+    /// because a raid rolled per partial visit would punish checking in.
+    /// </summary>
+    private static int ClaimHeatHours(Player player, DateTime nowUtc)
+    {
+        if (player.LastHeatRollUtc > nowUtc)
+        {
+            player.LastHeatRollUtc = nowUtc;
+            return 0;
+        }
+
+        var hours = (int)Math.Min(int.MaxValue, Math.Floor((nowUtc - player.LastHeatRollUtc).TotalHours));
+        if (hours <= 0) return 0;
+        player.LastHeatRollUtc = player.LastHeatRollUtc.AddHours(hours);
+        return hours;
+    }
+
     private int MoraleRecoveryPercentFor(IEnumerable<string> heldTypes)
         => heldTypes.Count(x => string.Equals(x, "club", StringComparison.OrdinalIgnoreCase)) * ClubMoraleRecoveryPercent;
 

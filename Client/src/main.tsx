@@ -675,9 +675,12 @@ function HideoutPage(ctx: PageContext) {
       </div>
       {(hideout.weedLabLevel > 0 || hideout.cokeLabLevel > 0) && <p className="hint">
         Labs keep running while you are away, up to {hideout.maxOfflineProductionHours} hours of work at a time,
-        and stop at whatever your storage room holds.
+        and stop at whatever your storage room holds. What they make is contraband, so a full lab and a
+        full store draw heat whether you are here or not.
       </p>}
     </section>
+
+    <HeatPanel hideout={hideout} />
 
     <HideoutStationsPanel dashboard={dashboard} busy={busy} act={act} />
 
@@ -700,6 +703,22 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
 }
 
 /**
+ * Heat. Everything the player does is illegal, so the question is never whether they are breaking the
+ * law: it is how loudly. Shown next to production because that is where the choice is made.
+ */
+function HeatPanel({ hideout }: { hideout: Dashboard['hideout'] }) {
+  const band = hideout.heatLabel.toLowerCase()
+  return <section className={`panel heat-panel heat-${band}`}>
+    <div className="panel-title"><h2>Heat</h2><span>How much notice you are drawing</span></div>
+    <div className="heat-reading">
+      <strong>{hideout.heatLabel}</strong>
+      <em>{number.format(Math.round(hideout.heat))}</em>
+    </div>
+    <p>{hideout.heatNote}</p>
+  </section>
+}
+
+/**
  * The making stations. Each is shown next to the price it exists to beat, because a station whose
  * output costs more than the thing it replaces has no reason to be built.
  */
@@ -718,15 +737,17 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
       {stations.map(station => {
         const runTurns = turns[station.key] ?? 5
         const built = station.level > 0
-        return <div className={station.illegal ? 'room-row illegal' : 'room-row'} key={station.key}>
+        return <div className={station.heatPerUnit > 0 ? 'room-row illegal' : 'room-row'} key={station.key}>
           <div className="room-copy">
-            <strong>{station.name}{station.illegal && <small> contraband</small>}</strong>
+            <strong>{station.name}{station.heatPerUnit > 0 && <small> contraband</small>}</strong>
             <span>
               {built
                 ? `${number.format(station.perTurn)} ${station.good} a turn at ${money.format(station.costPerUnit)} each, against ${money.format(station.comparePrice)} for ${station.compareLabel}`
                 : `Not built. Makes ${station.good} for less than ${money.format(station.comparePrice)}, the price of ${station.compareLabel}.`}
             </span>
-            {station.illegal && built && <small>Holding it is a standing risk. Brew and sell rather than stockpile.</small>}
+            {station.heatPerUnit > 0 && built && <small>
+              Each one held adds {station.heatPerUnit} heat. Make and sell rather than stockpile.
+            </small>}
             {station.upgrade?.tierLocked && <small>Level {station.upgrade.level} needs the {station.upgrade.requiredTierName} or better.</small>}
           </div>
           <em>{built ? `Level ${station.level}` : 'Not built'}</em>

@@ -71,11 +71,6 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - A **still** brews moonshine, which thugs drink exactly like the shop's beer at well under the shop's
   price. The bought beer is always poured first, so a player is never quietly spending contraband while
   a legal barrel sits next to it.
-- Moonshine is illegal to hold. Every hour it sits in storage is a roll, so it costs a player who
-  stockpiles it and costs almost nothing to one who brews and sells. Getting caught takes half the
-  stash and fines you, and the fine stops at cash on hand: a bust that could put a player into debt
-  would be a nastier mechanic than losing the stash. It arrives as an alert rather than a line buried
-  in the activity list.
 - A **mix house** makes cut, which stretches coke one for one and is worth nothing on its own. That is
   why it is priced off the local coke rather than carrying a band of its own: it follows the town
   automatically, because what it is worth is what it makes.
@@ -83,6 +78,28 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   the town the way weed, coke and cut do.
 - AI rivals trade. They buy weapons off the board when it beats the shop, judged against the shop
   rather than against the other listings, and list what they cannot use.
+
+### Heat
+
+- Everything in this game is illegal, so an illegal flag on one room and not another said nothing.
+  What differs is how much notice a thing draws, and that is what heat measures. Coke draws the most
+  per unit, then moonshine, then weed, and cut the least, which is the reverse of where it is made.
+- Working the streets adds heat by itself, with nothing held at all. The core loop is a crime; a system
+  that only watched the stash would have said otherwise.
+- Under the floor nobody is looking, however long you sit there. That floor is what makes a small
+  operation safe and stops the game punishing a player for existing. Above it, every hour is a roll,
+  and the chance climbs with the heat.
+- Getting caught takes half of every pile and fines you, and the fine stops at cash on hand: a raid
+  that could put a player into debt would be a nastier mechanic than losing the stash. It clears the
+  heat that drew it, so one raid does not guarantee the next.
+- Heat cools on its own, which is what makes lying low a real move rather than a figure of speech.
+- It runs on its own clock rather than the turn clock. The turn clock is dragged forward every few
+  minutes by anyone at the screen, so a player checking in often would never accumulate a whole hour
+  and would never be raided or cool down. Whole hours are consumed and the remainder is left behind.
+  A long absence is capped the same way offline lab work is, so a fortnight away costs no more than a
+  night.
+- The hideout page reads Quiet, Noticed, Watched or Hunted, with the hourly chance in plain numbers,
+  because the number alone says nothing about whether tonight is the night.
 
 ### Still to come in 0.2.4
 

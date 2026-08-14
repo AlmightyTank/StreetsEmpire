@@ -68,6 +68,9 @@ export type Hideout = {
   weedLabPassivePerHour: number
   cokeLabPassivePerHour: number
   maxOfflineProductionHours: number
+  heat: number
+  heatLabel: string
+  heatNote: string
   storageUpgrade?: HideoutRoomUpgrade | null
   safeUpgrade?: HideoutRoomUpgrade | null
   weedLabUpgrade?: HideoutRoomUpgrade | null
@@ -86,7 +89,7 @@ export type HideoutStation = {
   costPerUnit: number
   comparePrice: number
   compareLabel: string
-  illegal: boolean
+  heatPerUnit: number
   upgrade?: HideoutRoomUpgrade | null
 }
 

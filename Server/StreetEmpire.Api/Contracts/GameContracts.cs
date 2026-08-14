@@ -323,6 +323,9 @@ public sealed record HideoutResponse(
     int WeedLabPassivePerHour,
     int CokeLabPassivePerHour,
     int MaxOfflineProductionHours,
+    double Heat,
+    string HeatLabel,
+    string HeatNote,
     HideoutRoomUpgradeResponse? StorageUpgrade,
     HideoutRoomUpgradeResponse? SafeUpgrade,
     HideoutRoomUpgradeResponse? WeedLabUpgrade,
@@ -344,7 +347,7 @@ public sealed record HideoutStationResponse(
     long CostPerUnit,
     long ComparePrice,
     string CompareLabel,
-    bool Illegal,
+    double HeatPerUnit,
     HideoutRoomUpgradeResponse? Upgrade);
 
 /// <summary>The next level of a room. Null once the room is maxed out for good.</summary>

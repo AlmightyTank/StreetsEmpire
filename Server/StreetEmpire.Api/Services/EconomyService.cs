@@ -227,6 +227,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         player.Turns -= turns;
         player.Cash += playerProfit;
+        // Working the streets is illegal too, so it draws attention whether or not anything is held.
+        player.Heat += Math.Max(0, _options.Hideout.HeatPerStreetTurn) * turns;
         // Recruited pimps arrive as named crew, which also moves the counter.
         var recruitedPimpNames = pimps.Hire(player, recruitedPimps, DateTime.UtcNow).Select(x => x.Name).ToList();
         player.Hoes += recruitedHoes;

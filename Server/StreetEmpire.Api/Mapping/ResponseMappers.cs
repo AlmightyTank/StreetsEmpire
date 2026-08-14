@@ -202,6 +202,7 @@ internal static class ResponseMappers
     internal static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts, DateTime nowUtc, GameOptions options)
     {
         var capacity = hideouts.CapacityFor(player.Hideout);
+        var heat = hideouts.HeatFor(player);
         var nextTier = hideouts.NextTier(player.Hideout);
         var building = player.Hideout is { UpgradingToTier: { } tier, UpgradeCompletesAtUtc: { } due }
             ? new HideoutBuildResponse(
@@ -234,6 +235,9 @@ internal static class ResponseMappers
             hideouts.PassivePerHour(player.Hideout, "weed"),
             hideouts.PassivePerHour(player.Hideout, "coke"),
             options.Hideout.MaxOfflineProductionHours,
+            Math.Round(heat, 1),
+            HeatLabel(heat, options),
+            HeatNote(heat, options),
             ToRoomUpgrade(hideouts, player.Hideout, "storage"),
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
             ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),
@@ -261,11 +265,11 @@ internal static class ResponseMappers
     private static List<HideoutStationResponse> Stations(Player player, HideoutService hideouts, GameOptions options)
     {
         var cokePrice = options.CityMarkets.ProductPrice(player.City, "coke", options.CokeSellPrice);
-        (string Key, string Name, string Good, long Compare, string CompareLabel, bool Illegal)[] shapes =
+        (string Key, string Name, string Good, long Compare, string CompareLabel)[] shapes =
         [
-            ("workshop", "Workshop", "weapons", options.WeaponPrice, "store weapons", false),
-            ("still", "Still", "moonshine", options.BeerPrice, "store beer", true),
-            ("mix", "Mix House", "cut", Math.Max(1, cokePrice / 4), "what it stretches", false)
+            ("workshop", "Workshop", "weapons", options.WeaponPrice, "store weapons"),
+            ("still", "Still", "moonshine", options.BeerPrice, "store beer"),
+            ("mix", "Mix House", "cut", Math.Max(1, cokePrice / 4), "what it stretches")
         ];
 
         return shapes.Select(shape =>
@@ -285,10 +289,48 @@ internal static class ResponseMappers
                 level?.CostPerWeapon ?? 0,
                 shape.Compare,
                 shape.CompareLabel,
-                shape.Illegal,
+                HeatPerUnit(options, shape.Good),
                 ToRoomUpgrade(hideouts, player.Hideout, shape.Key));
         }).ToList();
     }
+
+    /// <summary>
+    /// Heat in words, because the number on its own says nothing about whether tonight is the night.
+    /// The floor is the honest dividing line: under it nobody is looking, however long you sit there.
+    /// </summary>
+    private static string HeatLabel(double heat, GameOptions options)
+    {
+        var floor = options.Hideout.HeatBustFloor;
+        return heat switch
+        {
+            var value when value <= floor => "Quiet",
+            var value when value <= floor * 2 => "Noticed",
+            var value when value <= floor * 4 => "Watched",
+            _ => "Hunted"
+        };
+    }
+
+    private static string HeatNote(double heat, GameOptions options)
+    {
+        var config = options.Hideout;
+        if (heat <= config.HeatBustFloor)
+            return "Nobody is looking your way. Nothing you hold is worth a door being kicked in yet.";
+        var chance = Math.Clamp((heat - config.HeatBustFloor) * config.BustChancePerHeat, 0, Math.Clamp(config.MaxBustChancePerHour, 0, 1));
+        return $"Roughly a {chance:P0} chance an hour of a raid. Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.";
+    }
+
+    /// <summary>
+    /// How much notice one unit of a good draws while it is held. Every station here makes something
+    /// illegal, so a plain legal/illegal flag told the player nothing; this is the part that differs.
+    /// </summary>
+    private static double HeatPerUnit(GameOptions options, string good) => good switch
+    {
+        "coke" => options.Hideout.CokeHeatPerUnit,
+        "moonshine" => options.Hideout.MoonshineHeatPerUnit,
+        "weed" => options.Hideout.WeedHeatPerUnit,
+        "cut" => options.Hideout.CutHeatPerUnit,
+        _ => 0
+    };
 
     private static HideoutRoomUpgradeResponse? ToRoomUpgrade(HideoutService hideouts, Hideout? hideout, string room)
         => hideouts.NextUpgrade(hideout, room) is { } next

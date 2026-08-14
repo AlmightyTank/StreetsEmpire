@@ -41,6 +41,21 @@ public sealed class Player
     /// <summary>Stretches coke. Worthless on its own, which is why it is priced off the local coke.</summary>
     public int Cut { get; set; }
 
+    /// <summary>
+    /// Attention earned rather than held. Everything in this game is illegal, so being illegal is not
+    /// what distinguishes anything: what differs is how much notice a thing draws. This is the part
+    /// that accumulates from working, and it decays on its own, which is why laying low works.
+    /// </summary>
+    public double Heat { get; set; }
+
+    /// <summary>
+    /// Heat runs on its own clock rather than the turn clock. The turn clock is dragged forward every
+    /// few minutes by anyone at the screen, so a player who checked in often would never accumulate a
+    /// whole hour, and would never be raided or cool down. Whole hours are consumed here and the
+    /// remainder is left behind, so twelve five-minute visits still add up to an hour.
+    /// </summary>
+    public DateTime LastHeatRollUtc { get; set; } = DateTime.UtcNow;
+
     // Combat pacing fields written by the attack flow.
     public DateTime? CombatProtectionUntilUtc { get; set; }
     public DateTime? LastAttackAtUtc { get; set; }

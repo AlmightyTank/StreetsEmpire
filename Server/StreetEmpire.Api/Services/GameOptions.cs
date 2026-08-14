@@ -201,18 +201,31 @@ public sealed class HideoutOptions
     public List<WorkshopLevelOptions> Mix { get; set; } = [];
 
     /// <summary>
-    /// Moonshine is contraband, so holding it is a standing risk rather than a one-off roll. Checked
-    /// per hour on the same clock the labs run on, which means it costs a player who stockpiles it and
-    /// costs nothing at all to one who brews and sells.
+    /// How much notice each contraband good draws per unit held. Weighted rather than flat because
+    /// they are not equally incriminating: a coke lab's output is the worst thing to be found with,
+    /// while cut is mostly baking soda and barely registers despite where it is made.
     /// </summary>
-    public double MoonshineBustChancePerHour { get; set; } = 0.04;
+    public double CokeHeatPerUnit { get; set; } = 1.0;
+    public double MoonshineHeatPerUnit { get; set; } = 0.7;
+    public double WeedHeatPerUnit { get; set; } = 0.35;
+    public double CutHeatPerUnit { get; set; } = 0.1;
 
-    /// <summary>Below this the still is too small to be worth a raid.</summary>
-    public int MoonshineBustFloor { get; set; } = 10;
+    /// <summary>Working the streets draws attention of its own, whether or not anything is held.</summary>
+    public double HeatPerStreetTurn { get; set; } = 0.5;
 
-    /// <summary>Share of the stash taken when it happens, and the fine as a multiple of what was lost.</summary>
-    public double MoonshineSeizedPercent { get; set; } = 0.5;
-    public double MoonshineFinePerUnit { get; set; } = 40;
+    /// <summary>Earned heat cools on its own, which is what makes laying low a real option.</summary>
+    public double HeatDecayPerHour { get; set; } = 3;
+
+    /// <summary>Below this nobody is looking. Above it, every hour is a roll.</summary>
+    public double HeatBustFloor { get; set; } = 20;
+
+    /// <summary>Chance per hour per point of heat over the floor, and the ceiling on that chance.</summary>
+    public double BustChancePerHeat { get; set; } = 0.002;
+    public double MaxBustChancePerHour { get; set; } = 0.35;
+
+    /// <summary>Share of every contraband pile taken when it happens, and the fine per unit lost.</summary>
+    public double SeizedPercent { get; set; } = 0.5;
+    public double FinePerSeizedUnit { get; set; } = 40;
 
     /// <summary>
     /// How much passive lab output can pile up while a player is away. Past this the labs sit idle, so

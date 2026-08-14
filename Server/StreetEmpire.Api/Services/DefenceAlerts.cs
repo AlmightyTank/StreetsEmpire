@@ -83,7 +83,7 @@ public static class DefenceAlerts
             "LAB" => new AlertResponse($"log-{logId}", "labs", "Your labs kept working", summary, "good", unread, createdAtUtc),
             "HIDEOUT" when summary.EndsWith(" is finished.", StringComparison.Ordinal)
                 => new AlertResponse($"log-{logId}", "hideout", "Building finished", summary, "good", unread, createdAtUtc),
-            "BUST" => new AlertResponse($"log-{logId}", "bust", "The law came", summary, "bad", unread, createdAtUtc),
+            "BUST" => new AlertResponse($"log-{logId}", "bust", "Raided", summary, "bad", unread, createdAtUtc),
             "GROUND" when summary.Contains("held", StringComparison.OrdinalIgnoreCase)
                 => new AlertResponse($"log-{logId}", "ground", "Your ground held", summary, "good", unread, createdAtUtc),
             "GROUND"

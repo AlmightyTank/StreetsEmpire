@@ -72,31 +72,72 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     }
 
     /// <summary>
-    /// Rolls for the law finding the moonshine. Once per elapsed hour rather than once per visit, so a
-    /// player who stockpiles carries the risk whether or not they are looking at the screen, and one
-    /// who brews and sells straight away carries almost none.
+    /// Total attention on a player: what they are sitting on, plus what they have earned working.
     ///
-    /// The fine comes out of cash on hand and stops at what they have. A bust that could put a player
-    /// into debt would be a different and much nastier mechanic than losing the stash.
+    /// Weighted per good rather than flat, because everything here is illegal and so being illegal
+    /// distinguishes nothing. What differs is how much notice a thing draws.
     /// </summary>
-    public MoonshineBust RollMoonshineBust(Player player, int hours, IGameRandom random)
+    public double HeatFor(Player player)
     {
         var config = _options.Hideout;
-        if (hours <= 0 || player.Moonshine < Math.Max(1, config.MoonshineBustFloor))
-            return MoonshineBust.None;
+        return Math.Max(0, player.Heat)
+               + player.Coke * config.CokeHeatPerUnit
+               + player.Moonshine * config.MoonshineHeatPerUnit
+               + player.Weed * config.WeedHeatPerUnit
+               + player.Cut * config.CutHeatPerUnit;
+    }
 
+    /// <summary>
+    /// Cools earned heat and then rolls for the law turning up, once per elapsed hour.
+    ///
+    /// Rolled on the clock rather than on an action so it costs a player who stockpiles whether or not
+    /// they are at the screen, and costs one who sells and lays low almost nothing. A bust takes a
+    /// share of every contraband pile and fines them, and the fine stops at cash on hand: one that
+    /// could push a player into debt is a different and much nastier mechanic than losing the stash.
+    /// </summary>
+    public ContrabandBust RollBust(Player player, int hours, IGameRandom random)
+    {
+        if (hours <= 0)
+            return ContrabandBust.None;
+
+        var config = _options.Hideout;
+        player.Heat = Math.Max(0, player.Heat - Math.Max(0, config.HeatDecayPerHour) * hours);
+
+        var heat = HeatFor(player);
+        if (heat <= config.HeatBustFloor)
+            return ContrabandBust.None;
+
+        var chance = Math.Clamp((heat - config.HeatBustFloor) * config.BustChancePerHeat, 0, Math.Clamp(config.MaxBustChancePerHour, 0, 1));
         var caught = false;
         for (var hour = 0; hour < hours && !caught; hour++)
-            caught = random.NextDouble() < Math.Clamp(config.MoonshineBustChancePerHour, 0, 1);
+            caught = random.NextDouble() < chance;
         if (!caught)
-            return MoonshineBust.None;
+            return ContrabandBust.None;
 
-        var seized = Math.Min(player.Moonshine, Math.Max(1, (int)Math.Round(player.Moonshine * Math.Clamp(config.MoonshineSeizedPercent, 0, 1))));
-        var fine = Math.Min(player.Cash, (long)Math.Round(seized * Math.Max(0, config.MoonshineFinePerUnit)));
+        var share = Math.Clamp(config.SeizedPercent, 0, 1);
+        var weed = Seize(player, "weed", share);
+        var coke = Seize(player, "coke", share);
+        var moonshine = Seize(player, "moonshine", share);
+        var cut = Seize(player, "cut", share);
 
-        player.Moonshine -= seized;
+        var units = weed + coke + moonshine + cut;
+        var fine = Math.Min(player.Cash, (long)Math.Round(units * Math.Max(0, config.FinePerSeizedUnit)));
         player.Cash -= fine;
-        return new MoonshineBust(seized, fine);
+        // A raid resets the attention it was drawn by. Leaving it high would mean one bust guarantees
+        // the next, which is a spiral rather than a risk.
+        player.Heat = 0;
+
+        return new ContrabandBust(weed, coke, moonshine, cut, fine, Math.Round(heat, 1));
+    }
+
+    /// <summary>Takes a share of one pile, through the same mapping every other mover of goods uses.</summary>
+    private static int Seize(Player player, string good, double share)
+    {
+        var held = TradeGoods.Held(player, good);
+        if (held <= 0) return 0;
+        var taken = Math.Min(held, Math.Max(1, (int)Math.Round(held * share)));
+        TradeGoods.Add(player, good, -taken);
+        return taken;
     }
 
     /// <summary>
@@ -513,11 +554,27 @@ public sealed record LabYield(int Weed, int Coke, int Hours, bool HitOfflineCeil
     }
 }
 
-/// <param name="Seized">Moonshine taken. Zero means nothing happened.</param>
-public sealed record MoonshineBust(int Seized, long Fine)
+/// <summary>What a raid took. Zero units means nothing happened.</summary>
+public sealed record ContrabandBust(int Weed, int Coke, int Moonshine, int Cut, long Fine, double HeatAtBust)
 {
-    public static readonly MoonshineBust None = new(0, 0);
-    public bool Happened => Seized > 0;
+    public static readonly ContrabandBust None = new(0, 0, 0, 0, 0, 0);
+
+    public int Units => Weed + Coke + Moonshine + Cut;
+    public bool Happened => Units > 0;
+
+    /// <summary>Names what was actually taken rather than listing every pile including the empty ones.</summary>
+    public string Describe()
+    {
+        var taken = new List<string>();
+        if (Coke > 0) taken.Add($"{Coke:N0} coke");
+        if (Moonshine > 0) taken.Add($"{Moonshine:N0} moonshine");
+        if (Weed > 0) taken.Add($"{Weed:N0} weed");
+        if (Cut > 0) taken.Add($"{Cut:N0} cut");
+        var haul = taken.Count == 0 ? "nothing worth naming" : string.Join(", ", taken);
+        return Fine > 0
+            ? $"The law came through. They took {haul} and fined you {Fine:C0}."
+            : $"The law came through and took {haul}.";
+    }
 }
 
 public sealed record HideoutCapacity(

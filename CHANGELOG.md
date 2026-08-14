@@ -7,8 +7,17 @@
   into the seller's bank.
 - Moonshine and cut, made by a still and a mix house. Moonshine substitutes for the beer thugs drink;
   cut stretches coke one for one.
-- Holding moonshine risks a bust, rolled per hour it sits in storage, taking half the stash and a fine
-  capped at cash on hand. It reaches the player as an alert.
+- Heat. Everything the player does is illegal, so the question is not whether they are breaking the
+  law but how loudly: contraband draws notice while it is held, weighted per good, and working the
+  streets draws notice on top of that. Under the floor nobody is looking, however long you sit there.
+- A raid, rolled per hour above the floor, taking half of every pile and a fine capped at cash on
+  hand. It clears the heat that drew it, and reaches the player as an alert and in the catch-up
+  digest.
+- Heat cools on its own, so lying low works. It runs on its own clock rather than the turn clock, so
+  twelve short visits still add up to an hour, and a fortnight away costs no more than a night.
+- A Heat panel on the hideout page reading Quiet, Noticed, Watched or Hunted, with the hourly raid
+  chance in plain numbers. Each station says how much notice a unit of its output draws, replacing a
+  legal/illegal badge that told the player nothing.
 - AI rivals buy from and sell on the market.
 - The still and the mix house need a Warehouse or better, enforced when making as well as when
   building.

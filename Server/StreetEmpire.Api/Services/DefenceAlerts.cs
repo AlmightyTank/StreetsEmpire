@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
 
@@ -82,11 +83,32 @@ public static class DefenceAlerts
             "LAB" => new AlertResponse($"log-{logId}", "labs", "Your labs kept working", summary, "good", unread, createdAtUtc),
             "HIDEOUT" when summary.EndsWith(" is finished.", StringComparison.Ordinal)
                 => new AlertResponse($"log-{logId}", "hideout", "Building finished", summary, "good", unread, createdAtUtc),
+            "TERRITORY" when summary.EndsWith(" from you.", StringComparison.Ordinal)
+                => new AlertResponse($"log-{logId}", "ground", "You lost ground", summary, "bad", unread, createdAtUtc),
             _ => null
         };
     }
 
-    /// <summary>The log rows that are notifications rather than actions, for filtering both ways.</summary>
+    /// <summary>
+    /// The one definition of which log rows are notifications rather than actions.
+    ///
+    /// Shared as an expression because three queries depend on it: the alert list, the unread count,
+    /// and the activity list that excludes exactly these rows. Written out separately in each, a new
+    /// kind lands in both places or neither.
+    /// </summary>
+    public static Expression<Func<GameActionLog, bool>> IsNotificationRow { get; } =
+        log => log.Action == "LAB"
+               || (log.Action == "HIDEOUT" && log.Summary.EndsWith(" is finished."))
+               // Ground being taken off you. Claiming ground yourself is an action and stays in activity.
+               || (log.Action == "TERRITORY" && log.Summary.EndsWith(" from you."));
+
+    /// <summary>The same rule negated, for the activity list. Derived so the two cannot disagree.</summary>
+    public static Expression<Func<GameActionLog, bool>> IsActionRow { get; } =
+        Expression.Lambda<Func<GameActionLog, bool>>(
+            Expression.Not(IsNotificationRow.Body),
+            IsNotificationRow.Parameters);
+
+    /// <summary>The in-memory twin, kept in step by a test that runs both over the same rows.</summary>
     public static bool IsNotification(string action, string summary)
-        => action == "LAB" || (action == "HIDEOUT" && summary.EndsWith(" is finished.", StringComparison.Ordinal));
+        => IsNotificationRow.Compile()(new GameActionLog { Action = action, Summary = summary });
 }

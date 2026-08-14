@@ -536,8 +536,21 @@ public sealed class CombatMissionService(
 
         if (mission.Outcome == "Victory")
         {
+            var loser = ground.HolderId;
             territories.Transfer(ground, mission.AttackerId, mission.RemainingAttackers, nowUtc);
             mission.Summary = $"{mission.Attacker.Name} took {ground.Name}.";
+
+            // The loser is told, because losing ground is something done to them and they were very
+            // likely not watching. Phrased "from you." so it reads as a notification rather than an
+            // action they took, which is what keeps it out of their own activity list.
+            if (loser is { } lostBy)
+                db.ActionLogs.Add(new GameActionLog
+                {
+                    PlayerId = lostBy,
+                    Action = "TERRITORY",
+                    Summary = $"{mission.Attacker.Name} took {ground.Name} from you.",
+                    CreatedAtUtc = nowUtc
+                });
             return;
         }
 

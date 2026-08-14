@@ -37,6 +37,20 @@ public static class CatchUp
         foreach (var build in facts.HideoutBuilds)
             items.Add(new CatchUpItemResponse("hideout", "Building finished", build, "good"));
 
+        if (facts.GroundLost.Count > 0)
+            items.Add(new CatchUpItemResponse(
+                "ground",
+                facts.GroundLost.Count == 1 ? $"You lost {facts.GroundLost[0]}" : $"You lost {facts.GroundLost.Count:N0} pieces of ground",
+                $"{Names(facts.GroundLost)} was taken off you while you were out.",
+                "bad"));
+
+        if (facts.GroundTaken.Count > 0)
+            items.Add(new CatchUpItemResponse(
+                "ground",
+                facts.GroundTaken.Count == 1 ? $"You took {facts.GroundTaken[0]}" : $"You took {facts.GroundTaken.Count:N0} pieces of ground",
+                $"{Names(facts.GroundTaken)} is yours now.",
+                "good"));
+
         if (RankItem(facts) is { } rank)
             items.Add(rank);
         if (PassedItem(facts) is { } passed)
@@ -169,8 +183,12 @@ public sealed record CatchUpFacts(
     int? RankBefore = null,
     int? RankNow = null,
     IReadOnlyList<string>? OvertookYouNames = null,
-    IReadOnlyList<string>? YouOvertookNames = null)
+    IReadOnlyList<string>? YouOvertookNames = null,
+    IReadOnlyList<string>? GroundLostNames = null,
+    IReadOnlyList<string>? GroundTakenNames = null)
 {
     public IReadOnlyList<string> OvertookYou => OvertookYouNames ?? [];
     public IReadOnlyList<string> YouOvertook => YouOvertookNames ?? [];
+    public IReadOnlyList<string> GroundLost => GroundLostNames ?? [];
+    public IReadOnlyList<string> GroundTaken => GroundTakenNames ?? [];
 }

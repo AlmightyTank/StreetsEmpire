@@ -13,7 +13,8 @@ public sealed class BotSimulationService(
     IGameRandom random,
     IOptionsSnapshot<GameOptions> options,
     HideoutService hideouts,
-    CombatMissionService missions)
+    CombatMissionService missions,
+    TerritoryService territories)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -61,7 +62,9 @@ public sealed class BotSimulationService(
                     continue;
 
                 await clock.AdvanceAsync(bot, nowUtc, ct: ct);
-                var botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
+                var botActions = await TryTerritoryAsync(bot, brain, nowUtc, ct);
+                if (botActions == 0)
+                    botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = RunBotRound(bot, brain, nowUtc);
                 if (botActions > 0)
@@ -141,6 +144,98 @@ public sealed class BotSimulationService(
             ["missionId"] = mission.Id,
             ["defender"] = defender.Name
         });
+    }
+
+    /// <summary>
+    /// Considers taking ground: claiming what nobody holds, or raiding a garrison thin enough to beat.
+    ///
+    /// Rivals have to contest the map or players own it uncontested within a day, which is the same
+    /// lesson as rivals not upgrading their hideouts. Ground is checked before a house raid because
+    /// both use a lane, and a bot that always robbed houses would never take any.
+    /// </summary>
+    private async Task<int> TryTerritoryAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var config = _options.Territory;
+        var cap = territories.HoldingCapFor(bot.Hideout);
+        var held = await db.Territories.CountAsync(x => x.HolderId == bot.Id, ct);
+        if (held >= cap)
+            return 0;
+
+        var free = await territories.FreeThugsAsync(bot, ct);
+        if (free < config.MinimumGarrison)
+            return 0;
+
+        // Never garrison the whole roster. A bot that empties its house to hold a corner is free loot,
+        // so it commits the same share it would send on a raid.
+        var profile = BotAttackProfile.For(brain.Focus);
+        var commit = Math.Clamp((int)Math.Round(free * profile.ThugCommitShare), config.MinimumGarrison, free);
+
+        var open = await db.Territories
+            .Where(x => x.HolderId == null && (x.ProtectedUntilUtc == null || x.ProtectedUntilUtc <= nowUtc))
+            .OrderBy(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (open is not null && bot.Turns >= config.ClaimTurnCost)
+        {
+            var before = Snapshot(bot);
+            try
+            {
+                var claimed = await territories.ClaimAsync(bot, open.Id, commit, nowUtc, ct);
+                AddLog(bot, before, "TERRITORY", 0, nowUtc, $"AI: Took over {claimed.Name} with {claimed.GarrisonThugs:N0} thug(s).");
+                return 1;
+            }
+            catch (GameRuleException)
+            {
+                return 0;
+            }
+        }
+
+        // Only ground it should actually beat. Judging with the force it will send, not the roster,
+        // is the same correction the house-raid path needed.
+        if (random.NextDouble() >= profile.AttackChance)
+            return 0;
+        var attackPower = AttackPower(CombatMissionService.CommandingPimps, commit, Math.Min(commit, free), (bot.HoeHappiness + bot.ThugHappiness) / 2);
+        var candidates = await db.Territories
+            .Include(x => x.Holder)
+            .Where(x => x.HolderId != null && x.HolderId != bot.Id)
+            .Where(x => x.ProtectedUntilUtc == null || x.ProtectedUntilUtc <= nowUtc)
+            .OrderBy(x => x.GarrisonThugs)
+            .Take(5)
+            .ToListAsync(ct);
+
+        foreach (var ground in candidates)
+        {
+            // The holder's morale, not the attacker's. Judging a garrison by how the raider feels is
+            // nonsense, and it flattered thin garrisons held by a demoralised crew.
+            var holderMorale = ground.Holder is { } owner ? (owner.HoeHappiness + owner.ThugHappiness) / 2 : 100;
+            var defence = DefensePower(0, ground.GarrisonThugs, ground.GarrisonThugs, holderMorale);
+            if (attackPower < defence * profile.WinMargin)
+                continue;
+
+            var holder = await db.Players.Include(x => x.Account).Include(x => x.Crew)
+                .SingleOrDefaultAsync(x => x.Id == ground.HolderId, ct);
+            if (holder is null)
+                continue;
+
+            var before = Snapshot(bot);
+            try
+            {
+                var mission = await missions.LaunchAsync(
+                    bot,
+                    holder,
+                    new CombatAttackRequest(holder.Id, commit, Math.Min(commit, free)),
+                    ground,
+                    nowUtc,
+                    ct);
+                AddLog(bot, before, "ATTACK", mission.TurnsSpent, nowUtc, $"AI: Moved on {ground.Name}. {mission.Summary}");
+                return 1;
+            }
+            catch (GameRuleException)
+            {
+                return 0;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>

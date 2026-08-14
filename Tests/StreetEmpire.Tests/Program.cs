@@ -1077,6 +1077,10 @@ static void WorldNewsKeepsFightsAndDropsNoise()
     AssertTrue(!newsworthy(new GameActionLog { Action = "LAB", CreatedAtUtc = now, WeedDelta = 84 }), "passive lab output is not news");
     AssertTrue(!newsworthy(new GameActionLog { Action = "ADMIN", CreatedAtUtc = now, CashDelta = 500_000 }), "admin action never reaches the feed");
 
+    AssertTrue(newsworthy(new GameActionLog { Action = "TERRITORY", CreatedAtUtc = now, Summary = "Took over Hunts Point." }), "ground changing hands is news");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "TERRITORY", CreatedAtUtc = now, Summary = "X took Y from you." }),
+        "the loser's own second-person notice is not published to everyone");
+    AssertEqual("ground", WorldNews.Category("TERRITORY"));
     AssertEqual("combat", WorldNews.Category("ATTACK"));
     AssertEqual("build", WorldNews.Category("HIDEOUT"));
     AssertEqual("money", WorldNews.Category("SALE"));
@@ -1508,6 +1512,19 @@ static void CatchUpReportsWhatHappenedWhileAway()
     AssertTrue(!CatchUp.Build(Quiet(since, now) with { TurnsNow = 199 }).Items.Any(x => x.Kind == "turns"),
         "turns below the cap are not news");
 
+    // Ground taken off you leads over ground you took, since it is the thing to react to.
+    var ground = CatchUp.Build(Quiet(since, now) with
+    {
+        GroundLostNames = ["Red Hook Docks"],
+        GroundTakenNames = ["Hunts Point"]
+    });
+    var lost = ground.Items.Single(x => x.Kind == "ground" && x.Tone == "bad");
+    AssertTrue(lost.Headline.Contains("You lost Red Hook Docks"), $"a single name reads better than a count: {lost.Headline}");
+    AssertTrue(ground.Items.Any(x => x.Kind == "ground" && x.Tone == "good"), "ground you took is worth a line too");
+    var groundKinds = ground.Items.Where(x => x.Kind == "ground").Select(x => x.Tone).ToList();
+    AssertEqual("bad", groundKinds[0]);
+    AssertEqual("good", groundKinds[1]);
+
     // Protection still running is worth knowing; protection that has lapsed is not.
     AssertTrue(CatchUp.Build(Quiet(since, now) with { ProtectedUntilUtc = now.AddMinutes(41) }).Items.Any(x => x.Kind == "protection"),
         "live protection is worth saying");
@@ -1611,6 +1628,22 @@ static void DefenceAlertsCountUnread()
     AssertTrue(DefenceAlerts.IsNotification("HIDEOUT", "The Warehouse is finished."), "a finished build is");
     AssertTrue(!DefenceAlerts.IsNotification("HIDEOUT", "Upgraded the safe to level 3."), "a room upgrade is not");
     AssertTrue(!DefenceAlerts.IsNotification("STREET", "Worked the streets."), "street work is not");
+    AssertTrue(DefenceAlerts.IsNotification("TERRITORY", "Brass Knox took Hunts Point from you."), "losing ground is");
+    AssertTrue(!DefenceAlerts.IsNotification("TERRITORY", "Took over Hunts Point with 6 thug(s)."), "claiming ground is an action");
+
+    // The activity list uses the negation of this rule, derived from it rather than written out again.
+    var rows = new[]
+    {
+        new GameActionLog { Action = "LAB", Summary = "made weed" },
+        new GameActionLog { Action = "TERRITORY", Summary = "X took Y from you." },
+        new GameActionLog { Action = "TERRITORY", Summary = "Took over Y." },
+        new GameActionLog { Action = "STREET", Summary = "worked" }
+    };
+    var isNotification = DefenceAlerts.IsNotificationRow.Compile();
+    var isAction = DefenceAlerts.IsActionRow.Compile();
+    foreach (var row in rows)
+        AssertTrue(isNotification(row) != isAction(row), $"every row is one or the other, never both: {row.Action}");
+    AssertEqual(2, rows.Count(isNotification));
 }
 
 // The balance target, stated as a test so retuning cannot quietly break it: a defender holds at equal

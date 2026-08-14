@@ -26,6 +26,13 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   Taking a corner is not robbing anyone, and gating it by wealth would let a weak player park on good
   ground permanently. Ground carries its own settling period after changing hands instead.
 
+- AI rivals contest the map. Ground is checked before a house raid because both use an attack lane,
+  and a rival that always robbed houses would never take any. They claim what is open before fighting
+  for what is not, and only raid a garrison they should beat.
+- Losing ground reaches the player: a line in the arrival summary, an entry in the alert bell, and the
+  raider's own row in world news. The loser's notice is written to them in the second person and is
+  deliberately kept out of the public feed, where the raider's row already reports the same event.
+
 ### Still to come in 0.2.4
 
 - Player-to-player markets and organizations.

@@ -274,6 +274,23 @@ internal static class CombatEndpoints
                 }
             }
 
+            // Read off finished territory raids rather than a new store: the mission already records
+            // who fought over what and when it landed.
+            var groundFights = await db.CombatMissions.AsNoTracking()
+                .Where(x => x.TerritoryId != null
+                            && x.Status == "Complete"
+                            && x.CompletedAtUtc != null
+                            && x.CompletedAtUtc > since
+                            && (x.AttackerId == player.Id || x.DefenderId == player.Id))
+                .Select(x => new { x.AttackerId, x.DefenderId, x.Outcome, Name = x.Territory!.Name })
+                .ToListAsync(ct);
+            var groundLost = groundFights
+                .Where(x => x.DefenderId == player.Id && x.Outcome == "Victory")
+                .Select(x => x.Name).ToList();
+            var groundTaken = groundFights
+                .Where(x => x.AttackerId == player.Id && x.Outcome == "Victory")
+                .Select(x => x.Name).ToList();
+
             var digest = CatchUp.Build(new CatchUpFacts(
                 since,
                 now,
@@ -293,7 +310,9 @@ internal static class CombatEndpoints
                 rankBefore,
                 rankNow,
                 overtookYou,
-                youOvertook));
+                youOvertook,
+                groundLost,
+                groundTaken));
 
             player.CatchUpSeenAtUtc = now;
             await db.SaveChangesAsync(ct);
@@ -322,8 +341,8 @@ internal static class CombatEndpoints
             // Matching the notification kinds in the database keeps the page small rather than pulling
             // a player's whole history back to filter it here.
             var notices = await db.ActionLogs.AsNoTracking()
-                .Where(x => x.PlayerId == player.Id
-                            && (x.Action == "LAB" || (x.Action == "HIDEOUT" && x.Summary.EndsWith(" is finished."))))
+                .Where(x => x.PlayerId == player.Id)
+                .Where(DefenceAlerts.IsNotificationRow)
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ThenByDescending(x => x.Id)
                 .Take(25)

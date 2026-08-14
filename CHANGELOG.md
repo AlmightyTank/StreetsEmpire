@@ -11,8 +11,14 @@
 - Empty ground is claimed with turns and a garrison; held ground is taken with a raid that uses an
   attack lane and fights the garrison rather than the holder's house.
 - A Territory page showing the map, who holds what, and why a piece cannot be acted on.
+- AI rivals claim and raid ground, judging a garrison by the holder's morale and committing the same
+  share of crew they would send on a raid.
+- Ground changing hands reaches the catch-up digest, the alert bell, and world news.
 
 ### Changed
+- One shared definition of which log rows are notifications rather than actions, with the activity
+  list using its derived negation. It had been written out separately in three queries, so a new kind
+  landed in both places or neither.
 - Cities stop being decoration and name the ground, though they do not gate who may contest it.
 - Anti-farm's wealth rules and house protection do not apply to fights over ground, which carries its
   own settling period after changing hands.

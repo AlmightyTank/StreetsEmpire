@@ -25,8 +25,13 @@ public static class WorldNews
         => log => log.CreatedAtUtc >= sinceUtc
                   && log.Action != "ADMIN"
                   && log.Action != "LAB"
+                  // The loser's own notice is written to them in the second person. The raider's row
+                  // already reports the same event publicly, so publishing this one puts "took it from
+                  // you" in front of everybody.
+                  && !(log.Action == "TERRITORY" && log.Summary.EndsWith(" from you."))
                   && (log.Action == "ATTACK"
                       || log.Action == "HIDEOUT"
+                      || log.Action == "TERRITORY"
                       || log.Action == "START"
                       || log.CashDelta + log.BankDelta >= options.MinCashSwing
                       || log.CashDelta + log.BankDelta <= -options.MinCashSwing
@@ -41,6 +46,7 @@ public static class WorldNews
     public static string Category(string action) => action switch
     {
         "ATTACK" => "combat",
+        "TERRITORY" => "ground",
         "HIDEOUT" => "build",
         "START" => "arrival",
         "CREW" => "crew",

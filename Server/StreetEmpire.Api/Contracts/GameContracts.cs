@@ -63,6 +63,7 @@ public sealed record TerritoryResponse(
     string? BlockedReason);
 
 public sealed record TerritoryBoardResponse(
+    string City,
     int Held,
     int HoldingCap,
     int MinimumGarrison,

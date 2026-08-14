@@ -67,6 +67,13 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     public async Task<List<Territory>> HeldByAsync(Guid playerId, CancellationToken ct = default)
         => await db.Territories.AsNoTracking().Where(x => x.HolderId == playerId).ToListAsync(ct);
 
+    /// <summary>
+    /// Ground is contested inside a town only. Checked in the service rather than the endpoint so the
+    /// claim path, the raid path, and the rivals all answer to the same rule.
+    /// </summary>
+    public static bool SameCity(Player player, Territory territory)
+        => string.Equals(player.City, territory.City, StringComparison.OrdinalIgnoreCase);
+
     public TerritoryTypeOptions? TypeOf(string type)
         => _options.Territory.Types.FirstOrDefault(x => string.Equals(x.Type, type, StringComparison.OrdinalIgnoreCase));
 
@@ -87,6 +94,8 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         var config = _options.Territory;
         var territory = await db.Territories.SingleOrDefaultAsync(x => x.Id == territoryId, ct)
             ?? throw new GameRuleException("That ground does not exist.");
+        if (!SameCity(player, territory))
+            throw new GameRuleException($"{territory.Name} is in {territory.City}. You run {player.City}.");
         if (territory.HolderId is not null)
             throw new GameRuleException($"{territory.Name} is already held. You will have to take it.");
         if (territory.ProtectedUntilUtc is { } until && until > nowUtc)

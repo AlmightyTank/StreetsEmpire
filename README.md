@@ -8,8 +8,14 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 ### Territory
 
-- Ten pieces of ground across the five cities. Cities name and group them but do not gate who may
-  contest what, or the players who all start in New York would have nothing to fight over.
+- Every town has its own map of six pieces, and the territory page shows yours and nowhere else.
+  Ground is contested inside a town: the other cities exist and rivals hold ground in them, but they
+  are not yours to fight over.
+- Each town carries all four types, so nowhere is starved of an effect, and the town list is derived
+  from the map rather than kept beside it, so a city with no ground could never be offered.
+- Players pick their town when they sign up. Registration used to ignore the field entirely, so every
+  player defaulted to New York whatever they chose, which would have put everybody on one map and left
+  the other four empty.
 - Holding ground takes thugs standing on it, and they are not at home while they do. That is the whole
   design in one line: attack, defend, or occupy, pick two. The hideout tier caps how many pieces you
   can run at once, from one to four.

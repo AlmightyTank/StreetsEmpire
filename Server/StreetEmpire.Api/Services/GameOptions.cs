@@ -266,6 +266,13 @@ public sealed class HideoutOptions
 /// </summary>
 public sealed class TerritoryOptions
 {
+    /// <summary>
+    /// The towns a player can set up in. Derived from the map so the two cannot drift: a city with no
+    /// ground would be a town where the territory page is empty.
+    /// </summary>
+    public IReadOnlyList<string> Cities()
+        => Map.Select(x => x.City).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList();
+
     /// <summary>Thugs needed to hold anything at all. Below this the ground is given up.</summary>
     public int MinimumGarrison { get; set; } = 5;
 
@@ -308,21 +315,45 @@ public sealed class TerritoryOptions
                 new TerritoryTypeOptions { Type = "stash", Label = "Stash House", LootPercent = 20 }
             ];
 
-        // Ten pieces against fourteen players wanting one to four each, so the map is contested rather
-        // than shared out. Cities name and group them; they do not gate who may attack what, or the six
-        // players who are all in New York would have nothing to fight over.
+        // Six pieces per city, and every city carries all four types so nowhere is starved of an
+        // effect. Ground is contested inside a city only, so a thin map would mean a town where
+        // nothing is worth fighting over.
         if (Map.Count == 0)
             Map =
             [
                 new TerritorySeedOptions { Name = "Hunts Point", City = "New York", Type = "corner" },
+                new TerritorySeedOptions { Name = "Bed-Stuy Blocks", City = "New York", Type = "corner" },
                 new TerritorySeedOptions { Name = "Red Hook Docks", City = "New York", Type = "dock" },
+                new TerritorySeedOptions { Name = "Sunset Pier", City = "New York", Type = "dock" },
+                new TerritorySeedOptions { Name = "The Deuce", City = "New York", Type = "club" },
+                new TerritorySeedOptions { Name = "Fulton Stash", City = "New York", Type = "stash" },
+
                 new TerritorySeedOptions { Name = "Eight Mile Strip", City = "Detroit", Type = "corner" },
+                new TerritorySeedOptions { Name = "Cass Corridor", City = "Detroit", Type = "corner" },
+                new TerritorySeedOptions { Name = "Delray Docks", City = "Detroit", Type = "dock" },
+                new TerritorySeedOptions { Name = "The Grande", City = "Detroit", Type = "club" },
                 new TerritorySeedOptions { Name = "Riverside Yard", City = "Detroit", Type = "stash" },
+                new TerritorySeedOptions { Name = "Packard Lot", City = "Detroit", Type = "stash" },
+
                 new TerritorySeedOptions { Name = "Southside Blocks", City = "Chicago", Type = "corner" },
+                new TerritorySeedOptions { Name = "Cabrini Corner", City = "Chicago", Type = "corner" },
                 new TerritorySeedOptions { Name = "Calumet Docks", City = "Chicago", Type = "dock" },
-                new TerritorySeedOptions { Name = "Sunset Room", City = "Los Angeles", Type = "club" },
+                new TerritorySeedOptions { Name = "Navy Pier Yard", City = "Chicago", Type = "dock" },
+                new TerritorySeedOptions { Name = "The Green Mill", City = "Chicago", Type = "club" },
+                new TerritorySeedOptions { Name = "Stony Island Stash", City = "Chicago", Type = "stash" },
+
+                new TerritorySeedOptions { Name = "Crenshaw Corner", City = "Los Angeles", Type = "corner" },
+                new TerritorySeedOptions { Name = "Skid Row Blocks", City = "Los Angeles", Type = "corner" },
                 new TerritorySeedOptions { Name = "Harbor Wharf", City = "Los Angeles", Type = "dock" },
+                new TerritorySeedOptions { Name = "Long Beach Docks", City = "Los Angeles", Type = "dock" },
+                new TerritorySeedOptions { Name = "Sunset Room", City = "Los Angeles", Type = "club" },
+                new TerritorySeedOptions { Name = "Boyle Stash", City = "Los Angeles", Type = "stash" },
+
+                new TerritorySeedOptions { Name = "Liberty Corner", City = "Miami", Type = "corner" },
+                new TerritorySeedOptions { Name = "Little Havana Blocks", City = "Miami", Type = "corner" },
+                new TerritorySeedOptions { Name = "Biscayne Docks", City = "Miami", Type = "dock" },
                 new TerritorySeedOptions { Name = "Ocean Drive Room", City = "Miami", Type = "club" },
+                new TerritorySeedOptions { Name = "Star Island Room", City = "Miami", Type = "club" },
                 new TerritorySeedOptions { Name = "Port Stash", City = "Miami", Type = "stash" }
             ];
     }

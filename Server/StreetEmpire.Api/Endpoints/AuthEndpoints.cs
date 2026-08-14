@@ -27,6 +27,14 @@ internal static class AuthEndpoints
     internal static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
 
+        // Public: the register form needs the town list before anybody has an account.
+        app.MapGet("/api/auth/cities", (IOptionsSnapshot<GameOptions> gameOptions) =>
+        {
+            var options = gameOptions.Value;
+            options.Territory.ApplyDefaultsWhereEmpty();
+            return Results.Ok(options.Territory.Cities());
+        });
+
         app.MapPost("/api/auth/register", async (
             RegisterRequest request,
             GameDbContext db,
@@ -46,6 +54,16 @@ internal static class AuthEndpoints
             if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 8)
                 return Results.BadRequest(new { error = "Password must be at least 8 characters." });
 
+            // Registration used to ignore the city entirely, so every player defaulted to New York no
+            // matter what they picked. Now that ground is contested inside a town, that would have put
+            // everybody in one map and left the other four empty.
+            var opts0 = gameOptions.Value;
+            opts0.Territory.ApplyDefaultsWhereEmpty();
+            var cities = opts0.Territory.Cities();
+            var city = cities.FirstOrDefault(x => string.Equals(x, request.City?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(request.City) && city is null)
+                return Results.BadRequest(new { error = $"Pick one of: {string.Join(", ", cities)}." });
+
             if (await db.Accounts.AnyAsync(x => x.Username == username, ct))
                 return Results.Conflict(new { error = "Username is already taken." });
             if (await db.Players.AnyAsync(x => x.Name == playerName, ct))
@@ -59,6 +77,7 @@ internal static class AuthEndpoints
             {
                 Account = account,
                 Name = playerName,
+                City = city ?? cities.FirstOrDefault() ?? "New York",
                 Cash = opts.StartingCash,
                 BankCash = opts.StartingBankCash,
                 Turns = opts.StartingTurns,

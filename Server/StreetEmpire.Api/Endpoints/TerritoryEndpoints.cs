@@ -29,10 +29,13 @@ internal static class TerritoryEndpoints
             await combatResolver.ResolveDueAsync(now, ct);
             await territories.SeedAsync(ct);
 
+            // Your town and nowhere else. The other cities exist and rivals hold ground in them, but
+            // they are not yours to fight over, so showing them would only be a list of buttons you
+            // cannot press.
             var all = await db.Territories.AsNoTracking()
                 .Include(x => x.Holder)
-                .OrderBy(x => x.City)
-                .ThenBy(x => x.Name)
+                .Where(x => x.City == player.City)
+                .OrderBy(x => x.Name)
                 .ToListAsync(ct);
 
             var config = gameOptions.Value.Territory;
@@ -42,6 +45,7 @@ internal static class TerritoryEndpoints
             var effects = territories.EffectsFor(mine);
 
             return Results.Ok(new TerritoryBoardResponse(
+                player.City,
                 mine.Count,
                 cap,
                 config.MinimumGarrison,

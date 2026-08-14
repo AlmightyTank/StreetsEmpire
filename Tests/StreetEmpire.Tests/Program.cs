@@ -1119,6 +1119,24 @@ static void TerritoryEffectsAddUp()
     // Ground of a type nobody configured is worth nothing rather than throwing.
     AssertTrue(!service.EffectsFor([Ground("racetrack")]).Any, "an unknown type is inert");
 
+    // Every town carries all four types, so nowhere is starved of an effect, and the town list is
+    // derived from the map rather than kept beside it.
+    var cities = options.Territory.Cities();
+    AssertTrue(cities.Count >= 5, $"every town needs a map: {cities.Count} found");
+    foreach (var city in cities)
+    {
+        var inTown = options.Territory.Map.Where(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase)).ToList();
+        AssertTrue(inTown.Count >= 4, $"{city} has only {inTown.Count} pieces, which is not a map worth fighting over");
+        foreach (var type in new[] { "corner", "dock", "club", "stash" })
+            AssertTrue(inTown.Any(x => x.Type == type), $"{city} has no {type}, so that effect is unreachable there");
+    }
+
+    // Ground is contested inside a town, and the rule lives in one place so claiming and raiding agree.
+    var local = new Player { City = "Detroit" };
+    AssertTrue(TerritoryService.SameCity(local, new Territory { City = "Detroit" }), "your own town is contestable");
+    AssertTrue(TerritoryService.SameCity(local, new Territory { City = "detroit" }), "case does not decide who runs a town");
+    AssertTrue(!TerritoryService.SameCity(local, new Territory { City = "Miami" }), "somebody else's town is not");
+
     // The tier ladder gains a second meaning: how much ground you may run at once.
     AssertEqual(1, service.HoldingCapFor(new Hideout { Tier = 1 }));
     AssertEqual(4, service.HoldingCapFor(new Hideout { Tier = 4 }));

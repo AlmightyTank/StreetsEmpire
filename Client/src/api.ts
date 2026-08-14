@@ -504,10 +504,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  register: (username: string, password: string, playerName: string) =>
+  cities: () => request<string[]>('/api/auth/cities'),
+  register: (username: string, password: string, playerName: string, city: string) =>
     request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, playerName }),
+      body: JSON.stringify({ username, password, playerName, city }),
     }),
   login: (username: string, password: string) =>
     request('/api/auth/login', {
@@ -747,6 +748,7 @@ export type Territory = {
 }
 
 export type TerritoryBoard = {
+  city: string
   held: number
   holdingCap: number
   minimumGarrison: number

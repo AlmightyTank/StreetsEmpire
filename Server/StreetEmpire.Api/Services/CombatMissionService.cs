@@ -50,6 +50,8 @@ public sealed class CombatMissionService(
 
         if (ground is not null)
         {
+            if (!TerritoryService.SameCity(attacker, ground))
+                throw new GameRuleException($"{ground.Name} is in {ground.City}. You run {attacker.City}.");
             if (ground.HolderId != defender.Id)
                 throw new GameRuleException($"{ground.Name} is not held by {defender.Name} any more.");
             if (ground.HolderId == attacker.Id)

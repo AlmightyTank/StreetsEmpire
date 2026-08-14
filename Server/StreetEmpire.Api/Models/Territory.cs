@@ -17,7 +17,10 @@ public sealed class Territory
 
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Naming and grouping only. Anyone may contest anything, whatever city they are in.</summary>
+    /// <summary>
+    /// The town this ground is in, and the boundary of who may fight over it. You contest your own
+    /// city and nowhere else, which is what makes the map local rather than a shared list.
+    /// </summary>
     public string City { get; set; } = string.Empty;
 
     /// <summary>corner, dock, club, or lot. Decides what holding it is worth.</summary>

@@ -171,6 +171,7 @@ public sealed class BotSimulationService(
         var commit = Math.Clamp((int)Math.Round(free * profile.ThugCommitShare), config.MinimumGarrison, free);
 
         var open = await db.Territories
+            .Where(x => x.City == bot.City)
             .Where(x => x.HolderId == null && (x.ProtectedUntilUtc == null || x.ProtectedUntilUtc <= nowUtc))
             .OrderBy(x => x.Id)
             .FirstOrDefaultAsync(ct);
@@ -196,6 +197,7 @@ public sealed class BotSimulationService(
         var attackPower = AttackPower(CombatMissionService.CommandingPimps, commit, Math.Min(commit, free), (bot.HoeHappiness + bot.ThugHappiness) / 2);
         var candidates = await db.Territories
             .Include(x => x.Holder)
+            .Where(x => x.City == bot.City)
             .Where(x => x.HolderId != null && x.HolderId != bot.Id)
             .Where(x => x.ProtectedUntilUtc == null || x.ProtectedUntilUtc <= nowUtc)
             .OrderBy(x => x.GarrisonThugs)

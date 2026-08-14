@@ -49,6 +49,10 @@ function App() {
   const [targetQuery, setTargetQuery] = useState('')
   const [activePage, setActivePage] = useState<AppPage>('overview')
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  // Fetched rather than hardcoded: the towns come from the territory map, so a city with no ground
+  // could never be offered as somewhere to set up.
+  const [cities, setCities] = useState<string[]>([])
+  useEffect(() => { void api.cities().then(setCities).catch(() => setCities([])) }, [])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [lastBreakdown, setLastBreakdown] = useState<Record<string, unknown> | null>(null)
@@ -178,7 +182,7 @@ function App() {
     setBusy(true); setError('')
     try {
       if (authMode === 'register')
-        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('playerName')))
+        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('playerName')), String(form.get('city')))
       else
         await api.login(String(form.get('username')), String(form.get('password')))
       await refresh()
@@ -236,6 +240,13 @@ function App() {
         <form onSubmit={auth}>
           <label>Username<input name="username" minLength={3} maxLength={32} required /></label>
           {authMode === 'register' && <label>Player Name<input name="playerName" minLength={3} maxLength={32} required /></label>}
+        {authMode === 'register' && <label>
+          Town
+          <select name="city" defaultValue={cities[0] ?? ''}>
+            {cities.map(city => <option key={city} value={city}>{city}</option>)}
+          </select>
+          <small>Ground is fought over inside a town. This is the map you will be playing on.</small>
+        </label>}
           <label>Password<input name="password" type="password" minLength={8} required /></label>
           {error && <DismissibleMessage className="error" onClose={() => setError('')}>{error}</DismissibleMessage>}
           <button className="primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
@@ -794,10 +805,11 @@ function TerritoryPage(ctx: PageContext) {
   return <div className="page-grid one-column">
     <section className="panel wide-panel">
       <div className="panel-title">
-        <h2>Ground</h2>
+        <h2>{board.city}</h2>
         <span>{board.held} of {board.holdingCap} held</span>
       </div>
       <p>
+        This is {board.city}, and it is the only map you fight over.
         Holding ground takes {board.minimumGarrison} thugs standing on it, and they are not at home while they do.
         You have <strong>{number.format(board.freeThugs)}</strong> free of {number.format(dashboard.thugs)}.
         Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
@@ -814,7 +826,7 @@ function TerritoryPage(ctx: PageContext) {
     </section>
 
     <section className="panel wide-panel">
-      <div className="panel-title"><h2>The Map</h2><span>{board.territories.length} pieces</span></div>
+      <div className="panel-title"><h2>The Map</h2><span>{board.territories.length} pieces in {board.city}</span></div>
       <div className="territory-grid">
         {board.territories.map(t => <div className={`territory-card ${t.heldByYou ? 'mine' : t.holderId ? 'taken' : 'open'}`} key={t.id}>
           <div className="territory-head">

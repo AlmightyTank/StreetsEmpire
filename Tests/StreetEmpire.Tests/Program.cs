@@ -51,6 +51,7 @@ var tests = new (string Name, Action Test)[]
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
     ("defence alerts flip the outcome to the defender's view", DefenceAlertsFlipPerspective),
     ("catch-up reports what happened while away and stays quiet otherwise", CatchUpReportsWhatHappenedWhileAway),
+    ("catch-up reports rank moves and who changed places with you", CatchUpReportsRankAndRivals),
     ("defence alerts count only what is unread", DefenceAlertsCountUnread),
     ("combat power keeps a defender edge without killing attacks", CombatPowerBalanceTarget),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
@@ -1430,6 +1431,64 @@ static void CatchUpReportsWhatHappenedWhileAway()
         "live protection is worth saying");
     AssertTrue(!CatchUp.Build(Quiet(since, now) with { ProtectedUntilUtc = now.AddMinutes(-1) }).Items.Any(x => x.Kind == "protection"),
         "lapsed protection is not");
+}
+
+static void CatchUpReportsRankAndRivals()
+{
+    var since = new DateTime(2026, 8, 13, 6, 0, 0, DateTimeKind.Utc);
+    var now = since.AddHours(9);
+    static CatchUpFacts Quiet(DateTime since, DateTime now)
+        => new(since, now, 0, 0, 0, 0, 0, 0, 0, 0, 0, [], 40, 200, null);
+
+    // No standings sample covering the absence means no claim at all, which is not the same as
+    // claiming nothing changed.
+    var blind = CatchUp.Build(Quiet(since, now));
+    AssertTrue(!blind.Items.Any(x => x.Kind == "rank"), "no baseline means no rank line");
+    AssertTrue(!blind.Items.Any(x => x.Kind == "rivals"), "no baseline means no rivals line");
+
+    // Rank rises as the number falls, so the wording has to be careful about which way is good.
+    var climbed = CatchUp.Build(Quiet(since, now) with { RankBefore = 7, RankNow = 4 });
+    var up = climbed.Items.Single(x => x.Kind == "rank");
+    AssertEqual("good", up.Tone);
+    AssertTrue(up.Headline.Contains("climbed to #4"), $"headline should name the new rank: {up.Headline}");
+    AssertTrue(up.Detail.Contains("#7"), $"detail should name the old rank: {up.Detail}");
+
+    var slipped = CatchUp.Build(Quiet(since, now) with { RankBefore = 3, RankNow = 5 });
+    AssertEqual("bad", slipped.Items.Single(x => x.Kind == "rank").Tone);
+    AssertTrue(slipped.Items.Single(x => x.Kind == "rank").Headline.Contains("slipped to #5"), "a drop should read as a drop");
+
+    // Holding the same rank is not news.
+    AssertTrue(!CatchUp.Build(Quiet(since, now) with { RankBefore = 4, RankNow = 4 }).Items.Any(x => x.Kind == "rank"),
+        "an unchanged rank is not worth a line");
+
+    // Being overtaken leads, because it is the thing to react to.
+    var overtaken = CatchUp.Build(Quiet(since, now) with
+    {
+        RankBefore = 3,
+        RankNow = 5,
+        OvertookYouNames = ["Lucky Voss", "Grit Baron"],
+        YouOvertookNames = ["Silk Ledger"]
+    });
+    var rivals = overtaken.Items.Single(x => x.Kind == "rivals");
+    AssertEqual("bad", rivals.Tone);
+    AssertTrue(rivals.Headline.Contains("2 rivals moved ahead"), $"headline should count them: {rivals.Headline}");
+    AssertTrue(rivals.Detail.Contains("Lucky Voss and Grit Baron"), $"detail should name them: {rivals.Detail}");
+    AssertTrue(rivals.Detail.Contains("Silk Ledger"), $"detail should still credit the one passed: {rivals.Detail}");
+
+    // Passing people with nobody passing you reads as a win.
+    var gained = CatchUp.Build(Quiet(since, now) with { RankBefore = 6, RankNow = 4, YouOvertookNames = ["Silk Ledger"] });
+    var won = gained.Items.Single(x => x.Kind == "rivals");
+    AssertEqual("good", won.Tone);
+    AssertTrue(won.Headline.Contains("You passed Silk Ledger"), $"a single name reads better than a count: {won.Headline}");
+
+    // A long list turns into a count rather than a wall of names.
+    var swarm = CatchUp.Build(Quiet(since, now) with
+    {
+        RankBefore = 2,
+        RankNow = 9,
+        OvertookYouNames = ["A", "B", "C", "D", "E", "F"]
+    });
+    AssertTrue(swarm.Items.Single(x => x.Kind == "rivals").Detail.Contains("and 3 others"), "six names should collapse");
 }
 
 static void DefenceAlertsCountUnread()

@@ -37,6 +37,7 @@ internal static class GameEndpoints
             PimpRoster pimps,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            StandingsRecorder standings,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -46,6 +47,9 @@ internal static class GameEndpoints
             await combatResolver.ResolveDueAsync(now, ct);
             if (clock.Advance(player, now, db).Changed)
                 await db.SaveChangesAsync(ct);
+            // Sampled from the busiest read in the game, behind a timer, so standings history builds up
+            // as a side effect of anyone playing rather than needing a background service of its own.
+            await standings.SampleIfDueAsync(now, ct);
 
             var netWorth = economy.CalculateNetWorth(player);
             var combatSince = now.AddDays(-1);

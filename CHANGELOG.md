@@ -14,7 +14,10 @@
 - A curated world news feed with headlines for who leads, the biggest take, the best score, and new
   arrivals.
 - A catch-up summary on arrival covering attacks taken, passive lab output, finished buildings, a
-  filled turn meter, and live protection. Shown once, and only when there is something to say.
+  filled turn meter, live protection, the rank you moved to, and who changed places with you. Shown
+  once, and only when there is something to say.
+- A standings history, sampled for every player on a timer, so rank comparisons between two past
+  moments are possible at all. Pruned to two weeks.
 - A warning on the crew and street pages when a completely full storage room still cannot supply the
   crew through a full-length action, naming the storage level that would. Warning only: a crew built
   for fighting does not have to be supplyable for street work.

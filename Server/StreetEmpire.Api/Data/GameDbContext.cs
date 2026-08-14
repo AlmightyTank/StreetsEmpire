@@ -15,6 +15,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Pimp> Pimps => Set<Pimp>();
     public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
     public DbSet<GameSetting> GameSettings => Set<GameSetting>();
+    public DbSet<StandingSnapshot> StandingSnapshots => Set<StandingSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +43,18 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StandingSnapshot>(entity =>
+        {
+            // Every read is "the sample nearest a moment, for one player" or "the whole sample at a
+            // moment", so both orderings are worth indexing.
+            entity.HasIndex(x => new { x.PlayerId, x.TakenAtUtc });
+            entity.HasIndex(x => x.TakenAtUtc);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

@@ -225,6 +225,55 @@ internal static class CombatEndpoints
                 .Select(x => x.Summary)
                 .ToListAsync(ct);
 
+            // Both readings come from standings samples, never from a live figure. Two samples share a
+            // ranking of the same players at the same instants, so crossings between them are real.
+            //
+            // It also stops the digest repeating itself. Compared against a live rank, the baseline
+            // stays the nearest sample even after the watermark advances, so the same "you climbed to
+            // #3" reappeared on every refresh. Once the watermark passes the newest sample the two
+            // readings are the same row and there is nothing left to report.
+            var baselineAt = await db.StandingSnapshots.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id && x.TakenAtUtc <= since)
+                .OrderByDescending(x => x.TakenAtUtc)
+                .Select(x => (DateTime?)x.TakenAtUtc)
+                .FirstOrDefaultAsync(ct);
+            var latestAt = await db.StandingSnapshots.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id)
+                .OrderByDescending(x => x.TakenAtUtc)
+                .Select(x => (DateTime?)x.TakenAtUtc)
+                .FirstOrDefaultAsync(ct);
+
+            int? rankBefore = null;
+            int? rankNow = null;
+            var overtookYou = new List<string>();
+            var youOvertook = new List<string>();
+            if (baselineAt is { } thenAt && latestAt is { } nowAt && thenAt < nowAt)
+            {
+                var samples = await db.StandingSnapshots.AsNoTracking()
+                    .Where(x => x.TakenAtUtc == thenAt || x.TakenAtUtc == nowAt)
+                    .Select(x => new { x.PlayerId, x.Rank, x.TakenAtUtc, Name = x.Player.Name })
+                    .ToListAsync(ct);
+
+                var before = samples.Where(x => x.TakenAtUtc == thenAt).ToList();
+                var after = samples.Where(x => x.TakenAtUtc == nowAt).ToList();
+                rankBefore = before.SingleOrDefault(x => x.PlayerId == player.Id)?.Rank;
+                rankNow = after.SingleOrDefault(x => x.PlayerId == player.Id)?.Rank;
+
+                if (rankBefore is { } wasRanked && rankNow is { } isRanked)
+                {
+                    var aheadThen = before.Where(x => x.Rank < wasRanked).Select(x => x.PlayerId).ToHashSet();
+                    var aheadNow = after.Where(x => x.Rank < isRanked).ToList();
+                    var nameOf = before.ToDictionary(x => x.PlayerId, x => x.Name);
+
+                    // Ahead now but not ahead then, and the reverse. Anyone missing from the older
+                    // sample is skipped rather than guessed at: a player who did not exist then cannot
+                    // have overtaken anybody.
+                    overtookYou = aheadNow.Where(x => !aheadThen.Contains(x.PlayerId) && nameOf.ContainsKey(x.PlayerId)).Select(x => x.Name).ToList();
+                    var aheadNowIds = aheadNow.Select(x => x.PlayerId).ToHashSet();
+                    youOvertook = aheadThen.Where(id => !aheadNowIds.Contains(id)).Select(id => nameOf[id]).ToList();
+                }
+            }
+
             var digest = CatchUp.Build(new CatchUpFacts(
                 since,
                 now,
@@ -240,7 +289,11 @@ internal static class CombatEndpoints
                 builds,
                 player.Turns,
                 gameOptions.Value.MaxTurns,
-                player.CombatProtectionUntilUtc));
+                player.CombatProtectionUntilUtc,
+                rankBefore,
+                rankNow,
+                overtookYou,
+                youOvertook));
 
             player.CatchUpSeenAtUtc = now;
             await db.SaveChangesAsync(ct);

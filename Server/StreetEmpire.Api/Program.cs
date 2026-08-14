@@ -37,6 +37,8 @@ builder.Services.AddScoped<CurrentPlayerService>();
 builder.Services.AddScoped<TurnService>();
 builder.Services.AddScoped<HideoutService>();
 builder.Services.AddScoped<PlayerClock>();
+builder.Services.AddScoped<StandingsRecorder>();
+builder.Services.AddSingleton<StandingsSchedule>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();

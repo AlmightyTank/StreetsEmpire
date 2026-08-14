@@ -53,6 +53,12 @@ activity log into something worth reading.
   whether you are still under protection.
 - It appears once and only when something actually happened. A popup reporting that the world stood
   still is an interruption with nothing behind it.
+- It also reports where you finished up: the rank you moved to, and who changed places with you in
+  either direction.
+- Rank is a comparison, so answering "who moved ahead of me" needs everyone's position at the same past
+  instant. Standings are sampled for all players every 15 minutes, and the digest compares the sample
+  nearest your last visit against the newest one. With no sample covering the absence it says nothing
+  rather than guessing.
 - Its read position is separate from the alert bell's. Reading the bell should not swallow the summary
   of an absence, and seeing that summary should not mark every attack as read.
 

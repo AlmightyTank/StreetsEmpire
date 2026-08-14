@@ -37,6 +37,11 @@ public static class CatchUp
         foreach (var build in facts.HideoutBuilds)
             items.Add(new CatchUpItemResponse("hideout", "Building finished", build, "good"));
 
+        if (RankItem(facts) is { } rank)
+            items.Add(rank);
+        if (PassedItem(facts) is { } passed)
+            items.Add(passed);
+
         // Only worth saying once the meter is full, because that is the point at which waiting longer
         // costs the player something.
         if (facts.MaxTurns > 0 && facts.TurnsNow >= facts.MaxTurns)
@@ -57,6 +62,59 @@ public static class CatchUp
         }
 
         return new CatchUpResponse(facts.SinceUtc, awayMinutes, items.Count > 0, items);
+    }
+
+    /// <summary>
+    /// Where the player finished up against where they started. Rank rises as the number falls, which
+    /// is worth being careful about in the wording: "moved up to #3" reads better than any arrow.
+    /// </summary>
+    private static CatchUpItemResponse? RankItem(CatchUpFacts facts)
+    {
+        if (facts.RankBefore is not { } before || facts.RankNow is not { } now || before == now)
+            return null;
+
+        var climbed = now < before;
+        return new CatchUpItemResponse(
+            "rank",
+            climbed ? $"You climbed to #{now:N0}" : $"You slipped to #{now:N0}",
+            climbed
+                ? $"Up from #{before:N0} while you were out."
+                : $"Down from #{before:N0} while you were out.",
+            climbed ? "good" : "bad");
+    }
+
+    /// <summary>
+    /// Who changed places with the player. Both directions are worth a line: being overtaken is the
+    /// thing to react to, and overtaking someone is the thing worth noticing.
+    /// </summary>
+    private static CatchUpItemResponse? PassedItem(CatchUpFacts facts)
+    {
+        if (facts.OvertookYou.Count == 0 && facts.YouOvertook.Count == 0)
+            return null;
+
+        if (facts.OvertookYou.Count > 0)
+            return new CatchUpItemResponse(
+                "rivals",
+                facts.OvertookYou.Count == 1 ? $"{facts.OvertookYou[0]} moved ahead of you" : $"{facts.OvertookYou.Count:N0} rivals moved ahead of you",
+                facts.YouOvertook.Count > 0
+                    ? $"{Names(facts.OvertookYou)} got past you, though you left {Names(facts.YouOvertook)} behind."
+                    : $"{Names(facts.OvertookYou)} got past you.",
+                "bad");
+
+        return new CatchUpItemResponse(
+            "rivals",
+            facts.YouOvertook.Count == 1 ? $"You passed {facts.YouOvertook[0]}" : $"You passed {facts.YouOvertook.Count:N0} rivals",
+            $"{Names(facts.YouOvertook)} are behind you now.",
+            "good");
+    }
+
+    /// <summary>Names read better than a count until there are too many to list.</summary>
+    private static string Names(IReadOnlyList<string> names)
+    {
+        if (names.Count == 1) return names[0];
+        if (names.Count == 2) return $"{names[0]} and {names[1]}";
+        if (names.Count <= 4) return $"{string.Join(", ", names.Take(names.Count - 1))}, and {names[^1]}";
+        return $"{string.Join(", ", names.Take(3))}, and {names.Count - 3:N0} others";
     }
 
     /// <summary>
@@ -106,4 +164,13 @@ public sealed record CatchUpFacts(
     IReadOnlyList<string> HideoutBuilds,
     int TurnsNow,
     int MaxTurns,
-    DateTime? ProtectedUntilUtc);
+    DateTime? ProtectedUntilUtc,
+    /// <summary>Null when no standings sample covers the absence, which is not the same as no change.</summary>
+    int? RankBefore = null,
+    int? RankNow = null,
+    IReadOnlyList<string>? OvertookYouNames = null,
+    IReadOnlyList<string>? YouOvertookNames = null)
+{
+    public IReadOnlyList<string> OvertookYou => OvertookYouNames ?? [];
+    public IReadOnlyList<string> YouOvertook => YouOvertookNames ?? [];
+}

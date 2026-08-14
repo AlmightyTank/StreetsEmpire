@@ -59,4 +59,13 @@ public sealed class WorldNewsOptions
     public long MinCashSwing { get; set; } = 25_000;
 
     public int MinCrewChange { get; set; } = 5;
+
+    /// <summary>
+    /// How often everybody's standing is sampled. Finer sampling pins down more precisely who moved
+    /// ahead of whom, at the cost of one row per player per sample.
+    /// </summary>
+    public int StandingsSampleMinutes { get; set; } = 15;
+
+    /// <summary>How long samples are kept. Nothing reads back further than the longest absence.</summary>
+    public int StandingsRetentionDays { get; set; } = 14;
 }

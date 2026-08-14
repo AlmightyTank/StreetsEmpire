@@ -297,7 +297,7 @@ function App() {
   return <main className="game-shell">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
     <aside className="app-nav">
-      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.3</small></div>
+      <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.4</small></div>
       <nav>
         {visiblePages.map(page => <button
           className={activePage === page ? 'active' : ''}

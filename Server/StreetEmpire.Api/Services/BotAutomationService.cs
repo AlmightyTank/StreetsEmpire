@@ -2,10 +2,10 @@ using Microsoft.Extensions.Options;
 
 namespace StreetEmpire.Api.Services;
 
+// Timing comes from BotAutomationState rather than options, because it is editable at runtime.
 public sealed class BotAutomationService(
     IServiceScopeFactory scopeFactory,
     BotAutomationState state,
-    IOptions<BotAutomationOptions> options,
     ILogger<BotAutomationService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

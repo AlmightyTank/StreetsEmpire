@@ -1,6 +1,14 @@
-# Street Empire 0.2.3
+# Street Empire 0.2.4
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
+
+## What changed in 0.2.4
+
+0.2.4 is in progress: player-to-player markets, organizations, and territory.
+
+### Still to come in 0.2.4
+
+- Player-to-player markets, organizations, and territory.
 
 ## What changed in 0.2.3
 
@@ -345,7 +353,7 @@ Working the streets for 1-20 turns can now:
 - Per-player economy/action history.
 - Responsive React browser UI.
 
-Travel, organizations, player-to-player markets, and territory are intentionally not part of 0.2.3.
+Travel is intentionally not part of 0.2.4.
 
 ## Stack
 
@@ -404,7 +412,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.3`.
+It should report version `0.2.4`.
 
 ### 4. Run the browser client
 
@@ -458,7 +466,7 @@ The product net-worth value is deliberately below its fixed sale value so invent
 
 ## Economy tuning
 
-The server remains authoritative, and 0.2.3 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
+The server remains authoritative, and 0.2.4 keeps the core tuning numbers in `Server\StreetEmpire.Api\appsettings.json` under `Game`.
 
 The configurable tables now include:
 
@@ -546,4 +554,4 @@ That rule becomes especially important once PvP and a player market are introduc
 - **0.2.1 - Done:** live combat missions, assigned crew, round events, combined Combat page, and committed-crew vulnerability.
 - **0.2.2 - Done:** hideout capacity, named pimps, the admin panel, database-side ranking, anti-farm protections, AI attack behavior, defender alerts, and a combat balance pass.
 - **0.2.3 - Done:** hideout tiers beyond the Trap House, passive lab production, and a curated world news feed.
-- **0.2.4 - Next:** player-to-player markets, organizations, and territory.
+- **0.2.4 - In progress:** player-to-player markets, organizations, and territory.

@@ -188,7 +188,7 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(138px, 1fr));
+  grid-template-columns: repeat(7, minmax(138px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
   overflow-x: auto;
@@ -215,7 +215,13 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.stat small { color: #35b6ab; font-size: .78rem; white-space: nowrap; }
+.stat small { color: #35b6ab; font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Heat reads as a temperature, so the card warms with the band rather than only naming it. */
+.stat.heat-noticed strong, .stat.heat-noticed small { color: #d8bb63; }
+.stat.heat-watched strong, .stat.heat-watched small { color: #e0913f; }
+.stat.heat-hunted strong, .stat.heat-hunted small { color: #d9695d; }
+.stat.heat-hunted { border-color: #5c3733; }
 
 .alerts { display: grid; gap: 8px; }
 .alerts:not(:empty) { margin-bottom: 14px; }
@@ -625,15 +631,6 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .room-row button { min-width: 148px; }
 .room-copy small { color: #c08a4a; font-size: .73rem; }
 .room-row.illegal { border-left: 3px solid #b4534a; }
-
-/* Heat reads as a temperature, so the panel warms with the band rather than just naming it. */
-.heat-panel { border-left: 3px solid #4f7a5a; }
-.heat-panel.heat-noticed { border-left-color: #b39a4a; }
-.heat-panel.heat-watched { border-left-color: #c1742f; }
-.heat-panel.heat-hunted { border-left-color: #b4534a; }
-.heat-reading { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.35rem; }
-.heat-reading strong { font-size: 1.25rem; letter-spacing: 0.02em; }
-.heat-reading em { font-style: normal; opacity: 0.65; font-variant-numeric: tabular-nums; }
 .room-copy strong small { color: #d4756a; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; margin-left: 6px; }
 .build-progress {
   display: grid;
@@ -977,7 +974,7 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   .player-plate { min-width: 0; justify-items: start; }
   .player-plate span { text-align: left; }
   .page-grid, .overview-grid, .overview-layout, .two-column, .market-page { grid-template-columns: 1fr; }
-  .status-strip { grid-template-columns: repeat(6, minmax(128px, 1fr)); }
+  .status-strip { grid-template-columns: repeat(7, minmax(128px, 1fr)); }
   .hero-metrics, .crew-grid, .crew-combat-strip, .hideout-layout, .hideout-actions, .target-metrics, .admin-metrics, .product-grid, .production-command, .war-readiness, .mission-stats { grid-template-columns: 1fr; }
   /* The two prices stay side by side and keep their headings; only the trip drops to its own line. */
   .city-market { grid-template-columns: minmax(0, 1fr) 72px 72px; row-gap: 8px; }

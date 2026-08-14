@@ -15,9 +15,10 @@
   digest.
 - Heat cools on its own, so lying low works. It runs on its own clock rather than the turn clock, so
   twelve short visits still add up to an hour, and a fortnight away costs no more than a night.
-- A Heat panel on the hideout page reading Quiet, Noticed, Watched or Hunted, with the hourly raid
-  chance in plain numbers. Each station says how much notice a unit of its output draws, replacing a
-  legal/illegal badge that told the player nothing.
+- Heat sits in the status strip on every page, next to turns, reading Quiet, Noticed, Watched or
+  Hunted and tinting with the band. It is a live risk, so it belongs with the numbers a player carries
+  between pages rather than in a panel on one of them. Each station says how much notice a unit of its
+  output draws, replacing a legal/illegal badge that told the player nothing.
 - AI rivals buy from and sell on the market.
 - The still and the mix house need a Warehouse or better, enforced when making as well as when
   building.

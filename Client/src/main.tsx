@@ -680,8 +680,6 @@ function HideoutPage(ctx: PageContext) {
       </p>}
     </section>
 
-    <HeatPanel hideout={hideout} />
-
     <HideoutStationsPanel dashboard={dashboard} busy={busy} act={act} />
 
     <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
@@ -700,22 +698,6 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
     <div className="capacity-track"><div className="capacity-fill" style={{ width: `${Math.max(2, percent)}%` }} /></div>
     {over && <small>Over capacity. You keep this, but cannot take on more until it drains.</small>}
   </div>
-}
-
-/**
- * Heat. Everything the player does is illegal, so the question is never whether they are breaking the
- * law: it is how loudly. Shown next to production because that is where the choice is made.
- */
-function HeatPanel({ hideout }: { hideout: Dashboard['hideout'] }) {
-  const band = hideout.heatLabel.toLowerCase()
-  return <section className={`panel heat-panel heat-${band}`}>
-    <div className="panel-title"><h2>Heat</h2><span>How much notice you are drawing</span></div>
-    <div className="heat-reading">
-      <strong>{hideout.heatLabel}</strong>
-      <em>{number.format(Math.round(hideout.heat))}</em>
-    </div>
-    <p>{hideout.heatNote}</p>
-  </section>
 }
 
 /**
@@ -1965,6 +1947,13 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
     <Stat label="Bank" value={money.format(dashboard.bankCash)} />
     <Stat label="Net Worth" value={money.format(dashboard.netWorth)} />
     <Stat label="Turns" value={`${dashboard.turns} / ${dashboard.maxTurns}`} sub={nextTurn === 'MAX' ? 'Turn bank full' : `+${dashboard.turnsPerTick} in ${nextTurn}`} />
+    <Stat
+      label="Heat"
+      value={dashboard.hideout.heatLabel}
+      sub={dashboard.hideout.heatDetail}
+      tone={`heat-${dashboard.hideout.heatLabel.toLowerCase()}`}
+      title={dashboard.hideout.heatNote}
+    />
     <Stat label="Rank" value={`#${dashboard.rank}`} />
     <Stat label="City" value={dashboard.city} />
   </section>
@@ -2766,8 +2755,8 @@ function DismissibleMessage({ className, children, onClose }: { className: strin
   </div>
 }
 
-function Stat({ label, value, sub }: { label: string, value: string, sub?: string }) {
-  return <div className="stat">
+function Stat({ label, value, sub, tone, title }: { label: string, value: string, sub?: string, tone?: string, title?: string }) {
+  return <div className={tone ? `stat ${tone}` : 'stat'} title={title}>
     <span>{label}</span>
     <strong>{value}</strong>
     {sub && <small>{sub}</small>}

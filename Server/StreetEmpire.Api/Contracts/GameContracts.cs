@@ -325,6 +325,7 @@ public sealed record HideoutResponse(
     int MaxOfflineProductionHours,
     double Heat,
     string HeatLabel,
+    string HeatDetail,
     string HeatNote,
     HideoutRoomUpgradeResponse? StorageUpgrade,
     HideoutRoomUpgradeResponse? SafeUpgrade,

@@ -70,6 +70,7 @@ export type Hideout = {
   maxOfflineProductionHours: number
   heat: number
   heatLabel: string
+  heatDetail: string
   heatNote: string
   storageUpgrade?: HideoutRoomUpgrade | null
   safeUpgrade?: HideoutRoomUpgrade | null

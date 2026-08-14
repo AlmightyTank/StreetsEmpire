@@ -98,8 +98,11 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   and would never be raided or cool down. Whole hours are consumed and the remainder is left behind.
   A long absence is capped the same way offline lab work is, so a fortnight away costs no more than a
   night.
-- The hideout page reads Quiet, Noticed, Watched or Hunted, with the hourly chance in plain numbers,
-  because the number alone says nothing about whether tonight is the night.
+- Heat reads Quiet, Noticed, Watched or Hunted, because the number alone says nothing about whether
+  tonight is the night. It lives in the status strip rather than on the hideout page: it is a live
+  risk that changes what a player should do next, so it belongs with the numbers carried between
+  pages. The strip scrolls on a narrow screen, so heat is placed ahead of rank and city, which are
+  read rather than acted on.
 
 ### Still to come in 0.2.4
 

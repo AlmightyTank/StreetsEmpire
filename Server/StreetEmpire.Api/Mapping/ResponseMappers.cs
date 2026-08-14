@@ -237,6 +237,7 @@ internal static class ResponseMappers
             options.Hideout.MaxOfflineProductionHours,
             Math.Round(heat, 1),
             HeatLabel(heat, options),
+            HeatDetail(heat, options),
             HeatNote(heat, options),
             ToRoomUpgrade(hideouts, player.Hideout, "storage"),
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
@@ -310,13 +311,30 @@ internal static class ResponseMappers
         };
     }
 
+    /// <summary>
+    /// The same reading in a few words, for the status strip. The strip is on every page, so it gets
+    /// the number and the odds; the sentence explaining what to do about it is the tooltip.
+    /// </summary>
+    private static string HeatDetail(double heat, GameOptions options)
+    {
+        var rounded = Math.Round(heat);
+        return heat <= options.Hideout.HeatBustFloor
+            ? $"{rounded:N0} heat, nobody looking"
+            : $"{rounded:N0} heat, {RaidChance(heat, options):P0} an hour";
+    }
+
+    private static double RaidChance(double heat, GameOptions options)
+    {
+        var config = options.Hideout;
+        return Math.Clamp((heat - config.HeatBustFloor) * config.BustChancePerHeat, 0, Math.Clamp(config.MaxBustChancePerHour, 0, 1));
+    }
+
     private static string HeatNote(double heat, GameOptions options)
     {
         var config = options.Hideout;
         if (heat <= config.HeatBustFloor)
             return "Nobody is looking your way. Nothing you hold is worth a door being kicked in yet.";
-        var chance = Math.Clamp((heat - config.HeatBustFloor) * config.BustChancePerHeat, 0, Math.Clamp(config.MaxBustChancePerHour, 0, 1));
-        return $"Roughly a {chance:P0} chance an hour of a raid. Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.";
+        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid. Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.";
     }
 
     /// <summary>

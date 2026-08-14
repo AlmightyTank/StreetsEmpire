@@ -240,6 +240,20 @@ export type PlayerProfile = PlayerTarget & {
   publicActivity: Activity[]
 }
 
+export type CatchUpItem = {
+  kind: string
+  headline: string
+  detail: string
+  tone: 'good' | 'bad' | 'neutral'
+}
+
+export type CatchUp = {
+  sinceUtc: string
+  awayMinutes: number
+  hasNews: boolean
+  items: CatchUpItem[]
+}
+
 export type WorldNewsEntry = {
   id: number
   playerName: string
@@ -515,6 +529,7 @@ export const api = {
     }),
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNews>('/api/world/news'),
+  catchUp: () => request<CatchUp>('/api/game/catch-up'),
   alerts: () => request<DefenceAlerts>('/api/game/alerts'),
   markAlertsSeen: () => request<DefenceAlerts>('/api/game/alerts/seen', { method: 'POST' }),
   adminOverview: () => request<AdminOverview>('/api/admin/overview'),

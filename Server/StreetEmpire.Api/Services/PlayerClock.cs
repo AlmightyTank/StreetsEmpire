@@ -22,14 +22,14 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts)
     {
         var built = hideouts.CompleteBuild(player.Hideout, nowUtc);
         if (db is not null && built)
-            AddLog(db, player, Snapshot(player), "HIDEOUT", 0, $"The {hideouts.TierName(player.Hideout!.Tier)} is finished.");
+            AddLog(db, player, Snapshot(player), "HIDEOUT", 0, $"The {hideouts.TierName(player.Hideout!.Tier)} is finished.", nowUtc);
 
         // Snapshotted again on purpose: sharing one snapshot with the build above would stamp the lab's
         // haul onto the build's log row as well, and both rows would claim the same weed.
         var beforeLabs = Snapshot(player);
         var labs = hideouts.AccrueLabs(player, nowUtc);
         if (db is not null && labs.Any)
-            AddLog(db, player, beforeLabs, "LAB", 0, labs.Describe());
+            AddLog(db, player, beforeLabs, "LAB", 0, labs.Describe(), nowUtc);
 
         var turnsMoved = turns.Refresh(player, nowUtc);
         return new PlayerTick(turnsMoved || built || labs.ClockMoved, built, labs);

@@ -33,13 +33,19 @@ internal static class ActionLogging
         player.HoeHappiness,
         player.ThugHappiness);
 
+    /// <param name="createdAtUtc">
+    /// Stamp the row with the caller's clock instead of the moment the object happens to be built.
+    /// A row left to default sits a few ticks after the request's own "now", which is enough for a
+    /// watermark set to that "now" to consider the row still unseen and replay it on the next read.
+    /// </param>
     internal static void AddLog(
         GameDbContext db,
         Player player,
         PlayerSnapshot before,
         string action,
         int turnsSpent,
-        string summary)
+        string summary,
+        DateTime? createdAtUtc = null)
     {
         db.ActionLogs.Add(new GameActionLog
         {
@@ -58,7 +64,8 @@ internal static class ActionLogging
             CokeDelta = player.Coke - before.Coke,
             HoeMoraleBefore = before.HoeMorale,
             ThugMoraleBefore = before.ThugMorale,
-            Summary = summary
+            Summary = summary,
+            CreatedAtUtc = createdAtUtc ?? DateTime.UtcNow
         });
     }
 }

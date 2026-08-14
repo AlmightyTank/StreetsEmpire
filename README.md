@@ -46,6 +46,16 @@ activity log into something worth reading.
 - With nothing recent to compare against the arrow is absent rather than flat. A steady arrow on a
   player who has not acted in hours would be a claim the server cannot support.
 
+### While you were away
+
+- Arriving raises a summary of what happened in your absence: who attacked and what they took, what
+  the labs made, any building that finished, whether your turn meter has filled up and stopped, and
+  whether you are still under protection.
+- It appears once and only when something actually happened. A popup reporting that the world stood
+  still is an interruption with nothing behind it.
+- Its read position is separate from the alert bell's. Reading the bell should not swallow the summary
+  of an absence, and seeing that summary should not mark every attack as read.
+
 ### World news worth reading
 
 - The feed was every action anyone took. With rivals acting on a timer that meant thirty rows of

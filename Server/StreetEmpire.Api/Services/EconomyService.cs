@@ -425,6 +425,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             _ => ("weapons", "weapon(s)", "You need a workshop before you can make weapons.")
         };
         var workshop = hideout.StationFor(player.Hideout, station) ?? throw new GameRuleException(refusal);
+        if (hideout.StationRequiredTier(station) is { } needed && (player.Hideout?.Tier ?? 1) < needed)
+            throw new GameRuleException($"Making {good} needs the {hideout.TierName(needed)} or better.");
 
         var capacity = hideout.CapacityFor(player.Hideout);
         var room = Math.Max(0, TradeGoods.Capacity(capacity, good) - TradeGoods.Held(player, good));

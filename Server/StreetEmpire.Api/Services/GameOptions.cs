@@ -284,18 +284,20 @@ public sealed class HideoutOptions
             ];
 
         // Moonshine undercuts the shop's beer, which is the only reason to run the risk of holding it.
+        // Both of these need the second tier: a Trap House is not somewhere you hide a still, and
+        // gating them there keeps the first tier about learning the game rather than running a lab.
         if (Still.Count == 0)
             Still =
             [
-                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 4, CostPerWeapon = 6, UpgradeCost = 25_000 },
-                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 7, CostPerWeapon = 5, UpgradeCost = 80_000 }
+                new WorkshopLevelOptions { Level = 1, MinTier = 2, WeaponsPerTurn = 4, CostPerWeapon = 6, UpgradeCost = 25_000 },
+                new WorkshopLevelOptions { Level = 2, MinTier = 2, WeaponsPerTurn = 7, CostPerWeapon = 5, UpgradeCost = 80_000 }
             ];
 
         if (Mix.Count == 0)
             Mix =
             [
-                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 3, CostPerWeapon = 20, UpgradeCost = 40_000 },
-                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 5, CostPerWeapon = 18, UpgradeCost = 120_000 }
+                new WorkshopLevelOptions { Level = 1, MinTier = 2, WeaponsPerTurn = 3, CostPerWeapon = 20, UpgradeCost = 40_000 },
+                new WorkshopLevelOptions { Level = 2, MinTier = 2, WeaponsPerTurn = 5, CostPerWeapon = 18, UpgradeCost = 120_000 }
             ];
 
         if (CokeLab.Count == 0)

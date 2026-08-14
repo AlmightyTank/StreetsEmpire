@@ -1261,6 +1261,21 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     // No workshop, no weapons.
     AssertRuleError(() => service.Forge(new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout() }, 5),
         "forging without a workshop");
+
+    // A still and a mix house need the second tier, and the gate holds when making as well as when
+    // building: a station built before the gate existed would otherwise keep running under it.
+    var hideouts = CreateHideouts(options);
+    AssertEqual(2, hideouts.StationRequiredTier("still") ?? 0);
+    AssertEqual(2, hideouts.StationRequiredTier("mix") ?? 0);
+    AssertTrue(hideouts.StationRequiredTier("workshop") is null, "the workshop is open from the start");
+
+    var trapHouse = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 1, StorageLevel = 3, StillLevel = 1, MixLevel = 1 } };
+    AssertRuleError(() => service.Make(trapHouse, "still", 5), "brewing in a Trap House");
+    AssertRuleError(() => service.Make(trapHouse, "mix", 5), "mixing in a Trap House");
+
+    var warehouse = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 2, StorageLevel = 3, StillLevel = 1, MixLevel = 1 } };
+    AssertEqual(20, Value<int>(RequiredBreakdown(service.Make(warehouse, "still", 5)), "unitsMade"));
+    AssertEqual(15, Value<int>(RequiredBreakdown(service.Make(warehouse, "mix", 5)), "unitsMade"));
 }
 
 /// <summary>

@@ -116,6 +116,23 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 
     public WorkshopLevelOptions? WorkshopFor(Hideout? hideout) => StationFor(hideout, "workshop");
 
+    /// <summary>
+    /// The tier a station needs, or null when it has no gate. Checked when making as well as when
+    /// building: buying is not the only way to end up with one, since a station built before a gate
+    /// existed would otherwise keep running under it forever.
+    /// </summary>
+    public int? StationRequiredTier(string station)
+    {
+        var levels = station switch
+        {
+            "still" => _options.Hideout.Still,
+            "mix" => _options.Hideout.Mix,
+            _ => _options.Hideout.Workshop
+        };
+        var first = levels.OrderBy(x => x.Level).FirstOrDefault();
+        return first is null || first.MinTier <= 1 ? null : first.MinTier;
+    }
+
     /// <summary>What a lab makes per hour on its own, before storage limits.</summary>
     public int PassivePerHour(Hideout? hideout, string product)
     {

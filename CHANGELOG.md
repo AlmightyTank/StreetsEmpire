@@ -10,6 +10,8 @@
 - Holding moonshine risks a bust, rolled per hour it sits in storage, taking half the stash and a fine
   capped at cash on hand. It reaches the player as an alert.
 - AI rivals buy from and sell on the market.
+- The still and the mix house need a Warehouse or better, enforced when making as well as when
+  building.
 - A Production section on the hideout page for the workshop, still and mix house, each shown next to
   the price it exists to beat.
 - A workshop hideout station that makes weapons from turns and materials below the store price, so the

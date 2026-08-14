@@ -64,6 +64,10 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 ### Moonshine and cut
 
+- Both the still and the mix house need the **Warehouse** or better. A Trap House is not somewhere you
+  hide a still, and gating them there keeps the first tier about learning the game rather than running
+  a lab. The gate is checked when making as well as when building, since buying is not the only way to
+  end up with a station.
 - A **still** brews moonshine, which thugs drink exactly like the shop's beer at well under the shop's
   price. The bought beer is always poured first, so a player is never quietly spending contraband while
   a legal barrel sits next to it.

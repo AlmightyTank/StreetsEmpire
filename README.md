@@ -62,6 +62,24 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   the board anything worth trading: every other good has a fixed price on both sides, so the tradeable
   spread over them is zero. Weapons are the one thing a player can make that everybody needs.
 
+### Moonshine and cut
+
+- A **still** brews moonshine, which thugs drink exactly like the shop's beer at well under the shop's
+  price. The bought beer is always poured first, so a player is never quietly spending contraband while
+  a legal barrel sits next to it.
+- Moonshine is illegal to hold. Every hour it sits in storage is a roll, so it costs a player who
+  stockpiles it and costs almost nothing to one who brews and sells. Getting caught takes half the
+  stash and fines you, and the fine stops at cash on hand: a bust that could put a player into debt
+  would be a nastier mechanic than losing the stash. It arrives as an alert rather than a line buried
+  in the activity list.
+- A **mix house** makes cut, which stretches coke one for one and is worth nothing on its own. That is
+  why it is priced off the local coke rather than carrying a band of its own: it follows the town
+  automatically, because what it is worth is what it makes.
+- Moonshine is priced against the shop's beer, which is the same everywhere, so it does not move with
+  the town the way weed, coke and cut do.
+- AI rivals trade. They buy weapons off the board when it beats the shop, judged against the shop
+  rather than against the other listings, and list what they cannot use.
+
 ### Still to come in 0.2.4
 
 - Player-to-player markets and organizations.

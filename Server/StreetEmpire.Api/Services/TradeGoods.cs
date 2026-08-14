@@ -11,7 +11,7 @@ namespace StreetEmpire.Api.Services;
 /// </summary>
 public static class TradeGoods
 {
-    public static readonly IReadOnlyList<string> Keys = ["condoms", "beer", "weapons", "weed", "coke"];
+    public static readonly IReadOnlyList<string> Keys = ["condoms", "beer", "weapons", "weed", "coke", "moonshine", "cut"];
 
     public static bool IsTradeable(string? key)
         => key is not null && Keys.Contains(key.Trim().ToLowerInvariant());
@@ -26,6 +26,8 @@ public static class TradeGoods
         "weapons" => "Weapons",
         "weed" => "Weed",
         "coke" => "Coke",
+        "moonshine" => "Moonshine",
+        "cut" => "Cut",
         _ => key
     };
 
@@ -36,6 +38,8 @@ public static class TradeGoods
         "weapons" => player.Weapons,
         "weed" => player.Weed,
         "coke" => player.Coke,
+        "moonshine" => player.Moonshine,
+        "cut" => player.Cut,
         _ => 0
     };
 
@@ -48,6 +52,8 @@ public static class TradeGoods
             case "weapons": player.Weapons += amount; break;
             case "weed": player.Weed += amount; break;
             case "coke": player.Coke += amount; break;
+            case "moonshine": player.Moonshine += amount; break;
+            case "cut": player.Cut += amount; break;
         }
     }
 
@@ -58,6 +64,8 @@ public static class TradeGoods
         "weapons" => capacity.MaxWeapons,
         "weed" => capacity.MaxWeed,
         "coke" => capacity.MaxCoke,
+        "moonshine" => capacity.MaxMoonshine,
+        "cut" => capacity.MaxCut,
         _ => 0
     };
 
@@ -72,6 +80,12 @@ public static class TradeGoods
         "weapons" => options.WeaponPrice,
         "weed" => options.CityMarkets.ProductPrice(city, "weed", options.WeedSellPrice),
         "coke" => options.CityMarkets.ProductPrice(city, "coke", options.CokeSellPrice),
+        // Moonshine is judged against the shop beer it replaces, and that price is the same everywhere,
+        // so it does not move with the town.
+        "moonshine" => options.BeerPrice,
+        // Cut is worth nothing on its own; it is worth what it stretches. Pricing it off the local coke
+        // makes it follow the town without needing a band of its own.
+        "cut" => Math.Max(1, options.CityMarkets.ProductPrice(city, "coke", options.CokeSellPrice) / 4),
         _ => 0
     };
 }

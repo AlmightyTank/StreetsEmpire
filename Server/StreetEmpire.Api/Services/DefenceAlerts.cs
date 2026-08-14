@@ -83,6 +83,7 @@ public static class DefenceAlerts
             "LAB" => new AlertResponse($"log-{logId}", "labs", "Your labs kept working", summary, "good", unread, createdAtUtc),
             "HIDEOUT" when summary.EndsWith(" is finished.", StringComparison.Ordinal)
                 => new AlertResponse($"log-{logId}", "hideout", "Building finished", summary, "good", unread, createdAtUtc),
+            "BUST" => new AlertResponse($"log-{logId}", "bust", "The law came", summary, "bad", unread, createdAtUtc),
             "GROUND" when summary.Contains("held", StringComparison.OrdinalIgnoreCase)
                 => new AlertResponse($"log-{logId}", "ground", "Your ground held", summary, "good", unread, createdAtUtc),
             "GROUND"
@@ -104,7 +105,8 @@ public static class DefenceAlerts
                // GROUND is ground news happening to you; TERRITORY is ground you acted on yourself and
                // belongs in activity. A separate action rather than matching how the sentence ends,
                // which broke the moment a second kind of ground notice existed.
-               || log.Action == "GROUND";
+               || log.Action == "GROUND"
+               || log.Action == "BUST";
 
     /// <summary>The same rule negated, for the activity list. Derived so the two cannot disagree.</summary>
     public static Expression<Func<GameActionLog, bool>> IsActionRow { get; } =

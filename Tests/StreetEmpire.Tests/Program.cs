@@ -39,6 +39,8 @@ var tests = new (string Name, Action Test)[]
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
     ("trade goods map keys to the piles they move", TradeGoodsMapKeysToPiles),
     ("workshop makes weapons under the store price", WorkshopMakesWeaponsUnderStorePrice),
+    ("moonshine drinks like beer and cut stretches coke", ContrabandGoodsDoTheirJob),
+    ("holding moonshine risks a bust that never bankrupts", MoonshineBustTakesTheStashNotTheShirt),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1259,6 +1261,95 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     // No workshop, no weapons.
     AssertRuleError(() => service.Forge(new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout() }, 5),
         "forging without a workshop");
+}
+
+/// <summary>
+/// Each new good earns its place by doing something, not by having a price. Moonshine substitutes for
+/// the beer thugs drink; cut stretches coke and is worth nothing otherwise.
+/// </summary>
+static void ContrabandGoodsDoTheirJob()
+{
+    var options = new GameOptions
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 0,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0, HoeRecruitChance = 0, ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Production = new ProductionOptions { Coke = new ProductProductionOptions(0, 4, 4) },
+        Morale = new MoraleOptions { TurnsPerBeer = 1, TurnsPerCondom = 1000, DesertionThreshold = 0, MaxDesertionChance = 0 }
+    };
+
+    // Ten thugs over ten turns need ten beer. Six bought, four moonshine, so nothing runs short.
+    var stocked = new Player { Turns = 20, Thugs = 10, Beer = 6, Moonshine = 4, ThugHappiness = 80, Hideout = new Hideout { StorageLevel = 3 } };
+    CreateEconomy(options).Scout(stocked, 10);
+    AssertEqual(0, stocked.Beer);
+    AssertEqual(0, stocked.Moonshine);
+
+    // The bought beer goes first, so a player is never quietly spending contraband while legal stock
+    // sits next to it.
+    var mixed = new Player { Turns = 20, Thugs = 5, Beer = 20, Moonshine = 10, ThugHappiness = 80, Hideout = new Hideout { StorageLevel = 3 } };
+    CreateEconomy(options).Scout(mixed, 4);
+    AssertEqual(10, mixed.Moonshine);
+
+    // Cut stretches coke one for one and is spent doing it.
+    var mixer = new Player { Turns = 20, Cash = 100_000, Cut = 3, Hideout = new Hideout { StorageLevel = 3 } };
+    var run = CreateEconomy(options).Produce(mixer, "coke", 5);
+    AssertEqual(3, Value<int>(RequiredBreakdown(run), "cutUsed"));
+    AssertEqual(0, mixer.Cut);
+    AssertEqual(23, Value<int>(RequiredBreakdown(run), "unitsProduced"));
+
+    // Cut does nothing for weed, which is not what it stretches.
+    var weeder = new Player { Turns = 20, Cash = 100_000, Cut = 3, Hideout = new Hideout { StorageLevel = 3 } };
+    CreateEconomy(options).Produce(weeder, "weed", 5);
+    AssertEqual(3, weeder.Cut);
+}
+
+/// <summary>
+/// Moonshine is illegal to hold, so the risk is carried by the stash rather than by any action. The
+/// fine stops at cash on hand: a bust that could put a player into debt is a different and much
+/// nastier mechanic than losing the stash.
+/// </summary>
+static void MoonshineBustTakesTheStashNotTheShirt()
+{
+    var options = Resolve(new GameOptions());
+    options.Hideout.MoonshineBustChancePerHour = 1;
+    options.Hideout.MoonshineBustFloor = 10;
+    options.Hideout.MoonshineSeizedPercent = 0.5;
+    options.Hideout.MoonshineFinePerUnit = 40;
+    var hideouts = CreateHideouts(options);
+
+    // Below the floor the still is too small to be worth a raid.
+    var small = new Player { Moonshine = 9, Cash = 10_000 };
+    AssertTrue(!hideouts.RollMoonshineBust(small, 5, new AlwaysRandom()).Happened, "a small stash is beneath notice");
+    AssertEqual(9, small.Moonshine);
+
+    // No elapsed hours, no roll: the risk is carried over time, not over page loads.
+    var idle = new Player { Moonshine = 100, Cash = 10_000 };
+    AssertTrue(!hideouts.RollMoonshineBust(idle, 0, new AlwaysRandom()).Happened, "no time passed, no risk");
+
+    var caught = new Player { Moonshine = 100, Cash = 10_000 };
+    var bust = hideouts.RollMoonshineBust(caught, 1, new AlwaysRandom());
+    AssertEqual(50, bust.Seized);
+    AssertEqual(2_000L, bust.Fine);
+    AssertEqual(50, caught.Moonshine);
+    AssertEqual(8_000L, caught.Cash);
+
+    // The fine never reaches past what is on hand.
+    var broke = new Player { Moonshine = 100, Cash = 500 };
+    var pinched = hideouts.RollMoonshineBust(broke, 1, new AlwaysRandom());
+    AssertEqual(500L, pinched.Fine);
+    AssertEqual(0L, broke.Cash);
+
+    // A lucky player keeps the lot.
+    var lucky = new Player { Moonshine = 100, Cash = 10_000 };
+    options.Hideout.MoonshineBustChancePerHour = 0;
+    AssertTrue(!CreateHideouts(options).RollMoonshineBust(lucky, 24, new AlwaysRandom()).Happened, "no chance, no bust");
+    AssertEqual(100, lucky.Moonshine);
 }
 
 static void TerritoryEffectsAddUp()

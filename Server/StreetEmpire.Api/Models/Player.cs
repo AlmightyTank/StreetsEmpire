@@ -32,6 +32,15 @@ public sealed class Player
     public int Weed { get; set; }
     public int Coke { get; set; }
 
+    /// <summary>
+    /// Home-brewed beer. Cheaper than the shop and it keeps thugs going the same way, but it is
+    /// contraband: holding it is what the law comes for.
+    /// </summary>
+    public int Moonshine { get; set; }
+
+    /// <summary>Stretches coke. Worthless on its own, which is why it is priced off the local coke.</summary>
+    public int Cut { get; set; }
+
     // Combat pacing fields written by the attack flow.
     public DateTime? CombatProtectionUntilUtc { get; set; }
     public DateTime? LastAttackAtUtc { get; set; }

@@ -29,6 +29,7 @@ public static class WorldNews
                   // reports the same event publicly, so publishing these would put "took it from you"
                   // in front of everybody.
                   && log.Action != "GROUND"
+                  && log.Action != "BUST"
                   && (log.Action == "ATTACK"
                       || log.Action == "HIDEOUT"
                       || log.Action == "TERRITORY"

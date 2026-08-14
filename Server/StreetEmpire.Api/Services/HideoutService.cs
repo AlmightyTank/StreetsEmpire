@@ -37,7 +37,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public LabYield AccrueLabs(Player player, DateTime nowUtc)
     {
         var hideout = player.Hideout;
-        if (hideout is null || (hideout.WeedLabLevel <= 0 && hideout.CokeLabLevel <= 0))
+        // A still counts as a reason to run the clock even though it makes nothing passively: the
+        // hours it reports are what the contraband risk is rolled over, and a brewer with no lab would
+        // otherwise never be at risk at all.
+        if (hideout is null || (hideout.WeedLabLevel <= 0 && hideout.CokeLabLevel <= 0 && hideout.StillLevel <= 0))
             return LabYield.None;
 
         // A lab built just now starts its clock now, so building one never pays out for the hours
@@ -68,12 +71,50 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         return new LabYield(weed, coke, chargedHours, hours > chargedHours, true);
     }
 
-    /// <summary>The workshop level's output and materials cost, or null when none is built.</summary>
-    public WorkshopLevelOptions? WorkshopFor(Hideout? hideout)
+    /// <summary>
+    /// Rolls for the law finding the moonshine. Once per elapsed hour rather than once per visit, so a
+    /// player who stockpiles carries the risk whether or not they are looking at the screen, and one
+    /// who brews and sells straight away carries almost none.
+    ///
+    /// The fine comes out of cash on hand and stops at what they have. A bust that could put a player
+    /// into debt would be a different and much nastier mechanic than losing the stash.
+    /// </summary>
+    public MoonshineBust RollMoonshineBust(Player player, int hours, IGameRandom random)
     {
-        var level = hideout?.WorkshopLevel ?? 0;
-        return level <= 0 ? null : Level(_options.Hideout.Workshop, level, x => x.Level);
+        var config = _options.Hideout;
+        if (hours <= 0 || player.Moonshine < Math.Max(1, config.MoonshineBustFloor))
+            return MoonshineBust.None;
+
+        var caught = false;
+        for (var hour = 0; hour < hours && !caught; hour++)
+            caught = random.NextDouble() < Math.Clamp(config.MoonshineBustChancePerHour, 0, 1);
+        if (!caught)
+            return MoonshineBust.None;
+
+        var seized = Math.Min(player.Moonshine, Math.Max(1, (int)Math.Round(player.Moonshine * Math.Clamp(config.MoonshineSeizedPercent, 0, 1))));
+        var fine = Math.Min(player.Cash, (long)Math.Round(seized * Math.Max(0, config.MoonshineFinePerUnit)));
+
+        player.Moonshine -= seized;
+        player.Cash -= fine;
+        return new MoonshineBust(seized, fine);
     }
+
+    /// <summary>
+    /// A making station's level, or null when none is built. One lookup for all three because they are
+    /// the same shape: turns and materials in, one good out.
+    /// </summary>
+    public WorkshopLevelOptions? StationFor(Hideout? hideout, string station)
+    {
+        var (levels, level) = station switch
+        {
+            "still" => (_options.Hideout.Still, hideout?.StillLevel ?? 0),
+            "mix" => (_options.Hideout.Mix, hideout?.MixLevel ?? 0),
+            _ => (_options.Hideout.Workshop, hideout?.WorkshopLevel ?? 0)
+        };
+        return level <= 0 ? null : Level(levels, level, x => x.Level);
+    }
+
+    public WorkshopLevelOptions? WorkshopFor(Hideout? hideout) => StationFor(hideout, "workshop");
 
     /// <summary>What a lab makes per hour on its own, before storage limits.</summary>
     public int PassivePerHour(Hideout? hideout, string product)
@@ -107,7 +148,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             storage.Beer,
             storage.Weapons,
             storage.Weed,
-            storage.Coke);
+            storage.Coke,
+            storage.Moonshine,
+            storage.Cut);
     }
 
     /// <summary>
@@ -219,6 +262,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 level => BuildLab(hideout, nowUtc, () => hideout.CokeLabLevel = level), "coke lab"),
             "workshop" => ApplyUpgrade(player, hideout, config.Workshop, hideout.WorkshopLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.WorkshopLevel = level, "workshop"),
+            "still" => ApplyUpgrade(player, hideout, config.Still, hideout.StillLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => hideout.StillLevel = level, "still"),
+            "mix" => ApplyUpgrade(player, hideout, config.Mix, hideout.MixLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => hideout.MixLevel = level, "mix house"),
             _ => throw new GameRuleException("Room must be 'tier', 'storage', 'safe', 'weedlab', 'cokelab', or 'workshop'.")
         };
     }
@@ -277,6 +324,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             "weedlab" => Next(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "cokelab" => Next(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "workshop" => Next(config.Workshop, hideout?.WorkshopLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "still" => Next(config.Still, hideout?.StillLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "mix" => Next(config.Mix, hideout?.MixLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             _ => null
         };
     }
@@ -447,6 +496,13 @@ public sealed record LabYield(int Weed, int Coke, int Hours, bool HitOfflineCeil
     }
 }
 
+/// <param name="Seized">Moonshine taken. Zero means nothing happened.</param>
+public sealed record MoonshineBust(int Seized, long Fine)
+{
+    public static readonly MoonshineBust None = new(0, 0);
+    public bool Happened => Seized > 0;
+}
+
 public sealed record HideoutCapacity(
     string TierName,
     int Tier,
@@ -462,7 +518,9 @@ public sealed record HideoutCapacity(
     int MaxBeer,
     int MaxWeapons,
     int MaxWeed,
-    int MaxCoke);
+    int MaxCoke,
+    int MaxMoonshine,
+    int MaxCut);
 
 /// <summary>The stock a player held before an action, used as the floor for grandfathered amounts.</summary>
 public sealed record StockLevels(long Cash, int Condoms, int Beer, int Weapons, int Weed, int Coke)

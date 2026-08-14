@@ -15,7 +15,8 @@ public sealed class BotSimulationService(
     HideoutService hideouts,
     CombatMissionService missions,
     TerritoryService territories,
-    PimpRoster pimps)
+    PimpRoster pimps,
+    MarketService market)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -63,7 +64,9 @@ public sealed class BotSimulationService(
                     continue;
 
                 await clock.AdvanceAsync(bot, nowUtc, ct: ct);
-                var botActions = await TryTerritoryAsync(bot, brain, nowUtc, ct);
+                var botActions = await TryMarketAsync(bot, brain, nowUtc, ct);
+                if (botActions == 0)
+                    botActions = await TryTerritoryAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
@@ -145,6 +148,73 @@ public sealed class BotSimulationService(
             ["missionId"] = mission.Id,
             ["defender"] = defender.Name
         });
+    }
+
+    /// <summary>
+    /// Buys from the board and puts surplus on it, so the market is not a room only players stand in.
+    ///
+    /// Buying is judged against the shop, never against the other listings: a rival that simply took
+    /// the cheapest thing on the board would bid against itself and drain every listing regardless of
+    /// whether the price was any good.
+    /// </summary>
+    private async Task<int> TryMarketAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var report = economy.GetCrewReport(bot);
+        var capacity = hideouts.CapacityFor(bot.Hideout);
+
+        // Weapons first, because uncovered thugs are the gap a rival most needs to close and the one
+        // good a player is likely to be selling.
+        if (report.UncoveredThugs > 0)
+        {
+            var offer = await db.MarketListings
+                .Include(x => x.Seller)
+                .Where(x => x.CancelledAtUtc == null && x.Quantity > 0 && x.Item == "weapons" && x.SellerId != bot.Id)
+                .Where(x => x.PricePerUnit < _options.WeaponPrice)
+                .OrderBy(x => x.PricePerUnit)
+                .FirstOrDefaultAsync(ct);
+            if (offer is not null)
+            {
+                var room = Math.Max(0, capacity.MaxWeapons - bot.Weapons);
+                var affordable = offer.PricePerUnit <= 0 ? 0 : (int)((bot.Cash - CashReserve(bot, brain)) / offer.PricePerUnit);
+                var want = Math.Min(Math.Min(report.UncoveredThugs, offer.Quantity), Math.Min(room, affordable));
+                if (want > 0)
+                {
+                    var before = Snapshot(bot);
+                    try
+                    {
+                        var purchase = await market.BuyAsync(bot, offer.Id, want, ct);
+                        AddLog(bot, before, "MARKET", 0, nowUtc,
+                            $"AI: Bought {purchase.Quantity:N0} weapons off {purchase.Listing.Seller.Name} for {purchase.Cost:C0}.");
+                        return 1;
+                    }
+                    catch (GameRuleException)
+                    {
+                        return 0;
+                    }
+                }
+            }
+        }
+
+        // Then sell what it is sitting on and cannot use. Priced under the shop, or nobody would buy.
+        var spare = Math.Max(0, bot.Weapons - bot.Thugs - 5);
+        if (spare >= 5 && hideouts.StationFor(bot.Hideout, "workshop") is not null)
+        {
+            var before = Snapshot(bot);
+            try
+            {
+                var price = (long)Math.Round(_options.WeaponPrice * 0.85);
+                var listing = await market.ListAsync(bot, "weapons", spare, price, nowUtc, ct);
+                AddLog(bot, before, "MARKET", 0, nowUtc,
+                    $"AI: Listed {listing.Quantity:N0} weapons at {listing.PricePerUnit:C0} each.");
+                return 1;
+            }
+            catch (GameRuleException)
+            {
+                return 0;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>

@@ -5,6 +5,11 @@
 ### Added
 - A player-to-player market: one global board, escrowed stock, partial fills, a house cut, and payouts
   into the seller's bank.
+- Moonshine and cut, made by a still and a mix house. Moonshine substitutes for the beer thugs drink;
+  cut stretches coke one for one.
+- Holding moonshine risks a bust, rolled per hour it sits in storage, taking half the stash and a fine
+  capped at cash on hand. It reaches the player as an alert.
+- AI rivals buy from and sell on the market.
 - A workshop hideout station that makes weapons from turns and materials below the store price, so the
   board has a good with real demand and room to undercut.
 - Territory: six pieces of ground per town, held by garrisoning thugs, who count as away from home

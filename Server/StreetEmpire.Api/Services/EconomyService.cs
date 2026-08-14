@@ -243,8 +243,12 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         var beerNeeded = RequiredUpkeep(thugsBefore, turns, morale.TurnsPerBeer);
         var beerUsed = Math.Min(player.Beer, beerNeeded);
-        var beerShortage = beerNeeded - beerUsed;
         player.Beer -= beerUsed;
+        // Moonshine drinks the same. Poured only once the bought beer is gone, so a player is never
+        // quietly spending contraband while a legal barrel sits next to it.
+        var moonshineUsed = Math.Min(player.Moonshine, beerNeeded - beerUsed);
+        player.Moonshine -= moonshineUsed;
+        var beerShortage = beerNeeded - beerUsed - moonshineUsed;
 
         var managementCapacity = Math.Max(1, player.Pimps) * morale.HoesManagedPerPimp;
         var unmanagedHoes = Math.Max(0, player.Hoes - managementCapacity);
@@ -355,7 +359,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         // The lab is turn-fed: it raises what each production turn yields rather than running itself.
         var labBonusPercent = hideout.ProductionYieldBonusPercent(player.Hideout, key) + (territory?.ProductionYieldPercent ?? 0);
-        var produced = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero);
+        // Cut stretches coke and nothing else. Spent to the extent there is any, one unit per unit of
+        // coke, so it is worth exactly what the coke it makes is worth in this town.
+        var cutUsed = key == "coke" ? Math.Min(player.Cut, baseUnits) : 0;
+        player.Cut -= cutUsed;
+        var produced = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero) + cutUsed;
 
         var totalCost = (long)production.CostPerTurn * turns;
         if (player.Cash < totalCost)
@@ -370,6 +378,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var summary = $"Produced {produced:N0} {key} using {turns} turn{Plural(turns)} and ${totalCost:N0} in materials.";
         if (labBonusPercent > 0)
             summary += $" The {key} lab added {labBonusPercent:N0}% yield.";
+        if (cutUsed > 0)
+            summary += $" {cutUsed:N0} cut stretched it by the same again.";
         summary += overflow.Describe();
 
         return new ActionResultResponse(
@@ -382,6 +392,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["unitsProduced"] = produced,
                 ["baseUnits"] = baseUnits,
                 ["labBonusPercent"] = labBonusPercent,
+                ["cutUsed"] = cutUsed,
                 ["costPerTurn"] = production.CostPerTurn,
                 ["totalCost"] = totalCost,
                 ["weedLostToStorage"] = overflow.WeedLost,
@@ -394,20 +405,31 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// sell to the game at a fixed price: they are a supply everyone burns, which is what makes them
     /// worth putting on the board.
     /// </summary>
-    public ActionResultResponse Forge(Player player, int turns)
+    public ActionResultResponse Forge(Player player, int turns) => Make(player, "workshop", turns);
+
+    /// <summary>
+    /// Turns and materials into one good. The workshop, the still and the mix house are the same shape,
+    /// so they share a path rather than three near-copies that can drift apart on the storage rule.
+    /// </summary>
+    public ActionResultResponse Make(Player player, string station, int turns)
     {
         if (turns < 1 || turns > _options.MaxActionTurns)
             throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
         if (player.Turns < turns)
             throw new GameRuleException("You do not have that many turns.");
 
-        var workshop = hideout.WorkshopFor(player.Hideout)
-            ?? throw new GameRuleException("You need a workshop before you can make weapons.");
+        var (good, label, refusal) = station switch
+        {
+            "still" => ("moonshine", "moonshine", "You need a still before you can brew moonshine."),
+            "mix" => ("cut", "cut", "You need a mix house before you can make cut."),
+            _ => ("weapons", "weapon(s)", "You need a workshop before you can make weapons.")
+        };
+        var workshop = hideout.StationFor(player.Hideout, station) ?? throw new GameRuleException(refusal);
 
         var capacity = hideout.CapacityFor(player.Hideout);
-        var room = Math.Max(0, capacity.MaxWeapons - player.Weapons);
+        var room = Math.Max(0, TradeGoods.Capacity(capacity, good) - TradeGoods.Held(player, good));
         if (room == 0)
-            throw new GameRuleException("Your storage has no room for more weapons.");
+            throw new GameRuleException($"Your storage has no room for more {good}.");
 
         // Bounded by the room up front rather than made and spilled, so nobody pays for materials that
         // turn into nothing.
@@ -420,15 +442,17 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         player.Turns -= turnsUsed;
         player.Cash -= cost;
-        player.Weapons += made;
+        TradeGoods.Add(player, good, made);
 
-        var summary = $"Turned out {made:N0} weapon(s) over {turnsUsed} turn{Plural(turnsUsed)} for {cost:C0} in materials.";
+        var summary = $"Turned out {made:N0} {label} over {turnsUsed} turn{Plural(turnsUsed)} for {cost:C0} in materials.";
         if (made < wanted)
             summary += " Storage filled up before the run finished.";
 
         return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
         {
+            ["good"] = good,
             ["weaponsMade"] = made,
+            ["unitsMade"] = made,
             ["turnsSpent"] = turnsUsed,
             ["costPerWeapon"] = workshop.CostPerWeapon,
             ["totalCost"] = cost,

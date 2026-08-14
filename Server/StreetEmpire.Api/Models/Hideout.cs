@@ -33,6 +33,12 @@ public sealed class Hideout
     /// </summary>
     public int WorkshopLevel { get; set; }
 
+    /// <summary>Brews moonshine. Illegal to hold, so running one is a standing risk.</summary>
+    public int StillLevel { get; set; }
+
+    /// <summary>Mixes cut, which stretches coke rather than being worth anything itself.</summary>
+    public int MixLevel { get; set; }
+
     /// <summary>
     /// When passive lab output was last banked. Null means the labs have never run, and accrual starts
     /// from the moment the first one is built rather than from the hideout's creation.

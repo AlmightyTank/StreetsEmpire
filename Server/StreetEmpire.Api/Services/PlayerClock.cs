@@ -13,7 +13,7 @@ namespace StreetEmpire.Api.Services;
 /// Wall-clock earnings have to happen wherever a player is loaded, not only on the dashboard, or the
 /// same hour pays out twice depending on which page they opened first.
 /// </summary>
-public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb)
+public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random)
 {
     /// <summary>
     /// Brings a player up to date. The caller saves when <see cref="PlayerTick.Changed"/> is set, and
@@ -40,8 +40,20 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
             .Where(x => x.HolderId == player.Id)
             .Select(x => x.Type)
             .ToListAsync(ct);
+        // Holding contraband is a standing risk, rolled over the same hours the labs ran for. Done
+        // here rather than on an action so it costs a player who stockpiles it whether or not they are
+        // at the screen, which is the whole point of it being illegal to hold.
+        var beforeBust = Snapshot(player);
+        var bust = hideouts.RollMoonshineBust(player, labs.Hours, random);
+        if (db is not null && bust.Happened)
+            AddLog(db, player, beforeBust, "BUST", 0,
+                bust.Fine > 0
+                    ? $"The law found the still. They took {bust.Seized:N0} moonshine and fined you {bust.Fine:C0}."
+                    : $"The law found the still and took {bust.Seized:N0} moonshine.",
+                nowUtc);
+
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved, built, labs);
+        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened, built, labs);
     }
 
     public int SecondsUntilNextTick(Player player, DateTime nowUtc)

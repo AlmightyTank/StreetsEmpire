@@ -197,6 +197,22 @@ public sealed class HideoutOptions
     public List<LabLevelOptions> WeedLab { get; set; } = [];
     public List<LabLevelOptions> CokeLab { get; set; } = [];
     public List<WorkshopLevelOptions> Workshop { get; set; } = [];
+    public List<WorkshopLevelOptions> Still { get; set; } = [];
+    public List<WorkshopLevelOptions> Mix { get; set; } = [];
+
+    /// <summary>
+    /// Moonshine is contraband, so holding it is a standing risk rather than a one-off roll. Checked
+    /// per hour on the same clock the labs run on, which means it costs a player who stockpiles it and
+    /// costs nothing at all to one who brews and sells.
+    /// </summary>
+    public double MoonshineBustChancePerHour { get; set; } = 0.04;
+
+    /// <summary>Below this the still is too small to be worth a raid.</summary>
+    public int MoonshineBustFloor { get; set; } = 10;
+
+    /// <summary>Share of the stash taken when it happens, and the fine as a multiple of what was lost.</summary>
+    public double MoonshineSeizedPercent { get; set; } = 0.5;
+    public double MoonshineFinePerUnit { get; set; } = 40;
 
     /// <summary>
     /// How much passive lab output can pile up while a player is away. Past this the labs sit idle, so
@@ -223,15 +239,15 @@ public sealed class HideoutOptions
             Storage =
             [
                 // Level 1 supplies a fifth of a full-length action at the crew caps: 4 turns of both.
-                new StorageLevelOptions { Level = 1, Condoms = 17, Beer = 10, Weapons = 5, Weed = 25, Coke = 10 },
+                new StorageLevelOptions { Level = 1, Condoms = 17, Beer = 10, Weapons = 5, Weed = 25, Coke = 10, Moonshine = 10, Cut = 10 },
                 // Level 2 supplies exactly half a full-length action: 10 turns of both.
-                new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, UpgradeCost = 15_000 },
+                new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, UpgradeCost = 15_000 },
                 // Level 3 holds exactly what a full-length action consumes: 84 condoms for 50 hoes at
                 // 12 turns each, 50 beer for 25 thugs at 10. It drains the room dry each time.
-                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, UpgradeCost = 50_000 },
-                new StorageLevelOptions { Level = 4, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, UpgradeCost = 150_000 },
-                new StorageLevelOptions { Level = 5, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, UpgradeCost = 400_000 },
-                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, UpgradeCost = 1_000_000 }
+                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, UpgradeCost = 50_000 },
+                new StorageLevelOptions { Level = 4, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, UpgradeCost = 150_000 },
+                new StorageLevelOptions { Level = 5, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, UpgradeCost = 400_000 },
+                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, UpgradeCost = 1_000_000 }
             ];
 
         if (Safe.Count == 0)
@@ -265,6 +281,21 @@ public sealed class HideoutOptions
                 new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 1, CostPerWeapon = 300, UpgradeCost = 60_000 },
                 new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 2, CostPerWeapon = 270, UpgradeCost = 180_000 },
                 new WorkshopLevelOptions { Level = 3, MinTier = 3, WeaponsPerTurn = 3, CostPerWeapon = 240, UpgradeCost = 500_000 }
+            ];
+
+        // Moonshine undercuts the shop's beer, which is the only reason to run the risk of holding it.
+        if (Still.Count == 0)
+            Still =
+            [
+                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 4, CostPerWeapon = 6, UpgradeCost = 25_000 },
+                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 7, CostPerWeapon = 5, UpgradeCost = 80_000 }
+            ];
+
+        if (Mix.Count == 0)
+            Mix =
+            [
+                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 3, CostPerWeapon = 20, UpgradeCost = 40_000 },
+                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 5, CostPerWeapon = 18, UpgradeCost = 120_000 }
             ];
 
         if (CokeLab.Count == 0)
@@ -578,6 +609,8 @@ public sealed class StorageLevelOptions
     public int Weapons { get; set; }
     public int Weed { get; set; }
     public int Coke { get; set; }
+    public int Moonshine { get; set; }
+    public int Cut { get; set; }
     public long UpgradeCost { get; set; }
 }
 

@@ -114,7 +114,12 @@ combat something you can lose as well as win.
 - The AI tab owns the rivals: seeding, running a batch by hand, the automatic loop, and a roster
   showing each rival's personality, net worth, and idle time. Rivals can be paused individually, which
   keeps them in the world as a fixed target while everyone else moves, or told to act immediately,
-  which ignores the cooldown that paces the loop. Automatic AI is saved rather than held in
+  which ignores the cooldown that paces the loop.
+- A rival can also be directed: pick the action yourself rather than letting its brain choose. Work the
+  streets, produce, buy, sell, hire, fire, bank, recover morale, upgrade a room, or attack a named
+  target including yourself, which is the quickest way to put a fight in front of you. Every action
+  runs through the same services a player's would, so the rules still apply and a refusal is the game
+  refusing rather than a special admin path that behaves differently. Automatic AI is saved rather than held in
   memory, so it survives a restart, and its tick and rounds are editable without one.
 
 ### Combat refinement

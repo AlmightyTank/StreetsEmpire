@@ -13,7 +13,9 @@
   being the constraint.
 - A curated world news feed with headlines for who leads, the biggest take, the best score, and new
   arrivals.
-- Individual AI rivals can be paused or told to act immediately.
+- Individual AI rivals can be paused, told to act immediately, or directed through a chosen action:
+  street work, production, trade, crew, banking, morale, hideout upgrades, or an attack on a named
+  target. Directed actions go through the same services a player's do, so the rules still apply.
 - The alert bell carries non-combat notices as well as raids: passive lab output and a building
   finishing, which are things done to a player rather than by them.
 - The admin panel is split into tabs, with the catch-all Admin Control Center dissolved into them and

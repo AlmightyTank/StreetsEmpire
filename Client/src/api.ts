@@ -704,6 +704,22 @@ export type AdminMission = {
   nextEventAtUtc?: string | null
   isOverdue: boolean
 }
+// Every field is optional because each action needs a different few.
+export type BotDirective = {
+  action: string
+  turns?: number
+  product?: string
+  item?: string
+  role?: string
+  quantity?: number
+  amount?: number
+  strategy?: string
+  room?: string
+  defenderId?: string
+  thugs?: number
+  weapons?: number
+}
+
 export type AdminBotHealth = {
   playerId: string
   name: string
@@ -737,6 +753,8 @@ export const opsApi = {
     request<ActionResult>(`/api/admin/bots/${playerId}/pause`, { method: 'PUT', body: JSON.stringify({ paused }) }),
   actNow: (playerId: string) =>
     request<ActionResult>(`/api/admin/bots/${playerId}/act`, { method: 'POST' }),
+  directBot: (playerId: string, body: BotDirective) =>
+    request<ActionResult>(`/api/admin/bots/${playerId}/do`, { method: 'POST', body: JSON.stringify(body) }),
   forceResolve: (missionId: number) =>
     request<ActionResult>(`/api/admin/missions/${missionId}/force-resolve`, { method: 'POST' }),
   liveOps: () => request<LiveOps>('/api/game/live-ops'),

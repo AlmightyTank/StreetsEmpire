@@ -79,6 +79,71 @@ public sealed class BotSimulationService(
     }
 
     /// <summary>
+    /// Puts a rival through an action the admin chose instead of one its brain chose.
+    ///
+    /// Every action goes through the same service a real player's would, so the rules still apply and a
+    /// refusal is a real refusal rather than a special admin path that behaves differently from the
+    /// game. That is the whole point: it is for testing what the game does, so it has to be the game
+    /// doing it. The cooldown is skipped, since this is an explicit instruction.
+    /// </summary>
+    public async Task<ActionResultResponse> DirectAsync(Player bot, AdminBotActionRequest request, DateTime nowUtc, CancellationToken ct)
+    {
+        var action = request.Action?.Trim().ToLowerInvariant() ?? string.Empty;
+        clock.Advance(bot, nowUtc);
+        var before = Snapshot(bot);
+
+        var (logAction, turnsSpent, result) = action switch
+        {
+            "street" => ("STREET", Turns(request), economy.Scout(bot, Turns(request), autoBuySupplies: true)),
+            "produce" => ("PRODUCTION", Turns(request), economy.Produce(bot, request.Product, Turns(request))),
+            "sell" => ("SALE", 0, economy.SellProduct(bot, request.Product, Quantity(request))),
+            "buy" => ("STORE", 0, economy.BuyStoreItem(bot, request.Item, Quantity(request))),
+            "hire" => ("CREW", 0, economy.HireCrew(bot, request.Role, Quantity(request))),
+            "fire" => ("CREW", 0, economy.FireCrew(bot, request.Role, Quantity(request))),
+            "deposit" => ("BANK", 0, economy.Deposit(bot, request.Amount ?? 0)),
+            "withdraw" => ("BANK", 0, economy.Withdraw(bot, request.Amount ?? 0)),
+            "recover" => ("HIDEOUT", 0, economy.RecoverCrewMorale(bot, request.Strategy)),
+            "upgrade" => ("HIDEOUT", 0, hideouts.Upgrade(bot, request.Room, nowUtc)),
+            "attack" => ("ATTACK", 0, await AttackAsync(bot, request, nowUtc, ct)),
+            _ => throw new GameRuleException(
+                "Action must be street, produce, sell, buy, hire, fire, deposit, withdraw, recover, upgrade, or attack.")
+        };
+
+        // Marked as directed rather than "AI:", so the activity trail does not claim the brain chose it.
+        AddLog(bot, before, logAction, turnsSpent, nowUtc, $"AI (directed): {result.Summary}");
+        await db.SaveChangesAsync(ct);
+        return result;
+
+        static int Turns(AdminBotActionRequest request) => Math.Max(1, request.Turns ?? 1);
+        static int Quantity(AdminBotActionRequest request) => Math.Max(1, request.Quantity ?? 1);
+    }
+
+    private async Task<ActionResultResponse> AttackAsync(Player bot, AdminBotActionRequest request, DateTime nowUtc, CancellationToken ct)
+    {
+        if (request.DefenderId is not { } defenderId)
+            throw new GameRuleException("Pick who the rival should attack.");
+
+        var defender = await db.Players
+            .Include(x => x.Account)
+            .Include(x => x.Crew)
+            .SingleOrDefaultAsync(x => x.Id == defenderId, ct)
+            ?? throw new GameRuleException("That target does not exist.");
+
+        var thugs = Math.Max(1, request.Thugs ?? 1);
+        var mission = await missions.LaunchAsync(
+            bot,
+            defender,
+            new CombatAttackRequest(defenderId, thugs, Math.Min(thugs, Math.Max(0, request.Weapons ?? thugs))),
+            nowUtc,
+            ct);
+        return new ActionResultResponse(mission.Summary, bot.Turns, new Dictionary<string, object?>
+        {
+            ["missionId"] = mission.Id,
+            ["defender"] = defender.Name
+        });
+    }
+
+    /// <summary>
     /// Considers starting a fight. Separate from the synchronous action chain because launching a
     /// mission needs the database, and an attack replaces the round's other action rather than adding
     /// to it. Every rule still applies: LaunchAsync validates turns, lanes, crew, and the anti-farm

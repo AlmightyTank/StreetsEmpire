@@ -251,6 +251,41 @@ internal static class AdminOpsEndpoints
         }).RequireAuthorization();
 
 
+        // Drives one rival through a chosen action. Rule failures come back as messages rather than
+        // being swallowed the way the automatic loop swallows them, since a refusal is often the answer
+        // the admin was testing for.
+        app.MapPost("/api/admin/bots/{playerId:guid}/do", async (
+            Guid playerId,
+            AdminBotActionRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            BotSimulationService bots,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            var bot = await db.Players
+                .Include(x => x.Account)
+                .Include(x => x.Hideout)
+                .Include(x => x.Crew)
+                .SingleOrDefaultAsync(x => x.Id == playerId, ct);
+            if (bot is null) return Results.NotFound(new { error = "Player not found." });
+            if (!bot.Account.IsBot) return Results.BadRequest(new { error = "That player is not an AI rival." });
+
+            try
+            {
+                var result = await bots.DirectAsync(bot, request, DateTime.UtcNow, ct);
+                return Results.Ok(new ActionResultResponse($"{bot.Name}: {result.Summary}", admin.Turns, result.Breakdown));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = $"{bot.Name} could not: {ex.Message}" });
+            }
+        }).RequireAuthorization();
+
+
         app.MapPut("/api/admin/bots/automation", async (
             AdminBotAutomationRequest request,
             CurrentPlayerService current,

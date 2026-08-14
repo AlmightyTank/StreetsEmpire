@@ -13,6 +13,24 @@ public sealed record MoraleRecoveryRequest(string? Strategy);
 public sealed record AdminSeedBotsRequest(int Count);
 public sealed record AdminRunBotsRequest(int Rounds);
 public sealed record AdminBotPauseRequest(bool Paused);
+
+/// <summary>
+/// Drives one rival through a chosen action rather than letting its brain pick. Every field is
+/// optional because each action needs a different few; the endpoint validates what its action needs.
+/// </summary>
+public sealed record AdminBotActionRequest(
+    string? Action,
+    int? Turns = null,
+    string? Product = null,
+    string? Item = null,
+    string? Role = null,
+    int? Quantity = null,
+    long? Amount = null,
+    string? Strategy = null,
+    string? Room = null,
+    Guid? DefenderId = null,
+    int? Thugs = null,
+    int? Weapons = null);
 /// <summary>Null timings mean "leave as they are"; the reset flag restores the configured defaults.</summary>
 public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = null, int? RoundsPerTick = null, bool ResetTiming = false);
 /// <summary>

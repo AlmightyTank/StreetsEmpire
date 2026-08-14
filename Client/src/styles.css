@@ -1054,6 +1054,15 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .admin-table tr.stale td { color: #7f7770; }
 .admin-table tr.paused td { color: #6f6862; font-style: italic; }
 .admin-table-actions { display: flex; gap: 6px; }
+.bot-directive {
+  margin-top: 14px;
+  border: 1px solid #3b4442;
+  background: #0d1011;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.bot-directive .admin-action-row { margin-top: 10px; }
+.bot-directive select { width: 100%; }
 .admin-action-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 .admin-action-row label { width: 132px; font-size: .74rem; }
 .audit-list { display: grid; gap: 6px; }

@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -2001,6 +2001,105 @@ function ProductTradeCard({ name, owned, price, quantity, canProduce, disabled, 
  * appsettings, so tuning it meant a restart, and the on/off switch lived only in memory so a restart
  * silently reverted it.
  */
+/**
+ * Tells one rival exactly what to do next, so a scenario can be set up rather than waited for.
+ * Everything runs through the same services a real player's action does, so a refusal here is a real
+ * game rule refusing, which is often the thing being tested.
+ */
+function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
+  bot: AdminBotHealth
+  targets: AdminBotHealth[]
+  selfId: string
+  selfName: string
+  busy: boolean
+  onRun: (directive: BotDirective) => void
+}) {
+  const [action, setAction] = useState('street')
+  const [turns, setTurns] = useState(10)
+  const [quantity, setQuantity] = useState(10)
+  const [amount, setAmount] = useState(10000)
+  const [product, setProduct] = useState('weed')
+  const [item, setItem] = useState('condoms')
+  const [role, setRole] = useState('hoes')
+  const [strategy, setStrategy] = useState('rest')
+  const [room, setRoom] = useState('storage')
+  const [defenderId, setDefenderId] = useState(selfId)
+
+  const directive = (): BotDirective => {
+    switch (action) {
+      case 'street': return { action, turns }
+      case 'produce': return { action, product, turns }
+      case 'sell': return { action, product, quantity }
+      case 'buy': return { action, item, quantity }
+      case 'hire': case 'fire': return { action, role, quantity }
+      case 'deposit': case 'withdraw': return { action, amount }
+      case 'recover': return { action, strategy }
+      case 'upgrade': return { action, room }
+      case 'attack': return { action, defenderId, thugs: quantity, weapons: quantity }
+      default: return { action }
+    }
+  }
+
+  return <div className="bot-directive">
+    <div className="admin-subtitle">
+      <strong>Direct {bot.name}</strong>
+      <span>Runs through the real rules, so a refusal is the game refusing</span>
+    </div>
+    <div className="admin-action-row">
+      <label>Action<select value={action} onChange={e => setAction(e.target.value)}>
+        <option value="street">Work the streets</option>
+        <option value="produce">Produce</option>
+        <option value="sell">Sell product</option>
+        <option value="buy">Buy supplies</option>
+        <option value="hire">Hire crew</option>
+        <option value="fire">Fire crew</option>
+        <option value="deposit">Deposit</option>
+        <option value="withdraw">Withdraw</option>
+        <option value="recover">Recover morale</option>
+        <option value="upgrade">Upgrade hideout</option>
+        <option value="attack">Attack someone</option>
+      </select></label>
+
+      {(action === 'street' || action === 'produce') &&
+        <label>Turns<input type="number" min={1} max={20} value={turns} onChange={e => setTurns(Number(e.target.value))} /></label>}
+      {(action === 'produce' || action === 'sell') &&
+        <label>Product<select value={product} onChange={e => setProduct(e.target.value)}>
+          <option value="weed">Weed</option><option value="coke">Coke</option>
+        </select></label>}
+      {action === 'buy' &&
+        <label>Item<select value={item} onChange={e => setItem(e.target.value)}>
+          <option value="condoms">Condoms</option><option value="beer">Beer</option><option value="weapons">Weapons</option>
+        </select></label>}
+      {(action === 'hire' || action === 'fire') &&
+        <label>Role<select value={role} onChange={e => setRole(e.target.value)}>
+          <option value="pimps">Pimps</option><option value="hoes">Hoes</option><option value="thugs">Thugs</option>
+        </select></label>}
+      {(action === 'sell' || action === 'buy' || action === 'hire' || action === 'fire') &&
+        <label>Quantity<input type="number" min={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>}
+      {(action === 'deposit' || action === 'withdraw') &&
+        <label>Amount<input type="number" min={1} step={1000} value={amount} onChange={e => setAmount(Number(e.target.value))} /></label>}
+      {action === 'recover' &&
+        <label>Strategy<select value={strategy} onChange={e => setStrategy(e.target.value)}>
+          <option value="rest">Rest</option><option value="party">Party</option>
+        </select></label>}
+      {action === 'upgrade' &&
+        <label>Room<select value={room} onChange={e => setRoom(e.target.value)}>
+          <option value="tier">Building tier</option><option value="storage">Storage</option>
+          <option value="safe">Safe</option><option value="weedlab">Weed lab</option><option value="cokelab">Coke lab</option>
+        </select></label>}
+      {action === 'attack' && <>
+        <label>Target<select value={defenderId} onChange={e => setDefenderId(e.target.value)}>
+          <option value={selfId}>{selfName} (you)</option>
+          {targets.map(t => <option key={t.playerId} value={t.playerId}>{t.name}</option>)}
+        </select></label>
+        <label>Thugs<input type="number" min={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>
+      </>}
+
+      <button className="primary compact" disabled={busy} onClick={() => onRun(directive())}>Do it</button>
+    </div>
+  </div>
+}
+
 function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } }) {
   const { overview, busy, seedBots, runBots, setBotAutomation } = ctx
   const auto = overview.botAutomation
@@ -2011,6 +2110,7 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
   const [roster, setRoster] = useState<AdminBotHealth[]>([])
   const [rosterError, setRosterError] = useState('')
   const [working, setWorking] = useState<string | null>(null)
+  const [directing, setDirecting] = useState<string | null>(null)
 
   // Re-reads the roster rather than patching it locally, so an action's real effect on net worth and
   // idle time shows up instead of just the flag that was toggled.
@@ -2137,10 +2237,25 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
               >
                 Act now
               </button>
+              <button
+                className="secondary compact"
+                disabled={working === bot.playerId}
+                onClick={() => setDirecting(id => id === bot.playerId ? null : bot.playerId)}
+              >
+                {directing === bot.playerId ? 'Close' : 'Direct'}
+              </button>
             </td>
           </tr>)}
         </tbody>
       </table></div>}
+      {directing && <BotDirectivePanel
+        bot={roster.find(x => x.playerId === directing)!}
+        targets={roster.filter(x => x.playerId !== directing)}
+        selfId={ctx.dashboard.playerId}
+        selfName={ctx.dashboard.name}
+        busy={working === directing}
+        onRun={directive => void rivalAction(directing, () => opsApi.directBot(directing, directive))}
+      />}
     </section>
   </>
 }

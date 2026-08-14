@@ -28,6 +28,7 @@ builder.Services.AddOptions<GameOptions>().PostConfigure<GameOptionOverrides>((o
 {
     overrides.Apply(options);
     options.Hideout.ApplyDefaultsWhereEmpty();
+    options.Territory.ApplyDefaultsWhereEmpty();
 });
 builder.Services.Configure<BotAutomationOptions>(builder.Configuration.GetSection("Bots"));
 builder.Services.AddDbContext<GameDbContext>(options =>
@@ -38,6 +39,7 @@ builder.Services.AddScoped<TurnService>();
 builder.Services.AddScoped<HideoutService>();
 builder.Services.AddScoped<PlayerClock>();
 builder.Services.AddScoped<StandingsRecorder>();
+builder.Services.AddScoped<TerritoryService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
@@ -196,6 +198,7 @@ app.MapAuthEndpoints();
 app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();
+app.MapTerritoryEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();
 

@@ -45,7 +45,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
-            if (clock.Advance(player, now, db).Changed)
+            if ((await clock.AdvanceAsync(player, now, db, ct)).Changed)
                 await db.SaveChangesAsync(ct);
             // Sampled from the busiest read in the game, behind a timer, so standings history builds up
             // as a side effect of anyone playing rather than needing a background service of its own.
@@ -149,6 +149,7 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            TerritoryService territories,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
         {
@@ -161,11 +162,11 @@ internal static class GameEndpoints
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
 
-            clock.Advance(player, now, db);
+            await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies);
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct));
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -184,6 +185,7 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            TerritoryService territories,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
         {
@@ -196,11 +198,11 @@ internal static class GameEndpoints
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
 
-            clock.Advance(player, now, db);
+            await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies);
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct));
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -218,16 +220,17 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            TerritoryService territories,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
-            clock.Advance(player, DateTime.UtcNow, db);
+            await clock.AdvanceAsync(player, DateTime.UtcNow, db, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.Produce(player, request.Product, request.Turns);
+                var result = economy.Produce(player, request.Product, request.Turns, await territories.EffectsForAsync(player.Id, ct));
                 AddLog(db, player, before, "PRODUCTION", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -424,13 +427,14 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            TerritoryService territories,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
             var now = DateTime.UtcNow;
-            clock.Advance(player, now, db);
+            await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
@@ -462,7 +466,7 @@ internal static class GameEndpoints
 
             // Moving up a tier is paid for in turns, so bring the accrued ones in before charging.
             var now = DateTime.UtcNow;
-            clock.Advance(player, now, db);
+            await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {

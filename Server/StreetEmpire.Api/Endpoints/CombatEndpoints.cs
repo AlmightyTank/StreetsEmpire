@@ -188,7 +188,7 @@ internal static class CombatEndpoints
             // settled by this very request, and the queries below go to the database: without the save
             // they would miss rows sitting unsaved in the change tracker and the player would be told
             // about their own lab run one visit late.
-            if (clock.Advance(player, now, db).Changed)
+            if ((await clock.AdvanceAsync(player, now, db, ct)).Changed)
                 await db.SaveChangesAsync(ct);
 
             // A player who has never had a digest has no "away" to report. Start their watermark and
@@ -380,7 +380,7 @@ internal static class CombatEndpoints
                 .SingleOrDefaultAsync(x => x.Id == request.DefenderId, ct);
             if (defender is null) return Results.NotFound(new { error = "Target not found." });
 
-            clock.Advance(attacker, now, db);
+            await clock.AdvanceAsync(attacker, now, db, ct);
             var before = Snapshot(attacker);
             try
             {

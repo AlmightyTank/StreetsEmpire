@@ -163,7 +163,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             morale.HqPartyThugMoraleGain);
     }
 
-    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false)
+    /// <param name="territory">
+    /// What the player's ground adds to the take. Passed in rather than looked up, because this runs
+    /// synchronously inside an action that already has the player loaded.
+    /// </param>
+    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null)
     {
         ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
 
@@ -210,7 +214,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         // Hustlers at home lift the take. Street work is blocked while a mission is out, so nobody
         // is away commanding at this point.
-        var streetBonusPercent = pimps.StreetBonusPercent(player, []);
+        var streetBonusPercent = pimps.StreetBonusPercent(player, []) + (territory?.StreetIncomePercent ?? 0);
         var grossBeforeBonus = gross;
         gross += (long)Math.Round(gross * (streetBonusPercent / 100.0), MidpointRounding.AwayFromZero);
 
@@ -269,8 +273,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             summary += $" Recruited {recruitedPimps} pimp(s), {recruitedHoes} hoe(s), and {recruitedThugs} thug(s).";
         if (recruitedPimpNames.Count > 0)
             summary += $" {string.Join(" and ", recruitedPimpNames)} signed on.";
+        var groundBonusPercent = territory?.StreetIncomePercent ?? 0;
         if (streetBonusPercent > 0)
-            summary += $" Your hustlers added {streetBonusPercent}% to the take.";
+            summary += groundBonusPercent > 0 && streetBonusPercent > groundBonusPercent
+                ? $" Your hustlers and your corners added {streetBonusPercent}% to the take."
+                : groundBonusPercent == streetBonusPercent
+                    ? $" Your corners added {streetBonusPercent}% to the take."
+                    : $" Your hustlers added {streetBonusPercent}% to the take.";
         if (recruitsTurnedAway > 0)
             summary += $" {recruitsTurnedAway} recruit(s) walked because your hideout is full.";
         if (condomsFound + beerFound + weedFound + cokeFound > 0)
@@ -329,7 +338,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         });
     }
 
-    public ActionResultResponse Produce(Player player, string? product, int turns)
+    public ActionResultResponse Produce(Player player, string? product, int turns, TerritoryEffects? territory = null)
     {
         ValidateTurns(player, turns, _options.MaxActionTurns, "Production");
         var key = NormalizeProduct(product);
@@ -341,7 +350,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             baseUnits += random.NextInclusive(production.UnitsMin, production.UnitsMax);
 
         // The lab is turn-fed: it raises what each production turn yields rather than running itself.
-        var labBonusPercent = hideout.ProductionYieldBonusPercent(player.Hideout, key);
+        var labBonusPercent = hideout.ProductionYieldBonusPercent(player.Hideout, key) + (territory?.ProductionYieldPercent ?? 0);
         var produced = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero);
 
         var totalCost = (long)production.CostPerTurn * turns;

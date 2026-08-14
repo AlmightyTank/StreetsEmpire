@@ -2,13 +2,13 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, TerritoryBoard, WorldNews, WorldNewsEntry, CatchUp } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'market' | 'recon' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'territory' | 'market' | 'recon' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -31,6 +31,7 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
   crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
   hideout: { label: 'Hideout', short: 'HO', kicker: 'Capacity and upgrades' },
+  territory: { label: 'Territory', short: 'TR', kicker: 'Ground you hold' },
   market: { label: 'Market', short: 'MK', kicker: 'Store, product, bank' },
   recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control center' },
@@ -399,6 +400,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
     case 'street': return <StreetPage {...ctx} />
     case 'crew': return <CrewPage {...ctx} />
     case 'hideout': return <HideoutPage {...ctx} />
+    case 'territory': return <TerritoryPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
     case 'recon': return <ReconPage {...ctx} />
     case 'admin': return ctx.adminOverview
@@ -756,6 +758,95 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
     <button className="primary" disabled={busy || !upgrade || locked || funds < upgrade.cost} onClick={onUpgrade}>
       {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
     </button>
+  </div>
+}
+
+/**
+ * The map. Ground is held with thugs who count as away from home, so what this page really shows is
+ * how much of your crew is standing somewhere else.
+ */
+function TerritoryPage(ctx: PageContext) {
+  const { dashboard, busy, act } = ctx
+  const [board, setBoard] = useState<TerritoryBoard | null>(null)
+  const [error, setError] = useState('')
+  const [thugs, setThugs] = useState<Record<number, number>>({})
+
+  const load = async () => {
+    try { setBoard(await api.territories()); setError('') }
+    catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [dashboard.thugs, dashboard.turns])
+
+  const run = async (fn: () => Promise<unknown>) => {
+    await act(fn)
+    await load()
+  }
+
+  if (!board) return <div className="page-grid one-column"><section className="panel wide-panel">
+    <div className="panel-title"><h2>Territory</h2><span>Loading</span></div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+  </section></div>
+
+  const effects = board.effects
+  const anyEffect = effects.streetIncomePercent || effects.productionYieldPercent || effects.moraleRecoveryPercent || effects.lootPercent
+  const force = (id: number) => thugs[id] ?? board.minimumGarrison
+
+  return <div className="page-grid one-column">
+    <section className="panel wide-panel">
+      <div className="panel-title">
+        <h2>Ground</h2>
+        <span>{board.held} of {board.holdingCap} held</span>
+      </div>
+      <p>
+        Holding ground takes {board.minimumGarrison} thugs standing on it, and they are not at home while they do.
+        You have <strong>{number.format(board.freeThugs)}</strong> free of {number.format(dashboard.thugs)}.
+        Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
+      </p>
+      {anyEffect
+        ? <div className="rule-strip">
+          {effects.streetIncomePercent > 0 && <span>+{effects.streetIncomePercent}% street income</span>}
+          {effects.productionYieldPercent > 0 && <span>+{effects.productionYieldPercent}% production</span>}
+          {effects.moraleRecoveryPercent > 0 && <span>+{effects.moraleRecoveryPercent}% morale recovery</span>}
+          {effects.lootPercent > 0 && <span>+{effects.lootPercent}% haul</span>}
+        </div>
+        : <p className="hint">You hold nothing yet, so none of your work is being amplified.</p>}
+      {error && <div className="error banner"><span>{error}</span></div>}
+    </section>
+
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>The Map</h2><span>{board.territories.length} pieces</span></div>
+      <div className="territory-grid">
+        {board.territories.map(t => <div className={`territory-card ${t.heldByYou ? 'mine' : t.holderId ? 'taken' : 'open'}`} key={t.id}>
+          <div className="territory-head">
+            <strong>{t.name}</strong>
+            <em>{t.typeLabel}</em>
+          </div>
+          <span className="territory-effect">{t.effect}</span>
+          <span className="territory-holder">
+            {t.heldByYou ? `Yours, ${number.format(t.garrisonThugs)} thug(s) on it`
+              : t.holderId ? `${t.holderName} holds it with ${number.format(t.garrisonThugs)} thug(s)`
+                : 'Nobody holds this'}
+            {' / '}{t.city}
+          </span>
+          {t.isProtected && t.protectedUntilUtc && <small>Settled for {timeUntil(t.protectedUntilUtc)}</small>}
+          {t.blockedReason && <small>{t.blockedReason}</small>}
+          <div className="territory-actions">
+            <label>Thugs<input
+              type="number"
+              min={t.heldByYou ? 0 : board.minimumGarrison}
+              value={force(t.id)}
+              onChange={e => setThugs(v => ({ ...v, [t.id]: Number(e.target.value) }))}
+            /></label>
+            {t.heldByYou && <>
+              <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, force(t.id)))}>Set garrison</button>
+              <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0))}>Give up</button>
+            </>}
+            {t.canClaim && <button className="primary compact" disabled={busy} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id)))}>Claim</button>}
+            {t.canRaid && <button className="primary compact" disabled={busy} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
+          </div>
+        </div>)}
+      </div>
+    </section>
   </div>
 }
 

@@ -40,6 +40,7 @@ public sealed class GameOptions
     public PimpOptions Pimps { get; set; } = new();
     public AntiFarmOptions AntiFarm { get; set; } = new();
     public WorldNewsOptions WorldNews { get; set; } = new();
+    public TerritoryOptions Territory { get; set; } = new();
 }
 
 /// <summary>
@@ -256,6 +257,104 @@ public sealed class HideoutOptions
                 new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 7, UpgradeCost = 1_200_000 }
             ];
     }
+}
+
+/// <summary>
+/// What ground is worth and what it costs to sit on. The map itself starts empty for the same reason
+/// the hideout tables do: the configuration binder appends to a pre-populated list rather than
+/// replacing it, so shipping defaults in the initialiser would merge them with appsettings.
+/// </summary>
+public sealed class TerritoryOptions
+{
+    /// <summary>Thugs needed to hold anything at all. Below this the ground is given up.</summary>
+    public int MinimumGarrison { get; set; } = 5;
+
+    /// <summary>Turns spent claiming ground nobody holds. Taking it off somebody costs a mission.</summary>
+    public int ClaimTurnCost { get; set; } = 5;
+
+    /// <summary>
+    /// How long ground is safe after changing hands. Anti-farm's wealth rules do not apply here,
+    /// because taking a corner is not robbing anyone, so this is the only thing stopping two players
+    /// trading the same ground every time their lanes come free.
+    /// </summary>
+    public int HoldCooldownMinutes { get; set; } = 60;
+
+    /// <summary>How many pieces of ground each hideout tier can hold at once.</summary>
+    public List<TerritoryTierCapOptions> TierCaps { get; set; } = [];
+
+    public List<TerritoryTypeOptions> Types { get; set; } = [];
+    public List<TerritorySeedOptions> Map { get; set; } = [];
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (TierCaps.Count == 0)
+            TierCaps =
+            [
+                new TerritoryTierCapOptions { Tier = 1, MaxTerritories = 1 },
+                new TerritoryTierCapOptions { Tier = 2, MaxTerritories = 2 },
+                new TerritoryTierCapOptions { Tier = 3, MaxTerritories = 3 },
+                new TerritoryTierCapOptions { Tier = 4, MaxTerritories = 4 }
+            ];
+
+        // Every effect is a percentage on an activity the player still spends turns on. Nothing here
+        // pays out on its own: the labs already fill that role and needed two separate bounds to stay
+        // sane, and a second idle earner would be one more thing to hold rather than a reason to play.
+        if (Types.Count == 0)
+            Types =
+            [
+                new TerritoryTypeOptions { Type = "corner", Label = "Corner", StreetIncomePercent = 15 },
+                new TerritoryTypeOptions { Type = "dock", Label = "Docks", ProductionYieldPercent = 20 },
+                new TerritoryTypeOptions { Type = "club", Label = "Club", MoraleRecoveryPercent = 50 },
+                new TerritoryTypeOptions { Type = "stash", Label = "Stash House", LootPercent = 20 }
+            ];
+
+        // Ten pieces against fourteen players wanting one to four each, so the map is contested rather
+        // than shared out. Cities name and group them; they do not gate who may attack what, or the six
+        // players who are all in New York would have nothing to fight over.
+        if (Map.Count == 0)
+            Map =
+            [
+                new TerritorySeedOptions { Name = "Hunts Point", City = "New York", Type = "corner" },
+                new TerritorySeedOptions { Name = "Red Hook Docks", City = "New York", Type = "dock" },
+                new TerritorySeedOptions { Name = "Eight Mile Strip", City = "Detroit", Type = "corner" },
+                new TerritorySeedOptions { Name = "Riverside Yard", City = "Detroit", Type = "stash" },
+                new TerritorySeedOptions { Name = "Southside Blocks", City = "Chicago", Type = "corner" },
+                new TerritorySeedOptions { Name = "Calumet Docks", City = "Chicago", Type = "dock" },
+                new TerritorySeedOptions { Name = "Sunset Room", City = "Los Angeles", Type = "club" },
+                new TerritorySeedOptions { Name = "Harbor Wharf", City = "Los Angeles", Type = "dock" },
+                new TerritorySeedOptions { Name = "Ocean Drive Room", City = "Miami", Type = "club" },
+                new TerritorySeedOptions { Name = "Port Stash", City = "Miami", Type = "stash" }
+            ];
+    }
+}
+
+public sealed class TerritoryTierCapOptions
+{
+    public int Tier { get; set; }
+    public int MaxTerritories { get; set; }
+}
+
+public sealed class TerritoryTypeOptions
+{
+    public string Type { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int StreetIncomePercent { get; set; }
+    public int ProductionYieldPercent { get; set; }
+    public int MoraleRecoveryPercent { get; set; }
+
+    /// <summary>
+    /// Extra haul from a won raid. Storage was the original plan here, but capacity is consulted in
+    /// seventeen places that all have to agree, and two authorities disagreeing about a cap is exactly
+    /// how the hideout bugs happened. Loot rides on the multiplier the mission already carries.
+    /// </summary>
+    public int LootPercent { get; set; }
+}
+
+public sealed class TerritorySeedOptions
+{
+    public string Name { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
 }
 
 public sealed class HideoutTierOptions

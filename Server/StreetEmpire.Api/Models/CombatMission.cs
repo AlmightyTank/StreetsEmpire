@@ -6,6 +6,13 @@ public sealed class CombatMission
     public Guid AttackerId { get; set; }
     public Player Attacker { get; set; } = null!;
     public Guid DefenderId { get; set; }
+
+    /// <summary>
+    /// Set when the raid is for ground rather than a house. The holder is still the defender, so this
+    /// does not make DefenderId nullable: unheld ground is claimed without a fight, never raided.
+    /// </summary>
+    public long? TerritoryId { get; set; }
+    public Territory? Territory { get; set; }
     public Player Defender { get; set; } = null!;
 
     public string Status { get; set; } = "Traveling";

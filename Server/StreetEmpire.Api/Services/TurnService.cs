@@ -7,7 +7,11 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
 {
     private readonly GameOptions _options = options.Value;
 
-    public bool Refresh(Player player, DateTime nowUtc)
+    /// <param name="moraleRecoveryPercent">
+    /// What the player's clubs add to passive recovery. A percentage on the existing rate rather than a
+    /// separate trickle, so there is still only one place morale recovers.
+    /// </param>
+    public bool Refresh(Player player, DateTime nowUtc, int moraleRecoveryPercent = 0)
     {
         var tick = TimeSpan.FromMinutes(_options.TurnTickMinutes);
         var elapsed = nowUtc - player.LastTurnUpdateUtc;
@@ -19,7 +23,9 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
             return false;
 
         var turnsToAdd = completedTicks * _options.TurnsPerTick;
-        var moraleRecovery = completedTicks * Math.Max(0, _options.Morale.PassiveRecoveryPerTick);
+        var moraleRecovery = completedTicks
+            * Math.Max(0, _options.Morale.PassiveRecoveryPerTick)
+            * (1 + Math.Max(0, moraleRecoveryPercent) / 100.0);
         var turnsBefore = player.Turns;
         var hoeBefore = player.HoeHappiness;
         var thugBefore = player.ThugHappiness;

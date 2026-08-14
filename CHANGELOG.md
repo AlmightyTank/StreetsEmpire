@@ -2,6 +2,22 @@
 
 ## 0.2.4 (in progress)
 
+### Added
+- Territory: ten pieces of ground held by garrisoning thugs, who count as away from home while they
+  hold it, capped per hideout tier.
+- Four ground types, each a percentage on an activity the player still spends turns on: Corner for
+  street income, Docks for production yield, Club for passive morale recovery, Stash House for raid
+  haul.
+- Empty ground is claimed with turns and a garrison; held ground is taken with a raid that uses an
+  attack lane and fights the garrison rather than the holder's house.
+- A Territory page showing the map, who holds what, and why a piece cannot be acted on.
+
+### Changed
+- Cities stop being decoration and name the ground, though they do not gate who may contest it.
+- Anti-farm's wealth rules and house protection do not apply to fights over ground, which carries its
+  own settling period after changing hands.
+- The player clock resolves morale recovery bonuses itself rather than asking every caller to pass
+  them, so recovery still happens in one place.
 ## 0.2.3
 
 ### Added

@@ -1054,6 +1054,28 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .admin-table tr.stale td { color: #7f7770; }
 .admin-table tr.paused td { color: #6f6862; font-style: italic; }
 .admin-table-actions { display: flex; gap: 6px; }
+.territory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; margin-top: 14px; }
+.territory-card {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+  border: 1px solid #2c302e;
+  border-left: 3px solid #4a5350;
+  background: #0d1011;
+  border-radius: 6px;
+  padding: 12px 13px;
+}
+.territory-card.mine { border-left-color: #4f8f6a; background: #0e1411; }
+.territory-card.taken { border-left-color: #b4534a; }
+.territory-card.open { border-left-color: #d9a441; }
+.territory-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.territory-head strong { color: #f4eee5; font-size: .9rem; }
+.territory-head em { font-style: normal; color: #8e877f; font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; }
+.territory-effect { color: #e8c07a; font-size: .8rem; }
+.territory-holder { color: #a89f96; font-size: .78rem; }
+.territory-card small { color: #7f7770; font-size: .73rem; }
+.territory-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; margin-top: 6px; }
+.territory-actions label { width: 78px; font-size: .72rem; }
 .bot-directive {
   margin-top: 14px;
   border: 1px solid #3b4442;

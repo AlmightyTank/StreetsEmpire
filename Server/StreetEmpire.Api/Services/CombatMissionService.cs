@@ -13,7 +13,8 @@ public sealed class CombatMissionService(
     HideoutService hideout,
     CombatSchedule schedule,
     PimpRoster pimps,
-    EconomyService economy)
+    EconomyService economy,
+    TerritoryService territories)
 {
     // Shared so the cancel path and the lane query cannot drift apart on the spelling.
     private const string CanceledOutcome = "Canceled";
@@ -23,7 +24,21 @@ public sealed class CombatMissionService(
 
     private readonly GameOptions _options = options.Value;
 
-    public async Task<CombatMission> LaunchAsync(Player attacker, Player defender, CombatAttackRequest request, DateTime nowUtc, CancellationToken cancellationToken)
+    public Task<CombatMission> LaunchAsync(Player attacker, Player defender, CombatAttackRequest request, DateTime nowUtc, CancellationToken cancellationToken)
+        => LaunchAsync(attacker, defender, request, null, nowUtc, cancellationToken);
+
+    /// <param name="ground">
+    /// Set for a raid on held ground rather than a house. The holder is still the defender and every
+    /// rule still applies except the wealth ratio: taking a corner is not robbing anyone, and gating it
+    /// by wealth would let a weak player park on good ground permanently.
+    /// </param>
+    public async Task<CombatMission> LaunchAsync(
+        Player attacker,
+        Player defender,
+        CombatAttackRequest request,
+        Territory? ground,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
     {
         var combat = _options.Combat;
         var activeMissions = await ActiveAttackMissions(attacker.Id)
@@ -31,15 +46,31 @@ public sealed class CombatMissionService(
         var committed = CombatCommitment.From(attacker, activeMissions, combat.MaxActiveAttackMissions);
         var laneReadyAt = await LaneReadyAtUtcAsync(attacker.Id, nowUtc, cancellationToken);
 
-        ValidateLaunch(attacker, defender, request, nowUtc, committed, combat, laneReadyAt);
+        ValidateLaunch(attacker, defender, request, ground, nowUtc, committed, combat, laneReadyAt);
 
-        // Anti-farm gate: a heavyweight cannot pick on a newcomer, and the very new cannot be touched.
-        var mismatch = AntiFarm.RejectReason(
-            economy.CalculateNetWorth(attacker),
-            economy.CalculateNetWorth(defender),
-            _options.AntiFarm);
-        if (mismatch is not null)
-            throw new GameRuleException(mismatch);
+        if (ground is not null)
+        {
+            if (ground.HolderId != defender.Id)
+                throw new GameRuleException($"{ground.Name} is not held by {defender.Name} any more.");
+            if (ground.HolderId == attacker.Id)
+                throw new GameRuleException("You already hold that ground.");
+            if (ground.ProtectedUntilUtc is { } groundSafeUntil && groundSafeUntil > nowUtc)
+            {
+                var minutes = Math.Max(1, (int)Math.Ceiling((groundSafeUntil - nowUtc).TotalMinutes));
+                throw new GameRuleException($"{ground.Name} has just changed hands. It is settled for another {minutes} minute(s).");
+            }
+        }
+        else
+        {
+            // Anti-farm gate: a heavyweight cannot pick on a newcomer, and the very new cannot be
+            // touched. Skipped for ground, which is contested rather than robbed.
+            var mismatch = AntiFarm.RejectReason(
+                economy.CalculateNetWorth(attacker),
+                economy.CalculateNetWorth(defender),
+                _options.AntiFarm);
+            if (mismatch is not null)
+                throw new GameRuleException(mismatch);
+        }
 
         // Caps a dogpile. Protection only exists once a mission finishes, so without this a crowd can
         // all launch at the same moment and every hit lands unshielded.
@@ -74,6 +105,8 @@ public sealed class CombatMissionService(
             Attacker = attacker,
             DefenderId = defender.Id,
             Defender = defender,
+            TerritoryId = ground?.Id,
+            Territory = ground,
             Status = "Traveling",
             Outcome = "Pending",
             Summary = summary,
@@ -118,6 +151,8 @@ public sealed class CombatMissionService(
             .Include(x => x.Defender).ThenInclude(x => x.Crew)
             .Include(x => x.CommanderPimp)
             .Include(x => x.Events)
+            // Tracked, not AsNoTracking: a won raid writes the new holder onto this row.
+            .Include(x => x.Territory)
             .Where(x => x.Status != "Complete")
             .OrderBy(x => x.ArrivesAtUtc)
             .ThenBy(x => x.Id)
@@ -310,7 +345,7 @@ public sealed class CombatMissionService(
         return LaneReadyAtUtc(launches, lanes, cooldown);
     }
 
-    private void ValidateLaunch(Player attacker, Player defender, CombatAttackRequest request, DateTime nowUtc, CombatCommitment committed, CombatOptions combat, DateTime? laneReadyAt)
+    private void ValidateLaunch(Player attacker, Player defender, CombatAttackRequest request, Territory? ground, DateTime nowUtc, CombatCommitment committed, CombatOptions combat, DateTime? laneReadyAt)
     {
         if (attacker.Id == defender.Id)
             throw new GameRuleException("You cannot attack yourself.");
@@ -330,10 +365,16 @@ public sealed class CombatMissionService(
             throw new GameRuleException("You do not have that many available thugs.");
         if (request.Weapons > committed.AvailableWeapons)
             throw new GameRuleException("You do not have that many available weapons.");
-        if (defender.CombatProtectionUntilUtc is { } protectionUntil && protectionUntil > nowUtc)
-            throw new GameRuleException($"{defender.Name} is under combat protection.");
-        if (defender.Pimps + defender.Hoes + defender.Thugs <= 0 && defender.Cash <= 0 && defender.Weed <= 0 && defender.Coke <= 0)
-            throw new GameRuleException($"{defender.Name} has nothing worth attacking right now.");
+        // House protection shields a player from being robbed. Ground is contested rather than robbed,
+        // so it neither blocks a raid for territory nor is granted by one: the ground carries its own
+        // settling period instead.
+        if (ground is null)
+        {
+            if (defender.CombatProtectionUntilUtc is { } protectionUntil && protectionUntil > nowUtc)
+                throw new GameRuleException($"{defender.Name} is under combat protection.");
+            if (defender.Pimps + defender.Hoes + defender.Thugs <= 0 && defender.Cash <= 0 && defender.Weed <= 0 && defender.Coke <= 0)
+                throw new GameRuleException($"{defender.Name} has nothing worth attacking right now.");
+        }
     }
 
     private void Arrive(CombatMission mission, DateTime nowUtc)
@@ -364,7 +405,14 @@ public sealed class CombatMissionService(
 
         mission.CurrentRound++;
         var attackerPower = AttackPower(mission.AssignedPimps, mission.RemainingAttackers, mission.RemainingWeapons, mission.AttackerMorale, mission.CommanderBonusPercent);
-        var defenderPower = DefensePower(defenderHomePimps, defenderHomeThugs, defenderHomeWeapons, mission.DefenderMorale, pimps.DefenceBonusPercent(mission.Defender, defenderAway));
+
+        // A raid for ground fights the garrison standing on it, not everyone back at the holder's
+        // house. Fighting the whole house would make ground effectively untakeable: the garrison is a
+        // handful of thugs and the house is the rest of the roster, so the defender would be stronger
+        // for having sent fewer people to hold it. No enforcer bonus either; that pimp is at home.
+        var defenderPower = mission.Territory is { } ground
+            ? DefensePower(0, ground.GarrisonThugs, ground.GarrisonThugs, mission.DefenderMorale)
+            : DefensePower(defenderHomePimps, defenderHomeThugs, defenderHomeWeapons, mission.DefenderMorale, pimps.DefenceBonusPercent(mission.Defender, defenderAway));
         var attackRoll = ApplyPowerVariance(attackerPower, combat.PowerRandomnessPercent);
         var defenseRoll = ApplyPowerVariance(defenderPower, combat.PowerRandomnessPercent);
         var difference = attackRoll - defenseRoll;
@@ -443,7 +491,11 @@ public sealed class CombatMissionService(
                 .CountAsync(x => x.DefenderId == mission.DefenderId
                                  && x.Outcome == "Victory"
                                  && x.CreatedAtUtc >= windowStart, cancellationToken);
-            mission.LootMultiplierPercent = (int)Math.Round(AntiFarm.LootMultiplier(priorVictories, _options.AntiFarm) * 100);
+            // A stash house lifts the haul. Folded into the multiplier the mission already carries, so
+            // there is still one number deciding what a raid is worth.
+            var stashPercent = (await territories.EffectsForAsync(mission.AttackerId, cancellationToken)).LootPercent;
+            mission.LootMultiplierPercent = (int)Math.Round(
+                AntiFarm.LootMultiplier(priorVictories, _options.AntiFarm) * 100 * (1 + stashPercent / 100.0));
             mission.DefenderRecentHits = recentHits;
 
             var lootOverflow = ApplyLoot(mission);
@@ -470,6 +522,29 @@ public sealed class CombatMissionService(
         }
     }
 
+    /// <summary>
+    /// Hands ground over on a win, or leaves the garrison bloodied on a loss.
+    ///
+    /// Settled when the raid comes home rather than the moment the last round is won, so a player
+    /// cannot see ground change hands and then have the crew that took it walk away: the surviving
+    /// attackers become the garrison.
+    /// </summary>
+    private void SettleTerritory(CombatMission mission, DateTime nowUtc)
+    {
+        if (mission.Territory is not { } ground)
+            return;
+
+        if (mission.Outcome == "Victory")
+        {
+            territories.Transfer(ground, mission.AttackerId, mission.RemainingAttackers, nowUtc);
+            mission.Summary = $"{mission.Attacker.Name} took {ground.Name}.";
+            return;
+        }
+
+        territories.Bloody(ground, mission.DefenderThugsLost);
+        mission.Summary = $"{ground.Name} held against {mission.Attacker.Name}.";
+    }
+
     private void BeginReturn(CombatMission mission, string outcome, string summary, DateTime nowUtc)
     {
         var combat = _options.Combat;
@@ -479,6 +554,22 @@ public sealed class CombatMissionService(
         mission.Summary = summary;
         mission.NextRoundAtUtc = null;
         mission.ReturnsAtUtc = nowUtc.AddSeconds(returnSeconds);
+        if (mission.TerritoryId is not null)
+        {
+            // Winning or losing a fight over a corner says nothing about whether the holder's house is
+            // being farmed, so it grants no shield there.
+            mission.Events.Add(new CombatMissionEvent
+            {
+                Round = mission.CurrentRound,
+                Kind = outcome,
+                Summary = summary,
+                AttackerMorale = Math.Round(mission.AttackerMorale, 2),
+                DefenderMorale = Math.Round(mission.DefenderMorale, 2),
+                CreatedAtUtc = nowUtc
+            });
+            return;
+        }
+
         mission.Defender.LastAttackedAtUtc = nowUtc;
         var protectionMinutes = AntiFarm.ProtectionMinutes(
             Math.Max(0, mission.DefenderRecentHits - 1),
@@ -512,6 +603,8 @@ public sealed class CombatMissionService(
         mission.Summary = commanderFate.Happened
             ? $"{mission.CommanderName} did not come back from {mission.Defender.Name}: {mission.Outcome}."
             : $"{mission.CommanderName ?? "The crew"} returned from {mission.Defender.Name}: {mission.Outcome}.";
+        // After the summary above, which would otherwise overwrite what the raid was actually about.
+        SettleTerritory(mission, nowUtc);
         mission.Events.Add(new CombatMissionEvent
         {
             Round = mission.CurrentRound,

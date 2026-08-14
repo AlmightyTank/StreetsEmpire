@@ -39,6 +39,44 @@ public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = 
 /// </summary>
 public sealed record CombatAttackRequest(Guid DefenderId, int Thugs = 1, int Weapons = 0, long? CommanderPimpId = null);
 
+public sealed record TerritoryClaimRequest(long TerritoryId, int Thugs);
+public sealed record TerritoryGarrisonRequest(long TerritoryId, int Thugs);
+public sealed record TerritoryRaidRequest(long TerritoryId, int Thugs, int Weapons = 0, long? CommanderPimpId = null);
+
+/// <summary>One piece of ground, as the map page shows it.</summary>
+public sealed record TerritoryResponse(
+    long Id,
+    string Name,
+    string City,
+    string Type,
+    string TypeLabel,
+    string Effect,
+    Guid? HolderId,
+    string? HolderName,
+    bool HeldByYou,
+    int GarrisonThugs,
+    DateTime? HeldSinceUtc,
+    bool IsProtected,
+    DateTime? ProtectedUntilUtc,
+    bool CanClaim,
+    bool CanRaid,
+    string? BlockedReason);
+
+public sealed record TerritoryBoardResponse(
+    int Held,
+    int HoldingCap,
+    int MinimumGarrison,
+    int ClaimTurnCost,
+    int FreeThugs,
+    TerritoryEffectsResponse Effects,
+    IReadOnlyList<TerritoryResponse> Territories);
+
+public sealed record TerritoryEffectsResponse(
+    int StreetIncomePercent,
+    int ProductionYieldPercent,
+    int MoraleRecoveryPercent,
+    int LootPercent);
+
 public sealed record DashboardResponse(
     Guid PlayerId,
     string Name,

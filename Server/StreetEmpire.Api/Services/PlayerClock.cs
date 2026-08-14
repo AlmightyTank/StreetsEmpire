@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using StreetEmpire.Api.Data;
 using StreetEmpire.Api.Models;
 using static StreetEmpire.Api.Support.ActionLogging;
@@ -12,13 +13,17 @@ namespace StreetEmpire.Api.Services;
 /// Wall-clock earnings have to happen wherever a player is loaded, not only on the dashboard, or the
 /// same hour pays out twice depending on which page they opened first.
 /// </summary>
-public sealed class PlayerClock(TurnService turns, HideoutService hideouts)
+public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb)
 {
     /// <summary>
     /// Brings a player up to date. The caller saves when <see cref="PlayerTick.Changed"/> is set, and
     /// passes <paramref name="db"/> when the run should leave a record the player can read later.
     /// </summary>
-    public PlayerTick Advance(Player player, DateTime nowUtc, GameDbContext? db = null)
+    /// <summary>
+    /// Async because a club's morale bonus depends on the ground the player holds, and resolving that
+    /// here keeps one authority over recovery rather than asking every caller to remember to pass it.
+    /// </summary>
+    public async Task<PlayerTick> AdvanceAsync(Player player, DateTime nowUtc, GameDbContext? db = null, CancellationToken ct = default)
     {
         var built = hideouts.CompleteBuild(player.Hideout, nowUtc);
         if (db is not null && built)
@@ -31,12 +36,25 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts)
         if (db is not null && labs.Any)
             AddLog(db, player, beforeLabs, "LAB", 0, labs.Describe(), nowUtc);
 
-        var turnsMoved = turns.Refresh(player, nowUtc);
+        var moraleBonus = await territoryDb.Territories.AsNoTracking()
+            .Where(x => x.HolderId == player.Id)
+            .Select(x => x.Type)
+            .ToListAsync(ct);
+        var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
         return new PlayerTick(turnsMoved || built || labs.ClockMoved, built, labs);
     }
 
     public int SecondsUntilNextTick(Player player, DateTime nowUtc)
         => turns.SecondsUntilNextTick(player, nowUtc);
+
+    /// <summary>
+    /// Reads the club bonus off the held types directly. Deliberately not routed through
+    /// TerritoryService: this runs on every player refresh, and a list of type strings is all it needs.
+    /// </summary>
+    private int MoraleRecoveryPercentFor(IEnumerable<string> heldTypes)
+        => heldTypes.Count(x => string.Equals(x, "club", StringComparison.OrdinalIgnoreCase)) * ClubMoraleRecoveryPercent;
+
+    private const int ClubMoraleRecoveryPercent = 50;
 }
 
 /// <param name="Changed">Whether anything was written to the player and needs saving.</param>

@@ -530,6 +530,13 @@ export const api = {
     }),
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNews>('/api/world/news'),
+  territories: () => request<TerritoryBoard>('/api/game/territories'),
+  claimTerritory: (territoryId: number, thugs: number) =>
+    request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs }) }),
+  setGarrison: (territoryId: number, thugs: number) =>
+    request<ActionResult>('/api/game/territories/garrison', { method: 'POST', body: JSON.stringify({ territoryId, thugs }) }),
+  raidTerritory: (territoryId: number, thugs: number, weapons: number) =>
+    request<ActionResult>('/api/game/territories/raid', { method: 'POST', body: JSON.stringify({ territoryId, thugs, weapons }) }),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
   alerts: () => request<Alerts>('/api/game/alerts'),
   markAlertsSeen: () => request<Alerts>('/api/game/alerts/seen', { method: 'POST' }),
@@ -718,6 +725,40 @@ export type BotDirective = {
   defenderId?: string
   thugs?: number
   weapons?: number
+}
+
+export type Territory = {
+  id: number
+  name: string
+  city: string
+  type: string
+  typeLabel: string
+  effect: string
+  holderId?: string | null
+  holderName?: string | null
+  heldByYou: boolean
+  garrisonThugs: number
+  heldSinceUtc?: string | null
+  isProtected: boolean
+  protectedUntilUtc?: string | null
+  canClaim: boolean
+  canRaid: boolean
+  blockedReason?: string | null
+}
+
+export type TerritoryBoard = {
+  held: number
+  holdingCap: number
+  minimumGarrison: number
+  claimTurnCost: number
+  freeThugs: number
+  effects: {
+    streetIncomePercent: number
+    productionYieldPercent: number
+    moraleRecoveryPercent: number
+    lootPercent: number
+  }
+  territories: Territory[]
 }
 
 export type AdminBotHealth = {

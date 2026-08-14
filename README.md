@@ -4,11 +4,31 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 ## What changed in 0.2.4
 
-0.2.4 is in progress: player-to-player markets, organizations, and territory.
+0.2.4 is in progress. Territory is in; player-to-player markets and organizations are still to come.
+
+### Territory
+
+- Ten pieces of ground across the five cities. Cities name and group them but do not gate who may
+  contest what, or the players who all start in New York would have nothing to fight over.
+- Holding ground takes thugs standing on it, and they are not at home while they do. That is the whole
+  design in one line: attack, defend, or occupy, pick two. The hideout tier caps how many pieces you
+  can run at once, from one to four.
+- Each piece is a **Corner** (+15% street income), **Docks** (+20% production yield), **Club** (+50%
+  passive morale recovery), or **Stash House** (+20% haul from raids). Every one is a percentage on an
+  activity you still spend turns on, so ground amplifies play rather than paying out on its own. The
+  labs already fill the idle-income role and needed two separate bounds to stay sane.
+- Empty ground is claimed with turns and a garrison. Held ground takes a raid, which uses one of your
+  two attack lanes, so taking ground competes with robbing a house.
+- A raid for ground fights the garrison standing on it, not everyone back at the holder's house.
+  Fighting the whole house would make ground untakeable: the garrison is a handful of thugs and the
+  house is the rest of the roster.
+- Anti-farm's wealth rules do not apply to ground, and a raid for it grants no house protection.
+  Taking a corner is not robbing anyone, and gating it by wealth would let a weak player park on good
+  ground permanently. Ground carries its own settling period after changing hands instead.
 
 ### Still to come in 0.2.4
 
-- Player-to-player markets, organizations, and territory.
+- Player-to-player markets and organizations.
 
 ## What changed in 0.2.3
 

@@ -32,6 +32,8 @@ var tests = new (string Name, Action Test)[]
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
     ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
+    ("territory effects add up across the ground held", TerritoryEffectsAddUp),
+    ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
     ("hideout tier gates the rooms it is too small to hold", HideoutTierGatesDeeperRooms),
     ("storage levels hold a full action at the crew caps they unlock", StorageLevelsMatchTheCrewCapsTheyUnlock),
@@ -1080,6 +1082,86 @@ static void WorldNewsKeepsFightsAndDropsNoise()
     AssertEqual("money", WorldNews.Category("SALE"));
 }
 
+/// <summary>
+/// Every type is a percentage on an activity the player still spends turns on, and holding two of a
+/// kind is worth twice as much. Storage was the original fourth type and became a stash house instead:
+/// capacity is read in seventeen places that must agree, and two authorities disagreeing about a cap
+/// is how the hideout bugs happened.
+/// </summary>
+static void TerritoryEffectsAddUp()
+{
+    var options = new GameOptions();
+    options.Territory.ApplyDefaultsWhereEmpty();
+    var service = CreateTerritories(options);
+
+    Territory Ground(string type) => new() { Type = type };
+
+    AssertEqual(0, service.EffectsFor([]).StreetIncomePercent);
+    AssertTrue(!service.EffectsFor([]).Any, "holding nothing amplifies nothing");
+
+    AssertEqual(15, service.EffectsFor([Ground("corner")]).StreetIncomePercent);
+    AssertEqual(30, service.EffectsFor([Ground("corner"), Ground("corner")]).StreetIncomePercent);
+    AssertEqual(20, service.EffectsFor([Ground("dock")]).ProductionYieldPercent);
+    AssertEqual(50, service.EffectsFor([Ground("club")]).MoraleRecoveryPercent);
+    AssertEqual(20, service.EffectsFor([Ground("stash")]).LootPercent);
+
+    // A mixed hand contributes to each line separately rather than to one pooled number.
+    var mixed = service.EffectsFor([Ground("corner"), Ground("dock"), Ground("stash")]);
+    AssertEqual(15, mixed.StreetIncomePercent);
+    AssertEqual(20, mixed.ProductionYieldPercent);
+    AssertEqual(20, mixed.LootPercent);
+    AssertEqual(0, mixed.MoraleRecoveryPercent);
+
+    // Ground of a type nobody configured is worth nothing rather than throwing.
+    AssertTrue(!service.EffectsFor([Ground("racetrack")]).Any, "an unknown type is inert");
+
+    // The tier ladder gains a second meaning: how much ground you may run at once.
+    AssertEqual(1, service.HoldingCapFor(new Hideout { Tier = 1 }));
+    AssertEqual(4, service.HoldingCapFor(new Hideout { Tier = 4 }));
+}
+
+/// <summary>
+/// The bonuses have to arrive where they were promised. Each one lives at a single seam, and a seam
+/// that silently stops passing them through is the failure this pins down.
+/// </summary>
+static void TerritoryBonusesReachTheirActivities()
+{
+    var options = new GameOptions
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 100,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0,
+            ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Production = new ProductionOptions { Weed = new ProductProductionOptions(0, 4, 4) },
+        Morale = new MoraleOptions { PassiveRecoveryPerTick = 1, TurnsPerCondom = 1000, TurnsPerBeer = 1000 }
+    };
+
+    // A corner lifts the take. Ten turns at a flat 100 gross is 1,000 before any cut.
+    var plain = new Player { Turns = 20, Hoes = 1, HoeCutPercent = 0, Hideout = new Hideout() };
+    var withCorner = new Player { Turns = 20, Hoes = 1, HoeCutPercent = 0, Hideout = new Hideout() };
+    AssertEqual(1000L, Value<long>(RequiredBreakdown(CreateEconomy(options).Scout(plain, 10)), "gross"));
+    AssertEqual(1150L, Value<long>(RequiredBreakdown(
+        CreateEconomy(options).Scout(withCorner, 10, false, new TerritoryEffects(15, 0, 0, 0))), "gross"));
+
+    // Docks lift the yield, stacking on whatever the lab already gives.
+    var producer = new Player { Turns = 20, Cash = 10_000, Hideout = new Hideout { StorageLevel = 3 } };
+    AssertEqual(24, Value<int>(RequiredBreakdown(
+        CreateEconomy(options).Produce(producer, "weed", 5, new TerritoryEffects(0, 20, 0, 0))), "unitsProduced"));
+
+    // A club speeds passive recovery, which is a percentage on the existing rate rather than a
+    // second trickle, so morale still recovers in exactly one place.
+    var resting = new Player { HoeHappiness = 50, ThugHappiness = 50, LastTurnUpdateUtc = new DateTime(2026, 8, 14, 0, 0, 0, DateTimeKind.Utc) };
+    CreateTurns(options).Refresh(resting, resting.LastTurnUpdateUtc.AddMinutes(options.TurnTickMinutes * 4), 50);
+    AssertEqual(56.0, Math.Round(resting.HoeHappiness, 2));
+}
+
 // The lockout check is what a ban actually means, so it has to be exact about the boundaries.
 static void AccountLockoutBlocksBannedAndSuspended()
 {
@@ -1872,6 +1954,13 @@ static EconomyService CreateEconomy(GameOptions? options = null)
         new PimpRoster(Snapshot(resolved), new MinimumRandom()));
 }
 
+/// <summary>
+/// Built without a database on purpose. The methods under test here decide what held ground is worth
+/// and how much of it a tier may run, and neither reads a row: the caller hands them the ground.
+/// </summary>
+static TerritoryService CreateTerritories(GameOptions options)
+    => new(null!, Snapshot(options));
+
 static TurnService CreateTurns(GameOptions? options = null)
 {
     var resolved = Resolve(options);
@@ -1889,6 +1978,7 @@ static GameOptions Resolve(GameOptions? options)
 {
     var resolved = options ?? new GameOptions();
     resolved.Hideout.ApplyDefaultsWhereEmpty();
+    resolved.Territory.ApplyDefaultsWhereEmpty();
     return resolved;
 }
 

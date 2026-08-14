@@ -16,6 +16,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
     public DbSet<GameSetting> GameSettings => Set<GameSetting>();
     public DbSet<StandingSnapshot> StandingSnapshots => Set<StandingSnapshot>();
+    public DbSet<Territory> Territories => Set<Territory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +45,20 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Territory>(entity =>
+        {
+            entity.HasIndex(x => x.Name).IsUnique();
+            entity.Property(x => x.Name).HasMaxLength(48);
+            entity.Property(x => x.City).HasMaxLength(32);
+            entity.Property(x => x.Type).HasMaxLength(16);
+            entity.HasIndex(x => x.HolderId);
+            // Losing a player must not delete the ground. It goes back to being unheld.
+            entity.HasOne(x => x.Holder)
+                .WithMany()
+                .HasForeignKey(x => x.HolderId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<StandingSnapshot>(entity =>
@@ -129,6 +144,11 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Summary).HasMaxLength(800);
             entity.Property(x => x.AttackerMorale).HasPrecision(5, 2);
             entity.Property(x => x.DefenderMorale).HasPrecision(5, 2);
+            // The ground outliving the raid matters: deleting a territory must not take its history.
+            entity.HasOne(x => x.Territory)
+                .WithMany()
+                .HasForeignKey(x => x.TerritoryId)
+                .OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.Attacker)
                 .WithMany(x => x.MissionsStarted)
                 .HasForeignKey(x => x.AttackerId)

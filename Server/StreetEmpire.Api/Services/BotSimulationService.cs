@@ -60,7 +60,7 @@ public sealed class BotSimulationService(
                 if (onlyPlayerId is null && nextEligibleAtUtc > nowUtc)
                     continue;
 
-                clock.Advance(bot, nowUtc);
+                await clock.AdvanceAsync(bot, nowUtc, ct: ct);
                 var botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = RunBotRound(bot, brain, nowUtc);
@@ -89,7 +89,7 @@ public sealed class BotSimulationService(
     public async Task<ActionResultResponse> DirectAsync(Player bot, AdminBotActionRequest request, DateTime nowUtc, CancellationToken ct)
     {
         var action = request.Action?.Trim().ToLowerInvariant() ?? string.Empty;
-        clock.Advance(bot, nowUtc);
+        await clock.AdvanceAsync(bot, nowUtc, ct: ct);
         var before = Snapshot(bot);
 
         var (logAction, turnsSpent, result) = action switch

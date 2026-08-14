@@ -44,6 +44,15 @@ public static class CatchUp
                 $"{Names(facts.GroundLost)} was taken off you while you were out.",
                 "bad"));
 
+        if (facts.GroundHeld.Count > 0)
+            items.Add(new CatchUpItemResponse(
+                "ground",
+                facts.GroundHeld.Count == 1 ? $"{facts.GroundHeld[0]} held" : $"{facts.GroundHeld.Count:N0} pieces held",
+                facts.GarrisonThugsLost > 0
+                    ? $"{Names(facts.GroundHeld)} was attacked and held. The garrison lost {facts.GarrisonThugsLost:N0} thug(s)."
+                    : $"{Names(facts.GroundHeld)} was attacked and held without a scratch.",
+                "good"));
+
         if (facts.GroundTaken.Count > 0)
             items.Add(new CatchUpItemResponse(
                 "ground",
@@ -185,10 +194,13 @@ public sealed record CatchUpFacts(
     IReadOnlyList<string>? OvertookYouNames = null,
     IReadOnlyList<string>? YouOvertookNames = null,
     IReadOnlyList<string>? GroundLostNames = null,
-    IReadOnlyList<string>? GroundTakenNames = null)
+    IReadOnlyList<string>? GroundTakenNames = null,
+    IReadOnlyList<string>? GroundHeldNames = null,
+    int GarrisonThugsLost = 0)
 {
     public IReadOnlyList<string> OvertookYou => OvertookYouNames ?? [];
     public IReadOnlyList<string> YouOvertook => YouOvertookNames ?? [];
     public IReadOnlyList<string> GroundLost => GroundLostNames ?? [];
     public IReadOnlyList<string> GroundTaken => GroundTakenNames ?? [];
+    public IReadOnlyList<string> GroundHeld => GroundHeldNames ?? [];
 }

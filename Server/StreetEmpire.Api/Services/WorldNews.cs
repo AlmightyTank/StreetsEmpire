@@ -25,10 +25,10 @@ public static class WorldNews
         => log => log.CreatedAtUtc >= sinceUtc
                   && log.Action != "ADMIN"
                   && log.Action != "LAB"
-                  // The loser's own notice is written to them in the second person. The raider's row
-                  // already reports the same event publicly, so publishing this one puts "took it from
-                  // you" in front of everybody.
-                  && !(log.Action == "TERRITORY" && log.Summary.EndsWith(" from you."))
+                  // GROUND rows are written to one player in the second person. The raider's own row
+                  // reports the same event publicly, so publishing these would put "took it from you"
+                  // in front of everybody.
+                  && log.Action != "GROUND"
                   && (log.Action == "ATTACK"
                       || log.Action == "HIDEOUT"
                       || log.Action == "TERRITORY"

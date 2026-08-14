@@ -8,6 +8,13 @@ public sealed class CombatLog
     public Guid DefenderId { get; set; }
     public Player Defender { get; set; } = null!;
 
+    /// <summary>
+    /// Set when the fight was over ground rather than a house. Without it a raid on a corner is
+    /// indistinguishable from a raid on the defender's home, so the arrival summary counted one fight
+    /// twice and called it an attack on their house.
+    /// </summary>
+    public long? TerritoryId { get; set; }
+
     public string Outcome { get; set; } = "Prepared";
     public string Summary { get; set; } = string.Empty;
     public int TurnsSpent { get; set; }

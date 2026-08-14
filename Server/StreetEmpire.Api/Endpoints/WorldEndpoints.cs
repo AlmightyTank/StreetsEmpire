@@ -85,8 +85,8 @@ internal static class WorldEndpoints
     }
 
     /// <summary>
-    /// The standing state of the world, as four separate top-one queries. Each is ordered and cut by
-    /// the database; none of them pulls a page of rows back to pick a winner in memory.
+    /// The standing state of the world, as separate top-one queries. Each is ordered and cut by the
+    /// database; none of them pulls a page of rows back to pick a winner in memory.
     /// </summary>
     private static async Task<List<WorldHeadlineResponse>> HeadlinesAsync(
         GameDbContext db,
@@ -130,6 +130,21 @@ internal static class WorldEndpoints
                 "score",
                 "Best day on the street",
                 $"{score.Name} cleared {score.Earned:C0} in one go."));
+
+        // Who runs the most ground. Counted and ordered by the database rather than reading the map
+        // back to tally it.
+        var landlord = await db.Territories.AsNoTracking()
+            .Where(x => x.HolderId != null)
+            .GroupBy(x => new { x.HolderId, Name = x.Holder!.Name, x.City })
+            .Select(g => new { g.Key.Name, g.Key.City, Pieces = g.Count(), Thugs = g.Sum(x => x.GarrisonThugs) })
+            .OrderByDescending(x => x.Pieces)
+            .ThenByDescending(x => x.Thugs)
+            .FirstOrDefaultAsync(ct);
+        if (landlord is { Pieces: > 0 })
+            headlines.Add(new WorldHeadlineResponse(
+                "ground",
+                landlord.Pieces == 1 ? $"{landlord.Name} holds ground" : $"{landlord.Name} runs {landlord.Pieces:N0} pieces",
+                $"{landlord.Thugs:N0} thug(s) standing on it across {landlord.City}."));
 
         var arrival = await db.Players.AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)

@@ -18,6 +18,8 @@
 - AI rivals post their best free Enforcer to ground they claim, and otherwise claim and raid ground, judging a garrison by the holder's morale and committing the same
   share of crew they would send on a raid.
 - Ground changing hands reaches the catch-up digest, the alert bell, and world news.
+- A raid you beat off tells the holder what it cost the garrison, in both the digest and the bell.
+- A world news headline for whoever runs the most ground.
 
 ### Changed
 - One shared definition of which log rows are notifications rather than actions, with the activity
@@ -69,6 +71,10 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- A raid on your ground was counted as an attack on your house as well, so the arrival summary
+  reported one fight twice and described a fight over a corner as a break-in.
+- Which log rows are notifications is decided by the action rather than how the sentence ends. The
+  suffix match broke as soon as a second kind of ground notice existed.
 - Passive lab output and finished builds appeared in the activity list, which is a record of what the
   player did, so a payout they had no hand in read as an action they took. They are alerts now.
 - The world news leader headline was styled by a bare "leader" class that collided with the

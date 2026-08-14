@@ -265,6 +265,7 @@ public sealed class CombatMissionService(
         {
             AttackerId = mission.AttackerId,
             DefenderId = mission.DefenderId,
+            TerritoryId = mission.TerritoryId,
             Outcome = mission.Outcome,
             Summary = mission.Summary,
             TurnsSpent = mission.TurnsSpent,
@@ -559,7 +560,7 @@ public sealed class CombatMissionService(
                 db.ActionLogs.Add(new GameActionLog
                 {
                     PlayerId = lostBy,
-                    Action = "TERRITORY",
+                    Action = "GROUND",
                     Summary = $"{mission.Attacker.Name} took {ground.Name} from you.",
                     CreatedAtUtc = nowUtc
                 });
@@ -568,6 +569,20 @@ public sealed class CombatMissionService(
 
         territories.Bloody(ground, mission.DefenderThugsLost);
         mission.Summary = $"{ground.Name} held against {mission.Attacker.Name}.";
+
+        // A raid that fails still costs the holder: the garrison wore it. Told to them, because a
+        // garrison quietly shrinking with no explanation reads as a bug rather than a fight.
+        if (ground.HolderId is { } heldBy)
+            db.ActionLogs.Add(new GameActionLog
+            {
+                PlayerId = heldBy,
+                Action = "GROUND",
+                Summary = mission.DefenderThugsLost > 0
+                    ? $"{ground.Name} held against {mission.Attacker.Name}, at the cost of {mission.DefenderThugsLost:N0} thug(s)."
+                    : $"{ground.Name} held against {mission.Attacker.Name} without a scratch.",
+                ThugsDelta = -mission.DefenderThugsLost,
+                CreatedAtUtc = nowUtc
+            });
     }
 
     private void BeginReturn(CombatMission mission, string outcome, string summary, DateTime nowUtc)
@@ -644,6 +659,7 @@ public sealed class CombatMissionService(
         {
             AttackerId = mission.AttackerId,
             DefenderId = mission.DefenderId,
+            TerritoryId = mission.TerritoryId,
             Outcome = mission.Outcome,
             Summary = mission.Summary,
             TurnsSpent = mission.TurnsSpent,

@@ -40,6 +40,10 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - AI rivals contest the map. Ground is checked before a house raid because both use an attack lane,
   and a rival that always robbed houses would never take any. They claim what is open before fighting
   for what is not, and only raid a garrison they should beat.
+- Ground reaching the player: losing it, and holding it. A raid you beat off still costs the garrison,
+  so it earns its own line rather than leaving a garrison that quietly shrank with no explanation.
+  Both appear in the arrival summary and the alert bell, alongside the raider's own row in world news,
+  and world news carries a headline for whoever runs the most ground.
 - Losing ground reaches the player: a line in the arrival summary, an entry in the alert bell, and the
   raider's own row in world news. The loser's notice is written to them in the second person and is
   deliberately kept out of the public feed, where the raider's row already reports the same event.

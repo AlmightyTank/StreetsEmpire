@@ -201,7 +201,9 @@ internal static class CombatEndpoints
             }
 
             var defences = await db.CombatLogs.AsNoTracking()
-                .Where(x => x.DefenderId == player.Id && x.Outcome != "Pending" && x.CreatedAtUtc > since)
+                // House raids only. A fight over ground is reported by its own lines, and counting it
+                // here as well told the player about one raid twice.
+                .Where(x => x.DefenderId == player.Id && x.TerritoryId == null && x.Outcome != "Pending" && x.CreatedAtUtc > since)
                 .Select(x => new
                 {
                     x.Outcome,
@@ -282,7 +284,7 @@ internal static class CombatEndpoints
                             && x.CompletedAtUtc != null
                             && x.CompletedAtUtc > since
                             && (x.AttackerId == player.Id || x.DefenderId == player.Id))
-                .Select(x => new { x.AttackerId, x.DefenderId, x.Outcome, Name = x.Territory!.Name })
+                .Select(x => new { x.AttackerId, x.DefenderId, x.Outcome, x.DefenderThugsLost, Name = x.Territory!.Name })
                 .ToListAsync(ct);
             var groundLost = groundFights
                 .Where(x => x.DefenderId == player.Id && x.Outcome == "Victory")
@@ -290,6 +292,9 @@ internal static class CombatEndpoints
             var groundTaken = groundFights
                 .Where(x => x.AttackerId == player.Id && x.Outcome == "Victory")
                 .Select(x => x.Name).ToList();
+            // Held is worth reporting too: the garrison paid for it, and a garrison that shrank with
+            // no explanation reads as a bug.
+            var defended = groundFights.Where(x => x.DefenderId == player.Id && x.Outcome != "Victory").ToList();
 
             var digest = CatchUp.Build(new CatchUpFacts(
                 since,
@@ -312,7 +317,9 @@ internal static class CombatEndpoints
                 overtookYou,
                 youOvertook,
                 groundLost,
-                groundTaken));
+                groundTaken,
+                defended.Select(x => x.Name).Distinct().ToList(),
+                defended.Sum(x => x.DefenderThugsLost)));
 
             player.CatchUpSeenAtUtc = now;
             await db.SaveChangesAsync(ct);

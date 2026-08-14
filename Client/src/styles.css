@@ -820,6 +820,7 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .headline-robbery { border-left-color: #b4534a; }
 .headline-score { border-left-color: #4f8f6a; }
 .headline-arrival { border-left-color: #5b7c9c; }
+.headline-ground { border-left-color: #8f7fc0; }
 .news-tag { text-transform: uppercase; letter-spacing: .07em; font-size: .72rem !important; }
 .news-tag.combat { color: #d4756a; }
 .news-tag.build { color: #e8c07a; }

@@ -1079,8 +1079,8 @@ static void WorldNewsKeepsFightsAndDropsNoise()
     AssertTrue(!newsworthy(new GameActionLog { Action = "ADMIN", CreatedAtUtc = now, CashDelta = 500_000 }), "admin action never reaches the feed");
 
     AssertTrue(newsworthy(new GameActionLog { Action = "TERRITORY", CreatedAtUtc = now, Summary = "Took over Hunts Point." }), "ground changing hands is news");
-    AssertTrue(!newsworthy(new GameActionLog { Action = "TERRITORY", CreatedAtUtc = now, Summary = "X took Y from you." }),
-        "the loser's own second-person notice is not published to everyone");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "GROUND", CreatedAtUtc = now, Summary = "X took Y from you." }),
+        "a notice written to one player is not published to everyone");
     AssertEqual("ground", WorldNews.Category("TERRITORY"));
     AssertEqual("combat", WorldNews.Category("ATTACK"));
     AssertEqual("build", WorldNews.Category("HIDEOUT"));
@@ -1581,6 +1581,15 @@ static void CatchUpReportsWhatHappenedWhileAway()
     AssertEqual("bad", groundKinds[0]);
     AssertEqual("good", groundKinds[1]);
 
+    // A raid you beat off still cost the garrison, which is why it is worth a line: a garrison that
+    // shrank with no explanation reads as a bug rather than a fight.
+    var held = CatchUp.Build(Quiet(since, now) with { GroundHeldNames = ["Hunts Point"], GarrisonThugsLost = 3 });
+    var line = held.Items.Single(x => x.Kind == "ground");
+    AssertEqual("good", line.Tone);
+    AssertTrue(line.Detail.Contains("3 thug"), $"the cost of holding is the point: {line.Detail}");
+    AssertTrue(CatchUp.Build(Quiet(since, now) with { GroundHeldNames = ["Hunts Point"] })
+        .Items.Single(x => x.Kind == "ground").Detail.Contains("without a scratch"), "a clean hold reads differently");
+
     // Protection still running is worth knowing; protection that has lapsed is not.
     AssertTrue(CatchUp.Build(Quiet(since, now) with { ProtectedUntilUtc = now.AddMinutes(41) }).Items.Any(x => x.Kind == "protection"),
         "live protection is worth saying");
@@ -1684,14 +1693,15 @@ static void DefenceAlertsCountUnread()
     AssertTrue(DefenceAlerts.IsNotification("HIDEOUT", "The Warehouse is finished."), "a finished build is");
     AssertTrue(!DefenceAlerts.IsNotification("HIDEOUT", "Upgraded the safe to level 3."), "a room upgrade is not");
     AssertTrue(!DefenceAlerts.IsNotification("STREET", "Worked the streets."), "street work is not");
-    AssertTrue(DefenceAlerts.IsNotification("TERRITORY", "Brass Knox took Hunts Point from you."), "losing ground is");
+    AssertTrue(DefenceAlerts.IsNotification("GROUND", "Brass Knox took Hunts Point from you."), "losing ground is");
+    AssertTrue(DefenceAlerts.IsNotification("GROUND", "Hunts Point held against Brass Knox."), "a raid you held off is");
     AssertTrue(!DefenceAlerts.IsNotification("TERRITORY", "Took over Hunts Point with 6 thug(s)."), "claiming ground is an action");
 
     // The activity list uses the negation of this rule, derived from it rather than written out again.
     var rows = new[]
     {
         new GameActionLog { Action = "LAB", Summary = "made weed" },
-        new GameActionLog { Action = "TERRITORY", Summary = "X took Y from you." },
+        new GameActionLog { Action = "GROUND", Summary = "X took Y from you." },
         new GameActionLog { Action = "TERRITORY", Summary = "Took over Y." },
         new GameActionLog { Action = "STREET", Summary = "worked" }
     };

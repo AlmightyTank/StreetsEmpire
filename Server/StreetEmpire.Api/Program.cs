@@ -40,6 +40,7 @@ builder.Services.AddScoped<HideoutService>();
 builder.Services.AddScoped<PlayerClock>();
 builder.Services.AddScoped<StandingsRecorder>();
 builder.Services.AddScoped<TerritoryService>();
+builder.Services.AddScoped<MarketService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
@@ -199,6 +200,7 @@ app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();
 app.MapTerritoryEndpoints();
+app.MapMarketEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();
 

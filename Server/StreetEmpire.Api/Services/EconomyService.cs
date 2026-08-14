@@ -389,6 +389,53 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             });
     }
 
+    /// <summary>
+    /// Turns and materials into weapons. Separate from Produce because weapons are not a product you
+    /// sell to the game at a fixed price: they are a supply everyone burns, which is what makes them
+    /// worth putting on the board.
+    /// </summary>
+    public ActionResultResponse Forge(Player player, int turns)
+    {
+        if (turns < 1 || turns > _options.MaxActionTurns)
+            throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
+        if (player.Turns < turns)
+            throw new GameRuleException("You do not have that many turns.");
+
+        var workshop = hideout.WorkshopFor(player.Hideout)
+            ?? throw new GameRuleException("You need a workshop before you can make weapons.");
+
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var room = Math.Max(0, capacity.MaxWeapons - player.Weapons);
+        if (room == 0)
+            throw new GameRuleException("Your storage has no room for more weapons.");
+
+        // Bounded by the room up front rather than made and spilled, so nobody pays for materials that
+        // turn into nothing.
+        var wanted = workshop.WeaponsPerTurn * turns;
+        var made = Math.Min(wanted, room);
+        var turnsUsed = (int)Math.Ceiling((double)made / Math.Max(1, workshop.WeaponsPerTurn));
+        var cost = workshop.CostPerWeapon * made;
+        if (player.Cash < cost)
+            throw new GameRuleException($"Materials for {made:N0} weapon(s) cost {cost:C0}.");
+
+        player.Turns -= turnsUsed;
+        player.Cash -= cost;
+        player.Weapons += made;
+
+        var summary = $"Turned out {made:N0} weapon(s) over {turnsUsed} turn{Plural(turnsUsed)} for {cost:C0} in materials.";
+        if (made < wanted)
+            summary += " Storage filled up before the run finished.";
+
+        return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
+        {
+            ["weaponsMade"] = made,
+            ["turnsSpent"] = turnsUsed,
+            ["costPerWeapon"] = workshop.CostPerWeapon,
+            ["totalCost"] = cost,
+            ["storePrice"] = _options.WeaponPrice
+        });
+    }
+
     public ActionResultResponse SellProduct(Player player, string? product, int quantity)
     {
         if (quantity is < 1 or > 100_000)

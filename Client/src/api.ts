@@ -532,6 +532,14 @@ export const api = {
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNews>('/api/world/news'),
   territories: () => request<TerritoryBoard>('/api/game/territories'),
+  market: () => request<MarketBoard>('/api/game/market'),
+  listOnMarket: (item: string, quantity: number, pricePerUnit: number) =>
+    request<ActionResult>('/api/game/market/list', { method: 'POST', body: JSON.stringify({ item, quantity, pricePerUnit }) }),
+  buyOnMarket: (listingId: number, quantity: number) =>
+    request<ActionResult>('/api/game/market/buy', { method: 'POST', body: JSON.stringify({ listingId, quantity }) }),
+  cancelListing: (listingId: number) =>
+    request<ActionResult>('/api/game/market/cancel', { method: 'POST', body: JSON.stringify({ listingId }) }),
+  forge: (turns: number) => request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns }) }),
   claimTerritory: (territoryId: number, thugs: number, pimpId: number | null) =>
     request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
   setGarrison: (territoryId: number, thugs: number, pimpId: number | null) =>
@@ -747,6 +755,36 @@ export type Territory = {
   canClaim: boolean
   canRaid: boolean
   blockedReason?: string | null
+}
+
+export type MarketListing = {
+  id: number
+  item: string
+  itemLabel: string
+  quantity: number
+  originalQuantity: number
+  pricePerUnit: number
+  sellerName: string
+  yours: boolean
+  referencePrice: number
+  createdAtUtc: string
+}
+
+export type MarketGood = {
+  item: string
+  label: string
+  referencePrice: number
+  held: number
+  room: number
+  bestPrice?: number | null
+}
+
+export type MarketBoard = {
+  houseCutPercent: number
+  maxListingsPerPlayer: number
+  yourOpenListings: number
+  goods: MarketGood[]
+  listings: MarketListing[]
 }
 
 export type TerritoryBoard = {

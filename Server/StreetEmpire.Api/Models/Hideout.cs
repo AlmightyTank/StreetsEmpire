@@ -28,6 +28,12 @@ public sealed class Hideout
     public int CokeLabLevel { get; set; }
 
     /// <summary>
+    /// Turns cash and turns into weapons. The one thing a player can make that everybody needs and
+    /// nobody else can undercut, which is what gives the market something worth trading.
+    /// </summary>
+    public int WorkshopLevel { get; set; }
+
+    /// <summary>
     /// When passive lab output was last banked. Null means the labs have never run, and accrual starts
     /// from the moment the first one is built rather than from the hideout's creation.
     /// </summary>

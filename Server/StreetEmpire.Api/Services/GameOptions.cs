@@ -41,6 +41,7 @@ public sealed class GameOptions
     public AntiFarmOptions AntiFarm { get; set; } = new();
     public WorldNewsOptions WorldNews { get; set; } = new();
     public TerritoryOptions Territory { get; set; } = new();
+    public MarketOptions Market { get; set; } = new();
 }
 
 /// <summary>
@@ -194,6 +195,7 @@ public sealed class HideoutOptions
     public List<SafeLevelOptions> Safe { get; set; } = [];
     public List<LabLevelOptions> WeedLab { get; set; } = [];
     public List<LabLevelOptions> CokeLab { get; set; } = [];
+    public List<WorkshopLevelOptions> Workshop { get; set; } = [];
 
     /// <summary>
     /// How much passive lab output can pile up while a player is away. Past this the labs sit idle, so
@@ -254,6 +256,16 @@ public sealed class HideoutOptions
                 new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 16, UpgradeCost = 700_000 }
             ];
 
+        // Priced under the store's $500 on purpose. A maker who cannot undercut the shop has nothing
+        // to sell, and the whole point of the workshop is to give the market a good with real demand.
+        if (Workshop.Count == 0)
+            Workshop =
+            [
+                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 1, CostPerWeapon = 300, UpgradeCost = 60_000 },
+                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 2, CostPerWeapon = 270, UpgradeCost = 180_000 },
+                new WorkshopLevelOptions { Level = 3, MinTier = 3, WeaponsPerTurn = 3, CostPerWeapon = 240, UpgradeCost = 500_000 }
+            ];
+
         if (CokeLab.Count == 0)
             CokeLab =
             [
@@ -271,6 +283,31 @@ public sealed class HideoutOptions
 /// the hideout tables do: the configuration binder appends to a pre-populated list rather than
 /// replacing it, so shipping defaults in the initialiser would merge them with appsettings.
 /// </summary>
+/// <summary>
+/// The player-to-player board. It exists because turns are scarcer than cash: somebody with turns and
+/// no money makes goods, somebody with money and no turns buys them.
+/// </summary>
+public sealed class MarketOptions
+{
+    /// <summary>
+    /// The house's cut of every sale. A money sink the game otherwise lacks, and a reason not to churn
+    /// stock back and forth through the board for the sake of it.
+    /// </summary>
+    public int HouseCutPercent { get; set; } = 5;
+
+    /// <summary>Stops one player papering the board over.</summary>
+    public int MaxListingsPerPlayer { get; set; } = 10;
+
+    /// <summary>
+    /// How far a price may sit from what the game itself pays, as a multiple. A wide band on purpose:
+    /// it is there to stop a mistyped price poisoning the board, not to set the price.
+    /// </summary>
+    public double MinPriceMultiplier { get; set; } = 0.25;
+    public double MaxPriceMultiplier { get; set; } = 4;
+
+    public int MaxQuantityPerListing { get; set; } = 10_000;
+}
+
 public sealed class TerritoryOptions
 {
     /// <summary>
@@ -429,6 +466,19 @@ public sealed class SafeLevelOptions
     public int Level { get; set; }
     public int MinTier { get; set; } = 1;
     public long MaxCash { get; set; }
+    public long UpgradeCost { get; set; }
+}
+
+public sealed class WorkshopLevelOptions
+{
+    public int Level { get; set; }
+    public int MinTier { get; set; } = 1;
+
+    /// <summary>Weapons a turn of work turns out.</summary>
+    public int WeaponsPerTurn { get; set; }
+
+    /// <summary>Materials per weapon. Below the store price, or there is nothing to sell.</summary>
+    public long CostPerWeapon { get; set; }
     public long UpgradeCost { get; set; }
 }
 

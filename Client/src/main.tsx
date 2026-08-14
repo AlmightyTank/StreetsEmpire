@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, TerritoryBoard, WorldNews, WorldNewsEntry, CatchUp } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, PlayerProfile, PlayerTarget, TerritoryBoard, WorldNews, WorldNewsEntry, CatchUp } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -880,6 +880,100 @@ function TerritoryPage(ctx: PageContext) {
   </div>
 }
 
+/**
+ * The player-to-player board. It works because turns are scarcer than cash: somebody with turns and no
+ * money makes weapons, somebody with money and no turns buys them rather than spending the turns.
+ */
+function TradingPanel(ctx: PageContext) {
+  const { dashboard, busy, act } = ctx
+  const [board, setBoard] = useState<MarketBoard | null>(null)
+  const [error, setError] = useState('')
+  const [item, setItem] = useState('weapons')
+  const [qty, setQty] = useState(1)
+  const [price, setPrice] = useState(0)
+  const [buyQty, setBuyQty] = useState<Record<number, number>>({})
+
+  const load = async () => {
+    try { setBoard(await api.market()); setError('') }
+    catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [dashboard.weapons, dashboard.weed, dashboard.coke, dashboard.condoms, dashboard.beer])
+
+  const run = async (fn: () => Promise<unknown>) => { await act(fn); await load() }
+  const good = board?.goods.find(g => g.item === item)
+  // Seeded from what the game itself pays, so the first listing is not a guess in the dark.
+  useEffect(() => { if (good && price === 0) setPrice(good.referencePrice) }, [good?.item])
+
+  if (!board) return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Market</h2><span>Loading</span></div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+  </section>
+
+  return <>
+    <section className="panel wide-panel">
+      <div className="panel-title">
+        <h2>Market</h2>
+        <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
+      </div>
+      <p>
+        Sell to other players instead of the game. Stock leaves your storage the moment you list it and
+        comes back if you pull the listing. What the game pays is shown for reference, not as a limit.
+      </p>
+      {error && <div className="error banner"><span>{error}</span></div>}
+      <div className="admin-action-row">
+        <label>Good<select value={item} onChange={e => { setItem(e.target.value); setPrice(board.goods.find(g => g.item === e.target.value)?.referencePrice ?? 0) }}>
+          {board.goods.map(g => <option key={g.item} value={g.item}>{g.label} ({number.format(g.held)} held)</option>)}
+        </select></label>
+        <label>Quantity<input type="number" min={1} max={good?.held ?? 1} value={qty} onChange={e => setQty(Number(e.target.value))} /></label>
+        <label>Price each<input type="number" min={1} value={price} onChange={e => setPrice(Number(e.target.value))} /></label>
+        <button
+          className="primary compact"
+          disabled={busy || !good || qty < 1 || qty > (good?.held ?? 0) || price < 1}
+          onClick={() => void run(() => api.listOnMarket(item, qty, price))}
+        >
+          List for {money.format(qty * price)}
+        </button>
+      </div>
+      {good && <p className="hint">
+        The game pays {money.format(good.referencePrice)} for {good.label.toLowerCase()}.
+        {good.bestPrice ? ` Cheapest on the board right now is ${money.format(good.bestPrice)}.` : ' Nothing listed yet.'}
+        {' '}You hold {number.format(good.held)} with room for {number.format(good.room)} more.
+      </p>}
+    </section>
+
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>On the Board</h2><span>{board.listings.length} listings</span></div>
+      {board.listings.length === 0 && <p className="coming">Nothing for sale. Be the first.</p>}
+      {board.listings.length > 0 && <div className="admin-table-scroll"><table className="admin-table">
+        <thead><tr><th>Good</th><th>Left</th><th>Each</th><th>vs game</th><th>Seller</th><th /></tr></thead>
+        <tbody>
+          {board.listings.map(l => <tr key={l.id} className={l.yours ? 'paused' : ''}>
+            <td>{l.itemLabel}</td>
+            <td>{number.format(l.quantity)} of {number.format(l.originalQuantity)}</td>
+            <td>{money.format(l.pricePerUnit)}</td>
+            <td>{l.referencePrice > 0 ? `${Math.round((l.pricePerUnit / l.referencePrice - 1) * 100)}%` : '-'}</td>
+            <td>{l.yours ? 'You' : l.sellerName}</td>
+            <td className="admin-table-actions">
+              {l.yours
+                ? <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.cancelListing(l.id))}>Pull it</button>
+                : <>
+                  <input
+                    type="number"
+                    min={1}
+                    max={l.quantity}
+                    value={buyQty[l.id] ?? l.quantity}
+                    onChange={e => setBuyQty(v => ({ ...v, [l.id]: Number(e.target.value) }))}
+                  />
+                  <button className="primary compact" disabled={busy} onClick={() => void run(() => api.buyOnMarket(l.id, buyQty[l.id] ?? l.quantity))}>Buy</button>
+                </>}
+            </td>
+          </tr>)}
+        </tbody>
+      </table></div>}
+    </section>
+  </>
+}
+
 function MarketPage(ctx: PageContext) {
   const { dashboard, busy, productionTurns, bankAmount, storeQty, sellQty, setProductionTurns, setBankAmount, setStoreQty, setSellQty, act } = ctx
   return <div className="market-page">
@@ -893,6 +987,8 @@ function MarketPage(ctx: PageContext) {
         <InventoryCard name="Coke" count={dashboard.coke} note={`${money.format(dashboard.cokeSellPrice)} street price`} />
       </div>
     </section>
+
+    <TradingPanel {...ctx} />
 
     <section className="panel market-store">
       <div className="panel-title"><h2>Street Store</h2><span>Cash on hand only</span></div>

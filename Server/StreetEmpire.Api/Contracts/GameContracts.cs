@@ -39,6 +39,40 @@ public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = 
 /// </summary>
 public sealed record CombatAttackRequest(Guid DefenderId, int Thugs = 1, int Weapons = 0, long? CommanderPimpId = null);
 
+public sealed record MarketListRequest(string? Item, int Quantity, long PricePerUnit);
+public sealed record MarketBuyRequest(long ListingId, int Quantity);
+public sealed record MarketCancelRequest(long ListingId);
+public sealed record ForgeRequest(int Turns);
+
+public sealed record MarketListingResponse(
+    long Id,
+    string Item,
+    string ItemLabel,
+    int Quantity,
+    int OriginalQuantity,
+    long PricePerUnit,
+    string SellerName,
+    bool Yours,
+    long ReferencePrice,
+    DateTime CreatedAtUtc);
+
+public sealed record MarketBoardResponse(
+    int HouseCutPercent,
+    int MaxListingsPerPlayer,
+    int YourOpenListings,
+    IReadOnlyList<MarketGoodResponse> Goods,
+    IReadOnlyList<MarketListingResponse> Listings);
+
+/// <param name="Held">What the viewer has of it, so they can see what is worth listing.</param>
+/// <param name="Room">Storage left, since a purchase past it is refused.</param>
+public sealed record MarketGoodResponse(
+    string Item,
+    string Label,
+    long ReferencePrice,
+    int Held,
+    int Room,
+    long? BestPrice);
+
 public sealed record TerritoryClaimRequest(long TerritoryId, int Thugs, long? PimpId = null);
 public sealed record TerritoryGarrisonRequest(long TerritoryId, int Thugs, long? PimpId = null);
 public sealed record TerritoryRaidRequest(long TerritoryId, int Thugs, int Weapons = 0, long? CommanderPimpId = null);

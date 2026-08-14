@@ -32,6 +32,8 @@ var tests = new (string Name, Action Test)[]
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
     ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
+    ("trade goods map keys to the piles they move", TradeGoodsMapKeysToPiles),
+    ("workshop makes weapons under the store price", WorkshopMakesWeaponsUnderStorePrice),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1093,6 +1095,63 @@ static void WorldNewsKeepsFightsAndDropsNoise()
 /// capacity is read in seventeen places that must agree, and two authorities disagreeing about a cap
 /// is how the hideout bugs happened.
 /// </summary>
+/// <summary>
+/// The store, production, admin adjustments and the market all move the same piles. One mapping, or a
+/// good lands in one place and not another and the market can take what it cannot give back.
+/// </summary>
+static void TradeGoodsMapKeysToPiles()
+{
+    var player = new Player { Condoms = 1, Beer = 2, Weapons = 3, Weed = 4, Coke = 5 };
+    var capacity = CreateHideouts().CapacityFor(new Hideout { StorageLevel = 3 });
+
+    foreach (var key in TradeGoods.Keys)
+    {
+        AssertTrue(TradeGoods.IsTradeable(key), $"{key} is listed as tradeable");
+        AssertTrue(TradeGoods.Capacity(capacity, key) > 0, $"{key} has a storage cap");
+        var before = TradeGoods.Held(player, key);
+        TradeGoods.Add(player, key, 7);
+        AssertEqual(before + 7, TradeGoods.Held(player, key));
+        TradeGoods.Add(player, key, -7);
+        AssertEqual(before, TradeGoods.Held(player, key));
+    }
+
+    // Crew is not goods. Listing a pimp would be selling a person out of the roster the game tracks by
+    // name, and nothing here knows how to move one.
+    AssertTrue(!TradeGoods.IsTradeable("pimps"), "crew is not tradeable");
+    AssertTrue(!TradeGoods.IsTradeable("turns"), "turns are not tradeable");
+    AssertTrue(!TradeGoods.IsTradeable(null), "nothing is not tradeable");
+}
+
+/// <summary>
+/// The workshop exists to give the board something worth trading, which only works if a maker can
+/// undercut the shop. If materials ever cost more than the store price there is nothing to sell.
+/// </summary>
+static void WorkshopMakesWeaponsUnderStorePrice()
+{
+    var options = Resolve(null);
+    foreach (var level in options.Hideout.Workshop)
+        AssertTrue(level.CostPerWeapon < options.WeaponPrice,
+            $"workshop level {level.Level} costs {level.CostPerWeapon} against a store price of {options.WeaponPrice}");
+
+    var service = CreateEconomy(options);
+    var maker = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
+    var made = service.Forge(maker, 5);
+    AssertEqual(5, Value<int>(RequiredBreakdown(made), "weaponsMade"));
+    AssertEqual(5, maker.Weapons);
+    AssertEqual(15, maker.Turns);
+
+    // Bounded by the room up front rather than made and spilled, so nobody pays for nothing.
+    var cramped = new Player { Turns = 20, Cash = 100_000, Weapons = 24, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
+    var partial = service.Forge(cramped, 10);
+    AssertEqual(1, Value<int>(RequiredBreakdown(partial), "weaponsMade"));
+    AssertEqual(25, cramped.Weapons);
+    AssertTrue(partial.Summary.Contains("Storage filled up"), "a short run says why");
+
+    // No workshop, no weapons.
+    AssertRuleError(() => service.Forge(new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout() }, 5),
+        "forging without a workshop");
+}
+
 static void TerritoryEffectsAddUp()
 {
     var options = new GameOptions();

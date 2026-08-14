@@ -17,6 +17,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<GameSetting> GameSettings => Set<GameSetting>();
     public DbSet<StandingSnapshot> StandingSnapshots => Set<StandingSnapshot>();
     public DbSet<Territory> Territories => Set<Territory>();
+    public DbSet<MarketListing> MarketListings => Set<MarketListing>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +45,18 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MarketListing>(entity =>
+        {
+            // Browsing is always "what is open, cheapest first for one good".
+            entity.HasIndex(x => new { x.Item, x.PricePerUnit });
+            entity.HasIndex(x => x.SellerId);
+            entity.Property(x => x.Item).HasMaxLength(16);
+            entity.HasOne(x => x.Seller)
+                .WithMany()
+                .HasForeignKey(x => x.SellerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

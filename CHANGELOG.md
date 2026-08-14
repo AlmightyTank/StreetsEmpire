@@ -3,6 +3,10 @@
 ## 0.2.4 (in progress)
 
 ### Added
+- A player-to-player market: one global board, escrowed stock, partial fills, a house cut, and payouts
+  into the seller's bank.
+- A workshop hideout station that makes weapons from turns and materials below the store price, so the
+  board has a good with real demand and room to undercut.
 - Territory: six pieces of ground per town, held by garrisoning thugs, who count as away from home
   while they hold it, capped per hideout tier.
 - Four ground types, each a percentage on an activity the player still spends turns on: Corner for

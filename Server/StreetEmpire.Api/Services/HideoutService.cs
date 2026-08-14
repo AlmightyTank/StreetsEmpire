@@ -68,6 +68,13 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         return new LabYield(weed, coke, chargedHours, hours > chargedHours, true);
     }
 
+    /// <summary>The workshop level's output and materials cost, or null when none is built.</summary>
+    public WorkshopLevelOptions? WorkshopFor(Hideout? hideout)
+    {
+        var level = hideout?.WorkshopLevel ?? 0;
+        return level <= 0 ? null : Level(_options.Hideout.Workshop, level, x => x.Level);
+    }
+
     /// <summary>What a lab makes per hour on its own, before storage limits.</summary>
     public int PassivePerHour(Hideout? hideout, string product)
     {
@@ -210,7 +217,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 level => BuildLab(hideout, nowUtc, () => hideout.WeedLabLevel = level), "weed lab"),
             "cokelab" => ApplyUpgrade(player, hideout, config.CokeLab, hideout.CokeLabLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => BuildLab(hideout, nowUtc, () => hideout.CokeLabLevel = level), "coke lab"),
-            _ => throw new GameRuleException("Room must be 'tier', 'storage', 'safe', 'weedlab', or 'cokelab'.")
+            "workshop" => ApplyUpgrade(player, hideout, config.Workshop, hideout.WorkshopLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => hideout.WorkshopLevel = level, "workshop"),
+            _ => throw new GameRuleException("Room must be 'tier', 'storage', 'safe', 'weedlab', 'cokelab', or 'workshop'.")
         };
     }
 
@@ -267,6 +276,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             "safe" => Next(config.Safe, hideout?.SafeLevel ?? 1, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "weedlab" => Next(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "cokelab" => Next(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "workshop" => Next(config.Workshop, hideout?.WorkshopLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             _ => null
         };
     }

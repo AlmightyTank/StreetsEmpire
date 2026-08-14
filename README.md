@@ -48,6 +48,20 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   raider's own row in world news. The loser's notice is written to them in the second person and is
   deliberately kept out of the public feed, where the raider's row already reports the same event.
 
+### The market
+
+- Players sell to each other on one global board. Stock leaves storage the moment it is listed and
+  comes back if the listing is pulled: escrow rather than a promise, or the same fifty weapons could be
+  listed twice or spent after somebody had bought them.
+- Partial fills, because a listing only one player in the game can afford is a listing nobody buys. The
+  house takes a cut of each sale, which is a money sink the game otherwise lacked.
+- The seller is paid into the bank rather than cash on hand, which is capped by their safe and
+  stealable. A sale that overflowed into nothing while they were offline would be a hole.
+- Pulling a listing into a full room leaves the stock on the board rather than destroying it.
+- A **workshop** makes weapons from turns and materials, under the store's price. This is what gives
+  the board anything worth trading: every other good has a fixed price on both sides, so the tradeable
+  spread over them is zero. Weapons are the one thing a player can make that everybody needs.
+
 ### Still to come in 0.2.4
 
 - Player-to-player markets and organizations.

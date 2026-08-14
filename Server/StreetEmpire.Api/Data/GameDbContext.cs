@@ -54,6 +54,11 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.City).HasMaxLength(32);
             entity.Property(x => x.Type).HasMaxLength(16);
             entity.HasIndex(x => x.HolderId);
+            // Losing the pimp leaves the ground held by thugs alone rather than deleting the row.
+            entity.HasOne(x => x.GarrisonPimp)
+                .WithMany()
+                .HasForeignKey(x => x.GarrisonPimpId)
+                .OnDelete(DeleteBehavior.SetNull);
             // Losing a player must not delete the ground. It goes back to being unheld.
             entity.HasOne(x => x.Holder)
                 .WithMany()

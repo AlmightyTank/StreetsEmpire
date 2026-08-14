@@ -39,8 +39,8 @@ public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = 
 /// </summary>
 public sealed record CombatAttackRequest(Guid DefenderId, int Thugs = 1, int Weapons = 0, long? CommanderPimpId = null);
 
-public sealed record TerritoryClaimRequest(long TerritoryId, int Thugs);
-public sealed record TerritoryGarrisonRequest(long TerritoryId, int Thugs);
+public sealed record TerritoryClaimRequest(long TerritoryId, int Thugs, long? PimpId = null);
+public sealed record TerritoryGarrisonRequest(long TerritoryId, int Thugs, long? PimpId = null);
 public sealed record TerritoryRaidRequest(long TerritoryId, int Thugs, int Weapons = 0, long? CommanderPimpId = null);
 
 /// <summary>One piece of ground, as the map page shows it.</summary>
@@ -55,6 +55,8 @@ public sealed record TerritoryResponse(
     string? HolderName,
     bool HeldByYou,
     int GarrisonThugs,
+    string? GarrisonPimpName,
+    int GarrisonBonusPercent,
     DateTime? HeldSinceUtc,
     bool IsProtected,
     DateTime? ProtectedUntilUtc,

@@ -92,6 +92,15 @@ public sealed class PimpRoster(IOptionsSnapshot<GameOptions> options, IGameRando
             Active(player).Where(x => x.Specialty == PimpSpecialties.Hustler && !away.Contains(x.Id)).Sum(x => x.BonusPercent));
 
     /// <summary>Stacked Enforcer bonus from pimps at home, as a percent added to defence power.</summary>
+    /// <summary>
+    /// What a pimp posted to ground adds to its defence. Only an Enforcer helps hold a corner, which
+    /// is the same division the rest of the game uses: Enforcers fight, Hustlers earn.
+    /// </summary>
+    public int GarrisonBonusPercent(Pimp? garrisonPimp)
+        => garrisonPimp is null || garrisonPimp.Specialty != PimpSpecialties.Enforcer || garrisonPimp.LostAtUtc is not null
+            ? 0
+            : Math.Min(Math.Max(0, _options.MaxGarrisonBonusPercent), garrisonPimp.BonusPercent);
+
     public int DefenceBonusPercent(Player player, IReadOnlyCollection<long> away)
         => Math.Min(
             Math.Max(0, _options.MaxDefenceBonusPercent),

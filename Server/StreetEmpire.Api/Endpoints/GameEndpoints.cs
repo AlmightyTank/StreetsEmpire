@@ -165,7 +165,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct));
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -201,7 +201,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct));
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

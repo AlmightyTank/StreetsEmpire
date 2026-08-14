@@ -167,7 +167,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// What the player's ground adds to the take. Passed in rather than looked up, because this runs
     /// synchronously inside an action that already has the player loaded.
     /// </param>
-    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null)
+    /// <param name="awayPimpIds">
+    /// Pimps who are not at home. Street work is blocked while a mission is out, so this used to be
+    /// empty by definition, but a pimp posted to ground is away while the player carries on working.
+    /// </param>
+    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null)
     {
         ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
 
@@ -214,7 +218,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         // Hustlers at home lift the take. Street work is blocked while a mission is out, so nobody
         // is away commanding at this point.
-        var streetBonusPercent = pimps.StreetBonusPercent(player, []) + (territory?.StreetIncomePercent ?? 0);
+        var streetBonusPercent = pimps.StreetBonusPercent(player, awayPimpIds ?? []) + (territory?.StreetIncomePercent ?? 0);
         var grossBeforeBonus = gross;
         gross += (long)Math.Round(gross * (streetBonusPercent / 100.0), MidpointRounding.AwayFromZero);
 

@@ -33,6 +33,7 @@ var tests = new (string Name, Action Test)[]
     ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
+    ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
     ("hideout tier gates the rooms it is too small to hold", HideoutTierGatesDeeperRooms),
@@ -1146,6 +1147,43 @@ static void TerritoryEffectsAddUp()
 /// The bonuses have to arrive where they were promised. Each one lives at a single seam, and a seam
 /// that silently stops passing them through is the failure this pins down.
 /// </summary>
+/// <summary>
+/// A garrison is a handful of thugs, so who runs it matters more there than at home. Only an Enforcer
+/// helps hold ground, which is the same division the rest of the game uses: Enforcers fight, Hustlers
+/// earn.
+/// </summary>
+static void GarrisonPimpBonusOnlyForEnforcers()
+{
+    var roster = CreatePimps(new GameOptions { Pimps = new PimpOptions { MaxGarrisonBonusPercent = 30 } });
+
+    AssertEqual(0, roster.GarrisonBonusPercent(null));
+    AssertEqual(7, roster.GarrisonBonusPercent(new Pimp { Specialty = PimpSpecialties.Enforcer, BonusPercent = 7 }));
+    AssertEqual(0, roster.GarrisonBonusPercent(new Pimp { Specialty = PimpSpecialties.Hustler, BonusPercent = 7 }));
+
+    // The garrison cap is its own number, not the house one, because the same percentage is worth far
+    // less over five thugs than over a full roster.
+    AssertEqual(30, roster.GarrisonBonusPercent(new Pimp { Specialty = PimpSpecialties.Enforcer, BonusPercent = 99 }));
+
+    // A pimp who is gone cannot be running anything.
+    AssertEqual(0, roster.GarrisonBonusPercent(new Pimp
+    {
+        Specialty = PimpSpecialties.Enforcer,
+        BonusPercent = 7,
+        LostAtUtc = new DateTime(2026, 8, 14, 0, 0, 0, DateTimeKind.Utc)
+    }));
+
+    // Posted away, so they are not also sharpening the house or lifting street income.
+    var player = new Player();
+    var enforcer = new Pimp { Id = 1, Specialty = PimpSpecialties.Enforcer, BonusPercent = 6 };
+    var hustler = new Pimp { Id = 2, Specialty = PimpSpecialties.Hustler, BonusPercent = 5 };
+    player.Crew.Add(enforcer);
+    player.Crew.Add(hustler);
+    AssertEqual(6, roster.DefenceBonusPercent(player, []));
+    AssertEqual(0, roster.DefenceBonusPercent(player, [1L]));
+    AssertEqual(5, roster.StreetBonusPercent(player, []));
+    AssertEqual(0, roster.StreetBonusPercent(player, [2L]));
+}
+
 static void TerritoryBonusesReachTheirActivities()
 {
     var options = new GameOptions
@@ -2011,6 +2049,12 @@ static EconomyService CreateEconomy(GameOptions? options = null)
 /// </summary>
 static TerritoryService CreateTerritories(GameOptions options)
     => new(null!, Snapshot(options));
+
+static PimpRoster CreatePimps(GameOptions? options = null)
+{
+    var resolved = Resolve(options);
+    return new PimpRoster(Snapshot(resolved), new MinimumRandom());
+}
 
 static TurnService CreateTurns(GameOptions? options = null)
 {

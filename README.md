@@ -16,6 +16,11 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - Players pick their town when they sign up. Registration used to ignore the field entirely, so every
   player defaulted to New York whatever they chose, which would have put everybody on one map and left
   the other four empty.
+- You pick a pimp to run each piece of ground. Standing there is a posting, not a visit: they are away
+  for as long as it lasts, so they do not sharpen the house, do not lift street income, cannot command
+  a raid, and cannot run a second piece. Only an **Enforcer** helps hold ground, capped separately from
+  the house bonus because the same percentage over a five thug garrison is worth far less than over a
+  full roster. A beaten pimp does not stay on to run the ground for whoever took it.
 - Holding ground takes thugs standing on it, and they are not at home while they do. That is the whole
   design in one line: attack, defend, or occupy, pick two. The hideout tier caps how many pieces you
   can run at once, from one to four.

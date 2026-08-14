@@ -18,6 +18,7 @@ internal static class TerritoryEndpoints
             CurrentPlayerService current,
             GameDbContext db,
             TerritoryService territories,
+            PimpRoster pimps,
             CombatResolutionService combatResolver,
             IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
@@ -34,6 +35,7 @@ internal static class TerritoryEndpoints
             // cannot press.
             var all = await db.Territories.AsNoTracking()
                 .Include(x => x.Holder)
+                .Include(x => x.GarrisonPimp)
                 .Where(x => x.City == player.City)
                 .OrderBy(x => x.Name)
                 .ToListAsync(ct);
@@ -56,7 +58,7 @@ internal static class TerritoryEndpoints
                     effects.ProductionYieldPercent,
                     effects.MoraleRecoveryPercent,
                     effects.LootPercent),
-                all.Select(x => Describe(x, player, territories, now, mine.Count, cap, free, config)).ToList()));
+                all.Select(x => Describe(x, player, territories, pimps, now, mine.Count, cap, free, config)).ToList()));
         }).RequireAuthorization();
 
 
@@ -76,7 +78,7 @@ internal static class TerritoryEndpoints
             var before = Snapshot(player);
             try
             {
-                var ground = await territories.ClaimAsync(player, request.TerritoryId, request.Thugs, now, ct);
+                var ground = await territories.ClaimAsync(player, request.TerritoryId, request.Thugs, request.PimpId, now, ct);
                 var summary = $"Took over {ground.Name} with {ground.GarrisonThugs:N0} thug(s) standing on it.";
                 AddLog(db, player, before, "TERRITORY", 0, summary, now);
                 await db.SaveChangesAsync(ct);
@@ -106,7 +108,7 @@ internal static class TerritoryEndpoints
             var before = Snapshot(player);
             try
             {
-                var (ground, gaveUp) = await territories.SetGarrisonAsync(player, request.TerritoryId, request.Thugs, ct);
+                var (ground, gaveUp) = await territories.SetGarrisonAsync(player, request.TerritoryId, request.Thugs, request.PimpId, ct);
                 var summary = gaveUp
                     ? $"Pulled off {ground.Name} entirely. It is anyone's now."
                     : $"{ground.Name} is now held by {ground.GarrisonThugs:N0} thug(s).";
@@ -187,6 +189,7 @@ internal static class TerritoryEndpoints
         Territory ground,
         Player player,
         TerritoryService territories,
+        PimpRoster pimps,
         DateTime nowUtc,
         int held,
         int cap,
@@ -216,6 +219,8 @@ internal static class TerritoryEndpoints
             ground.Holder?.Name,
             mine,
             ground.GarrisonThugs,
+            ground.GarrisonPimp?.Name,
+            pimps.GarrisonBonusPercent(ground.GarrisonPimp),
             ground.HeldSinceUtc,
             settled,
             ground.ProtectedUntilUtc,

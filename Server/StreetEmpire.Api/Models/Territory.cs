@@ -32,6 +32,14 @@ public sealed class Territory
     /// <summary>Thugs standing on it. They count as away from home for as long as they are here.</summary>
     public int GarrisonThugs { get; set; }
 
+    /// <summary>
+    /// The pimp running this ground. Standing here is a posting, not a visit: they are away from home
+    /// for as long as it lasts, so they do not sharpen the house's defence, do not lift street income,
+    /// and cannot command a raid. An Enforcer's bonus applies to the garrison instead.
+    /// </summary>
+    public long? GarrisonPimpId { get; set; }
+    public Pimp? GarrisonPimp { get; set; }
+
     public DateTime? HeldSinceUtc { get; set; }
 
     /// <summary>

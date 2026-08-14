@@ -532,10 +532,10 @@ export const api = {
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNews>('/api/world/news'),
   territories: () => request<TerritoryBoard>('/api/game/territories'),
-  claimTerritory: (territoryId: number, thugs: number) =>
-    request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs }) }),
-  setGarrison: (territoryId: number, thugs: number) =>
-    request<ActionResult>('/api/game/territories/garrison', { method: 'POST', body: JSON.stringify({ territoryId, thugs }) }),
+  claimTerritory: (territoryId: number, thugs: number, pimpId: number | null) =>
+    request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
+  setGarrison: (territoryId: number, thugs: number, pimpId: number | null) =>
+    request<ActionResult>('/api/game/territories/garrison', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
   raidTerritory: (territoryId: number, thugs: number, weapons: number) =>
     request<ActionResult>('/api/game/territories/raid', { method: 'POST', body: JSON.stringify({ territoryId, thugs, weapons }) }),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
@@ -739,6 +739,8 @@ export type Territory = {
   holderName?: string | null
   heldByYou: boolean
   garrisonThugs: number
+  garrisonPimpName?: string | null
+  garrisonBonusPercent: number
   heldSinceUtc?: string | null
   isProtected: boolean
   protectedUntilUtc?: string | null

@@ -89,7 +89,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     /// Claims ground nobody holds. Taking it off somebody is a mission, not this: the point of the
     /// system is that held ground has to be fought for.
     /// </summary>
-    public async Task<Territory> ClaimAsync(Player player, long territoryId, int thugs, DateTime nowUtc, CancellationToken ct)
+    public async Task<Territory> ClaimAsync(Player player, long territoryId, int thugs, long? pimpId, DateTime nowUtc, CancellationToken ct)
     {
         var config = _options.Territory;
         var territory = await db.Territories.SingleOrDefaultAsync(x => x.Id == territoryId, ct)
@@ -115,6 +115,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         if (thugs > free)
             throw new GameRuleException($"You only have {free:N0} thug(s) free. The rest are out or already on the ground.");
 
+        territory.GarrisonPimpId = await ResolveGarrisonPimpAsync(player, pimpId, territoryId, ct);
         player.Turns -= config.ClaimTurnCost;
         territory.HolderId = player.Id;
         territory.GarrisonThugs = thugs;
@@ -127,7 +128,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     /// Moves thugs on or off ground already held. Dropping below the minimum gives the ground up rather
     /// than leaving it held by nobody, so a garrison always means what it says.
     /// </summary>
-    public async Task<(Territory Territory, bool GaveUp)> SetGarrisonAsync(Player player, long territoryId, int thugs, CancellationToken ct)
+    public async Task<(Territory Territory, bool GaveUp)> SetGarrisonAsync(Player player, long territoryId, int thugs, long? pimpId, CancellationToken ct)
     {
         var config = _options.Territory;
         var territory = await db.Territories.SingleOrDefaultAsync(x => x.Id == territoryId, ct)
@@ -141,6 +142,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         {
             territory.HolderId = null;
             territory.GarrisonThugs = 0;
+            territory.GarrisonPimpId = null;
             territory.HeldSinceUtc = null;
             return (territory, true);
         }
@@ -149,6 +151,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         if (thugs > free)
             throw new GameRuleException($"You only have {free:N0} thug(s) available for that ground.");
 
+        territory.GarrisonPimpId = await ResolveGarrisonPimpAsync(player, pimpId, territoryId, ct);
         territory.GarrisonThugs = thugs;
         return (territory, false);
     }
@@ -166,10 +169,45 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         return Math.Max(0, player.Thugs - garrisoned - onMissions);
     }
 
+    /// <summary>
+    /// Pimps posted to ground. They are away for every purpose a mission commander is: no house
+    /// defence bonus, no street income bonus, and not available to command a raid.
+    /// </summary>
+    public async Task<List<long>> GarrisonedPimpIdsAsync(Guid playerId, CancellationToken ct = default)
+        => await db.Territories.AsNoTracking()
+            .Where(x => x.HolderId == playerId && x.GarrisonPimpId != null)
+            .Select(x => x.GarrisonPimpId!.Value)
+            .ToListAsync(ct);
+
     public async Task<int> GarrisonedThugsAsync(Guid playerId, CancellationToken ct = default)
         => await db.Territories.AsNoTracking()
             .Where(x => x.HolderId == playerId)
             .SumAsync(x => (int?)x.GarrisonThugs, ct) ?? 0;
+
+    /// <summary>
+    /// Validates the pimp being posted. Somebody already out commanding a raid or standing on other
+    /// ground cannot also run this one, which is the same rule a mission commander answers to.
+    /// </summary>
+    private async Task<long?> ResolveGarrisonPimpAsync(Player player, long? pimpId, long territoryId, CancellationToken ct)
+    {
+        if (pimpId is not { } id)
+            return null;
+
+        var pimp = player.Crew.FirstOrDefault(x => x.Id == id && x.LostAtUtc is null)
+            ?? throw new GameRuleException("That pimp is not on your roster.");
+
+        var commanding = await db.CombatMissions.AsNoTracking()
+            .AnyAsync(x => x.AttackerId == player.Id && x.Status != "Complete" && x.CommanderPimpId == id, ct);
+        if (commanding)
+            throw new GameRuleException($"{pimp.Name} is out commanding a raid.");
+
+        var elsewhere = await db.Territories.AsNoTracking()
+            .AnyAsync(x => x.HolderId == player.Id && x.Id != territoryId && x.GarrisonPimpId == id, ct);
+        if (elsewhere)
+            throw new GameRuleException($"{pimp.Name} is already running other ground.");
+
+        return id;
+    }
 
     /// <summary>
     /// Hands ground to its new holder after a won raid. The winning force stays as the garrison, which
@@ -178,6 +216,8 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     public void Transfer(Territory territory, Guid newHolderId, int garrison, DateTime nowUtc)
     {
         territory.HolderId = newHolderId;
+        // The beaten pimp does not stay on to run it for the winner.
+        territory.GarrisonPimpId = null;
         territory.GarrisonThugs = Math.Max(_options.Territory.MinimumGarrison, garrison);
         territory.HeldSinceUtc = nowUtc;
         territory.ProtectedUntilUtc = nowUtc.AddMinutes(_options.Territory.HoldCooldownMinutes);

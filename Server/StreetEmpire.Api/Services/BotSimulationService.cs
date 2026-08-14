@@ -14,7 +14,8 @@ public sealed class BotSimulationService(
     IOptionsSnapshot<GameOptions> options,
     HideoutService hideouts,
     CombatMissionService missions,
-    TerritoryService territories)
+    TerritoryService territories,
+    PimpRoster pimps)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -180,7 +181,10 @@ public sealed class BotSimulationService(
             var before = Snapshot(bot);
             try
             {
-                var claimed = await territories.ClaimAsync(bot, open.Id, commit, nowUtc, ct);
+                // Rivals post an Enforcer too, picking their best free one, or the ground is defended
+                // by thugs alone and every player walks over it.
+                var garrisonPimp = pimps.ChooseCommander(bot, await territories.GarrisonedPimpIdsAsync(bot.Id, ct));
+                var claimed = await territories.ClaimAsync(bot, open.Id, commit, garrisonPimp?.Id, nowUtc, ct);
                 AddLog(bot, before, "TERRITORY", 0, nowUtc, $"AI: Took over {claimed.Name} with {claimed.GarrisonThugs:N0} thug(s).");
                 return 1;
             }

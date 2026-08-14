@@ -13,7 +13,9 @@
 - A Territory page showing your town's map, who holds what, and why a piece cannot be acted on.
 - Players choose their town at sign-up. Registration ignored the field before, so everyone ended up in
   New York whatever they picked.
-- AI rivals claim and raid ground, judging a garrison by the holder's morale and committing the same
+- A pimp can be posted to run each piece of ground, adding their bonus to its defence if they are an
+  Enforcer. Posted pimps count as away from home for every other purpose.
+- AI rivals post their best free Enforcer to ground they claim, and otherwise claim and raid ground, judging a garrison by the holder's morale and committing the same
   share of crew they would send on a raid.
 - Ground changing hands reaches the catch-up digest, the alert bell, and world news.
 

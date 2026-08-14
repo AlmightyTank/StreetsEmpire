@@ -172,6 +172,13 @@ public sealed class PimpOptions
     /// </summary>
     public int MaxStreetBonusPercent { get; set; } = 20;
     public int MaxDefenceBonusPercent { get; set; } = 20;
+
+    /// <summary>
+    /// Cap on what an Enforcer adds to ground they are posted to. Its own number rather than the house
+    /// cap: a garrison is a handful of thugs, so the same percentage is worth far less in absolute
+    /// terms, and holding ground should be worth putting a good pimp on.
+    /// </summary>
+    public int MaxGarrisonBonusPercent { get; set; } = 30;
 }
 
 /// <summary>

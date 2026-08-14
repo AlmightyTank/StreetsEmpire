@@ -1076,6 +1076,9 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .territory-card small { color: #7f7770; font-size: .73rem; }
 .territory-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; margin-top: 6px; }
 .territory-actions label { width: 78px; font-size: .72rem; }
+.territory-actions label.territory-pimp { width: 100%; }
+.territory-pimp select { width: 100%; }
+.territory-pimp-name { color: #8fbf9e; font-size: .77rem; }
 .bot-directive {
   margin-top: 14px;
   border: 1px solid #3b4442;

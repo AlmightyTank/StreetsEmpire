@@ -781,6 +781,7 @@ function TerritoryPage(ctx: PageContext) {
   const [board, setBoard] = useState<TerritoryBoard | null>(null)
   const [error, setError] = useState('')
   const [thugs, setThugs] = useState<Record<number, number>>({})
+  const [pimpFor, setPimpFor] = useState<Record<number, number | null>>({})
 
   const load = async () => {
     try { setBoard(await api.territories()); setError('') }
@@ -801,6 +802,11 @@ function TerritoryPage(ctx: PageContext) {
   const effects = board.effects
   const anyEffect = effects.streetIncomePercent || effects.productionYieldPercent || effects.moraleRecoveryPercent || effects.lootPercent
   const force = (id: number) => thugs[id] ?? board.minimumGarrison
+  const chosen = (id: number) => pimpFor[id] ?? null
+  // Only pimps who are actually free. Anyone out commanding a raid, or already running other ground,
+  // cannot take a second posting, and the server refuses it anyway.
+  const freePimps = (id: number) => dashboard.crew.filter(p => !p.isCommanding
+    && !board.territories.some(t => t.id !== id && t.heldByYou && t.garrisonPimpName === p.name))
 
   return <div className="page-grid one-column">
     <section className="panel wide-panel">
@@ -840,6 +846,9 @@ function TerritoryPage(ctx: PageContext) {
                 : 'Nobody holds this'}
             {' / '}{t.city}
           </span>
+          {t.garrisonPimpName && <span className="territory-pimp-name">
+            Run by {t.garrisonPimpName}{t.garrisonBonusPercent > 0 ? ` (+${t.garrisonBonusPercent}% defence)` : ''}
+          </span>}
           {t.isProtected && t.protectedUntilUtc && <small>Settled for {timeUntil(t.protectedUntilUtc)}</small>}
           {t.blockedReason && <small>{t.blockedReason}</small>}
           <div className="territory-actions">
@@ -849,11 +858,20 @@ function TerritoryPage(ctx: PageContext) {
               value={force(t.id)}
               onChange={e => setThugs(v => ({ ...v, [t.id]: Number(e.target.value) }))}
             /></label>
+            {(t.heldByYou || t.canClaim) && <label className="territory-pimp">Run by<select
+              value={chosen(t.id) ?? ''}
+              onChange={e => setPimpFor(v => ({ ...v, [t.id]: e.target.value ? Number(e.target.value) : null }))}
+            >
+              <option value="">Nobody</option>
+              {freePimps(t.id).map(p => <option key={p.id} value={p.id}>
+                {p.name} ({p.specialty}{p.specialty === 'Enforcer' ? ` +${p.bonusPercent}%` : ''})
+              </option>)}
+            </select></label>}
             {t.heldByYou && <>
-              <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, force(t.id)))}>Set garrison</button>
-              <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0))}>Give up</button>
+              <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
+              <button className="secondary compact" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</button>
             </>}
-            {t.canClaim && <button className="primary compact" disabled={busy} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id)))}>Claim</button>}
+            {t.canClaim && <button className="primary compact" disabled={busy} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
             {t.canRaid && <button className="primary compact" disabled={busy} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
           </div>
         </div>)}

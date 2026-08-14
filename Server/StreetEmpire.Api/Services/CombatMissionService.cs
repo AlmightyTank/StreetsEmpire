@@ -87,8 +87,10 @@ public sealed class CombatMissionService(
         if (incoming >= maxIncoming)
             throw new GameRuleException($"{defender.Name} is already fighting off {incoming:N0} attack(s). Wait your turn.");
 
-        // Whoever is already out leading another mission cannot lead this one too.
+        // Whoever is already out leading another mission cannot lead this one too, and neither can
+        // anyone standing on ground.
         var commanding = activeMissions.Where(x => x.CommanderPimpId is not null).Select(x => x.CommanderPimpId!.Value).ToList();
+        commanding.AddRange(await territories.GarrisonedPimpIdsAsync(attacker.Id, cancellationToken));
         var commander = pimps.ChooseCommander(attacker, commanding, request.CommanderPimpId)
             ?? throw new GameRuleException("You need a free pimp to command the attack.");
 
@@ -153,8 +155,9 @@ public sealed class CombatMissionService(
             .Include(x => x.Defender).ThenInclude(x => x.Crew)
             .Include(x => x.CommanderPimp)
             .Include(x => x.Events)
-            // Tracked, not AsNoTracking: a won raid writes the new holder onto this row.
-            .Include(x => x.Territory)
+            // Tracked, not AsNoTracking: a won raid writes the new holder onto this row. The garrison
+            // pimp comes with it, or their bonus silently reads as zero.
+            .Include(x => x.Territory).ThenInclude(x => x!.GarrisonPimp)
             .Where(x => x.Status != "Complete")
             .OrderBy(x => x.ArrivesAtUtc)
             .ThenBy(x => x.Id)
@@ -401,6 +404,8 @@ public sealed class CombatMissionService(
             .Select(x => new { x.AssignedPimps, x.RemainingAttackers, x.RemainingWeapons, x.CommanderPimpId })
             .ToListAsync(cancellationToken);
         var defenderAway = defenderCommitted.Where(x => x.CommanderPimpId != null).Select(x => x.CommanderPimpId!.Value).ToList();
+        // A pimp posted to ground is not at home either, so they cannot also be sharpening the house.
+        defenderAway.AddRange(await territories.GarrisonedPimpIdsAsync(mission.DefenderId, cancellationToken));
         var defenderHomePimps = Math.Max(0, mission.Defender.Pimps - defenderCommitted.Sum(x => x.AssignedPimps));
         var defenderHomeThugs = Math.Max(0, mission.Defender.Thugs - defenderCommitted.Sum(x => x.RemainingAttackers));
         var defenderHomeWeapons = Math.Max(0, mission.Defender.Weapons - defenderCommitted.Sum(x => x.RemainingWeapons));
@@ -413,7 +418,12 @@ public sealed class CombatMissionService(
         // handful of thugs and the house is the rest of the roster, so the defender would be stronger
         // for having sent fewer people to hold it. No enforcer bonus either; that pimp is at home.
         var defenderPower = mission.Territory is { } ground
-            ? DefensePower(0, ground.GarrisonThugs, ground.GarrisonThugs, mission.DefenderMorale)
+            ? DefensePower(
+                ground.GarrisonPimpId is null ? 0 : 1,
+                ground.GarrisonThugs,
+                ground.GarrisonThugs,
+                mission.DefenderMorale,
+                pimps.GarrisonBonusPercent(ground.GarrisonPimp))
             : DefensePower(defenderHomePimps, defenderHomeThugs, defenderHomeWeapons, mission.DefenderMorale, pimps.DefenceBonusPercent(mission.Defender, defenderAway));
         var attackRoll = ApplyPowerVariance(attackerPower, combat.PowerRandomnessPercent);
         var defenseRoll = ApplyPowerVariance(defenderPower, combat.PowerRandomnessPercent);

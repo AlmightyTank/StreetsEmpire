@@ -38,7 +38,7 @@ internal static class MarketEndpoints
                 .Select(key => new MarketGoodResponse(
                     key,
                     TradeGoods.Label(key),
-                    TradeGoods.ReferencePrice(options, key),
+                    TradeGoods.ReferencePrice(options, key, player.City),
                     TradeGoods.Held(player, key),
                     Math.Max(0, TradeGoods.Capacity(capacity, key) - TradeGoods.Held(player, key)),
                     listings.Where(x => x.Item == key).Select(x => (long?)x.PricePerUnit).Min()))
@@ -58,7 +58,7 @@ internal static class MarketEndpoints
                     x.PricePerUnit,
                     x.Seller.Name,
                     x.SellerId == player.Id,
-                    TradeGoods.ReferencePrice(options, x.Item),
+                    TradeGoods.ReferencePrice(options, x.Item, player.City),
                     x.CreatedAtUtc)).ToList()));
         }).RequireAuthorization();
 

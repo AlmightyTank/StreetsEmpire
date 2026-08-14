@@ -705,6 +705,51 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .mini-inventory { display: grid; }
 .market-bank { min-height: 172px; }
 .market-production { min-height: 280px; }
+.travel-panel { min-height: 240px; }
+.travel-blocked {
+  margin: -4px 0 12px;
+  border-left: 2px solid #b4534a;
+  padding-left: 10px;
+  color: #c9968f;
+  font-size: .82rem;
+}
+.travel-note { margin: -4px 0 12px; color: #7d766e; font-size: .78rem; }
+.city-market-list { display: grid; gap: 6px; }
+.city-market {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.1fr) 84px 84px 92px;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #28302f;
+  background: #0d1011;
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+/* Column headings, so the prices are not made to label themselves in every row. */
+.city-market.head { border-color: transparent; background: transparent; padding: 0 12px 2px; }
+.city-market.head span {
+  color: #9b9288;
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  text-align: right;
+}
+.city-market.head span:first-child { text-align: left; }
+.city-market.current { border-color: #6b5630; background: #171410; }
+.city-market-head { display: grid; gap: 2px; min-width: 0; }
+.city-market-head strong { color: #f4eee5; font-size: .9rem; }
+.city-market-head span { color: #938b82; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; }
+.city-market.current .city-market-head span { color: #e4b76b; }
+.city-price { display: grid; gap: 1px; justify-items: end; text-align: right; }
+.city-price b { color: #e8e0d5; font-size: .92rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.city-price small { color: #6f6a64; font-size: .7rem; font-variant-numeric: tabular-nums; }
+.city-price small.up { color: #6fbf8a; }
+.city-price small.down { color: #d4756a; }
+.city-market-go { display: grid; justify-items: end; gap: 2px; }
+.city-market-go button { width: 100%; }
+.city-market-go small { color: #8a8279; font-size: .68rem; text-align: right; font-variant-numeric: tabular-nums; }
+.city-market-go small.short { color: #d4756a; }
+.city-market-go .here { color: #e4b76b; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; }
 .production-command {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px;
@@ -923,6 +968,11 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   .page-grid, .overview-grid, .overview-layout, .two-column, .market-page { grid-template-columns: 1fr; }
   .status-strip { grid-template-columns: repeat(6, minmax(128px, 1fr)); }
   .hero-metrics, .crew-grid, .crew-combat-strip, .hideout-layout, .hideout-actions, .target-metrics, .admin-metrics, .product-grid, .production-command, .war-readiness, .mission-stats { grid-template-columns: 1fr; }
+  /* The two prices stay side by side and keep their headings; only the trip drops to its own line. */
+  .city-market { grid-template-columns: minmax(0, 1fr) 72px 72px; row-gap: 8px; }
+  .city-market.head span:last-child { display: none; }
+  .city-market-go { grid-column: 1 / -1; justify-items: stretch; }
+  .city-market-go small, .city-market-go .here { text-align: center; }
   .inventory-grid, .capacity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .room-row { grid-template-columns: minmax(0, 1fr) auto; }
   .room-row button { grid-column: 1 / -1; }

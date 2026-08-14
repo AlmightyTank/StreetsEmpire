@@ -40,6 +40,48 @@ internal static class ResponseMappers
             player.Thugs,
             player.CreatedAtUtc);
 
+    internal static List<CityMarketResponse> ToCityMarkets(GameOptions options, Player player)
+    {
+        var homeValue = LoadValue(options, player, player.City);
+        return options.CityMarkets.Profiles
+            .OrderBy(x => x.City)
+            .Select(x =>
+            {
+                var current = string.Equals(x.City, player.City, StringComparison.OrdinalIgnoreCase);
+                return new CityMarketResponse(
+                    x.City,
+                    x.Weed,
+                    x.Coke,
+                    x.Risk,
+                    options.CityMarkets.BustChancePercent(x.City),
+                    current ? null : BreakEvenSeizurePercent(options, player, x.City, homeValue),
+                    options.CityMarkets.ProductPrice(x.City, "weed", options.WeedSellPrice),
+                    options.CityMarkets.ProductPrice(x.City, "coke", options.CokeSellPrice),
+                    options.CityMarkets.TravelTurns(x.City),
+                    current);
+            })
+            .ToList();
+    }
+
+    /// <summary>What the carried product would fetch in a given town, at that town's prices.</summary>
+    private static long LoadValue(GameOptions options, Player player, string city)
+        => (long)player.Weed * options.CityMarkets.ProductPrice(city, "weed", options.WeedSellPrice)
+           + (long)player.Coke * options.CityMarkets.ProductPrice(city, "coke", options.CokeSellPrice);
+
+    /// <summary>
+    /// A stop takes a share of the load, so the run beats staying home only while
+    /// (1 - share) * thereValue > hereValue. Solving for the share gives the point where the trip
+    /// stops paying for itself, which is the number that says how much a stop here actually costs.
+    /// </summary>
+    private static int? BreakEvenSeizurePercent(GameOptions options, Player player, string city, long homeValue)
+    {
+        var destinationValue = LoadValue(options, player, city);
+        if (destinationValue <= 0) return null;
+
+        var share = 1 - (double)homeValue / destinationValue;
+        return Math.Max(0, (int)Math.Round(share * 100, MidpointRounding.AwayFromZero));
+    }
+
     internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerNetWorth = 0)
     {
         var player = ranked.Player;

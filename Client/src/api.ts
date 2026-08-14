@@ -121,6 +121,9 @@ export type Dashboard = {
   name: string
   isAdmin: boolean
   city: string
+  currentMarket: CityMarket
+  cityMarkets: CityMarket[]
+  travel: TravelStatus
   cash: number
   bankCash: number
   netWorth: number
@@ -154,6 +157,26 @@ export type Dashboard = {
   unreadDefenceAlerts: number
   store: StoreItem[]
   recentActivity: Activity[]
+}
+
+export type CityMarket = {
+  city: string
+  weed: string
+  coke: string
+  risk: string
+  bustChancePercent: number
+  breakEvenSeizurePercent: number | null
+  weedSellPrice: number
+  cokeSellPrice: number
+  travelTurns: number
+  current: boolean
+}
+
+export type TravelStatus = {
+  blockedReason: string | null
+  carriedValue: number
+  seizureMinPercent: number
+  seizureMaxPercent: number
 }
 
 export type MoraleDirection = 'up' | 'down' | 'steady' | 'unknown'
@@ -540,6 +563,7 @@ export const api = {
   cancelListing: (listingId: number) =>
     request<ActionResult>('/api/game/market/cancel', { method: 'POST', body: JSON.stringify({ listingId }) }),
   forge: (turns: number) => request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns }) }),
+  travel: (city: string) => request<ActionResult>('/api/game/travel', { method: 'POST', body: JSON.stringify({ city }) }),
   claimTerritory: (territoryId: number, thugs: number, pimpId: number | null) =>
     request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
   setGarrison: (territoryId: number, thugs: number, pimpId: number | null) =>

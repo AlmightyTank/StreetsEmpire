@@ -61,8 +61,9 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         return new TerritoryEffects(street, production, morale, loot);
     }
 
-    public async Task<TerritoryEffects> EffectsForAsync(Guid playerId, CancellationToken ct = default)
-        => EffectsFor(await HeldByAsync(playerId, ct));
+    public async Task<TerritoryEffects> EffectsForAsync(Guid playerId, string? city = null, CancellationToken ct = default)
+        => EffectsFor((await HeldByAsync(playerId, ct))
+            .Where(x => city is null || string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase)));
 
     public async Task<List<Territory>> HeldByAsync(Guid playerId, CancellationToken ct = default)
         => await db.Territories.AsNoTracking().Where(x => x.HolderId == playerId).ToListAsync(ct);

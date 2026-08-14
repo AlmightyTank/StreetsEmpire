@@ -30,6 +30,11 @@ var tests = new (string Name, Action Test)[]
     ("hideout caps crew hiring at the tier limit", HideoutCapsCrewHiring),
     ("hideout blocks store buys that would overflow storage", HideoutBlocksOverflowingStoreBuys),
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
+    ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
+    ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
+    ("a stopped run takes a share of the load but never the bank", StoppedRunTakesAShareOfTheLoadButNeverTheBank),
+    ("a small load is not worth stopping", SmallLoadIsNotWorthStopping),
+    ("break-even seizure is priced against what the player carries", BreakEvenSeizureIsPricedAgainstWhatThePlayerCarries),
     ("hideout grandfathers stock a player already held", HideoutGrandfathersExistingStock),
     ("hideout lab raises production yield", HideoutLabRaisesProductionYield),
     ("trade goods map keys to the piles they move", TradeGoodsMapKeysToPiles),
@@ -797,6 +802,110 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
     AssertEqual(1_400L, player.BankCash);
     AssertEqual(1_400L, Value<long>(RequiredBreakdown(result), "cashBankedByOverflow"));
     AssertTrue(result.Summary.Contains("safe was full"), "the summary should explain the transfer");
+}
+
+static void CityMarketsChangeProductSalePrices()
+{
+    var service = CreateEconomy(new GameOptions { WeedSellPrice = 40, CokeSellPrice = 150 });
+    var player = new Player
+    {
+        City = "Chicago",
+        Weed = 2,
+        Coke = 1,
+        Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
+    };
+
+    var weed = service.SellProduct(player, "weed", 2);
+    AssertEqual(100L, player.Cash);
+    AssertEqual(50, Value<int>(RequiredBreakdown(weed), "unitPrice"));
+
+    player.City = "Detroit";
+    var coke = service.SellProduct(player, "coke", 1);
+    AssertEqual(250L, player.Cash);
+    AssertEqual(150, Value<int>(RequiredBreakdown(coke), "unitPrice"));
+}
+
+static void TravelChangesCityAndSpendsTheTownsDistance()
+{
+    var options = Resolve(null);
+    var service = CreateEconomy(options);
+    var player = new Player { City = "Detroit", Turns = 10 };
+
+    var result = service.Travel(player, "Chicago");
+
+    AssertEqual("Chicago", player.City);
+    AssertEqual(7, player.Turns);
+    AssertEqual(3, Value<int>(RequiredBreakdown(result), "turnsSpent"));
+    AssertEqual("High", Value<string>(RequiredBreakdown(result), "risk"));
+
+    // Distance and danger are separate numbers: Chicago is the short run into the bad town, Los
+    // Angeles the long run into the calmer one. Reading either off the other would fail here.
+    AssertEqual(3, options.CityMarkets.TravelTurns("Chicago"));
+    AssertEqual(6, options.CityMarkets.TravelTurns("Los Angeles"));
+    AssertEqual(22, options.CityMarkets.BustChancePercent("Chicago"));
+    AssertEqual(12, options.CityMarkets.BustChancePercent("Los Angeles"));
+
+    AssertRuleError(() => service.Travel(player, "Chicago"), "traveling to the current city");
+    AssertRuleError(() => service.Travel(player, "Atlantis"), "traveling to an unknown city");
+}
+
+static void StoppedRunTakesAShareOfTheLoadButNeverTheBank()
+{
+    var service = CreateEconomy(null, new AlwaysRandom());
+    var player = new Player { City = "Detroit", Turns = 10, Cash = 10_000, BankCash = 50_000, Weed = 100, Coke = 40 };
+
+    var result = service.Travel(player, "Chicago");
+    var breakdown = RequiredBreakdown(result);
+
+    // The trip is already paid for, so a stopped run still arrives, just lighter.
+    AssertEqual("Chicago", player.City);
+    AssertEqual(7, player.Turns);
+    AssertTrue(Value<bool>(breakdown, "busted"), "the run should have been stopped");
+
+    AssertEqual(50_000L, player.BankCash);
+    AssertEqual(8_000L, player.Cash);
+    AssertEqual(80, player.Weed);
+    AssertEqual(32, player.Coke);
+    AssertEqual(2_000L, Value<long>(breakdown, "cashSeized"));
+    AssertEqual(20, Value<int>(breakdown, "weedSeized"));
+    AssertEqual(8, Value<int>(breakdown, "cokeSeized"));
+    AssertTrue(result.Summary.Contains("got stopped"), "the summary should say the run was stopped");
+}
+
+static void BreakEvenSeizureIsPricedAgainstWhatThePlayerCarries()
+{
+    var options = Resolve(null);
+    var cokeRunner = new Player { City = "Detroit", Coke = 100 };
+    var markets = ToCityMarkets(options, cokeRunner);
+    int? BreakEven(IEnumerable<CityMarketResponse> board, string city)
+        => board.Single(x => x.City == city).BreakEvenSeizurePercent;
+
+    // Coke out of Detroit at 150: Miami pays 225, New York 188, Chicago 150, Los Angeles 113. The
+    // share is how much of the load a stop can take before staying home would have paid better.
+    AssertEqual<int?>(33, BreakEven(markets, "Miami"));
+    AssertEqual<int?>(20, BreakEven(markets, "New York"));
+    AssertEqual<int?>(0, BreakEven(markets, "Chicago"));
+    AssertEqual<int?>(0, BreakEven(markets, "Los Angeles"));
+    AssertEqual<int?>(null, BreakEven(markets, "Detroit"));
+
+    // The same map reads differently for a weed load: the number belongs to what is being carried,
+    // not to the route, which is the whole reason it is worth showing.
+    var weedRunner = new Player { City = "Detroit", Weed = 400 };
+    AssertEqual<int?>(40, BreakEven(ToCityMarkets(options, weedRunner), "Chicago"));
+
+    AssertEqual<int?>(null, BreakEven(ToCityMarkets(options, new Player { City = "Detroit" }), "Miami"));
+}
+
+static void SmallLoadIsNotWorthStopping()
+{
+    var service = CreateEconomy(null, new AlwaysRandom());
+    var player = new Player { City = "Detroit", Turns = 10, Cash = 100 };
+
+    var result = service.Travel(player, "Chicago");
+
+    AssertTrue(!Value<bool>(RequiredBreakdown(result), "busted"), "pocket change should not be worth a stop");
+    AssertEqual(100L, player.Cash);
+    AssertEqual("Chicago", player.City);
 }
 
 static void HideoutGrandfathersExistingStock()
@@ -2102,12 +2211,12 @@ static void CombatAttackSpendsTurnsAndCreatesLog()
     AssertTrue(resolution.Log.Summary.Contains("Defender"), "combat summary should name the defender");
 }
 
-static EconomyService CreateEconomy(GameOptions? options = null)
+static EconomyService CreateEconomy(GameOptions? options = null, IGameRandom? random = null)
 {
     var resolved = Resolve(options);
     return new EconomyService(
         Snapshot(resolved),
-        new MinimumRandom(),
+        random ?? new MinimumRandom(),
         new HideoutService(Snapshot(resolved)),
         new PimpRoster(Snapshot(resolved), new MinimumRandom()));
 }
@@ -2143,6 +2252,7 @@ static GameOptions Resolve(GameOptions? options)
     var resolved = options ?? new GameOptions();
     resolved.Hideout.ApplyDefaultsWhereEmpty();
     resolved.Territory.ApplyDefaultsWhereEmpty();
+    resolved.CityMarkets.ApplyDefaultsWhereEmpty(resolved.Territory.Cities());
     return resolved;
 }
 

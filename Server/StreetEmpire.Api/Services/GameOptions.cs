@@ -42,6 +42,7 @@ public sealed class GameOptions
     public WorldNewsOptions WorldNews { get; set; } = new();
     public TerritoryOptions Territory { get; set; } = new();
     public MarketOptions Market { get; set; } = new();
+    public CityMarketOptions CityMarkets { get; set; } = new();
 }
 
 /// <summary>
@@ -306,6 +307,125 @@ public sealed class MarketOptions
     public double MaxPriceMultiplier { get; set; } = 4;
 
     public int MaxQuantityPerListing { get; set; } = 10_000;
+}
+
+public sealed class CityMarketOptions
+{
+    public List<CityMarketProfileOptions> Profiles { get; set; } = [];
+    public double CheapMultiplier { get; set; } = 0.75;
+    public double MediumMultiplier { get; set; } = 1.0;
+    public double HighMultiplier { get; set; } = 1.25;
+    public double ExpensiveMultiplier { get; set; } = 1.5;
+    /// <summary>
+    /// Trip length for a profile that does not set its own <see cref="CityMarketProfileOptions.TravelTurns"/>.
+    /// Still keyed by risk so older configuration keeps working, but distance and danger are separate
+    /// numbers now: a short run into a bad town should cost few turns and still be the one that hurts.
+    /// </summary>
+    public int LowRiskTravelTurns { get; set; } = 2;
+    public int MediumRiskTravelTurns { get; set; } = 4;
+    public int HighRiskTravelTurns { get; set; } = 6;
+
+    /// <summary>Chance a run into the town is stopped, by risk band.</summary>
+    public double LowRiskBustChance { get; set; } = 0.05;
+    public double MediumRiskBustChance { get; set; } = 0.12;
+    public double HighRiskBustChance { get; set; } = 0.22;
+
+    /// <summary>
+    /// Share of the load taken when a run is stopped, rolled per trip. The top of the range has to
+    /// clear a route's break-even share (1 - homePrice/destPrice, up to 40% on the shipped map) or a
+    /// stop on the best runs costs less than staying home would have, and risk stops meaning anything.
+    /// </summary>
+    public double SeizureMinPercent { get; set; } = 0.20;
+    public double SeizureMaxPercent { get; set; } = 0.60;
+
+    /// <summary>
+    /// Below this carried value a stop takes nothing. A player moving pocket change is not worth
+    /// searching, and it keeps a first haul from being wiped before there is anything to bank.
+    /// </summary>
+    public long MinimumCarriedValueToBust { get; set; } = 2_000;
+
+    public void ApplyDefaultsWhereEmpty(IReadOnlyList<string> cities)
+    {
+        if (Profiles.Count == 0)
+            Profiles =
+            [
+                new CityMarketProfileOptions { City = "Miami", Weed = "Cheap", Coke = "Expensive", Risk = "Medium", TravelTurns = 5 },
+                new CityMarketProfileOptions { City = "New York", Weed = "Medium", Coke = "High", Risk = "High", TravelTurns = 4 },
+                new CityMarketProfileOptions { City = "Detroit", Weed = "Cheap", Coke = "Medium", Risk = "Low", TravelTurns = 2 },
+                new CityMarketProfileOptions { City = "Los Angeles", Weed = "Medium", Coke = "Cheap", Risk = "Medium", TravelTurns = 6 },
+                new CityMarketProfileOptions { City = "Chicago", Weed = "High", Coke = "Medium", Risk = "High", TravelTurns = 3 }
+            ];
+
+        foreach (var city in cities)
+            if (!Profiles.Any(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase)))
+                Profiles.Add(new CityMarketProfileOptions { City = city, Weed = "Medium", Coke = "Medium", Risk = "Medium" });
+    }
+
+    public CityMarketProfileOptions ProfileFor(string? city)
+        => Profiles.FirstOrDefault(x => string.Equals(x.City, city?.Trim(), StringComparison.OrdinalIgnoreCase))
+           ?? Profiles.FirstOrDefault()
+           ?? new CityMarketProfileOptions { City = city?.Trim() ?? "New York", Weed = "Medium", Coke = "Medium", Risk = "Medium" };
+
+    public string? ResolveCity(string? city)
+        => Profiles.FirstOrDefault(x => string.Equals(x.City, city?.Trim(), StringComparison.OrdinalIgnoreCase))?.City;
+
+    public int ProductPrice(string? city, string product, int basePrice)
+    {
+        var profile = ProfileFor(city);
+        var band = product.Trim().ToLowerInvariant() == "weed" ? profile.Weed : profile.Coke;
+        return Math.Max(1, (int)Math.Round(basePrice * MultiplierFor(band), MidpointRounding.AwayFromZero));
+    }
+
+    public int TravelTurns(string? city)
+    {
+        var profile = ProfileFor(city);
+        return Math.Max(1, profile.TravelTurns ?? RiskTravelTurns(profile.Risk));
+    }
+
+    public double BustChance(string? city)
+        => RiskBustChance(ProfileFor(city).Risk);
+
+    public int BustChancePercent(string? city)
+        => (int)Math.Round(BustChance(city) * 100, MidpointRounding.AwayFromZero);
+
+    private double MultiplierFor(string? band)
+        => band?.Trim().ToLowerInvariant() switch
+        {
+            "cheap" => CheapMultiplier,
+            "medium" => MediumMultiplier,
+            "high" => HighMultiplier,
+            "expensive" => ExpensiveMultiplier,
+            _ => MediumMultiplier
+        };
+
+    private int RiskTravelTurns(string? risk)
+        => risk?.Trim().ToLowerInvariant() switch
+        {
+            "low" => LowRiskTravelTurns,
+            "high" => HighRiskTravelTurns,
+            _ => MediumRiskTravelTurns
+        };
+
+    private double RiskBustChance(string? risk)
+        => Math.Clamp(risk?.Trim().ToLowerInvariant() switch
+        {
+            "low" => LowRiskBustChance,
+            "high" => HighRiskBustChance,
+            _ => MediumRiskBustChance
+        }, 0, 1);
+}
+
+public sealed class CityMarketProfileOptions
+{
+    public string City { get; set; } = string.Empty;
+    public string Weed { get; set; } = "Medium";
+    public string Coke { get; set; } = "Medium";
+
+    /// <summary>How likely a run into this town is stopped. No longer decides the trip length.</summary>
+    public string Risk { get; set; } = "Medium";
+
+    /// <summary>How far the town is, in turns. Falls back to the risk-keyed default when unset.</summary>
+    public int? TravelTurns { get; set; }
 }
 
 public sealed class TerritoryOptions

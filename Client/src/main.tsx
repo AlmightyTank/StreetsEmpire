@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, PlayerProfile, PlayerTarget, TerritoryBoard, WorldNews, WorldNewsEntry, CatchUp } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -422,7 +422,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
 }
 
 function OverviewPage(ctx: PageContext) {
-  const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, setActivePage } = ctx
+  const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="overview-layout">
     <div className="overview-stack">
       <section className="panel hero-panel">
@@ -442,6 +442,8 @@ function OverviewPage(ctx: PageContext) {
       </section>
 
       <NextMovePanel dashboard={dashboard} weaponCoverage={weaponCoverage} managementCapacity={managementCapacity} onPage={setActivePage} />
+
+      <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
 
       <section className="panel">
         <div className="panel-title"><h2>Inventory</h2><span>On hand</span></div>
@@ -978,13 +980,13 @@ function MarketPage(ctx: PageContext) {
   const { dashboard, busy, productionTurns, bankAmount, storeQty, sellQty, setProductionTurns, setBankAmount, setStoreQty, setSellQty, act } = ctx
   return <div className="market-page">
     <section className="panel wide-panel">
-      <div className="panel-title"><h2>Inventory</h2><span>Supplies + product</span></div>
+      <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
       <div className="inventory-grid">
         <InventoryCard name="Condoms" count={dashboard.condoms} note="Hoe upkeep" />
         <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
         <InventoryCard name="Weapons" count={dashboard.weapons} note="Permanent security" />
-        <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} street price`} />
-        <InventoryCard name="Coke" count={dashboard.coke} note={`${money.format(dashboard.cokeSellPrice)} street price`} />
+        <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} ${dashboard.currentMarket.weed.toLowerCase()}`} />
+        <InventoryCard name="Coke" count={dashboard.coke} note={`${money.format(dashboard.cokeSellPrice)} ${dashboard.currentMarket.coke.toLowerCase()}`} />
       </div>
     </section>
 
@@ -1022,7 +1024,7 @@ function MarketPage(ctx: PageContext) {
     <section className="panel market-production">
       <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
       <div className="production-command">
-        <p>Turn cash-on-hand into inventory, then sell product at fixed street prices.</p>
+        <p>Turn cash-on-hand into inventory, then sell product at this city's street prices.</p>
         <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
       </div>
       <div className="product-grid">
@@ -1050,6 +1052,77 @@ function MarketPage(ctx: PageContext) {
         />
       </div>
     </section>
+  </div>
+}
+
+function TravelPanel({ markets, turns, travel, busy, act }: { markets: CityMarket[], turns: number, travel: TravelStatus, busy: boolean, act: PageContext['act'] }) {
+  const here = markets.find(x => x.current)
+  // The city you stand in leads the list: every other row's price is read as a move against it, so
+  // the baseline has to sit where the eye starts rather than wherever the alphabet dropped it.
+  const ordered = here ? [here, ...markets.filter(x => !x.current)] : markets
+  return <section className="panel travel-panel">
+    {/* The stake is on the title line because it is the number that decides whether to bank first. */}
+    <div className="panel-title"><h2>Travel</h2><span>{turns.toLocaleString()} turns, carrying {money.format(travel.carriedValue)}</span></div>
+    {travel.blockedReason !== null && <p className="travel-blocked">{travel.blockedReason}</p>}
+    {travel.carriedValue > 0 && <p className="travel-note">A stop takes {travel.seizureMinPercent}–{travel.seizureMaxPercent}% of what you carry.</p>}
+    <div className="city-market-list">
+      <div className="city-market head">
+        <span>City</span><span>Weed</span><span>Coke</span><span>Trip</span>
+      </div>
+      {ordered.map(city => {
+        const shortfall = city.travelTurns - turns
+        return <div className={city.current ? 'city-market current' : 'city-market'} key={city.city}>
+          <div className="city-market-head">
+            <strong>{city.city}</strong>
+            <span>{city.current ? 'Current city' : riskLine(city, travel)}</span>
+          </div>
+          <CityPrice price={city.weedSellPrice} base={here?.weedSellPrice} showDelta={!city.current} />
+          <CityPrice price={city.cokeSellPrice} base={here?.cokeSellPrice} showDelta={!city.current} />
+          <div className="city-market-go">
+            {city.current
+              ? <span className="here">You are here</span>
+              : <>
+                <button
+                  className="secondary compact"
+                  disabled={busy || travel.blockedReason !== null || shortfall > 0}
+                  onClick={() => void act(() => api.travel(city.city))}
+                >
+                  Travel
+                </button>
+                <small className={shortfall > 0 ? 'short' : undefined}>
+                  {shortfall > 0 ? `need ${shortfall} more` : `${city.travelTurns} turns`}
+                </small>
+              </>}
+          </div>
+        </div>
+      })}
+    </div>
+  </section>
+}
+
+/// Chance and severity on one line. A break-even share only reads as a number while it sits inside
+/// the seizure range; outside it the honest answer is a phrase, because "break-even 8%" on a run
+/// where every possible stop already costs more than staying tells the player nothing they can use.
+function riskLine(city: CityMarket, travel: TravelStatus) {
+  const bust = `${city.bustChancePercent}% bust`
+  const breakEven = city.breakEvenSeizurePercent
+  if (breakEven === null) return bust
+  if (breakEven <= 0) return `${bust}, pays less here`
+  if (breakEven <= travel.seizureMinPercent) return `${bust}, any stop costs the trip`
+  if (breakEven >= travel.seizureMaxPercent) return `${bust}, no stop can cost the trip`
+  return `${bust}, break-even ${breakEven}%`
+}
+
+/// The price leads and the change against your own city sits under it: the number a player acts on
+/// is the difference, and making them hold your city's price in their head to find it is the work
+/// the panel should be doing.
+function CityPrice({ price, base, showDelta }: { price: number, base: number | undefined, showDelta: boolean }) {
+  const delta = base === undefined ? 0 : price - base
+  return <div className="city-price">
+    <b>{money.format(price)}</b>
+    {showDelta && base !== undefined && (delta === 0
+      ? <small>same</small>
+      : <small className={delta > 0 ? 'up' : 'down'}>{delta > 0 ? '+' : '−'}{money.format(Math.abs(delta))}</small>)}
   </div>
 }
 

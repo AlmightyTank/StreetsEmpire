@@ -5,6 +5,7 @@ namespace StreetEmpire.Api.Contracts;
 public sealed record ScoutRequest(int Turns, bool AutoBuySupplies = false);
 public sealed record ProduceRequest(string? Product, int Turns);
 public sealed record SellProductRequest(string? Product, int Quantity);
+public sealed record TravelRequest(string? City);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
 public sealed record BankRequest(long Amount);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
@@ -119,6 +120,9 @@ public sealed record DashboardResponse(
     string Name,
     bool IsAdmin,
     string City,
+    CityMarketResponse CurrentMarket,
+    IReadOnlyList<CityMarketResponse> CityMarkets,
+    TravelStatusResponse Travel,
     long Cash,
     long BankCash,
     long NetWorth,
@@ -152,6 +156,32 @@ public sealed record DashboardResponse(
     int UnreadDefenceAlerts,
     IReadOnlyList<StoreItemResponse> Store,
     IReadOnlyList<ActivityResponse> RecentActivity);
+
+public sealed record CityMarketResponse(
+    string City,
+    string Weed,
+    string Coke,
+    string Risk,
+    int BustChancePercent,
+    /// <summary>
+    /// The seizure share at which this run stops being worth taking, for the load the player is
+    /// actually carrying. Null when they carry nothing, or for the town they are standing in.
+    /// </summary>
+    int? BreakEvenSeizurePercent,
+    int WeedSellPrice,
+    int CokeSellPrice,
+    int TravelTurns,
+    bool Current);
+
+/// <summary>
+/// Travel facts that belong to the player rather than to any one town. The seizure range rides along
+/// because a break-even share means nothing without knowing what a stop can actually take.
+/// </summary>
+public sealed record TravelStatusResponse(
+    string? BlockedReason,
+    long CarriedValue,
+    int SeizureMinPercent,
+    int SeizureMaxPercent);
 
 public sealed record CrewReportResponse(
     int ManagementCapacity,

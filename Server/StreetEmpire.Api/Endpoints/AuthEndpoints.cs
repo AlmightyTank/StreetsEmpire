@@ -102,7 +102,7 @@ internal static class AuthEndpoints
             {
                 Player = player,
                 Action = "START",
-                Summary = $"{playerName} started an operation in New York with ${opts.StartingCash:N0}, {opts.StartingPimps} pimp(s), {opts.StartingHoes} hoe(s), and {opts.StartingThugs} thug(s).",
+                Summary = $"{playerName} started an operation in {player.City} with ${opts.StartingCash:N0}, {opts.StartingPimps} pimp(s), {opts.StartingHoes} hoe(s), and {opts.StartingThugs} thug(s).",
                 CashDelta = opts.StartingCash,
                 PimpsDelta = opts.StartingPimps,
                 HoesDelta = opts.StartingHoes,

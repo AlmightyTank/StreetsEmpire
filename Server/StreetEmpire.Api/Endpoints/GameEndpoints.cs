@@ -81,6 +81,15 @@ internal static class GameEndpoints
             // The window is now only a staleness bound. A baseline older than it says nothing useful
             // about the present, so the arrow is withheld rather than guessed.
             var opts = gameOptions.Value;
+            var cityMarkets = ToCityMarkets(opts, player);
+            var currentMarket = cityMarkets.First(x => x.Current);
+            // Reported up front so the travel panel can say why it is closed. Without it the buttons
+            // render live and the player only learns about the garrison or the mission by clicking.
+            var travel = new TravelStatusResponse(
+                await TravelBlockedReasonAsync(db, player.Id, ct),
+                economy.CarriedValue(player),
+                (int)Math.Round(opts.CityMarkets.SeizureMinPercent * 100, MidpointRounding.AwayFromZero),
+                (int)Math.Round(opts.CityMarkets.SeizureMaxPercent * 100, MidpointRounding.AwayFromZero));
             var trendSince = now.AddHours(-Math.Max(1, opts.Morale.TrendWindowHours));
             var moraleBaseline = await db.ActionLogs.AsNoTracking()
                 .Where(x => x.PlayerId == player.Id && x.CreatedAtUtc >= trendSince && x.HoeMoraleBefore != null)
@@ -106,6 +115,9 @@ internal static class GameEndpoints
                 player.Name,
                 player.Account.IsAdmin,
                 player.City,
+                currentMarket,
+                cityMarkets,
+                travel,
                 player.Cash,
                 player.BankCash,
                 netWorth,
@@ -128,8 +140,8 @@ internal static class GameEndpoints
                 player.Weapons,
                 player.Weed,
                 player.Coke,
-                opts.WeedSellPrice,
-                opts.CokeSellPrice,
+                economy.ProductSellPrice(player.City, "weed"),
+                economy.ProductSellPrice(player.City, "coke"),
                 economy.GetCrewReport(player),
                 ToHideoutResponse(player, hideouts, now, opts),
                 pimps.Active(player).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
@@ -139,6 +151,44 @@ internal static class GameEndpoints
                 unreadAlerts,
                 economy.GetStore(),
                 activity));
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/travel", async (
+            TravelRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            EconomyService economy,
+            CombatResolutionService combatResolver,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await combatResolver.ResolveDueAsync(now, ct);
+            var blockedReason = await TravelBlockedReasonAsync(db, player.Id, ct);
+            if (blockedReason is not null)
+                return Results.BadRequest(new { error = blockedReason });
+
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var result = economy.Travel(player, request.City);
+                AddLog(db, player, before, "TRAVEL", result.Breakdown is not null && result.Breakdown.TryGetValue("turnsSpent", out var turnsSpent)
+                    ? Convert.ToInt32(turnsSpent)
+                    : 0,
+                    result.Summary,
+                    now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         }).RequireAuthorization();
 
 
@@ -165,7 +215,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -201,7 +251,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -229,7 +279,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Produce(player, request.Product, request.Turns, await territories.EffectsForAsync(player.Id, ct));
+                var result = economy.Produce(player, request.Product, request.Turns, await territories.EffectsForAsync(player.Id, player.City, ct));
                 AddLog(db, player, before, "PRODUCTION", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -494,6 +544,18 @@ internal static class GameEndpoints
                 .OrderBy(x => x.ReturnsAtUtc ?? x.NextRoundAtUtc ?? x.ArrivesAtUtc)
                 .ThenBy(x => x.Id)
                 .FirstOrDefaultAsync(cancellationToken);
+
+        // Neither blocker is per-city, so travel is either open or shut for the whole panel. Shared by
+        // the dashboard, which reports the reason, and the travel post, which enforces it.
+        static async Task<string?> TravelBlockedReasonAsync(GameDbContext db, Guid playerId, CancellationToken cancellationToken)
+        {
+            var pendingAttack = await ActiveOutgoingMissionAsync(db, playerId, cancellationToken);
+            if (pendingAttack is not null) return PendingAttackMessage(pendingAttack);
+
+            return await db.Territories.AsNoTracking().AnyAsync(x => x.HolderId == playerId, cancellationToken)
+                ? "Pull your garrisons off your ground before leaving town."
+                : null;
+        }
 
         static string PendingAttackMessage(CombatMission mission)
         {

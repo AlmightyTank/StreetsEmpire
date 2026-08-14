@@ -24,6 +24,20 @@
 - Ground changing hands reaches the catch-up digest, the alert bell, and world news.
 - A raid you beat off tells the holder what it cost the garrison, in both the digest and the bell.
 - A world news headline for whoever runs the most ground.
+- Each town prices weed and coke on its own band, so a pile is worth different money depending on
+  where you are standing with it.
+- Travel between towns. How far a town is and how dangerous it is are separate numbers, so a short
+  run into a bad town is a real choice rather than the same fact stated twice.
+- A run can be stopped on the way in, taking a fifth to three fifths of the cash and product carried.
+  The bank is never touched, which is what makes banking before a run worth doing. A stopped run
+  still arrives: the turns are already spent, and turning the player back as well would be two
+  punishments for one roll. A load too small to be worth searching is left alone.
+- A Travel panel on the overview reading every town's prices as a change against the town you are in,
+  the trip cost against the turns in hand, and the share a stop would have to take before the run
+  stops paying for itself. That share is priced against the load actually being carried, so the same
+  map reads differently for a coke run and a weed run.
+- Travel is refused while an attack is out or while you hold ground, and the panel says which before
+  a button is pressed rather than leaving the player to find out by pressing one.
 
 ### Changed
 - One shared definition of which log rows are notifications rather than actions, with the activity
@@ -35,6 +49,11 @@
   own settling period after changing hands.
 - The player clock resolves morale recovery bonuses itself rather than asking every caller to pass
   them, so recovery still happens in one place.
+- Product sells at the price of the town it is sold in, rather than one street price for the whole
+  game.
+- A listing's price band on the player market is judged against the seller's town, so the guard
+  against a fat-fingered price moves with the local market instead of a single global number.
+- Ground pays out only in the town you are standing in.
 
 ## 0.2.3
 

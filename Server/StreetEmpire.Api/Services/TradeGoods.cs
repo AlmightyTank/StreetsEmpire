@@ -65,13 +65,13 @@ public static class TradeGoods
     /// What the game itself pays or charges, as the reference a listing is judged against. Used only to
     /// keep listings inside a sane band so a fat-fingered price cannot poison the board.
     /// </summary>
-    public static long ReferencePrice(GameOptions options, string key) => key switch
+    public static long ReferencePrice(GameOptions options, string key, string? city = null) => key switch
     {
         "condoms" => options.CondomPrice,
         "beer" => options.BeerPrice,
         "weapons" => options.WeaponPrice,
-        "weed" => options.WeedSellPrice,
-        "coke" => options.CokeSellPrice,
+        "weed" => options.CityMarkets.ProductPrice(city, "weed", options.WeedSellPrice),
+        "coke" => options.CityMarkets.ProductPrice(city, "coke", options.CokeSellPrice),
         _ => 0
     };
 }

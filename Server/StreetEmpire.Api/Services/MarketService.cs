@@ -33,7 +33,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
         if (pricePerUnit < 1)
             throw new GameRuleException("Name a price above zero.");
 
-        var reference = TradeGoods.ReferencePrice(_options, key);
+        var reference = TradeGoods.ReferencePrice(_options, key, seller.City);
         var floor = (long)Math.Floor(reference * config.MinPriceMultiplier);
         var ceiling = (long)Math.Ceiling(reference * config.MaxPriceMultiplier);
         if (reference > 0 && (pricePerUnit < floor || pricePerUnit > ceiling))

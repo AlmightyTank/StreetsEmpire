@@ -443,7 +443,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         var key = NormalizeProduct(product);
         var stockBefore = StockLevels.From(player);
-        var price = key == "weed" ? _options.WeedSellPrice : _options.CokeSellPrice;
+        var price = ProductSellPrice(player.City, key);
         if (key == "weed")
         {
             if (player.Weed < quantity) throw new GameRuleException("You do not have enough weed.");
@@ -470,6 +470,120 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["cashBankedByOverflow"] = overflow.CashBanked
             });
     }
+
+    public ActionResultResponse Travel(Player player, string? city)
+    {
+        var destination = _options.CityMarkets.ResolveCity(city)
+            ?? throw new GameRuleException($"Pick one of: {string.Join(", ", _options.CityMarkets.Profiles.Select(x => x.City))}.");
+        if (string.Equals(player.City, destination, StringComparison.OrdinalIgnoreCase))
+            throw new GameRuleException($"You are already in {destination}.");
+
+        var turns = _options.CityMarkets.TravelTurns(destination);
+        if (player.Turns < turns)
+            throw new GameRuleException($"Travel to {destination} takes {turns:N0} turns.");
+
+        var from = player.City;
+        var profile = _options.CityMarkets.ProfileFor(destination);
+        player.Turns -= turns;
+        player.City = destination;
+
+        // The trip is already paid for in turns, so a bad roll lightens the load rather than turning
+        // the player back. Losing the turns and the ground would be two punishments for one roll.
+        var seizure = RollTravelSeizure(player, destination);
+        var prices = $"Weed is {profile.Weed.ToLowerInvariant()}, coke is {profile.Coke.ToLowerInvariant()}.";
+        var summary = seizure.Busted
+            ? $"Traveled from {from} to {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices}"
+            : $"Traveled from {from} to {destination} clean. {prices}";
+
+        return new ActionResultResponse(
+            summary,
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["from"] = from,
+                ["to"] = destination,
+                ["turnsSpent"] = turns,
+                ["risk"] = profile.Risk,
+                ["bustChancePercent"] = _options.CityMarkets.BustChancePercent(destination),
+                ["busted"] = seizure.Busted,
+                ["cashSeized"] = seizure.Cash,
+                ["weedSeized"] = seizure.Weed,
+                ["cokeSeized"] = seizure.Coke,
+                ["weedSellPrice"] = ProductSellPrice(destination, "weed"),
+                ["cokeSellPrice"] = ProductSellPrice(destination, "coke")
+            });
+    }
+
+    /// <summary>
+    /// What a player has on them, valued the way net worth values it. Cash in the bank is deliberately
+    /// absent: it is the one place a load is safe, and that is what makes banking before a run a move.
+    /// </summary>
+    public long CarriedValue(Player player)
+        => player.Cash
+           + (long)player.Weed * _options.WeedNetWorth
+           + (long)player.Coke * _options.CokeNetWorth;
+
+    /// <summary>
+    /// Rolled once per trip rather than per turn: a run is one event, and per-turn rolls would make
+    /// the far towns punishing for their distance instead of their danger.
+    /// </summary>
+    private TravelSeizure RollTravelSeizure(Player player, string destination)
+    {
+        var markets = _options.CityMarkets;
+        if (CarriedValue(player) < markets.MinimumCarriedValueToBust) return TravelSeizure.None;
+        if (!RollChance(markets.BustChance(destination))) return TravelSeizure.None;
+
+        var share = Math.Clamp(
+            markets.SeizureMinPercent + random.NextDouble() * (markets.SeizureMaxPercent - markets.SeizureMinPercent),
+            0,
+            1);
+        var seizure = new TravelSeizure(
+            true,
+            SeizeCash(player.Cash, share),
+            SeizeUnits(player.Weed, share),
+            SeizeUnits(player.Coke, share));
+
+        player.Cash -= seizure.Cash;
+        player.Weed -= seizure.Weed;
+        player.Coke -= seizure.Coke;
+        return seizure;
+    }
+
+    private static long SeizeCash(long held, double share)
+        => held <= 0 ? 0 : (long)Math.Floor(held * share);
+
+    /// <summary>Keeps at least one unit when there was anything to take, as combat loot does.</summary>
+    private static int SeizeUnits(int held, double share)
+        => held <= 0 ? 0 : Math.Max(1, (int)Math.Floor(held * share));
+
+    private static string SeizureSummary(TravelSeizure seizure)
+    {
+        var lost = new List<string>();
+        if (seizure.Cash > 0) lost.Add($"${seizure.Cash:N0}");
+        if (seizure.Weed > 0) lost.Add($"{seizure.Weed:N0} weed");
+        if (seizure.Coke > 0) lost.Add($"{seizure.Coke:N0} coke");
+
+        return lost.Count switch
+        {
+            0 => "Nothing on you was worth taking.",
+            1 => $"They took {lost[0]}.",
+            2 => $"They took {lost[0]} and {lost[1]}.",
+            _ => $"They took {string.Join(", ", lost.Take(lost.Count - 1))} and {lost[^1]}."
+        };
+    }
+
+    private readonly record struct TravelSeizure(bool Busted, long Cash, int Weed, int Coke)
+    {
+        public static readonly TravelSeizure None = new(false, 0, 0, 0);
+    }
+
+    public int ProductSellPrice(string? city, string product)
+        => product.Trim().ToLowerInvariant() switch
+        {
+            "weed" => _options.CityMarkets.ProductPrice(city, "weed", _options.WeedSellPrice),
+            "coke" => _options.CityMarkets.ProductPrice(city, "coke", _options.CokeSellPrice),
+            _ => throw new GameRuleException("Product must be 'weed' or 'coke'.")
+        };
 
     public ActionResultResponse BuyStoreItem(Player player, string? itemKey, int quantity)
     {

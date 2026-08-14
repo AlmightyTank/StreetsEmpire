@@ -506,7 +506,7 @@ public sealed class CombatMissionService(
                                  && x.CreatedAtUtc >= windowStart, cancellationToken);
             // A stash house lifts the haul. Folded into the multiplier the mission already carries, so
             // there is still one number deciding what a raid is worth.
-            var stashPercent = (await territories.EffectsForAsync(mission.AttackerId, cancellationToken)).LootPercent;
+            var stashPercent = (await territories.EffectsForAsync(mission.AttackerId, mission.Attacker.City, cancellationToken)).LootPercent;
             mission.LootMultiplierPercent = (int)Math.Round(
                 AntiFarm.LootMultiplier(priorVictories, _options.AntiFarm) * 100 * (1 + stashPercent / 100.0));
             mission.DefenderRecentHits = recentHits;

@@ -29,6 +29,7 @@ builder.Services.AddOptions<GameOptions>().PostConfigure<GameOptionOverrides>((o
     overrides.Apply(options);
     options.Hideout.ApplyDefaultsWhereEmpty();
     options.Territory.ApplyDefaultsWhereEmpty();
+    options.CityMarkets.ApplyDefaultsWhereEmpty(options.Territory.Cities());
 });
 builder.Services.Configure<BotAutomationOptions>(builder.Configuration.GetSection("Bots"));
 builder.Services.AddDbContext<GameDbContext>(options =>

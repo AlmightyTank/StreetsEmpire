@@ -123,19 +123,27 @@ using (var startupScope = app.Services.CreateScope())
         var stored = await startupDb.GameSettings
             .AsNoTracking()
             .Where(x => x.Id == 1)
-            .Select(x => x.ConfigOverridesJson)
+            .Select(x => new { x.ConfigOverridesJson, x.BotAutomationEnabled, x.BotTickSeconds, x.BotRoundsPerTick })
             .SingleOrDefaultAsync();
-        if (!string.IsNullOrWhiteSpace(stored))
+        if (!string.IsNullOrWhiteSpace(stored?.ConfigOverridesJson))
         {
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(stored);
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(stored.ConfigOverridesJson);
             if (parsed is not null)
                 startupOverrides.Replace(parsed);
+        }
+        if (stored is not null)
+        {
+            // Automatic AI is deliberately restored before the background service starts, so a restart
+            // does not quietly revert an admin's decision to the appsettings default.
+            var startupAutomation = startupScope.ServiceProvider.GetRequiredService<BotAutomationState>();
+            startupAutomation.SetEnabled(stored.BotAutomationEnabled);
+            startupAutomation.SetTiming(stored.BotTickSeconds, stored.BotRoundsPerTick);
         }
     }
     catch (Exception ex)
     {
         // A missing or unreadable settings row must not stop the game booting on appsettings alone.
-        app.Logger.LogWarning(ex, "Could not load tuning overrides; running on appsettings values.");
+        app.Logger.LogWarning(ex, "Could not load stored settings; running on appsettings values.");
     }
 }
 

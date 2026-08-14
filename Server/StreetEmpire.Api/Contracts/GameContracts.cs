@@ -12,7 +12,8 @@ public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);
 public sealed record AdminSeedBotsRequest(int Count);
 public sealed record AdminRunBotsRequest(int Rounds);
-public sealed record AdminBotAutomationRequest(bool Enabled);
+/// <summary>Null timings mean "leave as they are"; the reset flag restores the configured defaults.</summary>
+public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = null, int? RoundsPerTick = null, bool ResetTiming = false);
 /// <summary>
 /// An attack carries exactly one commanding pimp, so there is no count to send. Naming a pimp picks
 /// the commander; leaving it null lets the server field the best Enforcer available.
@@ -412,7 +413,13 @@ public sealed record AdminOverviewResponse(
 public sealed record BotAutomationStatusResponse(
     bool Enabled,
     int TickSeconds,
-    int RoundsPerTick);
+    int RoundsPerTick,
+    int DefaultTickSeconds,
+    int DefaultRoundsPerTick,
+    int MinTickSeconds,
+    int MaxTickSeconds,
+    int MinRoundsPerTick,
+    int MaxRoundsPerTick);
 
 // ----- Admin panel -----
 

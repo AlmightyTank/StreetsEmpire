@@ -13,6 +13,8 @@
   being the constraint.
 - A curated world news feed with headlines for who leads, the biggest take, the best score, and new
   arrivals.
+- The admin panel is split into tabs, with the catch-all Admin Control Center dissolved into them and
+  a dedicated AI Rivals tab covering seeding, manual runs, the automatic loop's timing, and a roster.
 - A catch-up summary on arrival covering attacks taken, passive lab output, finished buildings, a
   filled turn meter, live protection, the rank you moved to, and who changed places with you. Shown
   once, and only when there is something to say.
@@ -32,6 +34,8 @@
 - Every hideout upgrade, room as well as tier, is paid from the bank first and cash on hand second.
 
 ### Fixed
+- Automatic AI lived only in memory, so every restart silently reverted an admin's decision to the
+  appsettings default. It is persisted now, and its tick and rounds no longer need a restart to change.
 - The morale arrow measured net change across a three hour window, so it kept pointing down for hours
   after a crash was over while morale visibly climbed. It reads from the most recent action instead,
   and the steady band narrowed from a full point to a quarter, which a crew recovering 0.7 an action

@@ -480,6 +480,12 @@ export type BotAutomationStatus = {
   enabled: boolean
   tickSeconds: number
   roundsPerTick: number
+  defaultTickSeconds: number
+  defaultRoundsPerTick: number
+  minTickSeconds: number
+  maxTickSeconds: number
+  minRoundsPerTick: number
+  maxRoundsPerTick: number
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -541,10 +547,11 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ rounds }),
   }),
-  adminSetBotAutomation: (enabled: boolean) => request<ActionResult>('/api/admin/bots/automation', {
-    method: 'PUT',
-    body: JSON.stringify({ enabled }),
-  }),
+  adminSetBotAutomation: (enabled: boolean, timing?: { tickSeconds?: number, roundsPerTick?: number, resetTiming?: boolean }) =>
+    request<ActionResult>('/api/admin/bots/automation', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, ...timing }),
+    }),
   workStreet: (turns: number, autoBuySupplies = false) => request<ActionResult>('/api/game/street', {
     method: 'POST',
     body: JSON.stringify({ turns, autoBuySupplies }),

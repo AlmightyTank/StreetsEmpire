@@ -108,6 +108,12 @@ combat something you can lose as well as win.
 - Oversight shows wealth distribution rather than bare totals, the fastest movers, every in-flight mission with stuck ones flagged, and AI idle times.
 - Maintenance mode blocks gameplay while leaving reads and admin access open. Announcements post a site-wide banner.
 - 161 scalar tuning values are editable at runtime without a restart, layered over `appsettings.json` and reversible to it.
+- The panel is split into tabs: Overview, Players, AI Rivals, Tuning, Live Ops, and Audit. The old
+  Admin Control Center held whatever had no other home, so its headline totals, its read-only economy
+  dump, and its AI controls now sit with the things they belong to.
+- The AI tab owns the rivals: seeding, running a batch by hand, the automatic loop, and a roster
+  showing each rival's personality, net worth, and idle time. Automatic AI is saved rather than held in
+  memory, so it survives a restart, and its tick and rounds are editable without one.
 
 ### Combat refinement
 

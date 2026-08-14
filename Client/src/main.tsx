@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
+import type { ActionResult, AdminAuditEntry, DefenceAlert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, MoraleDirection, MoraleTrend, PlayerProfile, PlayerTarget, WorldNews, WorldNewsEntry, CatchUp } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -291,7 +291,7 @@ function App() {
     cancelMission: missionId => void act(() => api.cancelCombatMission(missionId)),
     seedBots: count => void act(() => api.adminSeedBots(count)),
     runBots: rounds => void act(() => api.adminRunBots(rounds)),
-    setBotAutomation: enabled => void act(() => api.adminSetBotAutomation(enabled)),
+    setBotAutomation: (enabled, timing) => void act(() => api.adminSetBotAutomation(enabled, timing)),
   }
 
   return <main className="game-shell">
@@ -391,7 +391,7 @@ type PageContext = {
   cancelMission: (missionId: number) => void
   seedBots: (count: number) => void
   runBots: (rounds: number) => void
-  setBotAutomation: (enabled: boolean) => void
+  setBotAutomation: (enabled: boolean, timing?: { tickSeconds?: number, roundsPerTick?: number, resetTiming?: boolean }) => void
 }
 
 function renderPage(page: AppPage, ctx: PageContext) {
@@ -946,15 +946,83 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
   </div>
 }
 
+const ADMIN_TABS = ['overview', 'players', 'ai', 'config', 'liveops', 'audit'] as const
+type AdminTab = typeof ADMIN_TABS[number]
+
+const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
+  overview: { label: 'Overview', kicker: 'Totals and distribution' },
+  players: { label: 'Players', kicker: 'Search and enforcement' },
+  ai: { label: 'AI Rivals', kicker: 'Seed, run, automate' },
+  config: { label: 'Tuning', kicker: 'Runtime values' },
+  liveops: { label: 'Live Ops', kicker: 'Maintenance and banners' },
+  audit: { label: 'Audit', kicker: 'Who changed what' }
+}
+
+/**
+ * One tab at a time rather than six stacked panels. The Admin Control Center used to sit at the bottom
+ * holding whatever had no other home: headline totals, a read-only economy dump, and the AI controls.
+ * Those are three different jobs, so they now live with the things they belong to.
+ */
 function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
+  const [tab, setTab] = useState<AdminTab>('overview')
   return <div className="page-grid one-column">
-    <AdminLiveOpsPanel busy={ctx.busy} />
-    <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />
-    <AdminOversightPanel busy={ctx.busy} />
-    <AdminConfigPanel busy={ctx.busy} />
-    <AdminAuditPanel />
-    <AdminBotsAndConfig ctx={ctx} />
+    <nav className="admin-tabs">
+      {ADMIN_TABS.map(name => <button
+        key={name}
+        type="button"
+        className={tab === name ? 'active' : ''}
+        onClick={() => setTab(name)}
+      >
+        <strong>{ADMIN_TAB_META[name].label}</strong>
+        <span>{ADMIN_TAB_META[name].kicker}</span>
+      </button>)}
+    </nav>
+    {tab === 'overview' && <AdminOverviewTab overview={ctx.overview} busy={ctx.busy} />}
+    {tab === 'players' && <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />}
+    {tab === 'ai' && <AdminAiTab ctx={ctx} />}
+    {tab === 'config' && <><AdminConfigPanel busy={ctx.busy} /><AdminEconomyReadout overview={ctx.overview} /></>}
+    {tab === 'liveops' && <AdminLiveOpsPanel busy={ctx.busy} />}
+    {tab === 'audit' && <AdminAuditPanel />}
   </div>
+}
+
+function AdminOverviewTab({ overview, busy }: { overview: AdminOverview, busy: boolean }) {
+  return <>
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>The World</h2><span>As of {new Date(overview.generatedAtUtc).toLocaleTimeString()}</span></div>
+      <div className="admin-metrics">
+        <AdminMetric label="Accounts" value={number.format(overview.totalAccounts)} />
+        <AdminMetric label="Admins" value={number.format(overview.adminAccounts)} />
+        <AdminMetric label="AI rivals" value={number.format(overview.botAccounts)} />
+        <AdminMetric label="AI auto" value={overview.botAutomation.enabled ? 'On' : 'Off'} />
+        <AdminMetric label="Players" value={number.format(overview.totalPlayers)} />
+        <AdminMetric label="Liquid cash" value={money.format(overview.totalLiquidCash)} />
+        <AdminMetric label="Net worth" value={money.format(overview.totalNetWorth)} />
+        <AdminMetric label="Turns banked" value={number.format(overview.totalTurnsBanked)} />
+        <AdminMetric label="Avg hoe morale" value={`${overview.averageHoeMorale.toFixed(0)}%`} />
+        <AdminMetric label="Avg thug morale" value={`${overview.averageThugMorale.toFixed(0)}%`} />
+      </div>
+    </section>
+    <AdminOversightPanel busy={busy} />
+  </>
+}
+
+function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
+  const game = overview.economy
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>In Effect Now</h2><span>Read-only summary</span></div>
+    <div className="admin-config">
+      <StatusRow label="Turns" value={`+${game.turnsPerTick} / ${game.turnTickMinutes}m, cap ${game.maxTurns}`} />
+      <StatusRow label="Action limit" value={`${game.maxActionTurns} turns`} />
+      <StatusRow label="Store prices" value={`Condom ${money.format(game.condomPrice)}, beer ${money.format(game.beerPrice)}, weapon ${money.format(game.weaponPrice)}`} />
+      <StatusRow label="Product prices" value={`Weed ${money.format(game.weedSellPrice)}, coke ${money.format(game.cokeSellPrice)}`} />
+      <StatusRow label="Crew hire costs" value={`P ${money.format(game.crew.hirePimpCost)} / H ${money.format(game.crew.hireHoeCost)} / T ${money.format(game.crew.hireThugCost)}`} />
+      <StatusRow label="Recruit odds" value={`P ${percent(game.streetAction.pimpRecruitChance)} / H ${percent(game.streetAction.hoeRecruitChance)} / T ${percent(game.streetAction.thugRecruitChance)}`} />
+      <StatusRow label="Production" value={`Weed ${money.format(game.production.weed.costPerTurn)} ${game.production.weed.unitsMin}-${game.production.weed.unitsMax}, coke ${money.format(game.production.coke.costPerTurn)} ${game.production.coke.unitsMin}-${game.production.coke.unitsMax}`} />
+      <StatusRow label="Morale rules" value={`${game.morale.hoesManagedPerPimp} hoes/pimp, desertion below ${game.morale.desertionThreshold}%`} />
+      <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
+    </div>
+  </section>
 }
 
 function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
@@ -1429,16 +1497,6 @@ function enforcementLabel(player: AdminPlayerSummary) {
   if (player.isBanned) return 'Banned'
   if (player.suspendedUntilUtc && new Date(player.suspendedUntilUtc) > new Date()) return 'Suspended'
   return 'Active'
-}
-
-function AdminBotsAndConfig({ ctx }: { ctx: PageContext & { overview: AdminOverview } }) {
-  return <AdminPanel
-    overview={ctx.overview}
-    busy={ctx.busy}
-    onSeedBots={ctx.seedBots}
-    onRunBots={ctx.runBots}
-    onSetBotAutomation={ctx.setBotAutomation}
-  />
 }
 
 /**
@@ -1937,86 +1995,124 @@ function ProductTradeCard({ name, owned, price, quantity, canProduce, disabled, 
   </div>
 }
 
-function AdminPanel({ overview, busy, onSeedBots, onRunBots, onSetBotAutomation }: {
-  overview: AdminOverview
-  busy: boolean
-  onSeedBots: (count: number) => void
-  onRunBots: (rounds: number) => void
-  onSetBotAutomation: (enabled: boolean) => void
-}) {
-  const [collapsed, setCollapsed] = useState(false)
-  const [botSeedCount, setBotSeedCount] = useState(10)
-  const [botRunRounds, setBotRunRounds] = useState(1)
-  const game = overview.economy
-  return <div className="panel admin-panel">
-    <div className="panel-title admin-title">
-      <div><h2>Admin Control Center</h2><span>0.2.3 war room</span></div>
-      <button
-        className="secondary compact admin-toggle"
-        type="button"
-        aria-expanded={!collapsed}
-        aria-controls="admin-control-center-body"
-        onClick={() => setCollapsed(value => !value)}
-      >
-        {collapsed ? 'Show' : 'Hide'}
-      </button>
-    </div>
-    {!collapsed && <div id="admin-control-center-body" className="admin-body">
-      <div className="admin-metrics">
-        <AdminMetric label="Accounts" value={number.format(overview.totalAccounts)} />
-        <AdminMetric label="Admins" value={number.format(overview.adminAccounts)} />
-        <AdminMetric label="AI rivals" value={number.format(overview.botAccounts)} />
-        <AdminMetric label="AI auto" value={overview.botAutomation.enabled ? 'On' : 'Off'} />
-        <AdminMetric label="Players" value={number.format(overview.totalPlayers)} />
-        <AdminMetric label="Liquid cash" value={money.format(overview.totalLiquidCash)} />
-        <AdminMetric label="Net worth" value={money.format(overview.totalNetWorth)} />
-        <AdminMetric label="Turns banked" value={number.format(overview.totalTurnsBanked)} />
-        <AdminMetric label="Avg hoe morale" value={`${overview.averageHoeMorale.toFixed(0)}%`} />
-        <AdminMetric label="Avg thug morale" value={`${overview.averageThugMorale.toFixed(0)}%`} />
+/**
+ * Everything about the AI rivals in one place: how many exist, running them by hand, and the
+ * automatic loop. The loop's timing is editable here because it was previously fixed at startup from
+ * appsettings, so tuning it meant a restart, and the on/off switch lived only in memory so a restart
+ * silently reverted it.
+ */
+function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } }) {
+  const { overview, busy, seedBots, runBots, setBotAutomation } = ctx
+  const auto = overview.botAutomation
+  const [seedCount, setSeedCount] = useState(10)
+  const [runRounds, setRunRounds] = useState(1)
+  const [tickSeconds, setTickSeconds] = useState(auto.tickSeconds)
+  const [roundsPerTick, setRoundsPerTick] = useState(auto.roundsPerTick)
+  const [roster, setRoster] = useState<AdminBotHealth[]>([])
+  const [rosterError, setRosterError] = useState('')
+
+  // Follow the server whenever it reports different timings, so an edit made elsewhere does not leave
+  // stale numbers sitting in the inputs.
+  useEffect(() => { setTickSeconds(auto.tickSeconds); setRoundsPerTick(auto.roundsPerTick) }, [auto.tickSeconds, auto.roundsPerTick])
+  useEffect(() => {
+    opsApi.oversight()
+      .then((data: AdminOversight) => setRoster(data.bots))
+      .catch((e: unknown) => setRosterError((e as Error).message))
+  }, [overview.generatedAtUtc])
+
+  const timingChanged = tickSeconds !== auto.tickSeconds || roundsPerTick !== auto.roundsPerTick
+  const timingValid = tickSeconds >= auto.minTickSeconds && tickSeconds <= auto.maxTickSeconds
+    && roundsPerTick >= auto.minRoundsPerTick && roundsPerTick <= auto.maxRoundsPerTick
+  const atDefaults = auto.tickSeconds === auto.defaultTickSeconds && auto.roundsPerTick === auto.defaultRoundsPerTick
+
+  return <>
+    <section className="panel wide-panel">
+      <div className="panel-title">
+        <h2>Automatic AI</h2>
+        <span>{auto.enabled ? `On, ${auto.roundsPerTick} round(s) every ${auto.tickSeconds}s` : 'Off'}</span>
       </div>
-      <div className="admin-config">
-        <StatusRow label="Turns" value={`+${game.turnsPerTick} / ${game.turnTickMinutes}m, cap ${game.maxTurns}`} />
-        <StatusRow label="Action limit" value={`${game.maxActionTurns} turns`} />
-        <StatusRow label="Store prices" value={`Condom ${money.format(game.condomPrice)}, beer ${money.format(game.beerPrice)}, weapon ${money.format(game.weaponPrice)}`} />
-        <StatusRow label="Product prices" value={`Weed ${money.format(game.weedSellPrice)}, coke ${money.format(game.cokeSellPrice)}`} />
-        <StatusRow label="Crew hire costs" value={`P ${money.format(game.crew.hirePimpCost)} / H ${money.format(game.crew.hireHoeCost)} / T ${money.format(game.crew.hireThugCost)}`} />
-        <StatusRow label="Recruit odds" value={`P ${percent(game.streetAction.pimpRecruitChance)} / H ${percent(game.streetAction.hoeRecruitChance)} / T ${percent(game.streetAction.thugRecruitChance)}`} />
-        <StatusRow label="Production" value={`Weed ${money.format(game.production.weed.costPerTurn)} ${game.production.weed.unitsMin}-${game.production.weed.unitsMax}, coke ${money.format(game.production.coke.costPerTurn)} ${game.production.coke.unitsMin}-${game.production.coke.unitsMax}`} />
-        <StatusRow label="Morale rules" value={`${game.morale.hoesManagedPerPimp} hoes/pimp, desertion below ${game.morale.desertionThreshold}%`} />
-        <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
+      <p>
+        Rivals act on their own on this loop. The setting is saved, so it survives a restart, and the
+        timing takes effect on the next tick without one.
+      </p>
+      <div className="admin-action-row">
+        <button
+          className={auto.enabled ? 'secondary compact' : 'primary compact'}
+          disabled={busy || overview.botAccounts < 1}
+          onClick={() => setBotAutomation(!auto.enabled)}
+        >
+          {auto.enabled ? 'Turn off' : 'Turn on'}
+        </button>
+        <label>Tick seconds<input
+          type="number"
+          min={auto.minTickSeconds}
+          max={auto.maxTickSeconds}
+          value={tickSeconds}
+          onChange={e => setTickSeconds(Number(e.target.value))}
+        /></label>
+        <label>Rounds per tick<input
+          type="number"
+          min={auto.minRoundsPerTick}
+          max={auto.maxRoundsPerTick}
+          value={roundsPerTick}
+          onChange={e => setRoundsPerTick(Number(e.target.value))}
+        /></label>
+        <button
+          className="secondary compact"
+          disabled={busy || !timingChanged || !timingValid}
+          onClick={() => setBotAutomation(auto.enabled, { tickSeconds, roundsPerTick })}
+        >
+          Save timing
+        </button>
+        <button
+          className="secondary compact"
+          disabled={busy || atDefaults}
+          onClick={() => setBotAutomation(auto.enabled, { resetTiming: true })}
+        >
+          Reset to {auto.defaultTickSeconds}s / {auto.defaultRoundsPerTick}
+        </button>
       </div>
-      <div className="admin-bots">
-        <div className="admin-subtitle"><strong>AI Rivals</strong><span>Seed test opponents for combat</span></div>
-        <div className="admin-bot-controls">
-          <label>Count<input type="number" min={1} max={15} value={botSeedCount} onChange={event => setBotSeedCount(Number(event.target.value))} /></label>
-          <button className="secondary compact" disabled={busy} onClick={() => setBotSeedCount(5)}>5</button>
-          <button className="secondary compact" disabled={busy} onClick={() => setBotSeedCount(10)}>10</button>
-          <button className="secondary compact" disabled={busy} onClick={() => setBotSeedCount(15)}>15</button>
-          <button className="primary compact" disabled={busy || botSeedCount < 1 || botSeedCount > 15} onClick={() => onSeedBots(botSeedCount)}>Seed AI Players</button>
-        </div>
-        <div className="admin-bot-controls">
-          <label>Rounds<input type="number" min={1} max={10} value={botRunRounds} onChange={event => setBotRunRounds(Number(event.target.value))} /></label>
-          <button className="secondary compact" disabled={busy} onClick={() => setBotRunRounds(1)}>1</button>
-          <button className="secondary compact" disabled={busy} onClick={() => setBotRunRounds(3)}>3</button>
-          <button className="secondary compact" disabled={busy} onClick={() => setBotRunRounds(10)}>10</button>
-          <button className="primary compact" disabled={busy || overview.botAccounts < 1 || botRunRounds < 1 || botRunRounds > 10} onClick={() => onRunBots(botRunRounds)}>Run AI</button>
-        </div>
-        <div className="admin-bot-controls automation">
-          <div className="admin-bot-status">
-            <strong>{overview.botAutomation.enabled ? 'Automatic AI On' : 'Automatic AI Off'}</strong>
-            <span>Every {overview.botAutomation.tickSeconds}s / {overview.botAutomation.roundsPerTick} round{overview.botAutomation.roundsPerTick === 1 ? '' : 's'} per tick</span>
-          </div>
-          <button
-            className={overview.botAutomation.enabled ? 'secondary compact' : 'primary compact'}
-            disabled={busy || overview.botAccounts < 1}
-            onClick={() => onSetBotAutomation(!overview.botAutomation.enabled)}
-          >
-            {overview.botAutomation.enabled ? 'Turn Off Automatic AI' : 'Turn On Automatic AI'}
-          </button>
-        </div>
+      {!timingValid && <p className="hint">
+        Tick must be {auto.minTickSeconds}-{auto.maxTickSeconds}s and rounds {auto.minRoundsPerTick}-{auto.maxRoundsPerTick}.
+      </p>}
+      {overview.botAccounts < 1 && <p className="hint">Seed some rivals below before turning the loop on.</p>}
+    </section>
+
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>Seed and Run</h2><span>{number.format(overview.botAccounts)} rivals exist</span></div>
+      <div className="admin-action-row">
+        <label>Seed count<input type="number" min={1} max={15} value={seedCount} onChange={e => setSeedCount(Number(e.target.value))} /></label>
+        <button className="secondary compact" disabled={busy} onClick={() => setSeedCount(5)}>5</button>
+        <button className="secondary compact" disabled={busy} onClick={() => setSeedCount(10)}>10</button>
+        <button className="secondary compact" disabled={busy} onClick={() => setSeedCount(15)}>15</button>
+        <button className="primary compact" disabled={busy || seedCount < 1 || seedCount > 15} onClick={() => seedBots(seedCount)}>Seed rivals</button>
       </div>
-    </div>}
-  </div>
+      <div className="admin-action-row">
+        <label>Rounds<input type="number" min={1} max={10} value={runRounds} onChange={e => setRunRounds(Number(e.target.value))} /></label>
+        <button className="secondary compact" disabled={busy} onClick={() => setRunRounds(1)}>1</button>
+        <button className="secondary compact" disabled={busy} onClick={() => setRunRounds(3)}>3</button>
+        <button className="secondary compact" disabled={busy} onClick={() => setRunRounds(10)}>10</button>
+        <button className="primary compact" disabled={busy || overview.botAccounts < 1 || runRounds < 1 || runRounds > 10} onClick={() => runBots(runRounds)}>Run now</button>
+      </div>
+    </section>
+
+    <section className="panel wide-panel">
+      <div className="panel-title"><h2>The Rivals</h2><span>Personality and idle time</span></div>
+      {rosterError && <div className="error banner"><span>{rosterError}</span></div>}
+      {roster.length === 0 && !rosterError && <p className="coming">No AI rivals yet.</p>}
+      {roster.length > 0 && <div className="admin-table-scroll"><table className="admin-table">
+        <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th></tr></thead>
+        <tbody>
+          {roster.map(bot => <tr key={bot.playerId} className={bot.minutesIdle > 120 ? 'stale' : ''}>
+            <td>{bot.name}</td>
+            <td>{bot.personality}</td>
+            <td>{money.format(bot.netWorth)}</td>
+            <td>{bot.lastActionAtUtc ? `${number.format(bot.minutesIdle)}m` : 'never acted'}</td>
+          </tr>)}
+        </tbody>
+      </table></div>}
+    </section>
+  </>
 }
 
 function MiniInventory({ dashboard }: { dashboard: Dashboard }) {

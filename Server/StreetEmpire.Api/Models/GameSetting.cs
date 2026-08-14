@@ -25,6 +25,18 @@ public sealed class GameSetting
     /// </summary>
     public string? ConfigOverridesJson { get; set; }
 
+    /// <summary>
+    /// Automatic AI, persisted for the same reason maintenance mode is: an admin who turns the rivals
+    /// off before a deploy expects them to still be off afterwards. Held in memory alone it silently
+    /// reverted to the appsettings default on every restart.
+    ///
+    /// Null timings mean "use the configured default", so clearing an override is a real operation
+    /// rather than having to remember what the default was.
+    /// </summary>
+    public bool BotAutomationEnabled { get; set; }
+    public int? BotTickSeconds { get; set; }
+    public int? BotRoundsPerTick { get; set; }
+
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     public string? UpdatedBy { get; set; }
 }

@@ -8,20 +8,26 @@ public sealed class BotAutomationService(
     IOptions<BotAutomationOptions> options,
     ILogger<BotAutomationService> logger) : BackgroundService
 {
-    private readonly BotAutomationOptions _options = options.Value;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var tickSeconds = Math.Clamp(_options.TickSeconds, 15, 3600);
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(tickSeconds));
-
         logger.LogInformation(
             "AI bot automation started with a {TickSeconds}s tick. Initial state: {State}.",
-            tickSeconds,
+            state.TickSeconds,
             state.Enabled ? "enabled" : "disabled");
 
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        // The interval is read again every pass rather than baked into a PeriodicTimer at startup, so
+        // an admin changing the tick does not have to restart the server for it to take effect.
+        while (!stoppingToken.IsCancellationRequested)
         {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(state.TickSeconds), stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
             await RunTickAsync(stoppingToken);
         }
     }
@@ -35,7 +41,7 @@ public sealed class BotAutomationService(
         {
             using var scope = scopeFactory.CreateScope();
             var bots = scope.ServiceProvider.GetRequiredService<BotSimulationService>();
-            var result = await bots.RunAsync(Math.Clamp(_options.RoundsPerTick, 1, 10), stoppingToken);
+            var result = await bots.RunAsync(state.RoundsPerTick, stoppingToken);
 
             if (result.Actions > 0)
             {
@@ -55,11 +61,36 @@ public sealed class BotAutomationService(
     }
 }
 
+/// <summary>
+/// The live automation settings. Seeded from appsettings, replaced by whatever was persisted at
+/// startup, and updated by the admin panel. Clamped on the way in so a bad value cannot stall the
+/// loop or hammer the database.
+/// </summary>
 public sealed class BotAutomationState(IOptions<BotAutomationOptions> options)
 {
+    public const int MinTickSeconds = 15;
+    public const int MaxTickSeconds = 3600;
+    public const int MinRoundsPerTick = 1;
+    public const int MaxRoundsPerTick = 10;
+
     private volatile bool _enabled = options.Value.Enabled;
+    private int _tickSeconds = Math.Clamp(options.Value.TickSeconds, MinTickSeconds, MaxTickSeconds);
+    private int _roundsPerTick = Math.Clamp(options.Value.RoundsPerTick, MinRoundsPerTick, MaxRoundsPerTick);
 
     public bool Enabled => _enabled;
+    public int TickSeconds => Volatile.Read(ref _tickSeconds);
+    public int RoundsPerTick => Volatile.Read(ref _roundsPerTick);
+
+    /// <summary>The configured defaults, so clearing an override can restore them.</summary>
+    public int DefaultTickSeconds => Math.Clamp(options.Value.TickSeconds, MinTickSeconds, MaxTickSeconds);
+    public int DefaultRoundsPerTick => Math.Clamp(options.Value.RoundsPerTick, MinRoundsPerTick, MaxRoundsPerTick);
 
     public void SetEnabled(bool enabled) => _enabled = enabled;
+
+    /// <summary>Null restores the configured default rather than leaving the current value in place.</summary>
+    public void SetTiming(int? tickSeconds, int? roundsPerTick)
+    {
+        Volatile.Write(ref _tickSeconds, Math.Clamp(tickSeconds ?? DefaultTickSeconds, MinTickSeconds, MaxTickSeconds));
+        Volatile.Write(ref _roundsPerTick, Math.Clamp(roundsPerTick ?? DefaultRoundsPerTick, MinRoundsPerTick, MaxRoundsPerTick));
+    }
 }

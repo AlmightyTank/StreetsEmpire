@@ -32,7 +32,6 @@ internal static class AdminOpsEndpoints
             GameDbContext db,
             EconomyService economy,
             IOptionsSnapshot<GameOptions> gameOptions,
-            IOptions<BotAutomationOptions> botOptions,
             BotAutomationState botAutomation,
             CancellationToken ct) =>
         {
@@ -73,8 +72,14 @@ internal static class AdminOpsEndpoints
                 totals is null ? 0 : Math.Round(totals.ThugMorale, 2),
                 new BotAutomationStatusResponse(
                     botAutomation.Enabled,
-                    Math.Clamp(botOptions.Value.TickSeconds, 15, 3600),
-                    Math.Clamp(botOptions.Value.RoundsPerTick, 1, 10)),
+                    botAutomation.TickSeconds,
+                    botAutomation.RoundsPerTick,
+                    botAutomation.DefaultTickSeconds,
+                    botAutomation.DefaultRoundsPerTick,
+                    BotAutomationState.MinTickSeconds,
+                    BotAutomationState.MaxTickSeconds,
+                    BotAutomationState.MinRoundsPerTick,
+                    BotAutomationState.MaxRoundsPerTick),
                 gameOptions.Value));
         }).RequireAuthorization();
 
@@ -193,8 +198,8 @@ internal static class AdminOpsEndpoints
         app.MapPut("/api/admin/bots/automation", async (
             AdminBotAutomationRequest request,
             CurrentPlayerService current,
+            GameDbContext db,
             BotAutomationState botAutomation,
-            IOptions<BotAutomationOptions> botOptions,
             CancellationToken ct) =>
         {
             var admin = await current.GetAsync(ct);
@@ -202,13 +207,29 @@ internal static class AdminOpsEndpoints
             if (!admin.Account.IsAdmin) return Results.Forbid();
 
             botAutomation.SetEnabled(request.Enabled);
-            var summary = request.Enabled ? "Automatic AI is now on." : "Automatic AI is now off.";
+            botAutomation.SetTiming(
+                request.ResetTiming ? null : request.TickSeconds ?? botAutomation.TickSeconds,
+                request.ResetTiming ? null : request.RoundsPerTick ?? botAutomation.RoundsPerTick);
+
+            // Persisted for the same reason maintenance mode is: an admin who turns the rivals off
+            // before a deploy expects them to still be off after it.
+            var settings = await db.GameSettings.SingleAsync(x => x.Id == 1, ct);
+            settings.BotAutomationEnabled = botAutomation.Enabled;
+            settings.BotTickSeconds = request.ResetTiming ? null : botAutomation.TickSeconds;
+            settings.BotRoundsPerTick = request.ResetTiming ? null : botAutomation.RoundsPerTick;
+            settings.UpdatedAtUtc = DateTime.UtcNow;
+            settings.UpdatedBy = admin.Name;
+            await db.SaveChangesAsync(ct);
+
+            var summary = request.Enabled
+                ? $"Automatic AI is on, running {botAutomation.RoundsPerTick} round(s) every {botAutomation.TickSeconds}s."
+                : "Automatic AI is now off.";
 
             return Results.Ok(new ActionResultResponse(summary, admin.Turns, new Dictionary<string, object?>
             {
                 ["enabled"] = botAutomation.Enabled,
-                ["tickSeconds"] = Math.Clamp(botOptions.Value.TickSeconds, 15, 3600),
-                ["roundsPerTick"] = Math.Clamp(botOptions.Value.RoundsPerTick, 1, 10)
+                ["tickSeconds"] = botAutomation.TickSeconds,
+                ["roundsPerTick"] = botAutomation.RoundsPerTick
             }));
         }).RequireAuthorization();
 

@@ -18,6 +18,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<StandingSnapshot> StandingSnapshots => Set<StandingSnapshot>();
     public DbSet<Territory> Territories => Set<Territory>();
     public DbSet<MarketListing> MarketListings => Set<MarketListing>();
+    public DbSet<MuleRun> MuleRuns => Set<MuleRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +59,28 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.SellerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MuleRun>(entity =>
+        {
+            // Every read is "what has this player got out", and the settler asks "what is due now".
+            entity.HasIndex(x => new { x.PlayerId, x.SettledAtUtc });
+            entity.HasIndex(x => x.ReturnsAtUtc);
+            entity.Property(x => x.Good).HasMaxLength(16);
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.Outcome).HasMaxLength(16);
+            entity.Property(x => x.OriginCity).HasMaxLength(64);
+            entity.Property(x => x.DestinationCity).HasMaxLength(64);
+            entity.Property(x => x.PimpName).HasMaxLength(64);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A pimp who defects or dies is deleted; the run that says so must outlive them.
+            entity.HasOne(x => x.Pimp)
+                .WithMany()
+                .HasForeignKey(x => x.PimpId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Territory>(entity =>

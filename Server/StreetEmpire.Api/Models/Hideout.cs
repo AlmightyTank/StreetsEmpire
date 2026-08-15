@@ -40,6 +40,13 @@ public sealed class Hideout
     public int MixLevel { get; set; }
 
     /// <summary>
+    /// Runs the routes. Unlike the other stations it makes nothing: it decides how many mule runs can
+    /// be out at once, and how well briefed they are when they go. A room that buys capacity rather
+    /// than output, which is what stops mule running from being free once you can afford one pimp.
+    /// </summary>
+    public int IntelligenceLevel { get; set; }
+
+    /// <summary>
     /// When passive lab output was last banked. Null means the labs have never run, and accrual starts
     /// from the moment the first one is built rather than from the hideout's creation.
     /// </summary>

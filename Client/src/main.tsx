@@ -444,11 +444,6 @@ function OverviewPage(ctx: PageContext) {
       <NextMovePanel dashboard={dashboard} weaponCoverage={weaponCoverage} managementCapacity={managementCapacity} onPage={setActivePage} />
 
       <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
-
-      <section className="panel">
-        <div className="panel-title"><h2>Inventory</h2><span>On hand</span></div>
-        <MiniInventory dashboard={dashboard} />
-      </section>
     </div>
 
     <div className="overview-stack">
@@ -472,6 +467,12 @@ function OverviewPage(ctx: PageContext) {
         <StatusRow label="Combat status" value={dashboard.combatStatus.eligibility} warn={dashboard.combatStatus.isProtected} />
         <StatusRow label="20-turn condoms" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
         <StatusRow label="20-turn beer" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
+      </section>
+
+      {/* Directly under readiness, because the last two readiness rows are counts of these same piles. */}
+      <section className="panel">
+        <div className="panel-title"><h2>Inventory</h2><span>On hand</span></div>
+        <MiniInventory dashboard={dashboard} />
       </section>
 
       <section className="panel">

@@ -43,6 +43,7 @@ public sealed class GameOptions
     public TerritoryOptions Territory { get; set; } = new();
     public MarketOptions Market { get; set; } = new();
     public CityMarketOptions CityMarkets { get; set; } = new();
+    public MuleOptions Mules { get; set; } = new();
 }
 
 /// <summary>
@@ -199,6 +200,7 @@ public sealed class HideoutOptions
     public List<WorkshopLevelOptions> Workshop { get; set; } = [];
     public List<WorkshopLevelOptions> Still { get; set; } = [];
     public List<WorkshopLevelOptions> Mix { get; set; } = [];
+    public List<IntelligenceLevelOptions> Intelligence { get; set; } = [];
 
     /// <summary>
     /// How much notice each contraband good draws per unit held. Weighted rather than flat because
@@ -304,6 +306,19 @@ public sealed class HideoutOptions
             [
                 new WorkshopLevelOptions { Level = 1, MinTier = 2, WeaponsPerTurn = 4, CostPerWeapon = 6, UpgradeCost = 25_000 },
                 new WorkshopLevelOptions { Level = 2, MinTier = 2, WeaponsPerTurn = 7, CostPerWeapon = 5, UpgradeCost = 80_000 }
+            ];
+
+        // The intelligence centre buys capacity, not output: how many runs can be out at once, and how
+        // much of the route's risk is already known before anybody leaves. Gated at the Warehouse for
+        // the same reason the still is, and the first level is deliberately expensive relative to what
+        // one run earns, so mule running is something an empire grows into rather than opens with.
+        if (Intelligence.Count == 0)
+            Intelligence =
+            [
+                new IntelligenceLevelOptions { Level = 1, MinTier = 2, ConcurrentRuns = 1, RiskReductionPercent = 10, UpgradeCost = 120_000 },
+                new IntelligenceLevelOptions { Level = 2, MinTier = 2, ConcurrentRuns = 2, RiskReductionPercent = 20, UpgradeCost = 320_000 },
+                new IntelligenceLevelOptions { Level = 3, MinTier = 3, ConcurrentRuns = 3, RiskReductionPercent = 30, UpgradeCost = 750_000 },
+                new IntelligenceLevelOptions { Level = 4, MinTier = 4, ConcurrentRuns = 5, RiskReductionPercent = 40, UpgradeCost = 1_600_000 }
             ];
 
         if (Mix.Count == 0)
@@ -647,6 +662,93 @@ public sealed class WorkshopLevelOptions
 
     /// <summary>Materials per weapon. Below the store price, or there is nothing to sell.</summary>
     public long CostPerWeapon { get; set; }
+    public long UpgradeCost { get; set; }
+}
+
+/// <summary>
+/// A level of the intelligence centre. Shaped on its own rather than reusing the making stations,
+/// because it produces nothing: what it buys is how many runs can be in the air and how much of the
+/// route is known before anybody leaves.
+/// </summary>
+/// <summary>
+/// Sending crew to another town to buy cheap and carry it home.
+///
+/// Travelling yourself costs turns each way and leaves you standing in the wrong town. A run costs
+/// fewer turns, but it takes real time, it locks up crew who earn nothing while they are gone, and it
+/// is paid for in cash before anybody leaves. Neither is strictly better, which is the whole point.
+/// </summary>
+public sealed class MuleOptions
+{
+    /// <summary>
+    /// How long a leg takes per turn of distance. This is what makes a run feel like a flight rather
+    /// than a teleport: at six minutes a turn the shipped map runs twelve to thirty-six minutes each
+    /// way, so a round trip is a decent chunk of an evening.
+    /// </summary>
+    public int MinutesPerTravelTurn { get; set; } = 6;
+
+    /// <summary>How long they spend on the ground finding a seller and buying.</summary>
+    public int BuyingMinutes { get; set; } = 10;
+
+    /// <summary>
+    /// Turns to brief and dispatch a run, per turn of distance. Below 1 on purpose: the run is meant
+    /// to be cheaper in turns than going yourself, which costs the distance twice over.
+    /// </summary>
+    public double TurnCostPerTravelTurn { get; set; } = 0.5;
+    public int MinTurnCost { get; set; } = 1;
+
+    /// <summary>Units one hoe can carry. The number of hoes sent is the player's greed dial.</summary>
+    public int HoeCarryCapacity { get; set; } = 15;
+    public int MaxHoesPerRun { get; set; } = 6;
+
+    /// <summary>Fare per head per turn of distance, charged both ways at launch.</summary>
+    public long FarePerHeadPerTravelTurn { get; set; } = 220;
+
+    /// <summary>
+    /// Rooms and meals per head per hour away, charged up front for the whole trip. Prepaid rather
+    /// than billed hourly because crew who ran out of money mid-flight would need a debt system, and
+    /// a run that quietly becomes a loan is a nastier mechanic than one that is simply expensive.
+    /// </summary>
+    public long UpkeepPerHeadPerHour { get; set; } = 160;
+
+    /// <summary>
+    /// A mule is sloppier than you are, so a route's own bust chance is worse for them than for a
+    /// player making the same trip.
+    /// </summary>
+    public double BustChanceMultiplier { get; set; } = 1.4;
+
+    /// <summary>Extra chance per hoe beyond the first: more bodies, more to notice.</summary>
+    public double BustChancePerExtraHoe { get; set; } = 0.02;
+    public double MaxBustChance { get; set; } = 0.6;
+
+    /// <summary>Share of the load taken when a run is stopped.</summary>
+    public double SeizureMinPercent { get; set; } = 0.35;
+    public double SeizureMaxPercent { get; set; } = 1.0;
+
+    /// <summary>Heat earned per unit seized, because crew who are caught talk.</summary>
+    public double HeatPerSeizedUnit { get; set; } = 0.8;
+
+    /// <summary>
+    /// Below this loyalty a pimp sent far away with your money may simply not come back. This is what
+    /// makes who you send a real question rather than picking whoever is spare.
+    /// </summary>
+    public double DefectLoyaltyThreshold { get; set; } = 45;
+    public double MaxDefectChance { get; set; } = 0.3;
+
+    /// <summary>Runs allowed out with no intelligence centre. Zero: the room is what unlocks them.</summary>
+    public int BaseConcurrentRuns { get; set; } = 0;
+}
+
+public sealed class IntelligenceLevelOptions
+{
+    public int Level { get; set; }
+    public int MinTier { get; set; } = 2;
+
+    /// <summary>Mule runs allowed out at once.</summary>
+    public int ConcurrentRuns { get; set; } = 1;
+
+    /// <summary>How much of a route's risk is taken off by knowing it, as a percent of the base chance.</summary>
+    public int RiskReductionPercent { get; set; }
+
     public long UpgradeCost { get; set; }
 }
 

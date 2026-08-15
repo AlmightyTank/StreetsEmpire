@@ -22,6 +22,21 @@
   slept. One quiet for four hours is asleep, not stuck.
 
 ### Added
+- Mule runs, first slice: the model, the intelligence centre that gates them, and the launch that
+  prices and freezes one. Send a pimp and hoes to another town to buy cheap and carry it home.
+- An intelligence centre hideout station. Unlike every other room it makes nothing: it decides how
+  many runs can be in the air at once, and takes a share off a route's risk for knowing it. Without
+  one there are no runs at all.
+- A run costs fewer turns than travelling yourself, which pays the distance each way, but it takes
+  real time, locks up crew who earn nothing while they are gone, and is paid for in cash before
+  anybody leaves: fares both ways, and their keep for the whole trip, charged up front.
+- Flights take real time. At six minutes a turn of distance, the shipped map runs twelve to thirty-six
+  minutes a leg, so a run is a decent chunk of an evening rather than a teleport.
+- Mules buy at the destination's price, not at yours, which is the entire reason to send them.
+- Everything an outcome will depend on is frozen at launch: capacity, cash, the pimp's loyalty, and
+  the odds faced. A pimp whose loyalty slips mid-flight does not change a run already in the air.
+
+### Added
 - A player-to-player market: one global board, escrowed stock, partial fills, a house cut, and payouts
   into the seller's bank.
 - Moonshine and cut, made by a still and a mix house. Moonshine substitutes for the beer thugs drink;

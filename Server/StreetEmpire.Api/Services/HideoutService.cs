@@ -158,6 +158,30 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public WorkshopLevelOptions? WorkshopFor(Hideout? hideout) => StationFor(hideout, "workshop");
 
     /// <summary>
+    /// How many mule runs may be in the air at once. Zero without the room, which is what makes the
+    /// intelligence centre the gate on mule running rather than a discount on it.
+    /// </summary>
+    public int ConcurrentRunCap(Hideout? hideout)
+    {
+        var level = hideout?.IntelligenceLevel ?? 0;
+        if (level <= 0) return Math.Max(0, _options.Mules.BaseConcurrentRuns);
+        return Level(_options.Hideout.Intelligence, level, x => x.Level)?.ConcurrentRuns
+               ?? Math.Max(0, _options.Mules.BaseConcurrentRuns);
+    }
+
+    /// <summary>
+    /// The share of a route's risk that knowing the route takes off. Never all of it: a briefing is
+    /// not a guarantee, and a room that removed risk entirely would end the decision it exists for.
+    /// </summary>
+    public double RouteRiskReduction(Hideout? hideout)
+    {
+        var level = hideout?.IntelligenceLevel ?? 0;
+        if (level <= 0) return 0;
+        var percent = Level(_options.Hideout.Intelligence, level, x => x.Level)?.RiskReductionPercent ?? 0;
+        return Math.Clamp(percent / 100.0, 0, 0.9);
+    }
+
+    /// <summary>
     /// The tier a station needs, or null when it has no gate. Checked when making as well as when
     /// building: buying is not the only way to end up with one, since a station built before a gate
     /// existed would otherwise keep running under it forever.
@@ -324,7 +348,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 level => hideout.StillLevel = level, "still"),
             "mix" => ApplyUpgrade(player, hideout, config.Mix, hideout.MixLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.MixLevel = level, "mix house"),
-            _ => throw new GameRuleException("Room must be 'tier', 'storage', 'safe', 'weedlab', 'cokelab', or 'workshop'.")
+            "intelligence" => ApplyUpgrade(player, hideout, config.Intelligence, hideout.IntelligenceLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => hideout.IntelligenceLevel = level, "intelligence centre"),
+            _ => throw new GameRuleException(
+                "Room must be 'tier', 'storage', 'safe', 'weedlab', 'cokelab', 'workshop', 'still', 'mix', or 'intelligence'.")
         };
     }
 
@@ -384,6 +411,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             "workshop" => Next(config.Workshop, hideout?.WorkshopLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "still" => Next(config.Still, hideout?.StillLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "mix" => Next(config.Mix, hideout?.MixLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "intelligence" => Next(config.Intelligence, hideout?.IntelligenceLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             _ => null
         };
     }

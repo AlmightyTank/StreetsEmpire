@@ -62,6 +62,7 @@ var tests = new (string Name, Action Test)[]
     ("bot targeting picks the richest beatable target", BotTargetingPicksRichestBeatable),
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
+    ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("defence alerts flip the outcome to the defender's view", DefenceAlertsFlipPerspective),
     ("catch-up reports what happened while away and stays quiet otherwise", CatchUpReportsWhatHappenedWhileAway),
     ("catch-up reports rank moves and who changed places with you", CatchUpReportsRankAndRivals),
@@ -1843,6 +1844,113 @@ static BotSchedule ScheduleFor(BotBrainFocus focus, BotAutomationOptions options
 
     throw new InvalidOperationException($"No seed produced a {focus} rival.");
 }
+
+/// <summary>
+/// A run buys time and presence with crew and money. This pins the price of that: fewer turns than
+/// travelling yourself, real cash before anybody leaves, crew off the books while they are gone, and
+/// every number the outcome will depend on written down at launch rather than read again later.
+/// </summary>
+static void MuleRunsArePricedAndFrozen()
+{
+    var options = Resolve(new GameOptions());
+    var mules = CreateMules(options);
+    var hideouts = CreateHideouts(options);
+
+    // Los Angeles is six turns out on the shipped map; Detroit is two.
+    var player = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20 };
+    player.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
+
+    // Without the room there are no runs at all: the intelligence centre is the gate, not a discount.
+    var roomless = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { Tier = 2 } };
+    AssertEqual(0, hideouts.ConcurrentRunCap(roomless.Hideout));
+    AssertRuleError(
+        () => mules.Launch(roomless, Pimp(roomless, "Vic", 100), "Detroit", "weed", 2, 10_000, 0, DateTime.UtcNow),
+        "You need an intelligence centre before you can run mules.");
+
+    // A run is cheaper in turns than going yourself, which costs the distance each way.
+    var quote = mules.Quote(player, "Detroit", "weed", 3, 30_000);
+    AssertEqual(2, quote.TravelTurns);
+    AssertEqual(1, quote.Turns);
+    AssertTrue(quote.Turns < quote.TravelTurns * 2, "a run costs fewer turns than the round trip it replaces");
+
+    // Three hoes carry forty-five units, and the fare and upkeep are charged for four heads.
+    AssertEqual(45, quote.Capacity);
+    AssertEqual(4 * 2 * 220L, quote.Fare);
+    AssertEqual(34, quote.TripMinutes);
+    AssertEqual(quote.CashSent + quote.Fare + quote.Upkeep, quote.TotalCost);
+    AssertTrue(quote.Upkeep > 0, "keeping crew away costs something");
+
+    // They buy at the destination's price, not at ours, which is the entire reason to go.
+    AssertEqual(options.CityMarkets.ProductPrice("Detroit", "weed", options.WeedSellPrice), quote.UnitPriceThere);
+    AssertTrue(quote.UnitPriceThere < options.CityMarkets.ProductPrice("Los Angeles", "weed", options.WeedSellPrice),
+        "there is no point running to a town that is dearer than home");
+
+    // A run has to go somewhere else, and only carries what is worth a plane ticket.
+    AssertRuleError(() => mules.Quote(player, "Nowhere", "weed", 1, 1_000), "Pick one of");
+    AssertRuleError(() => mules.Quote(player, "Detroit", "beer", 1, 1_000), "A mule run carries weed or coke.");
+    AssertRuleError(
+        () => mules.Launch(player, Pimp(player, "Vic", 100), "Los Angeles", "weed", 1, 1_000, 0, DateTime.UtcNow),
+        "A mule run has to go somewhere else.");
+
+    // The cap is the room's, and it is counted against what is already in the air.
+    AssertRuleError(
+        () => mules.Launch(player, Pimp(player, "Vic", 100), "Detroit", "weed", 3, 30_000, 1, DateTime.UtcNow),
+        "can only run 1 at a time");
+
+    var launchedAt = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+    var run = mules.Launch(player, Pimp(player, "Vic", 100), "Detroit", "weed", 3, 30_000, 0, launchedAt);
+
+    // Paid for before anybody leaves, and the hoes are off the books while they are gone: counting
+    // them at home would have them working the streets and carrying cargo at the same time.
+    AssertEqual(200_000L - quote.TotalCost, player.Cash);
+    AssertEqual(99, player.Turns);
+    AssertEqual(17, player.Hoes);
+
+    // Both legs are booked at launch, so the run is a flight rather than a teleport.
+    AssertEqual(launchedAt.AddMinutes(12), run.ArrivesAtUtc);
+    AssertEqual(launchedAt.AddMinutes(34), run.ReturnsAtUtc);
+    AssertEqual(MuleRunStatus.Outbound, mules.StatusAt(run, launchedAt.AddMinutes(5)));
+    AssertEqual(MuleRunStatus.Inbound, mules.StatusAt(run, launchedAt.AddMinutes(20)));
+    AssertEqual(MuleRunStatus.Done, mules.StatusAt(run, launchedAt.AddMinutes(40)));
+    AssertTrue(run.IsOut, "a run is out until it is settled");
+
+    // Frozen at launch. A pimp whose loyalty slips mid-flight must not change a run already in the air.
+    AssertEqual(100.0, run.PimpLoyaltyAtLaunch);
+    AssertEqual(45, run.Capacity);
+    AssertEqual(30_000L, run.CashSent);
+
+    // A loyal pimp does not walk; a wavering one is likelier to the further he is sent.
+    AssertEqual(0, mules.DefectChancePercent(player, Pimp(player, "Loyal", 100), "Detroit"));
+    var wavering = mules.DefectChancePercent(player, Pimp(player, "Shaky", 20), "Detroit");
+    AssertTrue(wavering > 0, "a pimp well below the threshold might not come back");
+    AssertTrue(mules.DefectChancePercent(player, Pimp(player, "Shaky", 20), "Los Angeles") > wavering,
+        "distance makes walking away easier");
+
+    // Knowing the route takes a share off the risk, but never all of it.
+    var blind = mules.BustChancePercent(roomless, "New York", 1);
+    var briefed = mules.BustChancePercent(player, "New York", 1);
+    AssertTrue(briefed < blind, $"an intelligence centre lowers the risk ({briefed} vs {blind})");
+    AssertTrue(briefed > 0, "a briefing is not a guarantee");
+    AssertTrue(mules.BustChancePercent(player, "New York", 6) > briefed, "more bodies are easier to notice");
+
+    // Sending crew you do not have, or money you cannot cover, is refused rather than run on credit.
+    var thin = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 1, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };
+    AssertRuleError(
+        () => mules.Launch(thin, Pimp(thin, "Vic", 100), "Detroit", "weed", 4, 30_000, 0, launchedAt),
+        "hoe(s) to send");
+    AssertRuleError(
+        () => mules.Launch(player, Pimp(player, "Vic", 100), "Detroit", "weed", 1, 0, 0, launchedAt),
+        "Send them with something to buy with.");
+    AssertRuleError(
+        () => mules.Launch(player, Pimp(player, "Vic", 100), "Detroit", "weed", 1, 5_000_000, 0, launchedAt),
+        "costs");
+}
+
+static Pimp Pimp(Player owner, string name, double loyalty)
+    => new() { Id = 1, PlayerId = owner.Id, Name = name, Loyalty = loyalty };
+
+static MuleService CreateMules(GameOptions options)
+    => new(Snapshot(options), CreateHideouts(options));
 
 // A CombatLog stores the attacker's outcome, so telling the defender "Victory" would say they won a
 // fight they lost. This is the flip, and it is the whole reason the describer exists.

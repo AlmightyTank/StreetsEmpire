@@ -61,6 +61,7 @@ var tests = new (string Name, Action Test)[]
     ("anti-farm widens protection under repeated hits", AntiFarmWidensProtection),
     ("bot targeting picks the richest beatable target", BotTargetingPicksRichestBeatable),
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
+    ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("defence alerts flip the outcome to the defender's view", DefenceAlertsFlipPerspective),
     ("catch-up reports what happened while away and stays quiet otherwise", CatchUpReportsWhatHappenedWhileAway),
     ("catch-up reports rank moves and who changed places with you", CatchUpReportsRankAndRivals),
@@ -1766,6 +1767,81 @@ static void BotAttackProfilesScaleWithPersonality()
         AssertTrue(profile.WinMargin >= 1, $"{focus} does not seek fights it loses");
         AssertTrue(profile.MinThugsToAttack > 0, $"{focus} needs a crew to attack");
     }
+}
+
+/// <summary>
+/// A rival that acts once every twenty minutes forever is not doing what a player does. A player is
+/// away while turns bank up, then sits down and spends the lot, at their own hours. This pins the
+/// shape of that: habits fixed to the rival, hours that actually exclude something, and a next
+/// sitting that always lands inside them.
+/// </summary>
+static void BotSchedulesLookLikePeople()
+{
+    var options = new BotAutomationOptions();
+    var random = new AlwaysRandom();
+
+    // Habits belong to the rival, not to the roll: the same rival is the same person every time.
+    var bot = new Player { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"), AccountId = Guid.Parse("22222222-2222-2222-2222-222222222222"), Name = "Repeat" };
+    var brain = BotBrain.For(bot);
+    var once = BotSchedule.For(bot, brain, options);
+    AssertEqual(once, BotSchedule.For(bot, brain, options));
+
+    // Eager personalities play more often than patient ones, read off the character rather than a
+    // second dial that could disagree with the first.
+    var charger = ScheduleFor(BotBrainFocus.MoraleNeglecter, options);
+    var banker = ScheduleFor(BotBrainFocus.Banker, options);
+    AssertTrue(charger.SessionsPerDay >= banker.SessionsPerDay,
+        $"hard chargers play at least as often as bankers ({charger.SessionsPerDay} vs {banker.SessionsPerDay})");
+
+    // A rival that keeps hours is genuinely absent outside them, or "hours" means nothing.
+    var sleeper = new BotSchedule(4, PeakHourUtc: 20, WindowHours: 8, NeverSleeps: false);
+    AssertTrue(sleeper.IsAwake(new DateTime(2026, 1, 1, 20, 0, 0)), "a sleeper is up at its peak");
+    AssertTrue(!sleeper.IsAwake(new DateTime(2026, 1, 1, 4, 0, 0)), "a sleeper is away at four in the morning");
+
+    // The window wraps midnight rather than clipping at it, which a plain subtraction would get wrong.
+    var nightOwl = new BotSchedule(4, PeakHourUtc: 0, WindowHours: 8, NeverSleeps: false);
+    AssertTrue(nightOwl.IsAwake(new DateTime(2026, 1, 1, 23, 0, 0)), "an hour before midnight is inside a midnight window");
+    AssertTrue(nightOwl.IsAwake(new DateTime(2026, 1, 1, 3, 0, 0)), "and so is three hours after it");
+    AssertTrue(!nightOwl.IsAwake(new DateTime(2026, 1, 1, 12, 0, 0)), "noon is not");
+
+    // The next sitting is always inside the rival's hours, whenever it is asked from. Asked at four in
+    // the morning it must skip forward to the evening rather than schedule a session nobody plays.
+    for (var hour = 0; hour < 24; hour++)
+    {
+        var next = sleeper.NextSessionStart(new DateTime(2026, 1, 1, hour, 0, 0), random);
+        AssertTrue(next > new DateTime(2026, 1, 1, hour, 0, 0), $"the next sitting is in the future from {hour}:00");
+        AssertTrue(sleeper.IsAwake(next), $"the sitting booked from {hour}:00 lands inside its hours, not at {next:HH:mm}");
+    }
+
+    // A rival with no hours is available at every one of them, which is what keeps the board alive
+    // for anyone playing at an odd time.
+    var always = new BotSchedule(4, PeakHourUtc: 20, WindowHours: 8, NeverSleeps: true);
+    for (var hour = 0; hour < 24; hour++)
+        AssertTrue(always.IsAwake(new DateTime(2026, 1, 1, hour, 0, 0)), $"an always-on rival is up at {hour}:00");
+
+    // Sessions per day stay inside the configured band for every personality, so no rival plays
+    // ninety times a day or once a week.
+    foreach (var focus in Enum.GetValues<BotBrainFocus>())
+    {
+        var schedule = ScheduleFor(focus, options);
+        AssertTrue(schedule.SessionsPerDay >= options.MinSessionsPerDay && schedule.SessionsPerDay <= options.MaxSessionsPerDay,
+            $"{focus} plays {schedule.SessionsPerDay}x a day, inside the configured band");
+    }
+}
+
+/// <summary>Finds a rival whose seed lands on the wanted personality, so a focus can be tested directly.</summary>
+static BotSchedule ScheduleFor(BotBrainFocus focus, BotAutomationOptions options)
+{
+    for (var seed = 0; seed < 4096; seed++)
+    {
+        var id = new Guid(seed, 0, 0, [0, 0, 0, 0, 0, 0, 0, 0]);
+        var bot = new Player { Id = id, AccountId = id, Name = $"Seed {seed}" };
+        var brain = BotBrain.For(bot);
+        if (brain.Focus == focus)
+            return BotSchedule.For(bot, brain, options);
+    }
+
+    throw new InvalidOperationException($"No seed produced a {focus} rival.");
 }
 
 // A CombatLog stores the attacker's outcome, so telling the defender "Victory" would say they won a

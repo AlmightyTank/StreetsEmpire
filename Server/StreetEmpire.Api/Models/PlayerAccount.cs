@@ -15,6 +15,23 @@ public sealed class PlayerAccount
     /// </summary>
     public bool IsBotPaused { get; set; }
 
+    /// <summary>
+    /// When this rival's current sitting runs out. Null between sessions, which is what "logged off"
+    /// means here. Kept on the account rather than the player because it is a fact about the thing
+    /// driving the player, not about the empire.
+    /// </summary>
+    public DateTime? BotSessionEndsAtUtc { get; set; }
+
+    /// <summary>When the rival next sits down. Null means it may start as soon as it is looked at.</summary>
+    public DateTime? BotNextSessionAtUtc { get; set; }
+
+    /// <summary>What is left of this sitting. Counts down as the rival acts, and ends the session at zero.</summary>
+    public int BotSessionActionsLeft { get; set; }
+
+    /// <summary>Whether this rival is at the screen right now.</summary>
+    public bool IsBotInSession(DateTime nowUtc)
+        => BotSessionEndsAtUtc is { } ends && ends > nowUtc && BotSessionActionsLeft > 0;
+
     /// <summary>Blocked indefinitely until an admin lifts it.</summary>
     public bool IsBanned { get; set; }
 

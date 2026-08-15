@@ -1627,7 +1627,7 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
             <strong>{bot.name}</strong>
             <span>{bot.personality}</span>
           </div>
-          <p>{money.format(bot.netWorth)} / {bot.lastActionAtUtc ? `idle ${number.format(bot.minutesIdle)}m` : 'never acted'}</p>
+          <p>{money.format(bot.netWorth)} / {botPresence(bot)}</p>
         </div>)}
       </div>
     </div>
@@ -1934,6 +1934,25 @@ function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
       </div>)}
     </div>}
   </div>
+}
+
+/**
+ * What a rival is doing right now. Idle minutes stopped meaning anything on their own once rivals
+ * played in sessions: one quiet for four hours is asleep, not stuck, and the admin needs to be able
+ * to tell those apart at a glance.
+ */
+function botPresence(bot: AdminBotHealth) {
+  if (bot.isInSession) return `playing, ${number.format(bot.sessionActionsLeft)} left`
+  if (!bot.nextSessionAtUtc) return 'due to play'
+  const minutes = Math.round((new Date(bot.nextSessionAtUtc).getTime() - Date.now()) / 60000)
+  if (minutes <= 0) return 'due to play'
+  return minutes < 90 ? `back in ${minutes}m` : `back in ${Math.round(minutes / 60)}h`
+}
+
+// Only a rival that is meant to be playing and is not counts as stale, so a sleeper is not flagged.
+function rivalRowClass(bot: AdminBotHealth) {
+  if (bot.isPaused) return 'paused'
+  return bot.isInSession && bot.minutesIdle > 30 ? 'stale' : ''
 }
 
 function alertClass(alert: Alert) {
@@ -2575,18 +2594,19 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
     </section>
 
     <section className="panel wide-panel">
-      <div className="panel-title"><h2>The Rivals</h2><span>Personality and idle time</span></div>
+      <div className="panel-title"><h2>The Rivals</h2><span>Personality and playing habits</span></div>
       {rosterError && <div className="error banner"><span>{rosterError}</span></div>}
       {roster.length === 0 && !rosterError && <p className="coming">No AI rivals yet.</p>}
       {roster.length > 0 && <div className="admin-table-scroll"><table className="admin-table">
-        <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th><th>State</th><th /></tr></thead>
+        <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th><th>Habits</th><th>State</th><th /></tr></thead>
         <tbody>
-          {roster.map(bot => <tr key={bot.playerId} className={bot.isPaused ? 'paused' : bot.minutesIdle > 120 ? 'stale' : ''}>
+          {roster.map(bot => <tr key={bot.playerId} className={rivalRowClass(bot)}>
             <td>{bot.name}</td>
             <td>{bot.personality}</td>
             <td>{money.format(bot.netWorth)}</td>
             <td>{bot.lastActionAtUtc ? `${number.format(bot.minutesIdle)}m` : 'never acted'}</td>
-            <td>{bot.isPaused ? 'Paused' : 'Active'}</td>
+            <td>{bot.habits}</td>
+            <td>{bot.isPaused ? 'Paused' : botPresence(bot)}</td>
             <td className="admin-table-actions">
               <button
                 className="secondary compact"

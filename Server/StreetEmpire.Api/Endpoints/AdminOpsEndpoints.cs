@@ -455,6 +455,7 @@ internal static class AdminOpsEndpoints
             EconomyService economy,
             CombatMissionService combatMissions,
             IOptionsSnapshot<GameOptions> gameOptions,
+            IOptions<BotAutomationOptions> botOptions,
             CancellationToken ct) =>
         {
             var admin = await current.GetAsync(ct);
@@ -534,14 +535,23 @@ internal static class AdminOpsEndpoints
                 .Select(bot =>
                 {
                     var last = lastActions.TryGetValue(bot.Id, out var at) ? at : (DateTime?)null;
+                    var brain = BotBrain.For(bot);
+                    // Idle minutes stopped meaning anything on their own once rivals played in
+                    // sessions: a rival quiet for four hours is not stuck, it is asleep. The habits
+                    // and the next sitting are what say which.
+                    var schedule = BotSchedule.For(bot, brain, botOptions.Value);
                     return new AdminBotHealthResponse(
                         bot.Id,
                         bot.Name,
-                        BotBrain.For(bot).Name,
+                        brain.Name,
                         economy.CalculateNetWorth(bot),
                         last,
                         last is { } value ? (int)Math.Max(0, (now - value).TotalMinutes) : int.MaxValue,
-                        bot.Account.IsBotPaused);
+                        bot.Account.IsBotPaused,
+                        bot.Account.IsBotInSession(now),
+                        bot.Account.BotSessionActionsLeft,
+                        bot.Account.BotNextSessionAtUtc,
+                        schedule.Describe());
                 })
                 .OrderByDescending(x => x.MinutesIdle)
                 .ToList();

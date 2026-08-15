@@ -664,8 +664,51 @@ public sealed class LabLevelOptions
 public sealed class BotAutomationOptions
 {
     public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// How often the loop looks at the world. This is the rate a rival acts at while it is *in* a
+    /// session, not how often it plays: a player at the screen fires an action every minute or so, and
+    /// then is gone for hours.
+    /// </summary>
     public int TickSeconds { get; set; } = 60;
     public int RoundsPerTick { get; set; } = 1;
+
+    /// <summary>How many times a day a rival sits down to play. Each one draws its own from this band.</summary>
+    public int MinSessionsPerDay { get; set; } = 2;
+    public int MaxSessionsPerDay { get; set; } = 6;
+
+    /// <summary>
+    /// How wide a rival's playing hours are, centred on its own peak hour. Narrow enough that the world
+    /// has a rush hour, wide enough that it is not a single spike.
+    /// </summary>
+    public int ActiveWindowHours { get; set; } = 8;
+
+    /// <summary>
+    /// The share of rivals who keep no hours. Without a few of these the board is dead for anyone who
+    /// plays at an odd hour.
+    /// </summary>
+    public double NeverSleepsShare { get; set; } = 0.2;
+
+    /// <summary>
+    /// The ceiling on one sitting, in actions and in minutes. Both are backstops: a session is meant
+    /// to end when the turn bank runs dry, which is what a real one ends on. Sized so that a rival
+    /// returning to a full bank can actually spend it, since a cap that binds first would leave every
+    /// rival permanently sitting on turns it never uses.
+    /// </summary>
+    public int MaxActionsPerSession { get; set; } = 60;
+    public int MaxSessionMinutes { get; set; } = 90;
+
+    /// <summary>
+    /// Turns a rival leaves on the table before calling it a night. Nobody plays their bank to exactly
+    /// zero, and a rival that did would never have anything in hand to answer a raid with.
+    /// </summary>
+    public int SessionTurnReserve { get; set; } = 12;
+
+    /// <summary>
+    /// Chance of doing nothing on a given tick mid-session. This is reading the screen, changing your
+    /// mind, going to make tea: without it a session is a machine gun of evenly spaced actions.
+    /// </summary>
+    public double HesitationChance { get; set; } = 0.25;
 }
 
 public sealed class StreetActionOptions

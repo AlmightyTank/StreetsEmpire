@@ -16,16 +16,21 @@ public sealed class BotSimulationService(
     CombatMissionService missions,
     TerritoryService territories,
     PimpRoster pimps,
-    MarketService market)
+    MarketService market,
+    IOptions<BotAutomationOptions> botOptions)
 {
     private readonly GameOptions _options = options.Value;
+
+    // Bound from its own section rather than from GameOptions, so it is read separately here.
+    private readonly BotAutomationOptions _bots = botOptions.Value;
 
     public Task<BotSimulationResult> RunAsync(int requestedRounds, CancellationToken ct)
         => RunAsync(requestedRounds, null, ct);
 
     /// <param name="onlyPlayerId">
-    /// Runs a single rival regardless of its cooldown, for the admin's "act now" button. A paused rival
-    /// stays paused even then: pausing is a statement about the rival, not about this run.
+    /// Runs a single rival whether or not it is at the screen, for the admin's "act now" button: it
+    /// opens a sitting rather than waiting for one. A paused rival stays paused even then, because
+    /// pausing is a statement about the rival rather than about this run.
     /// </param>
     public async Task<BotSimulationResult> RunAsync(int requestedRounds, Guid? onlyPlayerId, CancellationToken ct)
     {
@@ -38,12 +43,6 @@ public sealed class BotSimulationService(
             .Where(x => onlyPlayerId == null || x.Id == onlyPlayerId)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
-        var botIds = bots.Select(x => x.Id).ToList();
-        var lastBotActivityTimes = await db.ActionLogs.AsNoTracking()
-            .Where(x => botIds.Contains(x.PlayerId))
-            .GroupBy(x => x.PlayerId)
-            .Select(x => new { PlayerId = x.Key, LastActionAtUtc = x.Max(a => a.CreatedAtUtc) })
-            .ToDictionaryAsync(x => x.PlayerId, x => x.LastActionAtUtc, ct);
         var actions = 0;
         var activeBotRounds = 0;
         var activeBotIds = new HashSet<Guid>();
@@ -54,14 +53,18 @@ public sealed class BotSimulationService(
             {
                 var nowUtc = DateTime.UtcNow;
                 var brain = BotBrain.For(bot);
-                var lastActivityAtUtc = lastBotActivityTimes.TryGetValue(bot.Id, out var lastActionAtUtc)
-                    ? lastActionAtUtc
-                    : bot.CreatedAtUtc;
-                var nextEligibleAtUtc = lastActivityAtUtc.AddMinutes(random.NextInclusive(brain.MinCooldownMinutes, brain.MaxCooldownMinutes));
-                // A targeted run is an explicit instruction, so it ignores the cooldown that exists to
-                // pace the loop rather than to gate the admin.
-                if (onlyPlayerId is null && nextEligibleAtUtc > nowUtc)
+                // A targeted run is an explicit instruction, so it opens a session rather than waiting
+                // for one. The gate exists to make rivals behave like people, not to gate the admin.
+                if (!OpenSessionIfDue(bot, brain, nowUtc, force: onlyPlayerId is not null))
                     continue;
+
+                // Reading the screen, changing your mind, going to make tea. Costs the session a slot,
+                // so a hesitant rival gets through less in a sitting, exactly as a distracted one does.
+                if (onlyPlayerId is null && random.NextDouble() < Math.Clamp(_bots.HesitationChance, 0, 0.9))
+                {
+                    SpendSessionAction(bot, brain, nowUtc);
+                    continue;
+                }
 
                 await clock.AdvanceAsync(bot, nowUtc, ct: ct);
                 var botActions = await TryMarketAsync(bot, brain, nowUtc, ct);
@@ -71,9 +74,10 @@ public sealed class BotSimulationService(
                     botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = RunBotRound(bot, brain, nowUtc);
+
+                SpendSessionAction(bot, brain, nowUtc);
                 if (botActions > 0)
                 {
-                    lastBotActivityTimes[bot.Id] = nowUtc;
                     activeBotIds.Add(bot.Id);
                     activeBotRounds++;
                     actions += botActions;
@@ -86,12 +90,77 @@ public sealed class BotSimulationService(
     }
 
     /// <summary>
+    /// Whether this rival is at the screen, opening a sitting if one is due.
+    ///
+    /// A player is away for hours while turns pile up, then sits down and spends the lot. So a rival
+    /// is either in a session, acting on every tick, or logged off entirely. How big a sitting is
+    /// follows from what there is to spend: a rival coming back to a full bank has a long evening
+    /// ahead of it, and one that just played has almost nothing to do.
+    /// </summary>
+    private bool OpenSessionIfDue(Player bot, BotBrain brain, DateTime nowUtc, bool force)
+    {
+        var account = bot.Account;
+        if (account.IsBotInSession(nowUtc)) return true;
+
+        // The session that just ended has to be closed out before the next can be scheduled, or a
+        // rival whose actions ran out would sit at zero and act again on the very next tick.
+        if (account.BotSessionEndsAtUtc is not null)
+            CloseSession(bot, brain, nowUtc);
+
+        if (!force)
+        {
+            if (account.BotNextSessionAtUtc is { } due && due > nowUtc) return false;
+
+            var schedule = BotSchedule.For(bot, brain, _bots);
+            // Being due is not enough: a rival that keeps hours does not play outside them, and the
+            // next-session time is only ever a lower bound.
+            if (!schedule.IsAwake(nowUtc))
+            {
+                account.BotNextSessionAtUtc = schedule.NextSessionStart(nowUtc, random);
+                return false;
+            }
+        }
+
+        var config = _bots;
+        var reserve = Math.Max(0, config.SessionTurnReserve);
+        var spendable = Math.Max(0, bot.Turns - reserve);
+        // Turns are the length of the evening. Sized off the smallest real turn action rather than an
+        // average, so the cap is a ceiling the rival rarely reaches instead of one it always hits.
+        var affordable = spendable / 2;
+        var slots = Math.Clamp(affordable, 1, Math.Max(1, config.MaxActionsPerSession));
+
+        account.BotSessionActionsLeft = force ? Math.Max(1, slots) : slots;
+        account.BotSessionEndsAtUtc = nowUtc.AddMinutes(Math.Max(1, config.MaxSessionMinutes));
+        account.BotNextSessionAtUtc = null;
+        return true;
+    }
+
+    /// <summary>Burns one slot, and ends the sitting when the rival is out of them or out of turns.</summary>
+    private void SpendSessionAction(Player bot, BotBrain brain, DateTime nowUtc)
+    {
+        var account = bot.Account;
+        account.BotSessionActionsLeft = Math.Max(0, account.BotSessionActionsLeft - 1);
+        // Nobody plays their bank to exactly zero, and a rival that did would have nothing in hand to
+        // answer a raid with.
+        if (account.BotSessionActionsLeft <= 0 || bot.Turns <= Math.Max(0, _bots.SessionTurnReserve))
+            CloseSession(bot, brain, nowUtc);
+    }
+
+    private void CloseSession(Player bot, BotBrain brain, DateTime nowUtc)
+    {
+        var account = bot.Account;
+        account.BotSessionActionsLeft = 0;
+        account.BotSessionEndsAtUtc = null;
+        account.BotNextSessionAtUtc = BotSchedule.For(bot, brain, _bots).NextSessionStart(nowUtc, random);
+    }
+
+    /// <summary>
     /// Puts a rival through an action the admin chose instead of one its brain chose.
     ///
     /// Every action goes through the same service a real player's would, so the rules still apply and a
     /// refusal is a real refusal rather than a special admin path that behaves differently from the
     /// game. That is the whole point: it is for testing what the game does, so it has to be the game
-    /// doing it. The cooldown is skipped, since this is an explicit instruction.
+    /// doing it. The rival's hours are ignored, since this is an explicit instruction.
     /// </summary>
     public async Task<ActionResultResponse> DirectAsync(Player bot, AdminBotActionRequest request, DateTime nowUtc, CancellationToken ct)
     {

@@ -10,6 +10,8 @@ public sealed class BotAutomationService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // The tick is how often the world is looked at, not how often a rival plays. A rival acts on
+        // roughly every tick while it is in a sitting, and not at all between them.
         logger.LogInformation(
             "AI bot automation started with a {TickSeconds}s tick. Initial state: {State}.",
             state.TickSeconds,

@@ -104,6 +104,26 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   pages. The strip scrolls on a narrow screen, so heat is placed ahead of rank and city, which are
   read rather than acted on.
 
+### How the rivals play
+
+- A rival used to take one action every twenty-odd minutes, evenly, forever. Nothing about that is
+  what a player does, and a world of them read as machinery rather than as opponents.
+- Rivals now play in sittings. Between them they are gone, and turns bank up exactly as a real
+  player's do; then they sit down and spend the lot. A sitting ends when the bank runs dry, with an
+  action count and a wall clock only as backstops, because running out of turns is what really ends
+  an evening.
+- Each rival keeps its own hours, so the world has a rush hour and a quiet stretch. A fifth of them
+  keep no hours at all: without those the board is dead for anyone who plays at an odd time, and the
+  point of rivals is that the world moves whether you are there or not.
+- How often a rival plays is read off its personality rather than a separate dial, using the same
+  pacing the personalities already carried. Eager ones sit down five or six times a day, patient ones
+  two or three.
+- Rivals hesitate. A quarter of the beats in a sitting pass with nothing happening, which is reading
+  the screen and changing your mind, and it is the difference between a person and a loop.
+- Because rivals now sleep, idle time stopped being a health signal on its own: one quiet for four
+  hours is asleep, not stuck. The admin's rivals table shows each one's habits and whether it is
+  playing right now, which is what actually distinguishes the two.
+
 ### Still to come in 0.2.4
 
 - Player-to-player markets and organizations.

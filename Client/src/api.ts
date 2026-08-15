@@ -858,6 +858,10 @@ export type AdminBotHealth = {
   lastActionAtUtc?: string | null
   minutesIdle: number
   isPaused: boolean
+  isInSession: boolean
+  sessionActionsLeft: number
+  nextSessionAtUtc?: string | null
+  habits: string
 }
 export type AdminOversight = {
   medianNetWorth: number

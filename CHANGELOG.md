@@ -2,6 +2,25 @@
 
 ## 0.2.4 (in progress)
 
+### Changed
+- AI rivals play in sittings instead of on a metronome. They used to take exactly one action every
+  fifteen to fifty minutes, evenly, around the clock, forever, which is nothing like what a player
+  does. A player is away for hours while turns bank up, then sits down and spends the lot, then goes
+  again.
+- Each rival keeps its own hours, drawn from its seed, so the world has a rush hour and a quiet
+  stretch instead of a flat hum. A fifth of them keep no hours at all, so the board is never dead for
+  someone playing at an odd time.
+- How often a rival plays comes from its personality: the eager ones sit down five or six times a day,
+  the patient ones two or three. This is read off the pacing the personalities already carried rather
+  than a second dial that could disagree with the first.
+- A sitting ends when the turn bank runs dry, which is what a real one ends on, with an action count
+  and a wall clock as backstops. Rivals now bank turns while away and spend them in a burst.
+- Rivals hesitate: a quarter of the time they do nothing on a given beat, so a sitting is not a
+  machine gun of evenly spaced actions.
+- The admin's rivals table shows habits and what each one is doing now - playing with so many actions
+  left, or back in so long - because idle minutes stopped meaning anything on their own once rivals
+  slept. One quiet for four hours is asleep, not stuck.
+
 ### Added
 - A player-to-player market: one global board, escrowed stock, partial fills, a house cut, and payouts
   into the seller's bank.

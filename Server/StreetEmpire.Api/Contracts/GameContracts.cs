@@ -657,7 +657,11 @@ public sealed record AdminBotHealthResponse(
     long NetWorth,
     DateTime? LastActionAtUtc,
     int MinutesIdle,
-    bool IsPaused);
+    bool IsPaused,
+    bool IsInSession,
+    int SessionActionsLeft,
+    DateTime? NextSessionAtUtc,
+    string Habits);
 
 public sealed record AdminOversightResponse(
     long MedianNetWorth,

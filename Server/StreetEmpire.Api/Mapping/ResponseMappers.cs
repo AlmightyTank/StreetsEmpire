@@ -235,6 +235,8 @@ internal static class ResponseMappers
             hideouts.PassivePerHour(player.Hideout, "weed"),
             hideouts.PassivePerHour(player.Hideout, "coke"),
             options.Hideout.MaxOfflineProductionHours,
+            player.Hideout?.IntelligenceLevel ?? 0,
+            hideouts.ConcurrentRunCap(player.Hideout),
             Math.Round(heat, 1),
             HeatLabel(heat, options),
             HeatDetail(heat, options),
@@ -243,6 +245,7 @@ internal static class ResponseMappers
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
             ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),
             ToRoomUpgrade(hideouts, player.Hideout, "cokelab"),
+            ToRoomUpgrade(hideouts, player.Hideout, "intelligence"),
             nextTier is null
                 ? null
                 : new HideoutTierUpgradeResponse(

@@ -2,13 +2,13 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'territory' | 'market' | 'recon' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'territory' | 'market' | 'mules' | 'recon' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -33,6 +33,7 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   hideout: { label: 'Hideout', short: 'HO', kicker: 'Capacity and upgrades' },
   territory: { label: 'Territory', short: 'TR', kicker: 'Ground you hold' },
   market: { label: 'Market', short: 'MK', kicker: 'Store, product, bank' },
+  mules: { label: 'Mules', short: 'MU', kicker: 'Runs out of town' },
   recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control center' },
 }
@@ -413,6 +414,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
     case 'hideout': return <HideoutPage {...ctx} />
     case 'territory': return <TerritoryPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
+    case 'mules': return <MulePage {...ctx} />
     case 'recon': return <ReconPage {...ctx} />
     case 'admin': return ctx.adminOverview
       ? <AdminPage {...ctx} overview={ctx.adminOverview} />
@@ -673,6 +675,17 @@ function HideoutPage(ctx: PageContext) {
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
         />
+        <RoomRow
+          name="Intelligence Centre"
+          level={hideout.intelligenceLevel}
+          detail={hideout.intelligenceLevel === 0
+            ? 'Not built. Makes nothing. Lets you run mules out of town, and knows the routes they take.'
+            : `${hideout.concurrentRunCap} mule run(s) out at once, on routes you already know`}
+          upgrade={hideout.intelligenceUpgrade}
+          funds={dashboard.cash + dashboard.bankCash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('intelligence'))}
+        />
       </div>
       {(hideout.weedLabLevel > 0 || hideout.cokeLabLevel > 0) && <p className="hint">
         Labs keep running while you are away, up to {hideout.maxOfflineProductionHours} hours of work at a time,
@@ -684,6 +697,194 @@ function HideoutPage(ctx: PageContext) {
     <HideoutStationsPanel dashboard={dashboard} busy={busy} act={act} />
 
     <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
+  </div>
+}
+
+/**
+ * Mule runs: crew sent to another town to buy cheap and carry home.
+ *
+ * Built around the one number that decides whether a run is worth making - what a unit costs there
+ * against what it fetches here - because every other figure on the page is a consequence of it.
+ */
+function MulePage(ctx: PageContext) {
+  const { dashboard, busy, act } = ctx
+  const [board, setBoard] = useState<MuleBoard | null>(null)
+  const [quote, setQuote] = useState<MuleQuote | null>(null)
+  const [error, setError] = useState('')
+  const [city, setCity] = useState('')
+  const [good, setGood] = useState('weed')
+  const [hoes, setHoes] = useState(3)
+  const [cash, setCash] = useState(10000)
+  const [pimpId, setPimpId] = useState<number | null>(null)
+
+  const load = async () => {
+    try {
+      const next = await api.mules()
+      setBoard(next)
+      setError('')
+      if (!city && next.destinations.length > 0) setCity(next.destinations[0].city)
+      if (pimpId === null) setPimpId(next.pimps.find(p => !p.isAway)?.id ?? null)
+    } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [dashboard.city, dashboard.turns, dashboard.hoes])
+
+  // Re-quoted whenever the shape of the run changes, since every figure on the ticket moves with it.
+  useEffect(() => {
+    if (!city) return
+    let stale = false
+    void (async () => {
+      try {
+        const next = await api.muleQuote(city, good, hoes, cash)
+        if (!stale) setQuote(next)
+      } catch { if (!stale) setQuote(null) }
+    })()
+    return () => { stale = true }
+  }, [city, good, hoes, cash])
+
+  if (!board) return <div className="page-grid one-column"><section className="panel wide-panel">
+    <div className="panel-title"><h2>Mules</h2><span>Loading</span></div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+  </section></div>
+
+  const free = board.pimps.filter(p => !p.isAway)
+  const out = board.runs.filter(r => r.status !== 'Done')
+  const home = board.runs.filter(r => r.status === 'Done')
+  const spread = quote ? quote.homePrice - quote.unitPriceThere : 0
+  const unspendable = quote ? quote.cashSent - quote.unitsAffordable * quote.unitPriceThere : 0
+
+  const send = async () => {
+    if (!pimpId) return
+    await act(() => api.launchMule(city, good, hoes, cash, pimpId))
+    await load()
+  }
+
+  return <div className="page-grid one-column">
+    <section className="panel wide-panel">
+      <div className="panel-title">
+        <h2>Mule Runs</h2>
+        <span>{board.runsOut} of {board.concurrentRunCap} out</span>
+      </div>
+      {error && <div className="error banner"><span>{error}</span></div>}
+      <p>
+        Send a pimp and hoes to another town to buy cheap and carry it home. Going yourself costs the
+        distance in turns each way and leaves you standing in the wrong town. A run costs a fraction of
+        that in turns, but it takes real time, the crew earn nothing while they are gone, and you pay
+        their fares and keep before anybody leaves.
+      </p>
+      {board.concurrentRunCap === 0 && <div className="error banner">
+        <span>You need an intelligence centre before you can run mules. Build one on the Hideout page.</span>
+      </div>}
+    </section>
+
+    {board.concurrentRunCap > 0 && <section className="panel wide-panel">
+      <div className="panel-title"><h2>Plan a run</h2><span>Prices are what they cost there</span></div>
+      <div className="mule-form">
+        <label>Town<select value={city} onChange={e => setCity(e.target.value)}>
+          {board.destinations.map(d => <option key={d.city} value={d.city}>
+            {d.city} - {d.flightMinutes}m each way, {d.risk.toLowerCase()} risk
+          </option>)}
+        </select></label>
+        <label>Good<select value={good} onChange={e => setGood(e.target.value)}>
+          <option value="weed">Weed</option>
+          <option value="coke">Coke</option>
+        </select></label>
+        <label>Hoes<input
+          type="number"
+          min={1}
+          max={Math.min(board.maxHoesPerRun, Math.max(1, board.hoesAvailable))}
+          value={hoes}
+          onChange={e => setHoes(Number(e.target.value))}
+        /></label>
+        <label>Cash to send<input
+          type="number"
+          min={0}
+          step={1000}
+          value={cash}
+          onChange={e => setCash(Number(e.target.value))}
+        /></label>
+        <label>Led by<select value={pimpId ?? ''} onChange={e => setPimpId(Number(e.target.value))}>
+          {free.length === 0 && <option value="">No pimp free</option>}
+          {free.map(p => <option key={p.id} value={p.id}>{p.name} - {p.loyalty}% loyal</option>)}
+        </select></label>
+      </div>
+
+      {quote && <div className="mule-ticket">
+        <div className="mule-figures">
+          <MuleFigure label="Buys there" value={`${money.format(quote.unitPriceThere)} each`} />
+          <MuleFigure label="Sells here" value={`${money.format(quote.homePrice)} each`} tone={spread > 0 ? 'good' : 'bad'} />
+          <MuleFigure label="They can carry" value={`${number.format(quote.capacity)} ${quote.good}`} />
+          <MuleFigure label="Your money buys" value={`${number.format(quote.unitsAffordable)} ${quote.good}`} />
+          <MuleFigure label="Turns" value={number.format(quote.turns)} />
+          <MuleFigure label="Round trip" value={`${quote.tripMinutes} min`} />
+          <MuleFigure label="Fares and keep" value={money.format(quote.fare + quote.upkeep)} />
+          <MuleFigure label="Spent on goods" value={money.format(quote.projectedSpend)} />
+          <MuleFigure
+            label="Profit if clean"
+            value={money.format(quote.projectedProfit)}
+            tone={quote.projectedProfit > 0 ? 'good' : 'bad'}
+          />
+          <MuleFigure label="Caught" value={`${quote.bustChancePercent}%`} tone={quote.bustChancePercent >= 25 ? 'bad' : undefined} />
+          <MuleFigure label="He runs" value={`${quote.defectChancePercent}%`} tone={quote.defectChancePercent > 0 ? 'bad' : undefined} />
+        </div>
+        {/* The spread alone does not decide it: fares and keep are paid whether or not the run pays. */}
+        <p className={quote.projectedProfit > 0 ? 'mule-verdict good' : 'mule-verdict bad'}>
+          {spread <= 0
+            ? `${quote.good} is no cheaper in ${quote.destinationCity} than it is here. There is nothing to make on this route.`
+            : quote.projectedProfit <= 0
+              ? `A clean run still loses ${money.format(-quote.projectedProfit)}. The ${money.format(quote.fare + quote.upkeep)} in fares and keep is more than ${number.format(quote.unitsAffordable)} ${quote.good} makes at ${money.format(spread)} a unit. Send more hoes, or find a wider spread.`
+              : `Clean, this run comes home ${money.format(quote.projectedProfit)} up: ${number.format(quote.unitsAffordable)} ${quote.good} worth ${money.format(quote.projectedGross)}, less ${money.format(quote.fare + quote.upkeep + quote.projectedSpend)} spent getting it.`}
+        </p>
+        {unspendable > 0 && <p className="hint">
+          {money.format(unspendable)} of what you send cannot be spent: {quote.hoes} hoe(s) only carry {number.format(quote.capacity)}.
+          It comes home with them, unless they are stopped, in which case it is taken too.
+        </p>}
+        <button
+          className="primary"
+          disabled={busy || !pimpId || board.runsOut >= board.concurrentRunCap || hoes > board.hoesAvailable}
+          onClick={() => void send()}
+        >
+          Send {quote.hoes} hoe(s) to {quote.destinationCity}
+        </button>
+      </div>}
+    </section>}
+
+    {out.length > 0 && <section className="panel wide-panel">
+      <div className="panel-title"><h2>In the air</h2><span>{out.length} out</span></div>
+      <div className="room-list">
+        {out.map(run => <div className="room-row" key={run.id}>
+          <div className="room-copy">
+            <strong>{run.pimpName} to {run.destinationCity}</strong>
+            <span>
+              {run.hoes} hoe(s) carrying up to {number.format(run.capacity)} {run.good}, {money.format(run.cashSent)} to buy with
+            </span>
+            <small>
+              {run.status === 'Outbound' ? 'On the way out' : 'On the way back'} - {run.bustChancePercent}% caught, {run.defectChancePercent}% he runs
+            </small>
+          </div>
+          <em>{run.secondsRemaining > 0 ? `${Math.ceil(run.secondsRemaining / 60)}m` : 'Landing'}</em>
+        </div>)}
+      </div>
+    </section>}
+
+    {home.length > 0 && <section className="panel wide-panel">
+      <div className="panel-title"><h2>Recently home</h2><span>Last 12 hours</span></div>
+      <div className="room-list">
+        {home.map(run => <div className={run.outcome === 'Delivered' ? 'room-row' : 'room-row illegal'} key={run.id}>
+          <div className="room-copy">
+            <strong>{run.pimpName} from {run.destinationCity}</strong>
+            <span>{run.summary}</span>
+          </div>
+          <em>{run.outcome}</em>
+        </div>)}
+      </div>
+    </section>}
+  </div>
+}
+
+function MuleFigure({ label, value, tone }: { label: string, value: string, tone?: 'good' | 'bad' }) {
+  return <div className={tone ? `mule-figure ${tone}` : 'mule-figure'}>
+    <span>{label}</span>
+    <strong>{value}</strong>
   </div>
 }
 

@@ -203,6 +203,7 @@ app.MapCombatEndpoints();
 app.MapWorldEndpoints();
 app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();
+app.MapMuleEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();
 

@@ -300,6 +300,82 @@ public sealed record PimpResponse(
     DateTime? LostAtUtc,
     string? LostReason);
 
+public sealed record MuleLaunchRequest(string? City, string? Good, int Hoes, long Cash, long PimpId);
+
+public sealed record MuleQuoteRequest(string? City, string? Good, int Hoes, long Cash);
+
+/// <summary>A run in the air, or one that has just come home. The same row serves both.</summary>
+public sealed record MuleRunResponse(
+    long Id,
+    string DestinationCity,
+    string Good,
+    string Status,
+    string Outcome,
+    string PimpName,
+    int Hoes,
+    int Capacity,
+    long CashSent,
+    int UnitsBought,
+    int SeizedUnits,
+    long CashReturned,
+    int BustChancePercent,
+    int DefectChancePercent,
+    DateTime ArrivesAtUtc,
+    DateTime ReturnsAtUtc,
+    int SecondsRemaining,
+    string Summary);
+
+/// <summary>A town a run could go to, priced and timed so the choice can be made without guessing.</summary>
+public sealed record MuleDestinationResponse(
+    string City,
+    string Risk,
+    int TravelTurns,
+    int FlightMinutes,
+    long WeedPrice,
+    long CokePrice,
+    int BustChancePercent);
+
+/// <summary>A pimp who could lead a run, and what sending them would risk.</summary>
+public sealed record MuleCandidateResponse(
+    long Id,
+    string Name,
+    string Specialty,
+    int Loyalty,
+    bool IsAway,
+    string? AwayReason);
+
+public sealed record MuleQuoteResponse(
+    string DestinationCity,
+    string Good,
+    int Hoes,
+    int Capacity,
+    int Turns,
+    int FlightMinutes,
+    int TripMinutes,
+    long Fare,
+    long Upkeep,
+    long CashSent,
+    long TotalCost,
+    long UnitPriceThere,
+    int UnitsAffordable,
+    long HomePrice,
+    long ProjectedGross,
+    long ProjectedSpend,
+    long ProjectedProfit,
+    int BustChancePercent,
+    int DefectChancePercent);
+
+public sealed record MuleBoardResponse(
+    int ConcurrentRunCap,
+    int RunsOut,
+    int IntelligenceLevel,
+    int HoesAvailable,
+    int MaxHoesPerRun,
+    int HoeCarryCapacity,
+    IReadOnlyList<MuleDestinationResponse> Destinations,
+    IReadOnlyList<MuleCandidateResponse> Pimps,
+    IReadOnlyList<MuleRunResponse> Runs);
+
 public sealed record HideoutResponse(
     string TierName,
     int Tier,
@@ -323,6 +399,8 @@ public sealed record HideoutResponse(
     int WeedLabPassivePerHour,
     int CokeLabPassivePerHour,
     int MaxOfflineProductionHours,
+    int IntelligenceLevel,
+    int ConcurrentRunCap,
     double Heat,
     string HeatLabel,
     string HeatDetail,
@@ -331,6 +409,7 @@ public sealed record HideoutResponse(
     HideoutRoomUpgradeResponse? SafeUpgrade,
     HideoutRoomUpgradeResponse? WeedLabUpgrade,
     HideoutRoomUpgradeResponse? CokeLabUpgrade,
+    HideoutRoomUpgradeResponse? IntelligenceUpgrade,
     HideoutTierUpgradeResponse? NextTier,
     HideoutBuildResponse? Building,
     IReadOnlyList<HideoutStationResponse> Stations);

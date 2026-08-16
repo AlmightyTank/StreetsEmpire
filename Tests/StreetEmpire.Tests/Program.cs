@@ -1875,9 +1875,9 @@ static void MuleRunsArePricedAndFrozen()
     AssertEqual(1, quote.Turns);
     AssertTrue(quote.Turns < quote.TravelTurns * 2, "a run costs fewer turns than the round trip it replaces");
 
-    // Three hoes carry forty-five units, and the fare and upkeep are charged for four heads.
-    AssertEqual(45, quote.Capacity);
-    AssertEqual(4 * 2 * 220L, quote.Fare);
+    // Three hoes carry ninety units, and the fare and upkeep are charged for four heads.
+    AssertEqual(90, quote.Capacity);
+    AssertEqual(4 * 2 * 60L, quote.Fare);
     AssertEqual(34, quote.TripMinutes);
     AssertEqual(quote.CashSent + quote.Fare + quote.Upkeep, quote.TotalCost);
     AssertTrue(quote.Upkeep > 0, "keeping crew away costs something");
@@ -1918,7 +1918,7 @@ static void MuleRunsArePricedAndFrozen()
 
     // Frozen at launch. A pimp whose loyalty slips mid-flight must not change a run already in the air.
     AssertEqual(100.0, run.PimpLoyaltyAtLaunch);
-    AssertEqual(45, run.Capacity);
+    AssertEqual(90, run.Capacity);
     AssertEqual(30_000L, run.CashSent);
 
     // A loyal pimp does not walk; a wavering one is likelier to the further he is sent.
@@ -1966,13 +1966,13 @@ static void MuleRunsSettleThreeWays()
     var settled = mules.Settle(run, lucky, Pimp(lucky, "Vic", 100), new MinimumRandom(), Landing());
 
     AssertEqual(MuleRunOutcome.Delivered, run.Outcome);
-    // Forty-five is what three hoes carry, so the load binds long before the money does.
-    AssertEqual(45, run.UnitsBought);
-    AssertEqual(30_000L - 45 * price, run.CashReturned);
-    AssertEqual(45, lucky.Weed);
+    // Ninety is what three hoes carry, so the load binds long before the money does.
+    AssertEqual(90, run.UnitsBought);
+    AssertEqual(30_000L - 90 * price, run.CashReturned);
+    AssertEqual(90, lucky.Weed);
     AssertEqual(20, lucky.Hoes);
-    AssertEqual(30_000L - 45 * price, lucky.Cash);
-    AssertEqual(45, settled.UnitsDelivered);
+    AssertEqual(30_000L - 90 * price, lucky.Cash);
+    AssertEqual(90, settled.UnitsDelivered);
     AssertTrue(!run.IsOut, "a settled run is no longer out");
 
     // Seized: a share of the load goes, the unspent cash goes with it because it was in the room when
@@ -1987,7 +1987,7 @@ static void MuleRunsSettleThreeWays()
     AssertEqual(0L, seizedRun.CashReturned);
     AssertEqual(0L, stopped.Cash);
     AssertTrue(seizedRun.SeizedUnits > 0, "a stop takes something");
-    AssertEqual(45 - seizedRun.SeizedUnits, stopped.Weed);
+    AssertEqual(90 - seizedRun.SeizedUnits, stopped.Weed);
     AssertEqual(seizedRun.SeizedUnits * options.Mules.HeatPerSeizedUnit, stopped.Heat);
     AssertEqual(20, stopped.Hoes);
     AssertTrue(seizedRun.Summary.Contains("was stopped"), $"the notice says what happened: {seizedRun.Summary}");
@@ -2021,10 +2021,10 @@ static void MuleRunsSettleThreeWays()
     var room = CreateHideouts(options).CapacityFor(cramped.Hideout).MaxWeed;
     AssertEqual(room, cramped.Weed);
     AssertEqual(room, tight.UnitsDelivered);
-    // The player paid for all 45. A run that quietly dropped the rest would read as the price being
+    // The player paid for all 90. A run that quietly dropped the rest would read as the price being
     // wrong rather than the room being full, so the notice has to say so.
-    AssertEqual(45, overflowing.UnitsBought);
-    AssertTrue(overflowing.Summary.Contains($"{45 - room:N0} weed was dumped"),
+    AssertEqual(90, overflowing.UnitsBought);
+    AssertTrue(overflowing.Summary.Contains($"{90 - room:N0} weed was dumped"),
         $"a short delivery says why: {overflowing.Summary}");
 
     static Player Loaded() => new()
@@ -2074,7 +2074,7 @@ static MuleRun Out(Player player, long cash, int hoes) => new()
     PimpName = "Vic",
     PimpLoyaltyAtLaunch = 100,
     AssignedHoes = hoes,
-    Capacity = hoes * 15,
+    Capacity = hoes * 30,
     CashSent = cash,
     DepartedAtUtc = Landing().AddHours(-1),
     ArrivesAtUtc = Landing().AddMinutes(-30),

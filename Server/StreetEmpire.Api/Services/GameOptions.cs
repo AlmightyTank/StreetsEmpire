@@ -696,19 +696,28 @@ public sealed class MuleOptions
     public double TurnCostPerTravelTurn { get; set; } = 0.5;
     public int MinTurnCost { get; set; } = 1;
 
-    /// <summary>Units one hoe can carry. The number of hoes sent is the player's greed dial.</summary>
-    public int HoeCarryCapacity { get; set; } = 15;
+    /// <summary>
+    /// Units one hoe can carry, and how many may go. The number of hoes sent is the player's greed
+    /// dial. Sized against the storage room rather than against nothing: six hoes at thirty apiece is
+    /// close to what a deep store holds, so a big run makes the room matter instead of vanishing into
+    /// it. It also has to clear what flying her costs, or every extra body is a loss.
+    /// </summary>
+    public int HoeCarryCapacity { get; set; } = 30;
     public int MaxHoesPerRun { get; set; } = 6;
 
-    /// <summary>Fare per head per turn of distance, charged both ways at launch.</summary>
-    public long FarePerHeadPerTravelTurn { get; set; } = 220;
+    /// <summary>
+    /// Fare per head per turn of distance, charged both ways at launch. Deliberately smaller than the
+    /// margin a hoe can carry: at 220 a head cost more to fly than she could earn on any route in the
+    /// game, so every run lost money and the whole mechanic was dead on arrival.
+    /// </summary>
+    public long FarePerHeadPerTravelTurn { get; set; } = 60;
 
     /// <summary>
     /// Rooms and meals per head per hour away, charged up front for the whole trip. Prepaid rather
     /// than billed hourly because crew who ran out of money mid-flight would need a debt system, and
     /// a run that quietly becomes a loan is a nastier mechanic than one that is simply expensive.
     /// </summary>
-    public long UpkeepPerHeadPerHour { get; set; } = 160;
+    public long UpkeepPerHeadPerHour { get; set; } = 60;
 
     /// <summary>
     /// A mule is sloppier than you are, so a route's own bust chance is worse for them than for a

@@ -76,6 +76,9 @@ export type Hideout = {
   safeUpgrade?: HideoutRoomUpgrade | null
   weedLabUpgrade?: HideoutRoomUpgrade | null
   cokeLabUpgrade?: HideoutRoomUpgrade | null
+  intelligenceUpgrade?: HideoutRoomUpgrade | null
+  intelligenceLevel: number
+  concurrentRunCap: number
   nextTier?: HideoutTierUpgrade | null
   building?: HideoutBuild | null
   stations: HideoutStation[]
@@ -120,7 +123,7 @@ export type HideoutBuild = {
   secondsRemaining: number
 }
 
-export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'still' | 'mix'
+export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'still' | 'mix' | 'intelligence'
 
 export type Pimp = {
   id: number
@@ -548,6 +551,76 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export type MuleRun = {
+  id: number
+  destinationCity: string
+  good: string
+  status: string
+  outcome: string
+  pimpName: string
+  hoes: number
+  capacity: number
+  cashSent: number
+  unitsBought: number
+  seizedUnits: number
+  cashReturned: number
+  bustChancePercent: number
+  defectChancePercent: number
+  arrivesAtUtc: string
+  returnsAtUtc: string
+  secondsRemaining: number
+  summary: string
+}
+export type MuleDestination = {
+  city: string
+  risk: string
+  travelTurns: number
+  flightMinutes: number
+  weedPrice: number
+  cokePrice: number
+  bustChancePercent: number
+}
+export type MuleCandidate = {
+  id: number
+  name: string
+  specialty: string
+  loyalty: number
+  isAway: boolean
+  awayReason?: string | null
+}
+export type MuleQuote = {
+  destinationCity: string
+  good: string
+  hoes: number
+  capacity: number
+  turns: number
+  flightMinutes: number
+  tripMinutes: number
+  fare: number
+  upkeep: number
+  cashSent: number
+  totalCost: number
+  unitPriceThere: number
+  unitsAffordable: number
+  homePrice: number
+  projectedGross: number
+  projectedSpend: number
+  projectedProfit: number
+  bustChancePercent: number
+  defectChancePercent: number
+}
+export type MuleBoard = {
+  concurrentRunCap: number
+  runsOut: number
+  intelligenceLevel: number
+  hoesAvailable: number
+  maxHoesPerRun: number
+  hoeCarryCapacity: number
+  destinations: MuleDestination[]
+  pimps: MuleCandidate[]
+  runs: MuleRun[]
+}
+
 export const api = {
   cities: () => request<string[]>('/api/auth/cities'),
   register: (username: string, password: string, playerName: string, city: string) =>
@@ -587,6 +660,11 @@ export const api = {
   forge: (turns: number, station: string) =>
     request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns, station }) }),
   travel: (city: string) => request<ActionResult>('/api/game/travel', { method: 'POST', body: JSON.stringify({ city }) }),
+  mules: () => request<MuleBoard>('/api/game/mules'),
+  muleQuote: (city: string, good: string, hoes: number, cash: number) =>
+    request<MuleQuote>('/api/game/mules/quote', { method: 'POST', body: JSON.stringify({ city, good, hoes, cash }) }),
+  launchMule: (city: string, good: string, hoes: number, cash: number, pimpId: number) =>
+    request<ActionResult>('/api/game/mules/launch', { method: 'POST', body: JSON.stringify({ city, good, hoes, cash, pimpId }) }),
   claimTerritory: (territoryId: number, thugs: number, pimpId: number | null) =>
     request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
   setGarrison: (territoryId: number, thugs: number, pimpId: number | null) =>

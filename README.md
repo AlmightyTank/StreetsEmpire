@@ -128,6 +128,13 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - What will not fit in the storage room is dumped, and the notice says so. A run that quietly dropped
   a third of a load already paid for would read as the price being wrong rather than the room.
 
+- The page quotes profit, not gross. The spread alone never decided a run, because the fares are paid
+  whether or not it pays: the first tuning had a head costing more to fly than a hoe could carry
+  margin for, so every route in the game lost money and the mechanic was dead on arrival. Short hops
+  are now thin, bad routes are clearly negative, and a long run into a wide spread is worth the risk.
+- Cash beyond what the crew can carry goods for is dead weight, and the page says so. It comes home
+  untouched on a clean run and is taken on a bad one, so sending a fat purse is pure exposure.
+
 ### Flights take time
 
 - A town's distance is now time as well as turns, for the player as much as for a mule. Travel used

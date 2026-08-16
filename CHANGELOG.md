@@ -44,6 +44,15 @@
 - Cargo that will not fit in the storage room is dumped rather than overfilling it, and the notice
   says how much and why. Silently dropping a third of a load a player had already paid for read as
   the price being wrong rather than the room being full.
+- A Mules page: pick a town, a good, how many hoes and how much money, and see the whole ticket before
+  committing. What it costs there against what it fetches here, what they can carry, the fares, the
+  turns, the round trip, and the odds of being caught or walked out on.
+- The ticket quotes profit rather than gross, because the spread alone does not decide a run: the
+  fares are paid whether or not it pays. A losing route says so and says why.
+- An Intelligence Centre row on the hideout page, so the room that gates mule running can be built.
+- Mule tuning was wrong on first contact. A head cost more to fly than a hoe could carry margin for,
+  so every route in the game lost money. Carrying doubled and fares cut to a third, which makes short
+  hops thin, bad routes clearly negative, and long runs into a wide spread worth the risk.
 - Travel is a flight for the player too. A town's distance is time as well as turns, and while it is
   running you are in the air and cannot act. Travel used to be instant, which made distance a pure
   turn cost: you were somewhere else the moment you decided to be.

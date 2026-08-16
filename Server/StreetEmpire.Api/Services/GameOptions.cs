@@ -219,6 +219,16 @@ public sealed class HideoutOptions
     public double CutHeatPerUnit { get; set; } = 0.03;
 
     /// <summary>
+    /// Units of coke a turn of stepping on it can stretch, per level of the mix house.
+    ///
+    /// Cutting is mixing rather than manufacturing, so it goes far faster than making the cut did: a
+    /// run of coke off a plane should be stretchable in an evening, not over days. The mix house level
+    /// scales it, which gives that room a second reason to exist beyond making the cut in the first
+    /// place.
+    /// </summary>
+    public int CutPerTurnPerMixLevel { get; set; } = 10;
+
+    /// <summary>
     /// Working the streets draws attention of its own, whether or not anything is held.
     ///
     /// Sized against the turn bank, which is the thing it is actually charged against. At half a point

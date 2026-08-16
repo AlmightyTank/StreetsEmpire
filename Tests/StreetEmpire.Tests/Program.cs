@@ -41,6 +41,7 @@ var tests = new (string Name, Action Test)[]
     ("workshop makes weapons under the store price", WorkshopMakesWeaponsUnderStorePrice),
     ("moonshine drinks like beer and cut stretches coke", ContrabandGoodsDoTheirJob),
     ("heat comes from what you hold and what you do", HeatDrivesTheBust),
+    ("stepping on coke turns cut into more of it", CuttingStretchesWhatYouAlreadyHold),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1316,17 +1317,83 @@ static void ContrabandGoodsDoTheirJob()
     CreateEconomy(options).Scout(mixed, 4);
     AssertEqual(10, mixed.Moonshine);
 
-    // Cut stretches coke one for one and is spent doing it.
+    // Production no longer touches cut. It used to be spent silently by any coke run, which meant a
+    // player saving it for a batch watched it vanish into something they had not connected it to.
     var mixer = new Player { Turns = 20, Cash = 100_000, Cut = 3, Hideout = new Hideout { StorageLevel = 3 } };
     var run = CreateEconomy(options).Produce(mixer, "coke", 5);
-    AssertEqual(3, Value<int>(RequiredBreakdown(run), "cutUsed"));
-    AssertEqual(0, mixer.Cut);
-    AssertEqual(23, Value<int>(RequiredBreakdown(run), "unitsProduced"));
+    AssertEqual(3, mixer.Cut);
+    AssertEqual(20, Value<int>(RequiredBreakdown(run), "unitsProduced"));
 
-    // Cut does nothing for weed, which is not what it stretches.
     var weeder = new Player { Turns = 20, Cash = 100_000, Cut = 3, Hideout = new Hideout { StorageLevel = 3 } };
     CreateEconomy(options).Produce(weeder, "weed", 5);
     AssertEqual(3, weeder.Cut);
+}
+
+/// <summary>
+/// Cut is worth nothing on its own; it is worth whatever the coke it becomes is worth. This is the
+/// step that turns one into the other, and the coke it works on is coke you already hold, however it
+/// got there - which is the whole reason it is an action rather than a bonus on production.
+/// </summary>
+static void CuttingStretchesWhatYouAlreadyHold()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var perTurn = options.Hideout.CutPerTurnPerMixLevel;
+
+    // A mix house is required, and so is something at both ends of the mix.
+    var roomless = Stocked(mix: 0, coke: 50, cut: 50);
+    AssertRuleError(() => economy.CutCoke(roomless, 5), "You need a mix house to step on it.");
+    AssertRuleError(() => economy.CutCoke(Stocked(mix: 1, coke: 50, cut: 0), 5), "no cut to work with");
+    AssertRuleError(() => economy.CutCoke(Stocked(mix: 1, coke: 0, cut: 50), 5), "no coke to step on");
+
+    // One cut makes one coke. The cut is spent, the pile grows by the same.
+    var player = Stocked(mix: 1, coke: 60, cut: 40);
+    var result = economy.CutCoke(player, 4);
+    AssertEqual(40, 60 + 40 - player.Coke + 40);
+    AssertEqual(100, player.Coke);
+    AssertEqual(0, player.Cut);
+    AssertTrue(result.Summary.Contains("Stepped on 40 coke"), $"the notice says what happened: {result.Summary}");
+
+    // Only the turns the batch actually needed. Asking for ten on a two-turn batch should not cost
+    // eight turns of standing about.
+    var quick = Stocked(mix: 1, coke: 100, cut: perTurn);
+    var turnsBefore = quick.Turns;
+    economy.CutCoke(quick, 10);
+    AssertEqual(turnsBefore - 1, quick.Turns);
+
+    // A better mix house works faster, which is the room's second reason to exist.
+    var basic = Stocked(mix: 1, coke: 100, cut: 500);
+    var better = Stocked(mix: 2, coke: 100, cut: 500);
+    economy.CutCoke(basic, 1);
+    economy.CutCoke(better, 1);
+    AssertEqual(perTurn, 500 - basic.Cut);
+    AssertEqual(perTurn * 2, 500 - better.Cut);
+
+    // Never past the walls. Cutting into a full store would destroy cut already paid for, so the
+    // batch stops at the room instead of spilling.
+    var cramped = Stocked(mix: 1, coke: 60, cut: 200, storage: 1);
+    var capacity = CreateHideouts(options).CapacityFor(cramped.Hideout).MaxCoke;
+    cramped.Coke = capacity - 3;
+    economy.CutCoke(cramped, 20);
+    AssertEqual(capacity, cramped.Coke);
+    AssertEqual(197, cramped.Cut);
+
+    AssertRuleError(() => economy.CutCoke(Full(options), 5), "no space for more coke");
+
+    static Player Stocked(int mix, int coke, int cut, int storage = 6) => new()
+    {
+        Turns = 100,
+        Coke = coke,
+        Cut = cut,
+        Hideout = new Hideout { Tier = 2, StorageLevel = storage, MixLevel = mix }
+    };
+
+    Player Full(GameOptions opts)
+    {
+        var player = Stocked(mix: 1, coke: 0, cut: 50, storage: 1);
+        player.Coke = CreateHideouts(opts).CapacityFor(player.Hideout).MaxCoke;
+        return player;
+    }
 }
 
 /// <summary>

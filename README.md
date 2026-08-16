@@ -71,9 +71,17 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - A **still** brews moonshine, which thugs drink exactly like the shop's beer at well under the shop's
   price. The bought beer is always poured first, so a player is never quietly spending contraband while
   a legal barrel sits next to it.
-- A **mix house** makes cut, which stretches coke one for one and is worth nothing on its own. That is
-  why it is priced off the local coke rather than carrying a band of its own: it follows the town
-  automatically, because what it is worth is what it makes.
+- A **mix house** makes cut, which is worth nothing on its own and worth whatever the coke it becomes
+  is worth. That is why it is priced off the local coke rather than carrying a band of its own: it
+  follows the town automatically, because what it is worth is what it makes.
+- **Stepping on it** spends that cut: one unit of cut makes one unit of coke, on any coke you hold.
+  It used to be a silent bonus inside coke production, which was wrong twice over. A player saving cut
+  for a batch watched it disappear into a production run they had not connected it to, and cut could
+  never reach coke that arrived any other way - off a plane, off the board, out of a lab overnight,
+  which is most of the coke worth stretching.
+- What it costs is turns, room, and notice. The mix house level sets how fast a batch goes, giving that
+  room a second reason to exist, and a stretched pile is a hotter pile: coke draws more heat per unit
+  than anything else you can hold.
 - Moonshine is priced against the shop's beer, which is the same everywhere, so it does not move with
   the town the way weed, coke and cut do.
 - AI rivals trade. They buy weapons off the board when it beats the shop, judged against the shop

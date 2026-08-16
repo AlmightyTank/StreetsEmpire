@@ -293,6 +293,35 @@ internal static class GameEndpoints
         }).RequireAuthorization();
 
 
+        // Stepping on coke you already hold, wherever it came from. Separate from production because
+        // the coke worth stretching is usually coke that was never produced.
+        app.MapPost("/api/game/cut", async (
+            ProduceRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            EconomyService economy,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            await clock.AdvanceAsync(player, DateTime.UtcNow, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var result = economy.CutCoke(player, request.Turns);
+                AddLog(db, player, before, "CUT", request.Turns, result.Summary);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
         app.MapPost("/api/game/product/sell", async (
             SellProductRequest request,
             CurrentPlayerService current,

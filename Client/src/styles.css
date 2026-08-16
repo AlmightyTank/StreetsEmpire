@@ -632,6 +632,20 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .room-copy small { color: #c08a4a; font-size: .73rem; }
 .room-row.illegal { border-left: 3px solid #b4534a; }
 
+/* Stepping on it: a station's sibling rather than a station, so it sits apart from the room list. */
+.cut-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #303532;
+  border-left: 3px solid #b4534a;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #171818, #101314);
+}
+.cut-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
+.cut-head strong { color: #f4eee5; }
+.cut-head span { color: #7f8b87; font-size: .8rem; }
+.cut-panel p { margin: 8px 0; }
+
 /* A run is a ticket: the shape of it on the left, what it costs and risks laid out to be compared. */
 .mule-form {
   display: grid;

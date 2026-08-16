@@ -363,11 +363,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         // The lab is turn-fed: it raises what each production turn yields rather than running itself.
         var labBonusPercent = hideout.ProductionYieldBonusPercent(player.Hideout, key) + (territory?.ProductionYieldPercent ?? 0);
-        // Cut stretches coke and nothing else. Spent to the extent there is any, one unit per unit of
-        // coke, so it is worth exactly what the coke it makes is worth in this town.
-        var cutUsed = key == "coke" ? Math.Min(player.Cut, baseUnits) : 0;
-        player.Cut -= cutUsed;
-        var produced = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero) + cutUsed;
+        // Cut is no longer spent here. It used to be consumed silently by any coke run, which meant a
+        // player saving it for a batch watched it disappear into production they had not connected it
+        // to, and cut could never touch coke that arrived any other way - off a plane, off the board,
+        // out of a lab. Stepping on it is its own action now, so the player decides when.
+        var produced = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero);
 
         var totalCost = (long)production.CostPerTurn * turns;
         if (player.Cash < totalCost)
@@ -382,8 +382,6 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var summary = $"Produced {produced:N0} {key} using {turns} turn{Plural(turns)} and ${totalCost:N0} in materials.";
         if (labBonusPercent > 0)
             summary += $" The {key} lab added {labBonusPercent:N0}% yield.";
-        if (cutUsed > 0)
-            summary += $" {cutUsed:N0} cut stretched it by the same again.";
         summary += overflow.Describe();
 
         return new ActionResultResponse(
@@ -396,11 +394,85 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["unitsProduced"] = produced,
                 ["baseUnits"] = baseUnits,
                 ["labBonusPercent"] = labBonusPercent,
-                ["cutUsed"] = cutUsed,
                 ["costPerTurn"] = production.CostPerTurn,
                 ["totalCost"] = totalCost,
                 ["weedLostToStorage"] = overflow.WeedLost,
                 ["cokeLostToStorage"] = overflow.CokeLost
+            });
+    }
+
+    /// <summary>
+    /// Steps on the coke you already hold: cut goes in, and the pile comes out bigger.
+    ///
+    /// Its own action rather than a silent bonus on production, because the coke worth stretching is
+    /// usually coke that was never produced. A run comes off a plane with eighty units, the board
+    /// sells a hundred, a lab turns some out overnight - none of that used to be reachable by cut,
+    /// which only ever applied to units made in the same breath as it was spent.
+    ///
+    /// One unit of cut makes one unit of coke, so the cut is worth exactly what the coke it becomes is
+    /// worth here. What it costs is turns, storage, and notice: coke draws more heat per unit than
+    /// anything else, so a stretched pile is a hotter pile.
+    /// </summary>
+    public ActionResultResponse CutCoke(Player player, int turns)
+    {
+        TravelGate.EnsureLanded(player);
+        ValidateTurns(player, turns, _options.MaxActionTurns, "Cutting coke");
+
+        var mixLevel = player.Hideout?.MixLevel ?? 0;
+        if (mixLevel <= 0)
+            throw new GameRuleException("You need a mix house to step on it.");
+        if (hideout.StationRequiredTier("mix") is { } needed && (player.Hideout?.Tier ?? 1) < needed)
+            throw new GameRuleException($"Stepping on it needs the {hideout.TierName(needed)} or better.");
+        if (player.Cut <= 0)
+            throw new GameRuleException("You have no cut to work with.");
+        if (player.Coke <= 0)
+            throw new GameRuleException("You have no coke to step on.");
+
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var room = Math.Max(0, capacity.MaxCoke - player.Coke);
+        if (room <= 0)
+            throw new GameRuleException("Your storage room has no space for more coke.");
+
+        // Bounded by every real limit at once, and capped by the room rather than allowed to overflow:
+        // cutting into a full store would destroy cut the player had already paid to make.
+        var perTurn = Math.Max(1, _options.Hideout.CutPerTurnPerMixLevel) * mixLevel;
+        // Held before the mix, so the summary below can say which of these actually bound the batch.
+        var cutAvailable = player.Cut;
+        var cokeAvailable = player.Coke;
+        var stretched = Math.Min(Math.Min(turns * perTurn, cutAvailable), Math.Min(cokeAvailable, room));
+        if (stretched <= 0)
+            throw new GameRuleException("There is nothing to gain from a batch this size.");
+
+        // Only the turns the batch actually needed. A player who asks for ten turns on a batch that
+        // takes two should not be charged for eight turns of standing about.
+        var turnsUsed = Math.Max(1, (int)Math.Ceiling(stretched / (double)perTurn));
+
+        player.Cut -= stretched;
+        player.Coke += stretched;
+        player.Turns -= turnsUsed;
+
+        var summary = $"Stepped on {stretched:N0} coke with {stretched:N0} cut, using {turnsUsed} turn{Plural(turnsUsed)}. You now hold {player.Coke:N0} coke.";
+        // Name the limit that actually bound the batch. "Something stopped it" is the kind of notice
+        // that leaves a player guessing whether to buy cut, sell coke, or build a bigger room.
+        if (stretched < turns * perTurn)
+            summary += cutAvailable <= stretched
+                ? " That was all the cut you had."
+                : cokeAvailable <= stretched
+                    ? " That was all the coke you had to step on."
+                    : " Your storage room would not hold any more.";
+
+        return new ActionResultResponse(
+            summary,
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["cutUsed"] = stretched,
+                ["cokeGained"] = stretched,
+                ["turnsSpent"] = turnsUsed,
+                ["perTurn"] = perTurn,
+                ["mixLevel"] = mixLevel,
+                ["cokeHeld"] = player.Coke,
+                ["cutHeld"] = player.Cut
             });
     }
 

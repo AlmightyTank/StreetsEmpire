@@ -963,7 +963,71 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
         </div>
       })}
     </div>
+
+    <CutCokePanel dashboard={dashboard} busy={busy} act={act} />
   </section>
+}
+
+/**
+ * Stepping on the coke you already hold.
+ *
+ * Sits under the stations rather than inside the mix house row because it is not a station: the mix
+ * house makes cut, and this spends it. The coke worth stretching is usually coke that was never
+ * produced here at all - off a plane, off the board, out of a lab overnight.
+ */
+function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const hideout = dashboard.hideout
+  const mix = hideout.stations?.find(s => s.key === 'mix')
+  const [turns, setTurns] = useState(5)
+  if (!mix || mix.level === 0) return null
+
+  const perTurn = 10 * mix.level
+  const room = Math.max(0, hideout.maxCoke - dashboard.coke)
+  // Every limit at once, the same way the server bounds it, so the button never promises a batch the
+  // rules will refuse.
+  const batch = Math.min(turns * perTurn, dashboard.cut, dashboard.coke, room)
+  const turnsNeeded = Math.max(1, Math.ceil(batch / perTurn))
+  const blocked = dashboard.cut <= 0
+    ? 'You have no cut to work with.'
+    : dashboard.coke <= 0
+      ? 'You have no coke to step on.'
+      : room <= 0
+        ? 'Your store is full of coke already.'
+        : null
+
+  return <div className="cut-panel">
+    <div className="cut-head">
+      <strong>Step on it</strong>
+      <span>{number.format(dashboard.cut)} cut, {number.format(dashboard.coke)} coke, room for {number.format(room)} more</span>
+    </div>
+    <p>
+      Cut is worth nothing on its own and worth whatever the coke it becomes is worth. One unit makes
+      one unit, on any coke you hold however it got here. It costs turns and space, and a bigger pile
+      of coke draws more notice than anything else you can hold.
+    </p>
+    {blocked
+      ? <p className="hint">{blocked}</p>
+      : <p className="hint">
+          {number.format(batch)} coke from {number.format(batch)} cut, in {turnsNeeded} turn{turnsNeeded === 1 ? '' : 's'}.
+          {batch < turns * perTurn && ' That is everything available.'}
+        </p>}
+    <div className="territory-actions">
+      <label>Turns<input
+        type="number"
+        min={1}
+        max={dashboard.maxActionTurns}
+        value={turns}
+        onChange={e => setTurns(Number(e.target.value))}
+      /></label>
+      <button
+        className="primary compact"
+        disabled={busy || blocked !== null || batch <= 0 || turnsNeeded > dashboard.turns}
+        onClick={() => void act(() => api.cutCoke(turns))}
+      >
+        Cut {number.format(batch)} coke
+      </button>
+    </div>
+  </div>
 }
 
 function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {

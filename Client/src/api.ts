@@ -660,6 +660,8 @@ export const api = {
   forge: (turns: number, station: string) =>
     request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns, station }) }),
   travel: (city: string) => request<ActionResult>('/api/game/travel', { method: 'POST', body: JSON.stringify({ city }) }),
+  cutCoke: (turns: number) =>
+    request<ActionResult>('/api/game/cut', { method: 'POST', body: JSON.stringify({ turns, product: 'coke' }) }),
   mules: () => request<MuleBoard>('/api/game/mules'),
   muleQuote: (city: string, good: string, hoes: number, cash: number) =>
     request<MuleQuote>('/api/game/mules/quote', { method: 'POST', body: JSON.stringify({ city, good, hoes, cash }) }),

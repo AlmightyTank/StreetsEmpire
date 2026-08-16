@@ -3,6 +3,16 @@
 ## 0.2.4 (in progress)
 
 ### Changed
+- Cut is spent by a step of its own now instead of vanishing into coke production. One unit of cut
+  makes one unit of coke, on any coke you hold however it got there, at a speed the mix house level
+  sets. Production no longer touches cut at all.
+- The old arrangement was wrong twice: a player saving cut for a batch watched it disappear into a
+  production run they had not connected it to, and cut could never reach coke off a plane, off the
+  board, or out of a lab, which is most of the coke worth stretching.
+- A batch stops at whichever limit binds first and says which one it was, rather than leaving a player
+  guessing whether to buy cut, sell coke, or build a bigger room.
+- AI rivals step on their coke too, before selling, so the mix house does not pile up cut they never
+  turn into anything.
 - Heat rose far too fast, because neither half of it was sized against anything the game actually
   ships. Working the streets earned half a point a turn, so a full 200-turn bank spent in one sitting
   earned 100 heat and took a player holding nothing at all from Quiet to Hunted, with decay of three

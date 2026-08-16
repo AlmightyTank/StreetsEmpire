@@ -606,7 +606,12 @@ public sealed class BotSimulationService(
         if (random.NextDouble() < brain.IdleChance)
             return 0;
 
-        var action = TrySellProduct(bot, brain, actionTimeUtc);
+        // Before selling: cut sitting next to coke is money not yet made, and a rival that never
+        // stepped on it would let the mix house pile up product it had already paid to produce.
+        var action = TryCutCoke(bot, actionTimeUtc);
+        if (action > 0) return action;
+
+        action = TrySellProduct(bot, brain, actionTimeUtc);
         if (action > 0) return action;
 
         action = TryUpgradeHideout(bot, brain, actionTimeUtc);
@@ -756,6 +761,19 @@ public sealed class BotSimulationService(
     /// Every branch is gated on the room already being the constraint, so a bot never spends on a
     /// bigger safe it has no cash to fill.
     /// </summary>
+    /// <summary>Steps on the coke, when there is cut, coke and somewhere to put the result.</summary>
+    private int TryCutCoke(Player bot, DateTime actionTimeUtc)
+    {
+        if (bot.Cut <= 0 || bot.Coke <= 0 || (bot.Hideout?.MixLevel ?? 0) <= 0)
+            return 0;
+        if (hideouts.CapacityFor(bot.Hideout).MaxCoke - bot.Coke <= 0)
+            return 0;
+
+        var perTurn = Math.Max(1, _options.Hideout.CutPerTurnPerMixLevel) * (bot.Hideout?.MixLevel ?? 1);
+        var turns = Math.Clamp((int)Math.Ceiling(bot.Cut / (double)perTurn), 1, _options.MaxActionTurns);
+        return TryAction(bot, "CUT", turns, actionTimeUtc, () => economy.CutCoke(bot, turns));
+    }
+
     private int TryUpgradeHideout(Player bot, BotBrain brain, DateTime actionTimeUtc)
     {
         var hideout = bot.Hideout;

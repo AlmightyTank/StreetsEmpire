@@ -206,14 +206,28 @@ public sealed class HideoutOptions
     /// How much notice each contraband good draws per unit held. Weighted rather than flat because
     /// they are not equally incriminating: a coke lab's output is the worst thing to be found with,
     /// while cut is mostly baking soda and barely registers despite where it is made.
+    ///
+    /// Sized against the storage rooms the game actually ships rather than against nothing. At the
+    /// first tuning coke drew a point a unit, so filling a Warehouse store with 85 coke put a player
+    /// at 85 heat - Hunted - for doing nothing but using the room they had bought. A full store should
+    /// be worth watching, not a death sentence: a Warehouse of coke now reads around 30, and only
+    /// hoarding a maxed Penthouse store of everything reaches Hunted on stock alone.
     /// </summary>
-    public double CokeHeatPerUnit { get; set; } = 1.0;
-    public double MoonshineHeatPerUnit { get; set; } = 0.7;
-    public double WeedHeatPerUnit { get; set; } = 0.35;
-    public double CutHeatPerUnit { get; set; } = 0.1;
+    public double CokeHeatPerUnit { get; set; } = 0.35;
+    public double MoonshineHeatPerUnit { get; set; } = 0.25;
+    public double WeedHeatPerUnit { get; set; } = 0.1;
+    public double CutHeatPerUnit { get; set; } = 0.03;
 
-    /// <summary>Working the streets draws attention of its own, whether or not anything is held.</summary>
-    public double HeatPerStreetTurn { get; set; } = 0.5;
+    /// <summary>
+    /// Working the streets draws attention of its own, whether or not anything is held.
+    ///
+    /// Sized against the turn bank, which is the thing it is actually charged against. At half a point
+    /// a turn a full 200-turn bank earned 100 heat in one sitting, so an ordinary evening of work took
+    /// a player who held nothing at all from Quiet to Hunted, and decay of three an hour could never
+    /// catch up. A heavy day should get you noticed and then fade overnight, which is what this does:
+    /// the whole bank is about 30, and ten quiet hours clears it.
+    /// </summary>
+    public double HeatPerStreetTurn { get; set; } = 0.15;
 
     /// <summary>Earned heat cools on its own, which is what makes laying low a real option.</summary>
     public double HeatDecayPerHour { get; set; } = 3;

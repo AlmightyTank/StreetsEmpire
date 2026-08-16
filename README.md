@@ -93,6 +93,12 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   that could put a player into debt would be a nastier mechanic than losing the stash. It clears the
   heat that drew it, so one raid does not guarantee the next.
 - Heat cools on its own, which is what makes lying low a real move rather than a figure of speech.
+- Both halves are sized against the game's own scales rather than against nothing, which is what the
+  first tuning got wrong: street work is measured against the turn bank, so spending the whole thing
+  is a night's worth of notice that fades by morning, and the per-unit weights are measured against
+  the storage rooms, so a full store is worth watching rather than an automatic death sentence. Under
+  the first numbers an ordinary evening of work by someone holding nothing reached Hunted, and so did
+  simply filling the room you had just paid for.
 - It runs on its own clock rather than the turn clock. The turn clock is dragged forward every few
   minutes by anyone at the screen, so a player checking in often would never accumulate a whole hour
   and would never be raided or cool down. Whole hours are consumed and the remainder is left behind.

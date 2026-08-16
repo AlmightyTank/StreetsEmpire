@@ -1345,10 +1345,23 @@ static void HeatDrivesTheBust()
     var hideouts = CreateHideouts(options);
 
     // Coke draws the most notice per unit and cut the least, despite where cut is made.
-    AssertEqual(100.0, hideouts.HeatFor(new Player { Coke = 100 }));
-    AssertEqual(70.0, hideouts.HeatFor(new Player { Moonshine = 100 }));
-    AssertEqual(35.0, hideouts.HeatFor(new Player { Weed = 100 }));
-    AssertEqual(10.0, hideouts.HeatFor(new Player { Cut = 100 }));
+    AssertEqual(35.0, hideouts.HeatFor(new Player { Coke = 100 }));
+    AssertEqual(25.0, hideouts.HeatFor(new Player { Moonshine = 100 }));
+    AssertEqual(10.0, hideouts.HeatFor(new Player { Weed = 100 }));
+    AssertEqual(3.0, hideouts.HeatFor(new Player { Cut = 100 }));
+
+    // Sized against the rooms the game ships. A full Warehouse store of coke is worth watching; a
+    // whole evening's work by someone holding nothing is not, and it fades before the next one.
+    var warehouseStore = hideouts.HeatFor(new Player { Coke = 85 });
+    AssertTrue(warehouseStore > config.HeatBustFloor && warehouseStore < config.HeatBustFloor * 2,
+        $"a full Warehouse store of coke is Noticed, not Hunted ({warehouseStore})");
+    // Read from a untouched copy: this test bends decay and the floor for the roll assertions below.
+    var shipped = new GameOptions().Hideout;
+    var fullBank = new GameOptions().MaxTurns * shipped.HeatPerStreetTurn;
+    AssertTrue(fullBank < shipped.HeatBustFloor * 2,
+        $"working the whole turn bank does not on its own pass Noticed ({fullBank})");
+    AssertTrue(fullBank / shipped.HeatDecayPerHour < 12,
+        "and a night of laying low clears what a day of work earned");
 
     // Working the streets counts even with nothing held, which is the point: the core loop is illegal.
     AssertEqual(25.0, hideouts.HeatFor(new Player { Heat = 25 }));
@@ -1358,8 +1371,11 @@ static void HeatDrivesTheBust()
     AssertTrue(!hideouts.RollBust(quiet, 24, new AlwaysRandom()).Happened, "a small stash draws nobody");
     AssertEqual(20, quiet.Weed);
 
-    // Over it, a raid takes a share of every pile and fines them for the lot.
-    var loaded = new Player { Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Cash = 10_000 };
+    // Over it, a raid takes a share of every pile and fines them for the lot. This stash alone sits
+    // just under the floor now, so it takes a day's work on top to draw anyone: which is the point.
+    var loaded = new Player { Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Heat = 20, Cash = 10_000 };
+    AssertTrue(hideouts.HeatFor(new Player { Coke = 40, Weed = 20, Moonshine = 10, Cut = 8 }) < config.HeatBustFloor,
+        "a working stash on its own stays under the floor");
     var bust = hideouts.RollBust(loaded, 1, new AlwaysRandom());
     AssertEqual(20, bust.Coke);
     AssertEqual(10, bust.Weed);

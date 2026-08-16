@@ -3,6 +3,15 @@
 ## 0.2.4 (in progress)
 
 ### Changed
+- Heat rose far too fast, because neither half of it was sized against anything the game actually
+  ships. Working the streets earned half a point a turn, so a full 200-turn bank spent in one sitting
+  earned 100 heat and took a player holding nothing at all from Quiet to Hunted, with decay of three
+  an hour unable to keep up. Coke drew a point a unit, so simply filling a Warehouse store put you at
+  85 and Hunted for using the room you had bought.
+- Street work is now 0.15 a turn, so a whole bank is about 30 and a night of laying low clears it, and
+  the per-unit weights are cut to roughly a third. A full Warehouse store of coke reads Noticed, a
+  fully stocked Warehouse reads Watched, and only a maxed Penthouse store of everything reaches
+  Hunted on stock alone.
 - AI rivals play in sittings instead of on a metronome. They used to take exactly one action every
   fifteen to fifty minutes, evenly, around the clock, forever, which is nothing like what a player
   does. A player is away for hours while turns bank up, then sits down and spends the lot, then goes

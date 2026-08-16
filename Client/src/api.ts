@@ -173,6 +173,8 @@ export type Dashboard = {
   cut: number
   weedSellPrice: number
   cokeSellPrice: number
+  cokePurityPercent: number
+  cokeSellPriceAtPurity: number
   crewReport: CrewReport
   hideout: Hideout
   crew: Pimp[]

@@ -25,6 +25,14 @@ public sealed class MarketListing
 
     public long PricePerUnit { get; set; }
 
+    /// <summary>
+    /// The purity of the coke in this listing, frozen when it went up. Carried on the listing rather
+    /// than read from the seller, because otherwise the board launders: stretch a pile to a tenth,
+    /// list it, and the buyer receives clean product while the seller keeps the difference. What was
+    /// escrowed is what gets delivered. Ignored for every other good, which is interchangeable.
+    /// </summary>
+    public double Purity { get; set; } = 1;
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     /// <summary>Set when the seller pulls it. Sold-out listings simply have no quantity left.</summary>

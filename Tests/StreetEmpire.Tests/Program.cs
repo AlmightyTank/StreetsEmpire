@@ -42,6 +42,7 @@ var tests = new (string Name, Action Test)[]
     ("moonshine drinks like beer and cut stretches coke", ContrabandGoodsDoTheirJob),
     ("heat comes from what you hold and what you do", HeatDrivesTheBust),
     ("stepping on coke turns cut into more of it", CuttingStretchesWhatYouAlreadyHold),
+    ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1330,6 +1331,60 @@ static void ContrabandGoodsDoTheirJob()
 }
 
 /// <summary>
+/// Cut used to be a free doubling: a unit of filler became a unit of product at full price, so the
+/// mix house was a cheaper and faster source of coke than producing coke was, without limit. Purity
+/// is what makes it a trade - more units, each worth less - and what makes the printer stop.
+/// </summary>
+static void PurityStopsTheCokePrinter()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+
+    // Blending is a weighted average, so filler drags the whole pile down with it.
+    var pile = new Player { Coke = 100, CokePurity = 1 };
+    pile.AddCoke(100, 0);
+    AssertEqual(200, pile.Coke);
+    AssertEqual(0.5, pile.CokePurity);
+    pile.AddCoke(200, 1);
+    AssertEqual(0.75, pile.CokePurity);
+
+    // Taking coke away leaves the mixture as it was: a share of a blend is the same blend.
+    pile.Coke -= 100;
+    AssertEqual(0.75, pile.CokePurity);
+
+    // The price falls slower than proportionally, or nobody would ever stretch anything.
+    AssertEqual(1.0, options.PurityMultiplier(1));
+    AssertTrue(options.PurityMultiplier(0.5) > 0.5, "halving purity costs less than half the price");
+    AssertTrue(options.PurityMultiplier(0.5) < 1, "but it does cost something");
+    AssertTrue(options.PurityMultiplier(0.25) < options.PurityMultiplier(0.5), "and it keeps falling");
+
+    // No floor, which is the point. A floor would make total value climb with unit count forever,
+    // which is the printer wearing a different hat.
+    AssertTrue(options.PurityMultiplier(0.01) < 0.2, "very cut product is very nearly worthless");
+
+    // The printer is dead: stretching a pile raises what it is worth by less than doubling it.
+    var pureValue = 200 * options.PurityMultiplier(1);
+    var stretchedValue = 400 * options.PurityMultiplier(0.5);
+    AssertTrue(stretchedValue > pureValue, "stretching still pays, or the mix house is pointless");
+    AssertTrue(stretchedValue < pureValue * 2, "but it never pays like free coke did");
+
+    // Selling reads the pile's own strength rather than the list price.
+    var seller = new Player { Turns = 50, Coke = 100, CokePurity = 0.25, City = "New York", Hideout = new Hideout { StorageLevel = 6, SafeLevel = 6 } };
+    var list = economy.ProductSellPrice(seller.City, "coke");
+    var sale = economy.SellProduct(seller, "coke", 100);
+    var paid = Value<long>(RequiredBreakdown(sale), "unitPrice");
+    AssertTrue(paid < list, $"cut coke fetches less than clean ({paid} against {list})");
+    AssertTrue(sale.Summary.Contains("25% pure"), $"and the notice says why: {sale.Summary}");
+
+    // Net worth values it the same way, in memory and in the database expression alike.
+    var cut = new Player { Coke = 100, CokePurity = 0.25 };
+    var clean = new Player { Coke = 100, CokePurity = 1 };
+    AssertTrue(economy.CalculateNetWorth(cut) < economy.CalculateNetWorth(clean),
+        "a cut pile is worth less on the ladder too");
+    AssertEqual(economy.CalculateNetWorth(cut), economy.NetWorthExpression.Compile()(cut));
+}
+
+/// <summary>
 /// Cut is worth nothing on its own; it is worth whatever the coke it becomes is worth. This is the
 /// step that turns one into the other, and the coke it works on is coke you already hold, however it
 /// got there - which is the whole reason it is an action rather than a bonus on production.
@@ -1349,9 +1404,10 @@ static void CuttingStretchesWhatYouAlreadyHold()
     // One cut makes one coke. The cut is spent, the pile grows by the same.
     var player = Stocked(mix: 1, coke: 60, cut: 40);
     var result = economy.CutCoke(player, 4);
-    AssertEqual(40, 60 + 40 - player.Coke + 40);
     AssertEqual(100, player.Coke);
     AssertEqual(0, player.Cut);
+    // Sixty clean plus forty of filler is sixty percent product, and that is what it now sells as.
+    AssertEqual(0.6, Math.Round(player.CokePurity, 4));
     AssertTrue(result.Summary.Contains("Stepped on 40 coke"), $"the notice says what happened: {result.Summary}");
 
     // Only the turns the batch actually needed. Asking for ten on a two-turn batch should not cost

@@ -57,6 +57,8 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
             Quantity = quantity,
             OriginalQuantity = quantity,
             PricePerUnit = pricePerUnit,
+            // Frozen at listing: the buyer gets what was escrowed, not what the seller holds later.
+            Purity = key == "coke" ? seller.CokePurity : 1,
             CreatedAtUtc = nowUtc
         };
         db.MarketListings.Add(listing);
@@ -99,7 +101,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
         var payout = cost - cut;
 
         buyer.Cash -= cost;
-        TradeGoods.Add(buyer, listing.Item, quantity);
+        TradeGoods.Add(buyer, listing.Item, quantity, listing.Purity);
         listing.Quantity -= quantity;
 
         // Straight to the seller's bank. Cash on hand is capped by their safe and stealable, and a sale
@@ -127,7 +129,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
         var room = Math.Max(0, TradeGoods.Capacity(capacity, listing.Item) - TradeGoods.Held(seller, listing.Item));
         var returned = Math.Min(listing.Quantity, room);
 
-        TradeGoods.Add(seller, listing.Item, returned);
+        TradeGoods.Add(seller, listing.Item, returned, listing.Purity);
         listing.Quantity -= returned;
         if (listing.Quantity == 0)
             listing.CancelledAtUtc = nowUtc;

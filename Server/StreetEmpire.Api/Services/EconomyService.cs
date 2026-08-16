@@ -26,7 +26,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                      + (long)player.Beer * options.BeerPrice
                      + (long)player.Weapons * options.WeaponPrice
                      + (long)player.Weed * options.WeedNetWorth
-                     + (long)player.Coke * options.CokeNetWorth;
+                     // Coke is worth what it is, not what it weighs. Math.Pow translates to the
+                     // database's own power(), so ranking still happens there rather than in memory.
+                     + (long)(player.Coke * options.CokeNetWorth
+                              * Math.Pow(player.CokePurity, options.CokePurityPricePower));
 
     /// <summary>
     /// Players ranked above the given standing, for turning a net worth into a rank without
@@ -107,7 +110,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
            + (long)player.Beer * _options.BeerPrice
            + (long)player.Weapons * _options.WeaponPrice
            + (long)player.Weed * _options.WeedNetWorth
-           + (long)player.Coke * _options.CokeNetWorth;
+           + (long)(player.Coke * _options.CokeNetWorth * _options.PurityMultiplier(player.CokePurity));
 
     public CrewReportResponse GetCrewReport(Player player)
     {
@@ -237,7 +240,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         player.Condoms += condomsFound;
         player.Beer += beerFound;
         player.Weed += weedFound;
-        player.Coke += cokeFound;
+        // Found on the street, so it is whatever it is: treated as clean.
+        player.AddCoke(cokeFound, 1);
 
         var condomsNeeded = RequiredUpkeep(hoesBefore, turns, morale.TurnsPerCondom);
         var condomsUsed = Math.Min(player.Condoms, condomsNeeded);
@@ -376,7 +380,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         player.Cash -= totalCost;
         player.Turns -= turns;
         if (key == "weed") player.Weed += produced;
-        else player.Coke += produced;
+        else player.AddCoke(produced, 1);
         var overflow = hideout.Settle(player, stockBefore);
 
         var summary = $"Produced {produced:N0} {key} using {turns} turn{Plural(turns)} and ${totalCost:N0} in materials.";
@@ -448,7 +452,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var turnsUsed = Math.Max(1, (int)Math.Ceiling(stretched / (double)perTurn));
 
         player.Cut -= stretched;
-        player.Coke += stretched;
+        // Filler is filler. Blending it in is the whole cost of the move: the pile grows and weakens.
+        player.AddCoke(stretched, 0);
         player.Turns -= turnsUsed;
 
         var summary = $"Stepped on {stretched:N0} coke with {stretched:N0} cut, using {turnsUsed} turn{Plural(turnsUsed)}. You now hold {player.Coke:N0} coke.";
@@ -547,7 +552,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         var key = NormalizeProduct(product);
         var stockBefore = StockLevels.From(player);
-        var price = ProductSellPrice(player.City, key);
+        var listPrice = ProductSellPrice(player.City, key);
+        // Coke is priced on what it actually is. Stretching gains units and loses strength, and the
+        // buyer is paying for the strength: without this the mix house is simply a cheaper coke lab.
+        var purity = key == "coke" ? player.CokePurity : 1;
+        var price = key == "coke"
+            ? Math.Max(1, (long)Math.Round(listPrice * _options.PurityMultiplier(purity)))
+            : listPrice;
         if (key == "weed")
         {
             if (player.Weed < quantity) throw new GameRuleException("You do not have enough weed.");
@@ -556,14 +567,18 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         else
         {
             if (player.Coke < quantity) throw new GameRuleException("You do not have enough coke.");
+            // Selling a share of a mixture leaves the mixture as it was.
             player.Coke -= quantity;
         }
 
         var total = (long)quantity * price;
         player.Cash += total;
         var overflow = hideout.Settle(player, stockBefore);
+        var weakened = key == "coke" && price < listPrice
+            ? $" It is {purity:P0} pure, so it fetched {price:C0} against {listPrice:C0} for clean."
+            : string.Empty;
         return new ActionResultResponse(
-            $"Sold {quantity:N0} {key} for ${total:N0} cash.{overflow.Describe()}",
+            $"Sold {quantity:N0} {key} for ${total:N0} cash.{weakened}{overflow.Describe()}",
             player.Turns,
             new Dictionary<string, object?>
             {

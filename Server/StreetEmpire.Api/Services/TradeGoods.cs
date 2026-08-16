@@ -43,8 +43,20 @@ public static class TradeGoods
         _ => 0
     };
 
-    public static void Add(Player player, string key, int amount)
+    /// <param name="purity">
+    /// Only read for coke, and only when adding. Coke is the one good that is not interchangeable with
+    /// itself: a unit is worth what it is cut with, so arriving stock has to be blended into the pile
+    /// rather than counted onto it. Taking coke away leaves purity alone, since removing a share of a
+    /// mixture does not change the mixture.
+    /// </param>
+    public static void Add(Player player, string key, int amount, double purity = 1)
     {
+        if (key == "coke" && amount > 0)
+        {
+            player.AddCoke(amount, purity);
+            return;
+        }
+
         switch (key)
         {
             case "condoms": player.Condoms += amount; break;

@@ -149,6 +149,9 @@ public sealed record DashboardResponse(
     int Cut,
     int WeedSellPrice,
     int CokeSellPrice,
+    /// <summary>How clean the coke pile is, and what that does to its price here.</summary>
+    int CokePurityPercent,
+    int CokeSellPriceAtPurity,
     CrewReportResponse CrewReport,
     HideoutResponse Hideout,
     IReadOnlyList<PimpResponse> Crew,

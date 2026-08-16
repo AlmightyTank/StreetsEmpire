@@ -987,6 +987,14 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
   // rules will refuse.
   const batch = Math.min(turns * perTurn, dashboard.cut, dashboard.coke, room)
   const turnsNeeded = Math.max(1, Math.ceil(batch / perTurn))
+  // Mirrors the server: blending is a weighted average, and price follows the square root of purity.
+  const purity = dashboard.cokePurityPercent / 100
+  const blended = dashboard.coke + batch <= 0 ? 1 : (dashboard.coke * purity) / (dashboard.coke + batch)
+  const afterPurity = Math.round(blended * 100)
+  const list = dashboard.cokeSellPrice
+  const afterPrice = Math.max(1, Math.round(list * Math.sqrt(blended)))
+  const nowValue = dashboard.coke * dashboard.cokeSellPriceAtPurity
+  const afterValue = (dashboard.coke + batch) * afterPrice
   const blocked = dashboard.cut <= 0
     ? 'You have no cut to work with.'
     : dashboard.coke <= 0
@@ -998,19 +1006,30 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
   return <div className="cut-panel">
     <div className="cut-head">
       <strong>Step on it</strong>
-      <span>{number.format(dashboard.cut)} cut, {number.format(dashboard.coke)} coke, room for {number.format(room)} more</span>
+      <span>
+        {number.format(dashboard.cut)} cut, {number.format(dashboard.coke)} coke at {dashboard.cokePurityPercent}% pure,
+        room for {number.format(room)} more
+      </span>
     </div>
     <p>
-      Cut is worth nothing on its own and worth whatever the coke it becomes is worth. One unit makes
-      one unit, on any coke you hold however it got here. It costs turns and space, and a bigger pile
-      of coke draws more notice than anything else you can hold.
+      One unit of cut makes one unit of coke, on any coke you hold however it got here. What it costs
+      is strength: the pile grows and weakens together, and buyers pay for what is actually in it. A
+      stretch still pays, but each one pays less than the last, and a bigger pile of coke draws more
+      notice than anything else you can hold.
     </p>
     {blocked
       ? <p className="hint">{blocked}</p>
       : <p className="hint">
           {number.format(batch)} coke from {number.format(batch)} cut, in {turnsNeeded} turn{turnsNeeded === 1 ? '' : 's'}.
+          {' '}Purity {dashboard.cokePurityPercent}% to {afterPurity}%, so a unit drops from{' '}
+          {money.format(dashboard.cokeSellPriceAtPurity)} to about {money.format(afterPrice)}.
           {batch < turns * perTurn && ' That is everything available.'}
         </p>}
+    <p className={afterValue > nowValue ? 'mule-verdict good' : 'mule-verdict bad'}>
+      {afterValue > nowValue
+        ? `Worth ${money.format(afterValue - nowValue)} more in total: ${number.format(dashboard.coke + batch)} weaker units beat ${number.format(dashboard.coke)} clean ones, for now.`
+        : 'This pile is already stretched too thin. More filler is worth less than the room it takes.'}
+    </p>
     <div className="territory-actions">
       <label>Turns<input
         type="number"
@@ -1321,7 +1340,14 @@ function MarketPage(ctx: PageContext) {
         <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
         <InventoryCard name="Weapons" count={dashboard.weapons} note="Permanent security" />
         <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} ${dashboard.currentMarket.weed.toLowerCase()}`} />
-        <InventoryCard name="Coke" count={dashboard.coke} note={`${money.format(dashboard.cokeSellPrice)} ${dashboard.currentMarket.coke.toLowerCase()}`} />
+        {/* Quotes what this pile actually fetches, not the list price, since cut coke is not coke. */}
+        <InventoryCard
+          name="Coke"
+          count={dashboard.coke}
+          note={dashboard.cokePurityPercent >= 100
+            ? `${money.format(dashboard.cokeSellPrice)} ${dashboard.currentMarket.coke.toLowerCase()}`
+            : `${money.format(dashboard.cokeSellPriceAtPurity)} at ${dashboard.cokePurityPercent}% pure`}
+        />
       </div>
     </section>
 

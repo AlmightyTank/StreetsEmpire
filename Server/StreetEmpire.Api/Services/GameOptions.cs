@@ -25,6 +25,22 @@ public sealed class GameOptions
     public int WeedSellPrice { get; set; } = 40;
     public int CokeSellPrice { get; set; } = 150;
 
+    /// <summary>
+    /// How hard a sale price follows purity, as an exponent.
+    ///
+    /// It has to fall slower than proportionally or stretching gains nothing and nobody would ever do
+    /// it; it has to fall at all or stretching is free money. A square root does both: halving purity
+    /// costs about 29% of the unit price while doubling the units, so a stretch pays, and each further
+    /// round needs twice the cut for the same proportional gain until the cut costs more than it makes.
+    /// A floor here would be a mistake - it would make total value climb with unit count forever,
+    /// which is the printer all over again.
+    /// </summary>
+    public double CokePurityPricePower { get; set; } = 0.5;
+
+    /// <summary>What a pile of this purity fetches, as a share of the list price.</summary>
+    public double PurityMultiplier(double purity)
+        => Math.Pow(Math.Clamp(purity, 0, 1), Math.Clamp(CokePurityPricePower, 0.05, 1));
+
     public int PimpNetWorth { get; set; } = 1_000;
     public int HoeNetWorth { get; set; } = 550;
     public int ThugNetWorth { get; set; } = 1_250;

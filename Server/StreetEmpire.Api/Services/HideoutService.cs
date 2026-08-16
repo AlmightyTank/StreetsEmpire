@@ -66,7 +66,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         var weed = Produce(player.Weed, capacity.MaxWeed, PassivePerHour(hideout, "weed") * chargedHours);
         var coke = Produce(player.Coke, capacity.MaxCoke, PassivePerHour(hideout, "coke") * chargedHours);
         player.Weed += weed;
-        player.Coke += coke;
+        player.AddCoke(coke, 1);
 
         return new LabYield(weed, coke, chargedHours, hours > chargedHours, true);
     }

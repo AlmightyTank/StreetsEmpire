@@ -756,7 +756,7 @@ public sealed class CombatMissionService(
         var stockBefore = StockLevels.From(mission.Attacker);
         mission.Attacker.Cash += mission.CashStolen;
         mission.Attacker.Weed += mission.WeedStolen;
-        mission.Attacker.Coke += mission.CokeStolen;
+        mission.Attacker.AddCoke(mission.CokeStolen, mission.Defender.CokePurity);
         return hideout.Settle(mission.Attacker, stockBefore);
     }
 

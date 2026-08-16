@@ -67,6 +67,32 @@ public sealed class Player
     public bool IsInTransit(DateTime nowUtc)
         => TravelArrivesAtUtc is { } landing && landing > nowUtc;
 
+    /// <summary>
+    /// How much of the coke pile is actually coke, from 1 down towards nothing.
+    ///
+    /// Cut used to be a free doubling: a unit of filler became a unit of product at full price, which
+    /// made the mix house a cheaper and faster source of coke than producing coke was, with no limit
+    /// on it. Purity is what turns stretching into a trade rather than a printer - more units, each
+    /// worth less - and it is why a batch of pure product is worth going out of your way for.
+    /// </summary>
+    public double CokePurity { get; set; } = 1;
+
+    /// <summary>
+    /// Adds coke of a known purity, blending it into whatever is already in the room.
+    ///
+    /// A method rather than a bare increment, because purity belongs to the pile and not to the
+    /// delivery. Coke arrives produced, found, stolen, bought, flown in, or stretched with filler, and
+    /// every one of those has to end up mixed into the same number. One place to do it is the only
+    /// arrangement that stays true as more ways of arriving get added.
+    /// </summary>
+    public void AddCoke(int units, double purity)
+    {
+        if (units <= 0) return;
+        var total = Coke + units;
+        CokePurity = Math.Clamp((Coke * CokePurity + units * Math.Clamp(purity, 0, 1)) / total, 0, 1);
+        Coke = total;
+    }
+
     // Combat pacing fields written by the attack flow.
     public DateTime? CombatProtectionUntilUtc { get; set; }
     public DateTime? LastAttackAtUtc { get; set; }

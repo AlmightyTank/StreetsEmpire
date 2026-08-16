@@ -91,7 +91,7 @@ public sealed class CombatService(IOptionsSnapshot<GameOptions> options, IGameRa
             defender.Weed -= weedStolen;
             attacker.Weed += weedStolen;
             defender.Coke -= cokeStolen;
-            attacker.Coke += cokeStolen;
+            attacker.AddCoke(cokeStolen, defender.CokePurity);
 
             ApplyLosses(defender, combat.LoserCrewLossPercent, combat.WeaponLossPercent);
             ApplyLosses(attacker, combat.WinnerCrewLossPercent, combat.WeaponLossPercent / 2);

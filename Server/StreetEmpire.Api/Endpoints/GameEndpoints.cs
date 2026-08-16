@@ -144,6 +144,8 @@ internal static class GameEndpoints
                 player.Cut,
                 economy.ProductSellPrice(player.City, "weed"),
                 economy.ProductSellPrice(player.City, "coke"),
+                (int)Math.Round(player.CokePurity * 100),
+                Math.Max(1, (int)Math.Round(economy.ProductSellPrice(player.City, "coke") * opts.PurityMultiplier(player.CokePurity))),
                 economy.GetCrewReport(player),
                 ToHideoutResponse(player, hideouts, now, opts),
                 pimps.Active(player).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),

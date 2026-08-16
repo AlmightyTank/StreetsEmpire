@@ -3,6 +3,20 @@
 ## 0.2.4 (in progress)
 
 ### Changed
+- Coke now has a purity, and cutting is a trade instead of a printer. Stretching a pile made a unit of
+  filler into a unit of product at full price, which made the mix house a cheaper and faster source of
+  coke than producing coke was, with nothing to stop it: about $300 a turn against $220 for the real
+  thing, and no ceiling.
+- Purity is a weighted average of everything in the room, so filler drags the whole pile down. The
+  sale price follows the square root of it, which is the only shape that works: fall proportionally
+  and stretching gains nothing, put a floor under it and total value climbs with unit count forever.
+- Every way coke arrives now blends rather than counts on - produced, found, stolen, bought off the
+  board, flown in by a mule, or stretched with filler - and listings carry the purity they were
+  escrowed at, so the board cannot be used to launder weak product into clean.
+- Net worth values coke by strength too, in the database as well as in memory, so the ladder is not
+  fooled by bulk.
+- Producing coke is now roughly three times better per turn than making cut and stretching, which is
+  the way round it should have been all along.
 - Cut is spent by a step of its own now instead of vanishing into coke production. One unit of cut
   makes one unit of coke, on any coke you hold however it got there, at a speed the mix house level
   sets. Production no longer touches cut at all.

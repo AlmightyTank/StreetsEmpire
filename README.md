@@ -79,7 +79,18 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   for a batch watched it disappear into a production run they had not connected it to, and cut could
   never reach coke that arrived any other way - off a plane, off the board, out of a lab overnight,
   which is most of the coke worth stretching.
-- What it costs is turns, room, and notice. The mix house level sets how fast a batch goes, giving that
+- What it costs is **strength**. Coke carries a purity, and cutting is a weighted average: the pile
+  grows and weakens together. Without that the mix house was simply a cheaper, faster coke lab - a
+  unit of filler became a unit of product at full price, about $300 a turn against $220 for producing
+  the real thing, with no ceiling on it at all.
+- The price follows the square root of purity, which is the only shape that works. Fall proportionally
+  and a stretch gains you nothing, so nobody would ever do it. Put a floor under it and total value
+  climbs with unit count forever, which is the printer wearing a different hat. A square root means a
+  stretch pays, the next one pays less, and eventually the cut costs more than it makes.
+- Purity is a property of the pile, so everything that adds coke blends into it: produced, found,
+  stolen, bought, flown in, or stretched. Market listings carry the purity they were escrowed at, or
+  the board would launder weak product into clean.
+- What it also costs is turns, room, and notice. The mix house level sets how fast a batch goes, giving that
   room a second reason to exist, and a stretched pile is a hotter pile: coke draws more heat per unit
   than anything else you can hold.
 - Moonshine is priced against the shop's beer, which is the same everywhere, so it does not move with

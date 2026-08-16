@@ -173,6 +173,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// </param>
     public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null)
     {
+        TravelGate.EnsureLanded(player);
         ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
 
         var street = _options.StreetAction;
@@ -350,6 +351,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse Produce(Player player, string? product, int turns, TerritoryEffects? territory = null)
     {
+        TravelGate.EnsureLanded(player);
         ValidateTurns(player, turns, _options.MaxActionTurns, "Production");
         var key = NormalizeProduct(product);
         var production = GetProduction(key);
@@ -415,6 +417,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// </summary>
     public ActionResultResponse Make(Player player, string station, int turns)
     {
+        TravelGate.EnsureLanded(player);
         if (turns < 1 || turns > _options.MaxActionTurns)
             throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
         if (player.Turns < turns)
@@ -466,6 +469,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse SellProduct(Player player, string? product, int quantity)
     {
+        TravelGate.EnsureLanded(player);
         if (quantity is < 1 or > 100_000)
             throw new GameRuleException("Quantity must be between 1 and 100,000.");
 
@@ -501,6 +505,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse Travel(Player player, string? city)
     {
+        TravelGate.EnsureLanded(player);
         var destination = _options.CityMarkets.ResolveCity(city)
             ?? throw new GameRuleException($"Pick one of: {string.Join(", ", _options.CityMarkets.Profiles.Select(x => x.City))}.");
         if (string.Equals(player.City, destination, StringComparison.OrdinalIgnoreCase))
@@ -515,13 +520,21 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         player.Turns -= turns;
         player.City = destination;
 
+        // The flight is the distance in time as well as in turns. Committed on departure rather than
+        // on arrival, so the town you are standing in is the one you paid to reach, and the clock is
+        // what says whether you are there yet.
+        var nowUtc = DateTime.UtcNow;
+        var flightMinutes = Math.Max(1, turns * Math.Max(1, _options.Mules.MinutesPerTravelTurn));
+        player.TravelArrivesAtUtc = nowUtc.AddMinutes(flightMinutes);
+
         // The trip is already paid for in turns, so a bad roll lightens the load rather than turning
         // the player back. Losing the turns and the ground would be two punishments for one roll.
         var seizure = RollTravelSeizure(player, destination);
         var prices = $"Weed is {profile.Weed.ToLowerInvariant()}, coke is {profile.Coke.ToLowerInvariant()}.";
+        var landing = $"You land in {flightMinutes} minute(s).";
         var summary = seizure.Busted
-            ? $"Traveled from {from} to {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices}"
-            : $"Traveled from {from} to {destination} clean. {prices}";
+            ? $"Left {from} for {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices} {landing}"
+            : $"Left {from} for {destination} clean. {prices} {landing}";
 
         return new ActionResultResponse(
             summary,
@@ -531,6 +544,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["from"] = from,
                 ["to"] = destination,
                 ["turnsSpent"] = turns,
+                ["flightMinutes"] = flightMinutes,
+                ["arrivesAtUtc"] = player.TravelArrivesAtUtc,
                 ["risk"] = profile.Risk,
                 ["bustChancePercent"] = _options.CityMarkets.BustChancePercent(destination),
                 ["busted"] = seizure.Busted,
@@ -615,6 +630,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse BuyStoreItem(Player player, string? itemKey, int quantity)
     {
+        TravelGate.EnsureLanded(player);
         if (quantity is < 1 or > 10_000)
             throw new GameRuleException("Quantity must be between 1 and 10,000.");
 
@@ -663,6 +679,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse Deposit(Player player, long amount)
     {
+        TravelGate.EnsureLanded(player);
         ValidateMoneyAmount(amount);
         if (player.Cash < amount) throw new GameRuleException("You do not have that much cash on hand.");
         player.Cash -= amount;
@@ -675,6 +692,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse Withdraw(Player player, long amount)
     {
+        TravelGate.EnsureLanded(player);
         ValidateMoneyAmount(amount);
         if (player.BankCash < amount) throw new GameRuleException("You do not have that much money in the bank.");
 
@@ -696,6 +714,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse HireCrew(Player player, string? role, int quantity)
     {
+        TravelGate.EnsureLanded(player);
         var crew = _options.Crew;
         var normalizedRole = NormalizeCrewRole(role);
         ValidateCrewQuantity(quantity, crew);
@@ -761,6 +780,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse FireCrew(Player player, string? role, int quantity)
     {
+        TravelGate.EnsureLanded(player);
         var crew = _options.Crew;
         var normalizedRole = NormalizeCrewRole(role);
         ValidateCrewQuantity(quantity, crew);
@@ -818,6 +838,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse RecoverCrewMorale(Player player, string? strategy)
     {
+        TravelGate.EnsureLanded(player);
         var morale = _options.Morale;
         var key = strategy?.Trim().ToLowerInvariant() ?? "rest";
         var hoeBefore = player.HoeHappiness;
@@ -1050,6 +1071,24 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 }
 
 public sealed class GameRuleException(string message) : Exception(message);
+
+/// <summary>
+/// The one rule about being on a plane: you cannot do anything from it.
+///
+/// Checked in the services rather than at each endpoint, because there are two dozen ways to act and
+/// only one set of places where acting actually happens. A guard the endpoints have to remember is a
+/// guard that will eventually be forgotten.
+/// </summary>
+public static class TravelGate
+{
+    public static void EnsureLanded(Player player)
+    {
+        var nowUtc = DateTime.UtcNow;
+        if (!player.IsInTransit(nowUtc)) return;
+        var minutes = Math.Max(1, (int)Math.Ceiling((player.TravelArrivesAtUtc!.Value - nowUtc).TotalMinutes));
+        throw new GameRuleException($"You are in the air, landing in {minutes} minute(s). Nothing to do but wait.");
+    }
+}
 
 /// <summary>What an auto-buy topped up before an action ran.</summary>
 public sealed record Restock(int Condoms, int Beer, long Cost)

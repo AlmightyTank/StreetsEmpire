@@ -104,6 +104,39 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   pages. The strip scrolls on a narrow screen, so heat is placed ahead of rank and city, which are
   read rather than acted on.
 
+### Mule runs
+
+- Sending crew to another town to buy cheap and carry it home. It is the first thing in the game that
+  costs crew and time rather than turns, which is what makes it a different decision rather than a
+  cheaper version of one you already had.
+- Travelling yourself pays the distance in turns each way and leaves you standing in the wrong town.
+  A run costs a fraction of that in turns, but it takes real time, locks up a pimp and hoes who earn
+  nothing while they are gone, and is paid for before anybody leaves: fares both ways and their keep
+  for the trip. Neither option dominates, which is the point.
+- The intelligence centre is the gate. Unlike every other room it makes nothing: it buys how many
+  runs can be in the air at once and how much of a route is known before anybody goes. Without one
+  there are no runs at all, which is what stops mule running from being free the moment you can
+  afford a spare pimp.
+- Mules buy at the destination's price, since that is the entire reason to send them. The load is
+  capped by the hoes sent, so how greedy to be is the dial the player actually turns.
+- Three ways it ends. Delivered brings the load and the unspent cash home. Seized takes a share of
+  the load and all the cash they were still carrying, and the heat lands on you, because crew who are
+  caught talk. Defected is a pimp far from home with your money deciding not to come back, which is
+  what makes who you send a real question rather than picking whoever is spare.
+- Runs settle on the clock rather than on a request, so they land whether or not you are watching,
+  and find you through the alert bell and the catch-up digest.
+- What will not fit in the storage room is dumped, and the notice says so. A run that quietly dropped
+  a third of a load already paid for would read as the price being wrong rather than the room.
+
+### Flights take time
+
+- A town's distance is now time as well as turns, for the player as much as for a mule. Travel used
+  to be instant, which made distance a pure turn cost: you were somewhere else the moment you decided
+  to be.
+- While the flight is running you are in the air and cannot act. That check lives in the services
+  rather than at each endpoint: there are two dozen ways to act and only one set of places where
+  acting happens, and a guard the endpoints have to remember is one that will eventually be forgotten.
+
 ### How the rivals play
 
 - A rival used to take one action every twenty-odd minutes, evenly, forever. Nothing about that is

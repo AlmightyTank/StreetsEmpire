@@ -63,6 +63,8 @@ var tests = new (string Name, Action Test)[]
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
+    ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
+    ("a player in the air cannot act", TravelIsAFlightYouCannotActFrom),
     ("defence alerts flip the outcome to the defender's view", DefenceAlertsFlipPerspective),
     ("catch-up reports what happened while away and stays quiet otherwise", CatchUpReportsWhatHappenedWhileAway),
     ("catch-up reports rank moves and who changed places with you", CatchUpReportsRankAndRivals),
@@ -1945,6 +1947,139 @@ static void MuleRunsArePricedAndFrozen()
         () => mules.Launch(player, Pimp(player, "Vic", 100), "Detroit", "weed", 1, 5_000_000, 0, launchedAt),
         "costs");
 }
+
+/// <summary>
+/// The three ways a run ends. Buying happens at settlement rather than at launch, because they buy at
+/// the destination's price and the only moment that price is real is when they are standing in it.
+/// </summary>
+static void MuleRunsSettleThreeWays()
+{
+    var options = Resolve(new GameOptions());
+    var mules = CreateMules(options);
+    var price = options.CityMarkets.ProductPrice("Detroit", "weed", options.WeedSellPrice);
+
+    // Delivered: cargo home, and cash they never spent comes back with them.
+    var lucky = Loaded();
+    var run = Out(lucky, cash: 30_000, hoes: 3);
+    run.BustChancePercent = 0;
+    run.DefectChancePercent = 0;
+    var settled = mules.Settle(run, lucky, Pimp(lucky, "Vic", 100), new MinimumRandom(), Landing());
+
+    AssertEqual(MuleRunOutcome.Delivered, run.Outcome);
+    // Forty-five is what three hoes carry, so the load binds long before the money does.
+    AssertEqual(45, run.UnitsBought);
+    AssertEqual(30_000L - 45 * price, run.CashReturned);
+    AssertEqual(45, lucky.Weed);
+    AssertEqual(20, lucky.Hoes);
+    AssertEqual(30_000L - 45 * price, lucky.Cash);
+    AssertEqual(45, settled.UnitsDelivered);
+    AssertTrue(!run.IsOut, "a settled run is no longer out");
+
+    // Seized: a share of the load goes, the unspent cash goes with it because it was in the room when
+    // the door came in, and the heat lands on the player who sent them.
+    var stopped = Loaded();
+    var seizedRun = Out(stopped, cash: 30_000, hoes: 3);
+    seizedRun.BustChancePercent = 100;
+    seizedRun.DefectChancePercent = 0;
+    mules.Settle(seizedRun, stopped, Pimp(stopped, "Vic", 100), new AlwaysRandom(), Landing());
+
+    AssertEqual(MuleRunOutcome.Seized, seizedRun.Outcome);
+    AssertEqual(0L, seizedRun.CashReturned);
+    AssertEqual(0L, stopped.Cash);
+    AssertTrue(seizedRun.SeizedUnits > 0, "a stop takes something");
+    AssertEqual(45 - seizedRun.SeizedUnits, stopped.Weed);
+    AssertEqual(seizedRun.SeizedUnits * options.Mules.HeatPerSeizedUnit, stopped.Heat);
+    AssertEqual(20, stopped.Hoes);
+    AssertTrue(seizedRun.Summary.Contains("was stopped"), $"the notice says what happened: {seizedRun.Summary}");
+
+    // Defected: he keeps the money, the goods and the crew, and comes off the payroll.
+    var robbed = Loaded();
+    var gone = Out(robbed, cash: 30_000, hoes: 3);
+    gone.BustChancePercent = 0;
+    gone.DefectChancePercent = 100;
+    var pimp = Pimp(robbed, "Vic", 20);
+    mules.Settle(gone, robbed, pimp, new AlwaysRandom(), Landing());
+
+    AssertEqual(MuleRunOutcome.Defected, gone.Outcome);
+    AssertEqual(0, robbed.Weed);
+    AssertEqual(0L, robbed.Cash);
+    AssertEqual(17, robbed.Hoes);
+    AssertEqual(3, gone.HoesLost);
+    AssertTrue(gone.PimpLost && pimp.LostAtUtc is not null, "a pimp who runs is off the payroll");
+
+    // Settling stamps the run, which is what stops the clock paying the same run out twice.
+    AssertEqual(Landing(), run.SettledAtUtc);
+    AssertEqual(MuleRunStatus.Done, mules.StatusAt(run, Landing().AddMinutes(-99)));
+
+    // A load bigger than the room is left behind rather than overfilling it, as a lab would be.
+    var cramped = Loaded();
+    cramped.Hideout = new Hideout { Tier = 1, StorageLevel = 1, IntelligenceLevel = 1 };
+    var overflowing = Out(cramped, cash: 30_000, hoes: 3);
+    overflowing.BustChancePercent = 0;
+    overflowing.DefectChancePercent = 0;
+    var tight = mules.Settle(overflowing, cramped, Pimp(cramped, "Vic", 100), new MinimumRandom(), Landing());
+    var room = CreateHideouts(options).CapacityFor(cramped.Hideout).MaxWeed;
+    AssertEqual(room, cramped.Weed);
+    AssertEqual(room, tight.UnitsDelivered);
+    // The player paid for all 45. A run that quietly dropped the rest would read as the price being
+    // wrong rather than the room being full, so the notice has to say so.
+    AssertEqual(45, overflowing.UnitsBought);
+    AssertTrue(overflowing.Summary.Contains($"{45 - room:N0} weed was dumped"),
+        $"a short delivery says why: {overflowing.Summary}");
+
+    static Player Loaded() => new()
+    {
+        City = "Los Angeles",
+        Cash = 0,
+        Hoes = 17,
+        Hideout = new Hideout { Tier = 2, StorageLevel = 6, IntelligenceLevel = 1 }
+    };
+}
+
+/// <summary>
+/// Travel used to be instant, which made a town's distance a pure turn cost: you were somewhere else
+/// the moment you decided to be. Now the distance is time too, and there is nothing to do from a plane.
+/// </summary>
+static void TravelIsAFlightYouCannotActFrom()
+{
+    var flyer = new Player { City = "Los Angeles", TravelArrivesAtUtc = DateTime.UtcNow.AddMinutes(10) };
+    AssertTrue(flyer.IsInTransit(DateTime.UtcNow), "a player mid-flight is in transit");
+    AssertRuleError(() => TravelGate.EnsureLanded(flyer), "You are in the air");
+
+    // Every way of acting runs through a service that checks this, so none of them work in the air.
+    var economy = CreateEconomy();
+    AssertRuleError(() => economy.Scout(flyer, 1), "You are in the air");
+    AssertRuleError(() => economy.Deposit(flyer, 1), "You are in the air");
+    AssertRuleError(() => economy.Travel(flyer, "Detroit"), "You are in the air");
+
+    // Landed is landed, whether the clock cleared it or the moment simply passed.
+    var landed = new Player { City = "Detroit", TravelArrivesAtUtc = DateTime.UtcNow.AddMinutes(-1) };
+    AssertTrue(!landed.IsInTransit(DateTime.UtcNow), "a flight in the past is over");
+    TravelGate.EnsureLanded(landed);
+}
+
+/// <summary>When the plane is due. A method, since top-level statements have no fields.</summary>
+static DateTime Landing() => new(2026, 1, 1, 13, 0, 0, DateTimeKind.Utc);
+
+/// <summary>A run already in the air, so settlement can be tested without replaying a launch.</summary>
+static MuleRun Out(Player player, long cash, int hoes) => new()
+{
+    PlayerId = player.Id,
+    OriginCity = player.City,
+    DestinationCity = "Detroit",
+    Good = "weed",
+    Status = MuleRunStatus.Inbound,
+    Outcome = MuleRunOutcome.Pending,
+    PimpId = 1,
+    PimpName = "Vic",
+    PimpLoyaltyAtLaunch = 100,
+    AssignedHoes = hoes,
+    Capacity = hoes * 15,
+    CashSent = cash,
+    DepartedAtUtc = Landing().AddHours(-1),
+    ArrivesAtUtc = Landing().AddMinutes(-30),
+    ReturnsAtUtc = Landing()
+};
 
 static Pimp Pimp(Player owner, string name, double loyalty)
     => new() { Id = 1, PlayerId = owner.Id, Name = name, Loyalty = loyalty };

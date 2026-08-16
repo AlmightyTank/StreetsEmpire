@@ -56,6 +56,17 @@ public sealed class Player
     /// </summary>
     public DateTime LastHeatRollUtc { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// When a flight lands. Null on the ground. Travel used to be instant, which made a town's distance
+    /// a pure turn cost and nothing else: you could be somewhere else the moment you decided to be.
+    /// Now the distance is time as well, and while it is running you are on a plane and cannot act.
+    /// </summary>
+    public DateTime? TravelArrivesAtUtc { get; set; }
+
+    /// <summary>Whether this player is in the air right now.</summary>
+    public bool IsInTransit(DateTime nowUtc)
+        => TravelArrivesAtUtc is { } landing && landing > nowUtc;
+
     // Combat pacing fields written by the attack flow.
     public DateTime? CombatProtectionUntilUtc { get; set; }
     public DateTime? LastAttackAtUtc { get; set; }

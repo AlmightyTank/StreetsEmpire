@@ -92,6 +92,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     /// </summary>
     public async Task<Territory> ClaimAsync(Player player, long territoryId, int thugs, long? pimpId, DateTime nowUtc, CancellationToken ct)
     {
+        TravelGate.EnsureLanded(player);
         var config = _options.Territory;
         var territory = await db.Territories.SingleOrDefaultAsync(x => x.Id == territoryId, ct)
             ?? throw new GameRuleException("That ground does not exist.");
@@ -131,6 +132,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     /// </summary>
     public async Task<(Territory Territory, bool GaveUp)> SetGarrisonAsync(Player player, long territoryId, int thugs, long? pimpId, CancellationToken ct)
     {
+        TravelGate.EnsureLanded(player);
         var config = _options.Territory;
         var territory = await db.Territories.SingleOrDefaultAsync(x => x.Id == territoryId, ct)
             ?? throw new GameRuleException("That ground does not exist.");

@@ -40,6 +40,8 @@ public sealed class CombatMissionService(
         DateTime nowUtc,
         CancellationToken cancellationToken)
     {
+        TravelGate.EnsureLanded(attacker);
+
         var combat = _options.Combat;
         var activeMissions = await ActiveAttackMissions(attacker.Id)
             .ToListAsync(cancellationToken);

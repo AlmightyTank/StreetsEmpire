@@ -64,6 +64,8 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
     /// </summary>
     public MuleRun Launch(Player player, Pimp pimp, string? city, string? good, int hoes, long cashToSend, int runsAlreadyOut, DateTime nowUtc)
     {
+        TravelGate.EnsureLanded(player);
+
         var cap = hideouts.ConcurrentRunCap(player.Hideout);
         if (cap <= 0)
             throw new GameRuleException("You need an intelligence centre before you can run mules.");
@@ -162,6 +164,105 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         return (int)Math.Round(Math.Clamp(chance, 0, 1) * 100, MidpointRounding.AwayFromZero);
     }
 
+    /// <summary>
+    /// Settles a run that is home, or that never will be.
+    ///
+    /// Buying happens here rather than at launch because they buy at the destination's price, and the
+    /// only moment that price is real is when they are standing in it. Everything else the outcome
+    /// turns on was frozen when they left, so a player who changed nothing while the plane was in the
+    /// air gets the run they actually booked.
+    /// </summary>
+    public MuleSettlement Settle(MuleRun run, Player player, Pimp? pimp, IGameRandom random, DateTime nowUtc)
+    {
+        var mules = _options.Mules;
+        var price = Math.Max(1, TradeGoods.ReferencePrice(_options, run.Good, run.DestinationCity));
+        var units = (int)Math.Min(run.Capacity, run.CashSent / price);
+        var unspent = run.CashSent - units * price;
+
+        run.UnitPricePaid = price;
+        run.UnitsBought = units;
+        run.SettledAtUtc = nowUtc;
+        run.Status = MuleRunStatus.Done;
+
+        // A pimp far from home with your money and nothing to come back for. Rolled before the law,
+        // because a man who has already gone was never carrying anything to be caught with.
+        if (random.NextDouble() < run.DefectChancePercent / 100.0)
+        {
+            run.Outcome = MuleRunOutcome.Defected;
+            run.PimpLost = true;
+            run.HoesLost = run.AssignedHoes;
+            if (pimp is not null) pimp.LostAtUtc = nowUtc;
+            run.Summary = $"{run.PimpName} never came back from {run.DestinationCity}. He kept {run.CashSent:C0}, the {run.AssignedHoes} hoe(s), and whatever he bought with it.";
+            return new MuleSettlement(run, 0, 0, 0, 0);
+        }
+
+        if (random.NextDouble() < run.BustChancePercent / 100.0)
+        {
+            var share = Math.Clamp(
+                mules.SeizureMinPercent + random.NextDouble() * Math.Max(0, mules.SeizureMaxPercent - mules.SeizureMinPercent),
+                0,
+                1);
+            var seized = Math.Min(units, (int)Math.Ceiling(units * share));
+            var kept = units - seized;
+            run.Outcome = MuleRunOutcome.Seized;
+            run.SeizedUnits = seized;
+            run.HeatAdded = seized * Math.Max(0, mules.HeatPerSeizedUnit);
+            // Cash they had not spent yet goes with them. It was in the room when the door came in.
+            run.CashReturned = 0;
+            player.Heat += run.HeatAdded;
+            var (delivered, seizedSpill) = Deliver(player, run.Good, kept);
+            var hoes = ReturnHoes(player, run);
+            run.Summary = seized >= units && units > 0
+                ? $"{run.PimpName} was stopped coming back from {run.DestinationCity}. They took all {seized:N0} {run.Good} and the {unspent:C0} he had left."
+                : $"{run.PimpName} was stopped coming back from {run.DestinationCity}. They took {seized:N0} {run.Good} and the {unspent:C0} he had left; {delivered:N0} got through.{Spill(seizedSpill, run.Good)}";
+            return new MuleSettlement(run, delivered, 0, hoes, run.HeatAdded);
+        }
+
+        run.Outcome = MuleRunOutcome.Delivered;
+        run.CashReturned = unspent;
+        player.Cash += unspent;
+        var (landed, landedSpill) = Deliver(player, run.Good, units);
+        var home = ReturnHoes(player, run);
+        run.Summary = unspent > 0
+            ? $"{run.PimpName} is back from {run.DestinationCity} with {landed:N0} {run.Good} at {price:C0} each, and {unspent:C0} unspent.{Spill(landedSpill, run.Good)}"
+            : $"{run.PimpName} is back from {run.DestinationCity} with {landed:N0} {run.Good} at {price:C0} each.{Spill(landedSpill, run.Good)}";
+        return new MuleSettlement(run, landed, unspent, home, 0);
+    }
+
+    /// <summary>
+    /// Puts the load away, up to what the storage room holds. Cargo that will not fit is left behind
+    /// rather than overfilling the room, the same way a lab stops at the walls. What was left is
+    /// returned as well as what was stored, because the player paid for both and a run that quietly
+    /// dropped a third of the load would read as the price being wrong.
+    /// </summary>
+    private (int Stored, int Spilled) Deliver(Player player, string good, int units)
+    {
+        if (units <= 0) return (0, 0);
+        var capacity = TradeGoods.Capacity(hideouts.CapacityFor(player.Hideout), good);
+        var room = Math.Max(0, capacity - TradeGoods.Held(player, good));
+        var stored = Math.Min(units, room);
+        TradeGoods.Add(player, good, stored);
+        return (stored, units - stored);
+    }
+
+    /// <summary>Says what would not fit, so a short delivery is never silent.</summary>
+    private static string Spill(int spilled, string good)
+        => spilled <= 0 ? string.Empty : $" {spilled:N0} {good} was dumped: your storage room is full.";
+
+    /// <summary>
+    /// Brings the crew back onto the books, up to the hideout's cap. They were taken off at launch, so
+    /// this can only bind if the player hired replacements while they were gone.
+    /// </summary>
+    private int ReturnHoes(Player player, MuleRun run)
+    {
+        var cap = hideouts.CapacityFor(player.Hideout).MaxHoes;
+        var room = Math.Max(0, cap - player.Hoes);
+        var home = Math.Min(run.AssignedHoes, room);
+        player.Hoes += home;
+        run.HoesLost = run.AssignedHoes - home;
+        return home;
+    }
+
     private string ResolveDestination(Player player, string? city)
         => _options.CityMarkets.ResolveCity(city)
            ?? throw new GameRuleException($"Pick one of: {string.Join(", ", _options.CityMarkets.Profiles.Where(x => !string.Equals(x.City, player.City, StringComparison.OrdinalIgnoreCase)).Select(x => x.City))}.");
@@ -192,8 +293,10 @@ public static class MuleRunOutcome
     public const string Delivered = "Delivered";
     public const string Seized = "Seized";
     public const string Defected = "Defected";
-    public const string Lost = "Lost";
 }
+
+/// <summary>What a settled run actually returned, for the row the player reads afterwards.</summary>
+public sealed record MuleSettlement(MuleRun Run, int UnitsDelivered, long CashReturned, int HoesHome, double HeatAdded);
 
 /// <summary>What a run would cost and face. Shown before committing, so a run is never a surprise.</summary>
 public sealed record MuleQuote(

@@ -13,7 +13,7 @@ namespace StreetEmpire.Api.Services;
 /// Wall-clock earnings have to happen wherever a player is loaded, not only on the dashboard, or the
 /// same hour pays out twice depending on which page they opened first.
 /// </summary>
-public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random)
+public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules)
 {
     /// <summary>
     /// Brings a player up to date. The caller saves when <see cref="PlayerTick.Changed"/> is set, and
@@ -48,8 +48,50 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         if (db is not null && bust.Happened)
             AddLog(db, player, beforeBust, "BUST", 0, bust.Describe(), nowUtc);
 
+        // A flight that has landed is over. Cleared here rather than checked everywhere, so nothing
+        // downstream has to reason about a arrival time that is already in the past.
+        var landed = false;
+        if (player.TravelArrivesAtUtc is { } arrival && arrival <= nowUtc)
+        {
+            player.TravelArrivesAtUtc = null;
+            landed = true;
+        }
+
+        var runsHome = await SettleMuleRunsAsync(player, nowUtc, db, ct);
+
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened, built, labs);
+        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome, built, labs);
+    }
+
+    /// <summary>
+    /// Brings home any mule run whose plane has landed.
+    ///
+    /// Settled on the clock rather than on a timer because a run is owed to a player, not to the
+    /// world: the crew, the cargo and the cash all belong to one empire, and the moment that matters
+    /// is the moment that empire is next looked at. Bots go through this same call when they play, so
+    /// a rival's runs land on the same rules a player's do.
+    /// </summary>
+    private async Task<bool> SettleMuleRunsAsync(Player player, DateTime nowUtc, GameDbContext? db, CancellationToken ct)
+    {
+        var due = await territoryDb.MuleRuns
+            .Where(x => x.PlayerId == player.Id && x.SettledAtUtc == null && x.ReturnsAtUtc <= nowUtc)
+            .OrderBy(x => x.ReturnsAtUtc)
+            .ToListAsync(ct);
+        if (due.Count == 0) return false;
+
+        var pimpIds = due.Where(x => x.PimpId is not null).Select(x => x.PimpId!.Value).ToList();
+        var crew = await territoryDb.Pimps.Where(x => pimpIds.Contains(x.Id)).ToListAsync(ct);
+
+        foreach (var run in due)
+        {
+            // Snapshotted per run: two runs landing together must not both claim the same delivery.
+            var before = Snapshot(player);
+            mules.Settle(run, player, crew.FirstOrDefault(x => x.Id == run.PimpId), random, nowUtc);
+            if (db is not null)
+                AddLog(db, player, before, "MULE", 0, run.Summary, nowUtc);
+        }
+
+        return true;
     }
 
     public int SecondsUntilNextTick(Player player, DateTime nowUtc)

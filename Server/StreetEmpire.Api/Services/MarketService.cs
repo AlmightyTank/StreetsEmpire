@@ -22,6 +22,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
     /// </summary>
     public async Task<MarketListing> ListAsync(Player seller, string? item, int quantity, long pricePerUnit, DateTime nowUtc, CancellationToken ct)
     {
+        TravelGate.EnsureLanded(seller);
         var config = _options.Market;
         var key = TradeGoods.Normalise(item);
         if (!TradeGoods.IsTradeable(key))
@@ -68,6 +69,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
     /// </summary>
     public async Task<MarketPurchase> BuyAsync(Player buyer, long listingId, int quantity, CancellationToken ct)
     {
+        TravelGate.EnsureLanded(buyer);
         var listing = await db.MarketListings
             .Include(x => x.Seller)
             .SingleOrDefaultAsync(x => x.Id == listingId, ct)
@@ -113,6 +115,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
     /// </summary>
     public async Task<MarketWithdrawal> CancelAsync(Player seller, long listingId, DateTime nowUtc, CancellationToken ct)
     {
+        TravelGate.EnsureLanded(seller);
         var listing = await db.MarketListings.SingleOrDefaultAsync(x => x.Id == listingId, ct)
             ?? throw new GameRuleException("That listing is gone.");
         if (listing.SellerId != seller.Id)

@@ -35,6 +35,18 @@
 - Mules buy at the destination's price, not at yours, which is the entire reason to send them.
 - Everything an outcome will depend on is frozen at launch: capacity, cash, the pimp's loyalty, and
   the odds faced. A pimp whose loyalty slips mid-flight does not change a run already in the air.
+- Runs settle three ways. Delivered brings the load home along with cash they never spent; seized
+  takes a share of the load and the unspent cash with it, because it was in the room when the door
+  came in, and the heat lands on whoever sent them; defected is the pimp keeping the money, the goods
+  and the crew, and coming off the payroll.
+- Runs settle on the clock, so they land whether or not anyone is watching, and reach the player
+  through the alert bell and the catch-up digest.
+- Cargo that will not fit in the storage room is dumped rather than overfilling it, and the notice
+  says how much and why. Silently dropping a third of a load a player had already paid for read as
+  the price being wrong rather than the room being full.
+- Travel is a flight for the player too. A town's distance is time as well as turns, and while it is
+  running you are in the air and cannot act. Travel used to be instant, which made distance a pure
+  turn cost: you were somewhere else the moment you decided to be.
 
 ### Added
 - A player-to-player market: one global board, escrowed stock, partial fills, a house cut, and payouts

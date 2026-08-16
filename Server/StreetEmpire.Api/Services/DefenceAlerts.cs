@@ -84,6 +84,12 @@ public static class DefenceAlerts
             "HIDEOUT" when summary.EndsWith(" is finished.", StringComparison.Ordinal)
                 => new AlertResponse($"log-{logId}", "hideout", "Building finished", summary, "good", unread, createdAtUtc),
             "BUST" => new AlertResponse($"log-{logId}", "bust", "Raided", summary, "bad", unread, createdAtUtc),
+            // A run lands whether or not anyone is watching, so how it went has to come find them.
+            "MULE" when summary.Contains("never came back", StringComparison.Ordinal)
+                => new AlertResponse($"log-{logId}", "mule", "Your pimp ran", summary, "bad", unread, createdAtUtc),
+            "MULE" when summary.Contains("was stopped", StringComparison.Ordinal)
+                => new AlertResponse($"log-{logId}", "mule", "Your mule was stopped", summary, "bad", unread, createdAtUtc),
+            "MULE" => new AlertResponse($"log-{logId}", "mule", "Your mule is back", summary, "good", unread, createdAtUtc),
             "GROUND" when summary.Contains("held", StringComparison.OrdinalIgnoreCase)
                 => new AlertResponse($"log-{logId}", "ground", "Your ground held", summary, "good", unread, createdAtUtc),
             "GROUND"
@@ -106,7 +112,9 @@ public static class DefenceAlerts
                // belongs in activity. A separate action rather than matching how the sentence ends,
                // which broke the moment a second kind of ground notice existed.
                || log.Action == "GROUND"
-               || log.Action == "BUST";
+               || log.Action == "BUST"
+               // A run settles on the clock rather than on a request, so it is news, not activity.
+               || log.Action == "MULE";
 
     /// <summary>The same rule negated, for the activity list. Derived so the two cannot disagree.</summary>
     public static Expression<Func<GameActionLog, bool>> IsActionRow { get; } =

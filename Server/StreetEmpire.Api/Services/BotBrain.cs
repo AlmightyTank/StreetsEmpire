@@ -148,6 +148,36 @@ internal sealed record BotAttackProfile(
         };
 }
 
+/// <summary>
+/// How willing a personality is to send crew out of town. Kept as a lookup for the same reason the
+/// attack profile is: the brain record is already a 57-field positional type, and four more arguments
+/// across seven variants would be far easier to get wrong than a table.
+///
+/// A run is capital tied up in a plane, so the split falls out of what each personality is for. The
+/// Product Runner moves goods for a living and does it most; the Banker would rather the money sat
+/// still; the Hard Charger is not patient enough to wait for a plane.
+/// </summary>
+internal sealed record BotMuleProfile(
+    double RunChance,
+    int MaxHoes,
+    double CashShare,
+    long MinimumProfit)
+{
+    internal static BotMuleProfile For(BotBrainFocus focus)
+        => focus switch
+        {
+            BotBrainFocus.ProductRunner => new(0.55, 6, 0.55, 500),
+            BotBrainFocus.BigSpender => new(0.30, 5, 0.45, 800),
+            BotBrainFocus.BalancedOperator => new(0.25, 4, 0.35, 900),
+            BotBrainFocus.ResourceManager => new(0.20, 4, 0.30, 1_200),
+            BotBrainFocus.CrewBuilder => new(0.15, 3, 0.25, 1_200),
+            // Bankers want the money where they can see it, and hard chargers want a fight, not a wait.
+            BotBrainFocus.Banker => new(0.12, 3, 0.20, 2_000),
+            BotBrainFocus.MoraleNeglecter => new(0.10, 4, 0.30, 1_500),
+            _ => new(0.25, 4, 0.35, 900)
+        };
+}
+
 internal enum BotBrainFocus
 {
     BalancedOperator,

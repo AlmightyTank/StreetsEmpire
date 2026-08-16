@@ -44,6 +44,15 @@
 - Cargo that will not fit in the storage room is dumped rather than overfilling it, and the notice
   says how much and why. Silently dropping a third of a load a player had already paid for read as
   the price being wrong rather than the room being full.
+- AI rivals run mules. They build the intelligence centre themselves, pick a route by what it clears
+  after fares rather than by the widest spread, and since rivals sit in different towns, what is worth
+  running differs per rival without any of them being told so.
+- How keenly a rival runs mules follows from what it is for: the Product Runner moves goods for a
+  living and does it most, the Banker wants the money where it can see it, and the Hard Charger would
+  rather have a fight than wait for a plane.
+- A rival never sends its whole roster or its whole purse, buys only what it has somewhere to put, and
+  counts cargo already in the air so two runs are not sized against the same empty shelf.
+
 - A Mules page: pick a town, a good, how many hoes and how much money, and see the whole ticket before
   committing. What it costs there against what it fetches here, what they can carry, the fares, the
   turns, the round trip, and the odds of being caught or walked out on.

@@ -61,6 +61,7 @@ var tests = new (string Name, Action Test)[]
     ("anti-farm widens protection under repeated hits", AntiFarmWidensProtection),
     ("bot targeting picks the richest beatable target", BotTargetingPicksRichestBeatable),
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
+    ("bot mule appetite follows what each rival is for", BotMuleProfilesScaleWithPersonality),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
@@ -1778,6 +1779,34 @@ static void BotAttackProfilesScaleWithPersonality()
 /// shape of that: habits fixed to the rival, hours that actually exclude something, and a next
 /// sitting that always lands inside them.
 /// </summary>
+/// <summary>
+/// A run is capital tied up in a plane, so who sends one falls out of what each personality is for.
+/// The runner moves goods for a living; the banker wants the money where it can see it; the hard
+/// charger wants a fight rather than a wait.
+/// </summary>
+static void BotMuleProfilesScaleWithPersonality()
+{
+    var runner = BotMuleProfile.For(BotBrainFocus.ProductRunner);
+    var banker = BotMuleProfile.For(BotBrainFocus.Banker);
+    var charger = BotMuleProfile.For(BotBrainFocus.MoraleNeglecter);
+
+    AssertTrue(runner.RunChance > banker.RunChance, "product runners run mules more than bankers");
+    AssertTrue(runner.RunChance > charger.RunChance, "and more than hard chargers, who would rather fight");
+    AssertTrue(runner.CashShare > banker.CashShare, "and commit more of the purse to it");
+    AssertTrue(banker.MinimumProfit > runner.MinimumProfit, "a banker wants a wider margin before it bothers");
+
+    // Every personality is sane: it sometimes runs, never sends the whole purse, and never sends a
+    // run it expects to lose on.
+    foreach (var focus in Enum.GetValues<BotBrainFocus>())
+    {
+        var profile = BotMuleProfile.For(focus);
+        AssertTrue(profile.RunChance is > 0 and <= 1, $"{focus} has a usable run chance");
+        AssertTrue(profile.CashShare is > 0 and < 1, $"{focus} keeps some money at home");
+        AssertTrue(profile.MaxHoes is > 0 and <= 6, $"{focus} sends a sane number of hoes");
+        AssertTrue(profile.MinimumProfit > 0, $"{focus} does not send runs it expects to lose on");
+    }
+}
+
 static void BotSchedulesLookLikePeople()
 {
     var options = new BotAutomationOptions();

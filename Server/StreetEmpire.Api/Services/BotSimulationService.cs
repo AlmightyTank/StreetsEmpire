@@ -17,6 +17,7 @@ public sealed class BotSimulationService(
     TerritoryService territories,
     PimpRoster pimps,
     MarketService market,
+    MuleService mules,
     IOptions<BotAutomationOptions> botOptions)
 {
     private readonly GameOptions _options = options.Value;
@@ -68,6 +69,8 @@ public sealed class BotSimulationService(
 
                 await clock.AdvanceAsync(bot, nowUtc, ct: ct);
                 var botActions = await TryMarketAsync(bot, brain, nowUtc, ct);
+                if (botActions == 0)
+                    botActions = await TryMuleRunAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = await TryTerritoryAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
@@ -293,6 +296,127 @@ public sealed class BotSimulationService(
     /// lesson as rivals not upgrading their hideouts. Ground is checked before a house raid because
     /// both use a lane, and a bot that always robbed houses would never take any.
     /// </summary>
+    /// <summary>
+    /// Sends crew out of town when a route is worth it.
+    ///
+    /// A rival picks the route the same way a player should: by what the run actually clears after
+    /// fares, not by the widest spread. Rivals sit in different towns, so what is worth running
+    /// differs per rival without any of them being told so.
+    /// </summary>
+    private async Task<int> TryMuleRunAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var profile = BotMuleProfile.For(brain.Focus);
+        if (random.NextDouble() >= profile.RunChance)
+            return 0;
+
+        var cap = hideouts.ConcurrentRunCap(bot.Hideout);
+        if (cap <= 0) return 0;
+
+        // Saved runs plus ones launched earlier in this same batch. A whole round of rivals is written
+        // in one SaveChanges at the end, so a query alone cannot see what has just been sent and the
+        // cap would let a rival put its entire roster in the air at once.
+        var out_ = await db.MuleRuns.CountAsync(x => x.PlayerId == bot.Id && x.SettledAtUtc == null, ct)
+                   + db.ChangeTracker.Entries<MuleRun>()
+                       .Count(x => x.State == EntityState.Added
+                                   && x.Entity.PlayerId == bot.Id
+                                   && x.Entity.SettledAtUtc is null);
+        if (out_ >= cap) return 0;
+
+        // A pimp on ground or already on a plane is not available, and neither is one leading a raid.
+        var busy = new HashSet<long>(await territories.GarrisonedPimpIdsAsync(bot.Id, ct));
+        foreach (var id in await db.MuleRuns
+                     .Where(x => x.PlayerId == bot.Id && x.SettledAtUtc == null && x.PimpId != null)
+                     .Select(x => x.PimpId!.Value)
+                     .ToListAsync(ct))
+            busy.Add(id);
+
+        var pimp = bot.Crew.FirstOrDefault(x => x.LostAtUtc is null && !busy.Contains(x.Id));
+        if (pimp is null) return 0;
+
+        // Never send the whole house. Hoes on a plane are hoes not working the streets, and a rival
+        // that emptied its roster onto one run would stop earning the moment it left.
+        var spare = Math.Min(profile.MaxHoes, bot.Hoes / 3);
+        if (spare < 1) return 0;
+
+        var purse = (long)Math.Round((bot.Cash + bot.BankCash - CashReserve(bot, brain)) * profile.CashShare);
+        if (purse <= 0) return 0;
+
+        // Room already spoken for by cargo in the air. Without this a rival with two runs allowed out
+        // sizes both against the same empty shelf, and the second one lands and is dumped.
+        var inbound = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pending in await db.MuleRuns
+                     .Where(x => x.PlayerId == bot.Id && x.SettledAtUtc == null)
+                     .Select(x => new { x.Good, x.Capacity })
+                     .ToListAsync(ct))
+            inbound[pending.Good] = inbound.GetValueOrDefault(pending.Good) + pending.Capacity;
+        foreach (var entry in db.ChangeTracker.Entries<MuleRun>()
+                     .Where(x => x.State == EntityState.Added && x.Entity.PlayerId == bot.Id && x.Entity.SettledAtUtc is null))
+            inbound[entry.Entity.Good] = inbound.GetValueOrDefault(entry.Entity.Good) + entry.Entity.Capacity;
+
+        var best = BestRoute(bot, spare, purse, profile.MinimumProfit, inbound);
+        if (best is null) return 0;
+
+        var run = default(MuleRun);
+        var actions = TryAction(bot, "MULE_SENT", 0, nowUtc, () =>
+        {
+            run = mules.Launch(bot, pimp, best.Value.City, best.Value.Good, spare, best.Value.Cash, out_, nowUtc);
+            return new ActionResultResponse(run.Summary, bot.Turns, new Dictionary<string, object?>());
+        });
+
+        if (actions > 0 && run is not null)
+            db.MuleRuns.Add(run);
+        return actions;
+    }
+
+    /// <summary>
+    /// The best route on offer, judged on what it clears rather than on the spread. Returns nothing
+    /// when no route pays, which is the correct answer for a rival sitting in the cheapest town.
+    /// </summary>
+    private (string City, string Good, long Cash)? BestRoute(Player bot, int hoes, long purse, long minimumProfit, IReadOnlyDictionary<string, int> inbound)
+    {
+        (string City, string Good, long Cash)? best = null;
+        var bestProfit = minimumProfit;
+        var storage = hideouts.CapacityFor(bot.Hideout);
+
+        foreach (var profileCity in _options.CityMarkets.Profiles)
+        {
+            if (string.Equals(profileCity.City, bot.City, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            foreach (var good in new[] { "weed", "coke" })
+            {
+                MuleQuote quote;
+                try
+                {
+                    quote = mules.Quote(bot, profileCity.City, good, hoes, purse);
+                }
+                catch (GameRuleException)
+                {
+                    continue;
+                }
+
+                // Only what there is somewhere to put. Cargo that will not fit is dumped on arrival,
+                // so buying past the room is buying nothing: a rival that ignored this spent thousands
+                // on coke and stored none of it.
+                var room = Math.Max(0, TradeGoods.Capacity(storage, good) - TradeGoods.Held(bot, good) - inbound.GetValueOrDefault(good));
+                var units = Math.Min(quote.UnitsAffordable, room);
+                if (units <= 0) continue;
+
+                var home = TradeGoods.ReferencePrice(_options, good, bot.City);
+                var spend = units * quote.UnitPriceThere;
+                var profit = units * home - (quote.Fare + quote.Upkeep + spend);
+                if (profit <= bestProfit) continue;
+
+                bestProfit = profit;
+                // Buying money only. Fares are charged on top of this, and anything sent beyond what
+                // the load costs just rides along to be taken if the run is stopped.
+                best = (profileCity.City, good, spend);
+            }
+        }
+
+        return best;
+    }
+
     private async Task<int> TryTerritoryAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
     {
         var config = _options.Territory;
@@ -662,6 +786,15 @@ public sealed class BotSimulationService(
             && bot.Cash + bot.BankCash >= tier.UpgradeCost + reserve
             && bot.Turns >= tier.UpgradeTurns + TurnReserve(brain))
             return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "tier", actionTimeUtc));
+
+        // The intelligence centre, for the personalities that would use it. Ahead of the labs because
+        // a room that unlocks a whole way of earning is worth more than a percentage on one that is
+        // already running, and without it a rival can never run a mule at all.
+        var muleProfile = BotMuleProfile.For(brain.Focus);
+        if (muleProfile.RunChance >= 0.2
+            && hideouts.NextUpgrade(hideout, "intelligence") is { TierLocked: false } intel
+            && bot.Cash + bot.BankCash >= intel.Cost + reserve * 2)
+            return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "intelligence", actionTimeUtc));
 
         // Labs last, and only for the brain that actually runs product.
         if (brain.Focus == BotBrainFocus.ProductRunner)

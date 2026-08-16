@@ -135,6 +135,13 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - Cash beyond what the crew can carry goods for is dead weight, and the page says so. It comes home
   untouched on a clean run and is taken on a bad one, so sending a fat purse is pure exposure.
 
+- Rivals run mules too, or this would be a player-only edge and the leaderboard would stop meaning
+  anything. They build the room themselves and judge a route on what it clears after fares. Because
+  rivals live in different towns, they find different routes without being told to.
+- A rival sends neither its whole roster nor its whole purse, buys only what it has room to store,
+  and subtracts what is already in the air. The first pass did none of that: one rival spent thousands
+  on coke and stored none of it, because the shelf was already full when the plane landed.
+
 ### Flights take time
 
 - A town's distance is now time as well as turns, for the player as much as for a mule. Travel used

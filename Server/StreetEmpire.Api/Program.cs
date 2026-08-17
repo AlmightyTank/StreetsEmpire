@@ -43,6 +43,7 @@ builder.Services.AddScoped<StandingsRecorder>();
 builder.Services.AddScoped<TerritoryService>();
 builder.Services.AddScoped<MarketService>();
 builder.Services.AddScoped<MuleService>();
+builder.Services.AddScoped<GuidanceService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();

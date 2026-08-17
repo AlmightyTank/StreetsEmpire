@@ -43,6 +43,7 @@ var tests = new (string Name, Action Test)[]
     ("heat comes from what you hold and what you do", HeatDrivesTheBust),
     ("stepping on coke turns cut into more of it", CuttingStretchesWhatYouAlreadyHold),
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
+    ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1335,6 +1336,94 @@ static void ContrabandGoodsDoTheirJob()
 /// mix house was a cheaper and faster source of coke than producing coke was, without limit. Purity
 /// is what makes it a trade - more units, each worth less - and what makes the printer stop.
 /// </summary>
+/// <summary>
+/// A new player used to finish their whole first session having clicked one button five times, with
+/// the best purchase available to them unmentioned. Guidance ranks what is actually worth doing, and
+/// the opening ladder is read from the world rather than stored, so it cannot drift out of step.
+/// </summary>
+static void GuidancePointsAtTheGame()
+{
+    var options = Resolve(new GameOptions());
+    var guidance = CreateGuidance(options);
+
+    // Day one: turns and nothing wrong, so the advice is simply to go and earn.
+    AssertTrue(guidance.NextMoves(Rookie(options), 0).Any(x => x.Label.Contains("Work the streets")),
+        "a fresh player is told where the money is");
+
+    // Things actively costing money outrank things that merely would pay. An unarmed crew bleeds
+    // morale every shift; a lab is only an opportunity.
+    var bleeding = Rookie(options);
+    bleeding.Thugs = 6;
+    bleeding.Weapons = 0;
+    bleeding.Cash = 50_000;
+    var advice = guidance.NextMoves(bleeding, 0).ToList();
+    var arm = advice.FindIndex(x => x.Label.StartsWith("Arm "));
+    var lab = advice.FindIndex(x => x.Label.Contains("weed lab"));
+    AssertTrue(arm >= 0, "an unarmed crew is called out");
+    AssertTrue(lab >= 0, "and the lab is still offered");
+    AssertTrue(arm < lab, "but the bleeding comes first");
+    AssertTrue(advice[arm].Urgent, "and it is marked urgent");
+    AssertEqual(6 * (long)options.WeaponPrice, advice[arm].Cost);
+
+    // The single best early purchase, which the old panel never once mentioned.
+    var flush = Rookie(options);
+    flush.Cash = 50_000;
+    AssertTrue(guidance.NextMoves(flush, 0).Any(x => x.Label.Contains("weed lab")),
+        "a player who can afford the lab is told about the lab");
+    AssertTrue(!guidance.NextMoves(Rookie(options), 0).Any(x => x.Label.Contains("weed lab")),
+        "and a broke one is not sold what they cannot buy");
+
+    // Never a wall of text. Four at most, or the ranking was pointless.
+    var swamped = Rookie(options);
+    swamped.Thugs = 9;
+    swamped.Weapons = 0;
+    swamped.Hoes = 90;
+    swamped.Condoms = 0;
+    swamped.Beer = 0;
+    swamped.HoeHappiness = 10;
+    swamped.Cash = 900_000;
+    AssertTrue(guidance.NextMoves(swamped, 500).Count <= 4, "advice is ranked, not dumped");
+
+    // The ladder is read from the world: a lab built is a rung ticked, with nothing stored anywhere.
+    var climber = Rookie(options);
+    AssertTrue(!guidance.Objectives(climber, []).Single(x => x.Label.Contains("weed lab")).Done, "no lab, no tick");
+    climber.Hideout!.WeedLabLevel = 1;
+    AssertTrue(guidance.Objectives(climber, []).Single(x => x.Label.Contains("weed lab")).Done, "a lab in the world is a lab on the ladder");
+
+    // And from history, for the verbs that leave no mark on the player themselves.
+    AssertTrue(!guidance.Objectives(climber, []).Single(x => x.Label.Contains("Sell")).Done, "nothing sold yet");
+    AssertTrue(guidance.Objectives(climber, ["SALE"]).Single(x => x.Label.Contains("Sell")).Done, "a sale in the log counts");
+
+    // A grown empire has a finished ladder, which is how the panel knows to get out of the way.
+    var veteran = Rookie(options);
+    veteran.Pimps = 4;
+    veteran.Thugs = 2;
+    veteran.Weapons = 8;
+    veteran.Hideout = new Hideout { Tier = 2, StorageLevel = 3, WeedLabLevel = 2 };
+    var finished = guidance.Objectives(veteran, ["STREET", "BANK", "PRODUCTION", "SALE"]);
+    AssertTrue(finished.All(x => x.Done),
+        $"nothing left to tell a grown empire: {string.Join(", ", finished.Where(x => !x.Done).Select(x => x.Label))}");
+}
+
+static Player Rookie(GameOptions options) => new()
+{
+    City = "Detroit",
+    Cash = options.StartingCash,
+    Turns = options.StartingTurns,
+    Pimps = options.StartingPimps,
+    Hoes = options.StartingHoes,
+    Thugs = options.StartingThugs,
+    Condoms = options.StartingCondoms,
+    Beer = options.StartingBeer,
+    Weapons = options.StartingWeapons,
+    HoeHappiness = 100,
+    ThugHappiness = 100,
+    Hideout = new Hideout { Tier = 1, StorageLevel = 1, SafeLevel = 1 }
+};
+
+static GuidanceService CreateGuidance(GameOptions options)
+    => new(Snapshot(options), CreateHideouts(options), CreateEconomy(options));
+
 static void PurityStopsTheCokePrinter()
 {
     var options = Resolve(new GameOptions());

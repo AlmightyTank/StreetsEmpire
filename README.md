@@ -4,7 +4,21 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 ## What changed in 0.2.5
 
-0.2.5 is in progress.
+0.2.5 is in progress, and is about the early game.
+
+### Telling a new player anything at all
+
+- Played fresh, the first session was five clicks. A hundred starting turns at twenty a shift is five
+  street actions, after which the turn bank is empty for eight hours. In that whole session a player
+  saw one verb, never met production, a lab, the market or heat, and the best purchase available to
+  them - a ten thousand dollar weed lab - went unmentioned in a room they had no reason to open.
+- Next Moves used to be a status readout wearing an advice label: four fixed rows that read the same
+  on day one and day one hundred. It ranks real moves now, priced, with a reason, ordered so that what
+  is actively costing you money comes before what would merely pay.
+- A Getting Started ladder covers the verbs nothing else introduces, and hides itself when finished.
+  A checklist a veteran still scrolls past is clutter; the point of it is to stop being needed.
+- Neither is stored. A lab built is a lab on the ladder, and a sale in the log is a sale: asking the
+  world what happened cannot drift out of step with it the way a checklist column would.
 
 ## What changed in 0.2.4
 

@@ -153,6 +153,7 @@ public sealed record DashboardResponse(
     int CokePurityPercent,
     int CokeSellPriceAtPurity,
     CrewReportResponse CrewReport,
+    GuidanceResponse Guidance,
     HideoutResponse Hideout,
     IReadOnlyList<PimpResponse> Crew,
     IReadOnlyList<PimpResponse> FallenCrew,
@@ -378,6 +379,18 @@ public sealed record MuleBoardResponse(
     IReadOnlyList<MuleDestinationResponse> Destinations,
     IReadOnlyList<MuleCandidateResponse> Pimps,
     IReadOnlyList<MuleRunResponse> Runs);
+
+/// <summary>One move worth making now, with what it costs and why it is worth it.</summary>
+public sealed record NextMoveResponse(string Label, string Why, string Page, long Cost, bool Urgent);
+
+/// <summary>A rung on the opening ladder. Done is read from the world, never stored.</summary>
+public sealed record ObjectiveResponse(string Label, string Why, string Page, bool Done);
+
+public sealed record GuidanceResponse(
+    IReadOnlyList<NextMoveResponse> Moves,
+    IReadOnlyList<ObjectiveResponse> Objectives,
+    int ObjectivesDone,
+    int ObjectivesTotal);
 
 public sealed record HideoutResponse(
     string TierName,

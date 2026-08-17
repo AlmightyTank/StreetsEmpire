@@ -443,7 +443,8 @@ function OverviewPage(ctx: PageContext) {
         </div>
       </section>
 
-      <NextMovePanel dashboard={dashboard} weaponCoverage={weaponCoverage} managementCapacity={managementCapacity} onPage={setActivePage} />
+      <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
+      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} />
 
       <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
     </div>
@@ -2364,45 +2365,63 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
   </div>
 }
 
-function NextMovePanel({ dashboard, weaponCoverage, managementCapacity, onPage }: {
-  dashboard: Dashboard
-  weaponCoverage: number
-  managementCapacity: number
-  onPage: (page: AppPage) => void
-}) {
-  const moves: { label: string, detail: string, page: AppPage, urgent?: boolean }[] = [
-    {
-      label: dashboard.turns > 0 ? 'Spend turns' : 'Wait for turns',
-      detail: dashboard.turns > 0 ? `${dashboard.turns} turn${dashboard.turns === 1 ? '' : 's'} ready for street work or production.` : 'Your turn bank is empty.',
-      page: dashboard.turns > 0 ? 'street' : 'overview',
-      urgent: dashboard.turns >= dashboard.maxActionTurns,
-    },
-    {
-      label: 'Crew pressure',
-      detail: dashboard.hoes > managementCapacity ? `${dashboard.hoes - managementCapacity} unmanaged hoes need more pimps.` : `Management is stable at ${dashboard.hoes}/${managementCapacity} hoes.`,
-      page: 'crew',
-      urgent: dashboard.hoes > managementCapacity,
-    },
-    {
-      label: 'Supply reserve',
-      detail: `${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction} condoms, ${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction} beer for a max street action.`,
-      page: 'market',
-      urgent: dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction || dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction,
-    },
-    {
-      label: 'Combat posture',
-      detail: `${weaponCoverage.toFixed(0)}% thug weapon coverage for combat.`,
-      page: 'recon',
-      urgent: weaponCoverage < 75,
-    },
-  ]
+/**
+ * What to do next, ranked by the server against the state the player is actually in.
+ *
+ * This used to be four fixed rows - turns, crew pressure, supplies, combat posture - that read the
+ * same on day one and day one hundred and never named a move. A new player finished their whole
+ * first session having clicked one button five times, with the best purchase available to them
+ * sitting unmentioned in a room they had no reason to open.
+ */
+function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (page: AppPage) => void }) {
+  const moves = dashboard.guidance?.moves ?? []
+  if (moves.length === 0) return null
 
   return <section className="panel">
-    <div className="panel-title"><h2>Next Moves</h2><span>Flow</span></div>
+    <div className="panel-title"><h2>Next Moves</h2><span>Worth doing now</span></div>
     <div className="flow-list">
-      {moves.map(move => <button className={move.urgent ? 'flow-row urgent' : 'flow-row'} type="button" key={move.label} onClick={() => onPage(move.page)}>
-        <strong>{move.label}</strong>
-        <span>{move.detail}</span>
+      {moves.map(move => <button
+        className={move.urgent ? 'flow-row urgent' : 'flow-row'}
+        type="button"
+        key={move.label}
+        onClick={() => onPage(move.page as AppPage)}
+      >
+        <strong>{move.label}{move.cost > 0 && <b className="flow-cost">{money.format(move.cost)}</b>}</strong>
+        <span>{move.why}</span>
+      </button>)}
+    </div>
+  </section>
+}
+
+/**
+ * The opening ladder, and the only place the game explains itself.
+ *
+ * Hidden once it is finished rather than kept forever: a checklist a veteran still has to scroll past
+ * is clutter, and the whole point of it is to stop being needed.
+ */
+function OpeningLadderPanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (page: AppPage) => void }) {
+  const guidance = dashboard.guidance
+  if (!guidance || guidance.objectivesDone >= guidance.objectivesTotal) return null
+  // The next unfinished rung, plus what has been done, so progress is visible without listing it all.
+  const next = guidance.objectives.find(o => !o.done)
+
+  return <section className="panel">
+    <div className="panel-title">
+      <h2>Getting Started</h2>
+      <span>{guidance.objectivesDone} of {guidance.objectivesTotal}</span>
+    </div>
+    <div className="ladder">
+      {guidance.objectives.map(step => <button
+        className={step.done ? 'ladder-row done' : step === next ? 'ladder-row next' : 'ladder-row'}
+        type="button"
+        key={step.label}
+        onClick={() => onPage(step.page as AppPage)}
+      >
+        <em>{step.done ? '✓' : ''}</em>
+        <div>
+          <strong>{step.label}</strong>
+          {step === next && <span>{step.why}</span>}
+        </div>
       </button>)}
     </div>
   </section>

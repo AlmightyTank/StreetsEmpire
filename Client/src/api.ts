@@ -45,6 +45,15 @@ export type CrewReport = {
   hqPartyThugMoraleGain: number
 }
 
+export type NextMove = { label: string, why: string, page: string, cost: number, urgent: boolean }
+export type Objective = { label: string, why: string, page: string, done: boolean }
+export type Guidance = {
+  moves: NextMove[]
+  objectives: Objective[]
+  objectivesDone: number
+  objectivesTotal: number
+}
+
 export type Hideout = {
   tierName: string
   tier: number
@@ -176,6 +185,7 @@ export type Dashboard = {
   cokePurityPercent: number
   cokeSellPriceAtPurity: number
   crewReport: CrewReport
+  guidance: Guidance
   hideout: Hideout
   crew: Pimp[]
   fallenCrew: Pimp[]

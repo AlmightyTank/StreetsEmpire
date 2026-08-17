@@ -32,6 +32,7 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            GuidanceService guidance,
             IOptionsSnapshot<GameOptions> gameOptions,
             HideoutService hideouts,
             PimpRoster pimps,
@@ -99,6 +100,15 @@ internal static class GameEndpoints
                 .FirstOrDefaultAsync(ct);
             var moraleTrend = ToMoraleTrend(player, moraleBaseline?.Hoe, moraleBaseline?.Thug, opts.Morale);
 
+            // Which verbs this player has ever used, so the opening ladder can be read from what
+            // actually happened rather than from a checklist column that could drift out of step.
+            var actionsTaken = await db.ActionLogs.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id)
+                .Select(x => x.Action)
+                .Distinct()
+                .ToListAsync(ct);
+            var objectives = guidance.Objectives(player, actionsTaken);
+
             // Notifications are excluded: this list is what the player did, and a lab payout they had
             // no hand in reads as an action they took. They surface in the alert bell instead.
             var activity = await db.ActionLogs.AsNoTracking()
@@ -147,6 +157,11 @@ internal static class GameEndpoints
                 (int)Math.Round(player.CokePurity * 100),
                 Math.Max(1, (int)Math.Round(economy.ProductSellPrice(player.City, "coke") * opts.PurityMultiplier(player.CokePurity))),
                 economy.GetCrewReport(player),
+                new GuidanceResponse(
+                    guidance.NextMoves(player, hideouts.HeatFor(player)),
+                    objectives,
+                    objectives.Count(x => x.Done),
+                    objectives.Count),
                 ToHideoutResponse(player, hideouts, now, opts),
                 pimps.Active(player).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),

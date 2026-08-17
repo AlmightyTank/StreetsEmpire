@@ -2,6 +2,18 @@
 
 ## 0.2.5 (in progress)
 
+### Added
+- Next Moves is advice now rather than a status readout. It ranks what is actually worth doing against
+  the state you are in, names what each move costs, and says why it is worth it. The old panel showed
+  the same four rows on day one and day one hundred and never once named a move.
+- A Getting Started ladder covering the verbs the game never introduced: work the streets, bank what
+  you make, build the weed lab, run production, sell it, arm your thugs, hire a second pimp, deepen
+  the store, and reach the Warehouse. It hides itself once finished.
+- Both are read from the world rather than stored, so a rung cannot drift out of step with the empire
+  it describes, and no migration was needed for either.
+
+### Changed
+
 ## 0.2.4
 
 ### Changed

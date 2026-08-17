@@ -632,6 +632,36 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .room-copy small { color: #c08a4a; font-size: .73rem; }
 .room-row.illegal { border-left: 3px solid #b4534a; }
 
+/* Advice carries a price, so the cost sits with the label rather than buried in the reason. */
+.flow-cost { float: right; color: #d9ae62; font-weight: 600; font-size: .82rem; }
+
+/* The opening ladder. Done rungs recede; the next one is the only one that explains itself. */
+.ladder { display: grid; gap: 4px; }
+.ladder-row {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 8px;
+  align-items: start;
+  text-align: left;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: #aea59a;
+}
+.ladder-row:hover { background: #14171799; }
+.ladder-row em { font-style: normal; color: #4f7a5a; }
+.ladder-row strong { font-weight: 500; font-size: .88rem; }
+.ladder-row.done { opacity: .45; }
+.ladder-row.done strong { text-decoration: line-through; }
+.ladder-row.next {
+  border-color: #3b4644;
+  background: linear-gradient(180deg, #171818, #101314);
+  color: #f4eee5;
+}
+.ladder-row.next strong { font-weight: 700; }
+.ladder-row.next span { display: block; margin-top: 2px; color: #9aa6a2; font-size: .8rem; }
+
 /* Stepping on it: a station's sibling rather than a station, so it sits apart from the room list. */
 .cut-panel {
   margin-top: 14px;

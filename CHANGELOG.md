@@ -8,6 +8,18 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Added
+- A town's risk now reaches the daily loop instead of only the road in. It used to decide whether a
+  run was stopped at the door and nothing at all about living somewhere, so two players running
+  identical operations in Detroit and New York stood in identical danger.
+- The same stash and the same shift draw more notice in a watchful town: 60 coke and 40 weed reads
+  17.5 heat in Detroit, 25 in Atlanta and 35 in New York. Earned heat is banked points and is not
+  rescaled by moving, or changing town would rewrite a player's history rather than change what
+  happens next.
+- The heat note names the town, so a player who moves and watches the number jump knows it was the
+  place rather than something they did.
+- It pairs with what a town pays. The towns that watch hardest are the ones that sell dearest, so the
+  trade is legible rather than a penalty for living in the wrong place.
+
 - Per-city leaderboards. Eight towns on one global board means most players never appear on it and
   never will, so the town they chose is now the place their standing is actually legible. Standings
   opens on your own city and toggles to everywhere, and the dashboard carries both ranks.

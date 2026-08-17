@@ -80,11 +80,14 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public double HeatFor(Player player)
     {
         var config = _options.Hideout;
+        // What is held draws notice at the town's own rate: the same stash is more conspicuous in a
+        // watchful city than a quiet one, which is what makes where you live a standing decision.
+        var town = _options.CityMarkets.HeatMultiplier(player.City);
         return Math.Max(0, player.Heat)
-               + player.Coke * config.CokeHeatPerUnit
+               + town * (player.Coke * config.CokeHeatPerUnit
                + player.Moonshine * config.MoonshineHeatPerUnit
                + player.Weed * config.WeedHeatPerUnit
-               + player.Cut * config.CutHeatPerUnit;
+               + player.Cut * config.CutHeatPerUnit);
     }
 
     /// <summary>

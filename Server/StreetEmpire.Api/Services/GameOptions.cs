@@ -474,6 +474,31 @@ public sealed class CityMarketOptions
     public double HighRiskBustChance { get; set; } = 0.22;
 
     /// <summary>
+    /// How much notice a town takes of you, by risk band.
+    ///
+    /// Risk used to describe only the way into a town: it decided whether a run was stopped at the
+    /// door and nothing at all about living there. So a player in Detroit and a player in New York ran
+    /// exactly the same daily operation at exactly the same danger, and the choice of town was a price
+    /// list rather than a place. This is what makes it a place: the same stash and the same shift draw
+    /// more attention in a watchful town than a quiet one.
+    ///
+    /// It pairs with what a town pays. The high-risk towns are the ones that sell dear - New York,
+    /// Chicago, Las Vegas - so the trade is legible: earn more per unit, get noticed faster.
+    /// </summary>
+    public double LowRiskHeatMultiplier { get; set; } = 0.7;
+    public double MediumRiskHeatMultiplier { get; set; } = 1.0;
+    public double HighRiskHeatMultiplier { get; set; } = 1.4;
+
+    /// <summary>How hard this town looks at you, as a multiple of the ordinary rate.</summary>
+    public double HeatMultiplier(string? city)
+        => ProfileFor(city).Risk?.Trim().ToLowerInvariant() switch
+        {
+            "low" => LowRiskHeatMultiplier,
+            "high" => HighRiskHeatMultiplier,
+            _ => MediumRiskHeatMultiplier
+        };
+
+    /// <summary>
     /// Share of the load taken when a run is stopped, rolled per trip. The top of the range has to
     /// clear a route's break-even share (1 - homePrice/destPrice, up to 40% on the shipped map) or a
     /// stop on the best runs costs less than staying home would have, and risk stops meaning anything.

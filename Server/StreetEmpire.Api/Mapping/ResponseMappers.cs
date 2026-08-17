@@ -242,7 +242,7 @@ internal static class ResponseMappers
             Math.Round(heat, 1),
             HeatLabel(heat, options),
             HeatDetail(heat, options),
-            HeatNote(heat, options),
+            HeatNote(heat, options, player.City),
             ToRoomUpgrade(hideouts, player.Hideout, "storage"),
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
             ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),
@@ -335,12 +335,20 @@ internal static class ResponseMappers
         return Math.Clamp((heat - config.HeatBustFloor) * config.BustChancePerHeat, 0, Math.Clamp(config.MaxBustChancePerHour, 0, 1));
     }
 
-    private static string HeatNote(double heat, GameOptions options)
+    private static string HeatNote(double heat, GameOptions options, string city)
     {
         var config = options.Hideout;
+        // Named, because a player who moves and watches their heat jump deserves to know it was the
+        // town rather than something they did.
+        var town = options.CityMarkets.HeatMultiplier(city) switch
+        {
+            > 1.05 => $" {city} watches harder than most towns.",
+            < 0.95 => $" {city} pays less attention than most towns.",
+            _ => string.Empty
+        };
         if (heat <= config.HeatBustFloor)
-            return "Nobody is looking your way. Nothing you hold is worth a door being kicked in yet.";
-        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid. Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.";
+            return $"Nobody is looking your way. Nothing you hold is worth a door being kicked in yet.{town}";
+        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid. Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
     }
 
     /// <summary>

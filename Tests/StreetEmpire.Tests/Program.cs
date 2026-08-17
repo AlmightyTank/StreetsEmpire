@@ -72,6 +72,7 @@ var tests = new (string Name, Action Test)[]
     ("rivals remember who robbed them", BotsHoldGrudges),
     ("the news names who started the feud", FeudsNameTheAggressor),
     ("every town has ground, a price and a name of its own", EveryCityIsRealAndDistinct),
+    ("a watchful town notices the same operation sooner", CityRiskReachesTheDailyLoop),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
@@ -1436,8 +1437,8 @@ static void TheFirstTierHasNoDeadZone()
     AssertTrue(hideouts.BustRiskReduction(watched) < 1, "but never to nothing, or holding would be free");
 
     // And it actually reaches the roll rather than only reading well in the options.
-    var exposed = new Player { Coke = 400, Cash = 50_000, Hideout = new Hideout { Tier = 1, StorageLevel = 6 } };
-    var guarded = new Player { Coke = 400, Cash = 50_000, Hideout = watched };
+    var exposed = new Player { City = "Atlanta", Coke = 400, Cash = 50_000, Hideout = new Hideout { Tier = 1, StorageLevel = 6 } };
+    var guarded = new Player { City = "Atlanta", Coke = 400, Cash = 50_000, Hideout = watched };
     var risky = Resolve(new GameOptions());
     risky.Hideout.HeatDecayPerHour = 0;
     var service = CreateHideouts(risky);
@@ -1698,15 +1699,18 @@ static void HeatDrivesTheBust()
     config.FinePerSeizedUnit = 40;
     var hideouts = CreateHideouts(options);
 
-    // Coke draws the most notice per unit and cut the least, despite where cut is made.
-    AssertEqual(35.0, hideouts.HeatFor(new Player { Coke = 100 }));
-    AssertEqual(25.0, hideouts.HeatFor(new Player { Moonshine = 100 }));
-    AssertEqual(10.0, hideouts.HeatFor(new Player { Weed = 100 }));
-    AssertEqual(3.0, hideouts.HeatFor(new Player { Cut = 100 }));
+    // Coke draws the most notice per unit and cut the least, despite where cut is made. Measured in
+    // an ordinary town: how hard a town looks is its own thing, and is tested on its own.
+    const string ordinary = "Atlanta";
+    AssertEqual(1.0, options.CityMarkets.HeatMultiplier(ordinary));
+    AssertEqual(35.0, hideouts.HeatFor(new Player { City = ordinary, Coke = 100 }));
+    AssertEqual(25.0, hideouts.HeatFor(new Player { City = ordinary, Moonshine = 100 }));
+    AssertEqual(10.0, hideouts.HeatFor(new Player { City = ordinary, Weed = 100 }));
+    AssertEqual(3.0, hideouts.HeatFor(new Player { City = ordinary, Cut = 100 }));
 
     // Sized against the rooms the game ships. A full Warehouse store of coke is worth watching; a
     // whole evening's work by someone holding nothing is not, and it fades before the next one.
-    var warehouseStore = hideouts.HeatFor(new Player { Coke = 85 });
+    var warehouseStore = hideouts.HeatFor(new Player { City = ordinary, Coke = 85 });
     AssertTrue(warehouseStore > config.HeatBustFloor && warehouseStore < config.HeatBustFloor * 2,
         $"a full Warehouse store of coke is Noticed, not Hunted ({warehouseStore})");
     // Read from a untouched copy: this test bends decay and the floor for the roll assertions below.
@@ -1721,14 +1725,14 @@ static void HeatDrivesTheBust()
     AssertEqual(25.0, hideouts.HeatFor(new Player { Heat = 25 }));
 
     // Under the floor nobody is looking, however long they sit there.
-    var quiet = new Player { Weed = 20, Cash = 10_000 };
+    var quiet = new Player { City = ordinary, Weed = 20, Cash = 10_000 };
     AssertTrue(!hideouts.RollBust(quiet, 24, new AlwaysRandom()).Happened, "a small stash draws nobody");
     AssertEqual(20, quiet.Weed);
 
     // Over it, a raid takes a share of every pile and fines them for the lot. This stash alone sits
     // just under the floor now, so it takes a day's work on top to draw anyone: which is the point.
-    var loaded = new Player { Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Heat = 20, Cash = 10_000 };
-    AssertTrue(hideouts.HeatFor(new Player { Coke = 40, Weed = 20, Moonshine = 10, Cut = 8 }) < config.HeatBustFloor,
+    var loaded = new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Heat = 20, Cash = 10_000 };
+    AssertTrue(hideouts.HeatFor(new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8 }) < config.HeatBustFloor,
         "a working stash on its own stays under the floor");
     var bust = hideouts.RollBust(loaded, 1, new AlwaysRandom());
     AssertEqual(20, bust.Coke);
@@ -1740,12 +1744,12 @@ static void HeatDrivesTheBust()
     AssertTrue(bust.Describe().Contains("20 coke"), $"the notice names what went: {bust.Describe()}");
 
     // The fine never reaches past cash on hand.
-    var broke = new Player { Coke = 100, Cash = 500 };
+    var broke = new Player { City = ordinary, Coke = 100, Cash = 500 };
     AssertEqual(500L, hideouts.RollBust(broke, 1, new AlwaysRandom()).Fine);
     AssertEqual(0L, broke.Cash);
 
     // A raid clears the attention it was drawn by, or one bust guarantees the next.
-    var raided = new Player { Coke = 100, Heat = 90, Cash = 10_000 };
+    var raided = new Player { City = ordinary, Coke = 100, Heat = 90, Cash = 10_000 };
     hideouts.RollBust(raided, 1, new AlwaysRandom());
     AssertEqual(0.0, raided.Heat);
 
@@ -2170,6 +2174,66 @@ static void BotAttackProfilesScaleWithPersonality()
 /// silently wrong: the city list is derived from the map, so a town with no ground simply is not
 /// there, and the market fills any gap with a bland Medium/Medium profile rather than complaining.
 /// </summary>
+/// <summary>
+/// Risk used to describe only the way into a town: whether a run was stopped at the door, and nothing
+/// about living there. Two players running identical operations in Detroit and New York were in
+/// identical danger, which made the choice of town a price list rather than a place.
+/// </summary>
+static void CityRiskReachesTheDailyLoop()
+{
+    var options = Resolve(new GameOptions());
+    var markets = options.CityMarkets;
+    var hideouts = CreateHideouts(options);
+
+    // Detroit is the quiet town and New York the watchful one, so the same stash reads differently.
+    AssertTrue(markets.HeatMultiplier("Detroit") < markets.HeatMultiplier("Atlanta"), "a quiet town looks less hard");
+    AssertTrue(markets.HeatMultiplier("New York") > markets.HeatMultiplier("Atlanta"), "a watchful one looks harder");
+
+    var quiet = new Player { City = "Detroit", Coke = 100 };
+    var watchful = new Player { City = "New York", Coke = 100 };
+    AssertTrue(hideouts.HeatFor(watchful) > hideouts.HeatFor(quiet),
+        $"the same stash is hotter in New York ({hideouts.HeatFor(watchful)}) than Detroit ({hideouts.HeatFor(quiet)})");
+
+    // Earned heat is banked points and is not re-scaled by where it was earned, or moving town would
+    // silently rewrite a player's history rather than change what happens next.
+    var carried = new Player { City = "New York", Heat = 40 };
+    AssertEqual(40.0, hideouts.HeatFor(carried));
+
+    // A shift in a watchful town earns more notice than the same shift in a quiet one.
+    var economy = CreateEconomy(options);
+    var inDetroit = Working("Detroit");
+    var inNewYork = Working("New York");
+    economy.Scout(inDetroit, 10);
+    economy.Scout(inNewYork, 10);
+    AssertTrue(inNewYork.Heat > inDetroit.Heat,
+        $"ten turns draws more notice in New York ({inNewYork.Heat:F1}) than Detroit ({inDetroit.Heat:F1})");
+
+    // Risk pairs with reward, or it is only a penalty for living in the wrong place. The towns that
+    // watch hardest are the ones that pay best.
+    var cities = options.Territory.Cities();
+    var watched = cities.Where(c => markets.HeatMultiplier(c) > 1).ToList();
+    AssertTrue(watched.Count > 0, "somewhere watches harder than average");
+    var bestPaying = cities.Max(c => markets.ProductPrice(c, "coke", 100));
+    AssertTrue(watched.Any(c => markets.ProductPrice(c, "coke", 100) == bestPaying),
+        "the best coke price in the game is in a town that watches");
+
+    static Player Working(string city) => new()
+    {
+        City = city,
+        Turns = 100,
+        Pimps = 1,
+        Hoes = 6,
+        Thugs = 2,
+        Condoms = 500,
+        Beer = 500,
+        Weapons = 2,
+        HoeHappiness = 90,
+        ThugHappiness = 90,
+        HoeCutPercent = 30,
+        Hideout = new Hideout { Tier = 1, StorageLevel = 3, SafeLevel = 3 }
+    };
+}
+
 static void EveryCityIsRealAndDistinct()
 {
     var options = Resolve(new GameOptions());

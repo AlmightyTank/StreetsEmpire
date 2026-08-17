@@ -96,12 +96,6 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 "market");
         }
 
-        if (player.Turns >= _options.MaxTurns)
-        {
-            Add(21, "Spend your turns",
-                "Your bank is full, so every turn you earn from here is thrown away until you spend some.",
-                "street");
-        }
 
         // Then what would pay. The first lab is the single best purchase in the early game and the one
         // nothing in the old panel ever mentioned.
@@ -123,8 +117,14 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
 
         if (player.Turns >= _options.MaxActionTurns)
         {
-            Add(32, "Work the streets",
-                $"{player.Turns:N0} turns ready. This is where the money comes from early on.",
+            // A full bank earns nothing further, which is worth saying - but as part of this row
+            // rather than beside it. Two rows both meaning "go and act" is the noise this panel
+            // exists to remove, and a new player starts at the cap so they met it immediately.
+            var full = player.Turns >= _options.MaxTurns
+                ? " Your bank is full, so anything you earn from here is thrown away until you spend some."
+                : string.Empty;
+            Add(21, "Work the streets",
+                $"{player.Turns:N0} turns ready. This is where the money comes from early on.{full}",
                 "street");
         }
 

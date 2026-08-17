@@ -1,10 +1,16 @@
-# Street Empire 0.2.4
+# Street Empire 0.2.5
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
 
+## What changed in 0.2.5
+
+0.2.5 is in progress.
+
 ## What changed in 0.2.4
 
-0.2.4 is in progress. Territory is in; player-to-player markets and organizations are still to come.
+Territory, player-to-player markets, mule runs, heat, travel between towns as timed flights, and
+rivals who play in sittings rather than on a metronome. Organizations did not make it and carry
+forward.
 
 ### Territory
 
@@ -196,9 +202,9 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   hours is asleep, not stuck. The admin's rivals table shows each one's habits and whether it is
   playing right now, which is what actually distinguishes the two.
 
-### Still to come in 0.2.4
+### Carried out of 0.2.4
 
-- Player-to-player markets and organizations.
+- Organizations. Everything else planned for it shipped.
 
 ## What changed in 0.2.3
 
@@ -543,7 +549,7 @@ Working the streets for 1-20 turns can now:
 - Per-player economy/action history.
 - Responsive React browser UI.
 
-Travel is intentionally not part of 0.2.4.
+Travel arrived in 0.2.4, as timed flights you cannot act from.
 
 ## Stack
 
@@ -602,7 +608,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.4`.
+It should report version `0.2.5`.
 
 ### 4. Run the browser client
 

@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.2.4 (in progress)
+## 0.2.5 (in progress)
+
+## 0.2.4
 
 ### Changed
 - Coke now has a purity, and cutting is a trade instead of a printer. Stretching a pile made a unit of

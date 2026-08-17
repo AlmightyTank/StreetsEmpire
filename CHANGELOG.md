@@ -8,6 +8,18 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Added
+- Contracts: people in a town who want a set amount of something by a deadline and pay over the
+  counter for it. The game had exactly one buyer before this - the city itself, fixed price, any
+  amount, any hour - which is a price list rather than a market and made producing a routine.
+- The buyer is a real place on that town's map, and what a town asks for follows what it values, so
+  Las Vegas leans on coke and Detroit on weed without either ever ruling the other out.
+- Some coke buyers set a purity floor and pay extra for strength. Sometimes rather than always: a
+  floor on every order would make stretching pointless rather than the trade it is meant to be.
+- Every refusal is a real one, against the same stock the rest of the game moves - not enough held,
+  cut too thin, or the buyer is in another town - and an order is filled once and then gone.
+- Boards are topped up when somebody looks at a town, the way ground is seeded, so a town nobody
+  visits costs nothing and no timer can drift.
+
 - A town's risk now reaches the daily loop instead of only the road in. It used to decide whether a
   run was stopped at the door and nothing at all about living somewhere, so two players running
   identical operations in Detroit and New York stood in identical danger.

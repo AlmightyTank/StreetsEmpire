@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -1366,6 +1366,7 @@ function TradingPanel(ctx: PageContext) {
 function MarketPage(ctx: PageContext) {
   const { dashboard, busy, productionTurns, bankAmount, storeQty, sellQty, setProductionTurns, setBankAmount, setStoreQty, setSellQty, act } = ctx
   return <div className="market-page">
+    <ContractsPanel dashboard={dashboard} busy={busy} act={act} />
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
       <div className="inventory-grid">
@@ -3194,6 +3195,70 @@ function CrewCard({ name, count, desc, tone, cap, trend }: { name: string, count
     <strong>{number.format(count)}{cap !== undefined && <small> / {number.format(cap)}</small>}</strong>
     <p>{desc}{trend}</p>
   </div>
+}
+
+/**
+ * The people in town who want things.
+ *
+ * The game had one buyer before this - the city itself, fixed price, any amount, any hour - which is
+ * a price list rather than a market. An order has a shape: an amount, a deadline, sometimes a
+ * condition, which is what makes producing a decision rather than a routine.
+ */
+function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const [board, setBoard] = useState<ContractBoard | null>(null)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    try { setBoard(await api.contracts()); setError('') }
+    catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [dashboard.city, dashboard.weed, dashboard.coke, dashboard.weapons, dashboard.moonshine])
+
+  if (!board || board.contracts.length === 0) return null
+
+  const fill = async (id: number) => {
+    await act(() => api.fillContract(id))
+    await load()
+  }
+
+  return <section className="panel wide-panel">
+    <div className="panel-title"><h2>Wanted in {board.city}</h2><span>Buyers with a deadline</span></div>
+    <p>
+      These pay over the counter price, but they want a set amount by a set time, and some of them care
+      what it is cut with. Selling flat is always there; this is what makes it worth choosing what to make.
+    </p>
+    <div className="room-list">
+      {board.contracts.map(c => {
+        const hours = Math.floor(c.minutesRemaining / 60)
+        const left = hours >= 1 ? `${hours}h left` : `${c.minutesRemaining}m left`
+        return <div className={c.blockedReason ? 'room-row' : 'room-row ready'} key={c.id}>
+          <div className="room-copy">
+            <strong>{c.buyer}</strong>
+            <span>
+              Wants {number.format(c.quantity)} {c.good}
+              {c.minimumPurityPercent ? `, at least ${c.minimumPurityPercent}% pure` : ''}
+              {' '}at {money.format(c.pricePerUnit)} each, against {money.format(c.listPricePerUnit)} over the counter.
+            </span>
+            <small>
+              {money.format(c.payout)} the lot, {money.format(c.premiumOverFlat)} more than selling it flat - {left}
+              {c.blockedReason ? ` - ${c.blockedReason}` : ''}
+            </small>
+          </div>
+          <em>{number.format(c.held)}/{number.format(c.quantity)}</em>
+          <div className="territory-actions">
+            <button
+              className="primary compact"
+              disabled={busy || c.blockedReason !== null}
+              onClick={() => void fill(c.id)}
+            >
+              Deliver
+            </button>
+          </div>
+        </div>
+      })}
+    </div>
+    {error && <div className="error banner"><span>{error}</span></div>}
+  </section>
 }
 
 function InventoryCard({ name, count, note }: { name: string, count: number, note: string }) {

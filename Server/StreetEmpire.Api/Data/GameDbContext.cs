@@ -19,6 +19,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Territory> Territories => Set<Territory>();
     public DbSet<MarketListing> MarketListings => Set<MarketListing>();
     public DbSet<MuleRun> MuleRuns => Set<MuleRun>();
+    public DbSet<Contract> Contracts => Set<Contract>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +81,20 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasOne(x => x.Pimp)
                 .WithMany()
                 .HasForeignKey(x => x.PimpId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Contract>(entity =>
+        {
+            // Every read is "what is open in this town", which is exactly this index.
+            entity.HasIndex(x => new { x.City, x.FilledAtUtc, x.ExpiresAtUtc });
+            entity.Property(x => x.City).HasMaxLength(64);
+            entity.Property(x => x.Buyer).HasMaxLength(64);
+            entity.Property(x => x.Good).HasMaxLength(16);
+            // A filled contract outlives the empire that filled it, so the board can still say who did.
+            entity.HasOne(x => x.FilledBy)
+                .WithMany()
+                .HasForeignKey(x => x.FilledById)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 

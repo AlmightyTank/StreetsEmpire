@@ -1,0 +1,54 @@
+namespace StreetEmpire.Api.Models;
+
+/// <summary>
+/// Somebody in a town who wants a quantity of something by a deadline, and pays over the market for
+/// it.
+///
+/// The game had exactly one buyer before this: the city itself, at a fixed price, for any amount, at
+/// any hour. That is a price list rather than a market, and it made producing a routine rather than a
+/// decision - there was never a reason to make one thing over another, or to make it by Tuesday.
+///
+/// A contract is demand with a shape: an amount, a deadline, sometimes a condition. It is offered to
+/// the town rather than to a player, and the buyer is a real place on that town's map, so the people
+/// wanting things are the same places the player already fights over.
+/// </summary>
+public sealed class Contract
+{
+    public long Id { get; set; }
+
+    public string City { get; set; } = string.Empty;
+
+    /// <summary>A place on this town's map, so the buyer is somewhere the player already knows.</summary>
+    public string Buyer { get; set; } = string.Empty;
+
+    public string Good { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public long PricePerUnit { get; set; }
+
+    /// <summary>
+    /// What the town pays for this good ordinarily, frozen when the contract was posted. Kept so the
+    /// board can show what the premium actually is without recomputing a price that may since have
+    /// moved, and so a filled contract still explains itself afterwards.
+    /// </summary>
+    public long ListPricePerUnit { get; set; }
+
+    /// <summary>
+    /// A purity floor, for coke only. Null when the buyer does not care. This is what makes a stretched
+    /// pile a decision rather than free money: the cheap buyers take anything, the good ones do not.
+    /// </summary>
+    public int? MinimumPurityPercent { get; set; }
+
+    public DateTime PostedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAtUtc { get; set; }
+
+    /// <summary>Set when somebody fills it. A contract is filled once and then it is gone.</summary>
+    public Guid? FilledById { get; set; }
+    public Player? FilledBy { get; set; }
+    public DateTime? FilledAtUtc { get; set; }
+
+    public bool IsOpen(DateTime nowUtc) => FilledAtUtc is null && ExpiresAtUtc > nowUtc;
+
+    /// <summary>What the whole job pays, and what the same goods would fetch sold flat.</summary>
+    public long Payout => Quantity * PricePerUnit;
+    public long FlatValue => Quantity * ListPricePerUnit;
+}

@@ -408,6 +408,23 @@ public sealed record GuidanceResponse(
     int ObjectivesDone,
     int ObjectivesTotal);
 
+/// <summary>One order on a town's board, with why it cannot be filled if it cannot.</summary>
+public sealed record ContractResponse(
+    long Id,
+    string Buyer,
+    string Good,
+    int Quantity,
+    long PricePerUnit,
+    long ListPricePerUnit,
+    long Payout,
+    long PremiumOverFlat,
+    int? MinimumPurityPercent,
+    int MinutesRemaining,
+    int Held,
+    string? BlockedReason);
+
+public sealed record ContractBoardResponse(string City, IReadOnlyList<ContractResponse> Contracts);
+
 public sealed record HideoutResponse(
     string TierName,
     int Tier,

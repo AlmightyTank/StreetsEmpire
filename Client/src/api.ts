@@ -49,6 +49,22 @@ export type CrewReport = {
   hqPartyThugMoraleGain: number
 }
 
+export type Contract = {
+  id: number
+  buyer: string
+  good: string
+  quantity: number
+  pricePerUnit: number
+  listPricePerUnit: number
+  payout: number
+  premiumOverFlat: number
+  minimumPurityPercent?: number | null
+  minutesRemaining: number
+  held: number
+  blockedReason?: string | null
+}
+export type ContractBoard = { city: string, contracts: Contract[] }
+
 export type NextMove = { label: string, why: string, page: string, cost: number, urgent: boolean }
 export type Objective = { label: string, why: string, page: string, done: boolean }
 export type Guidance = {
@@ -685,6 +701,9 @@ export const api = {
   cutCoke: (turns: number) =>
     request<ActionResult>('/api/game/cut', { method: 'POST', body: JSON.stringify({ turns, product: 'coke' }) }),
   mules: () => request<MuleBoard>('/api/game/mules'),
+  contracts: () => request<ContractBoard>('/api/game/contracts'),
+  fillContract: (id: number) =>
+    request<ActionResult>(`/api/game/contracts/${id}/fill`, { method: 'POST' }),
   muleQuote: (city: string, good: string, hoes: number, cash: number) =>
     request<MuleQuote>('/api/game/mules/quote', { method: 'POST', body: JSON.stringify({ city, good, hoes, cash }) }),
   launchMule: (city: string, good: string, hoes: number, cash: number, pimpId: number) =>

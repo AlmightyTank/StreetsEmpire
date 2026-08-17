@@ -631,6 +631,8 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .room-row button { min-width: 148px; }
 .room-copy small { color: #c08a4a; font-size: .73rem; }
 .room-row.illegal { border-left: 3px solid #b4534a; }
+/* An order the player can actually fill right now. */
+.room-row.ready { border-left: 3px solid #4f7a5a; }
 
 /* Home board or the whole world. Two ladders, one panel. */
 .scope-toggle { display: flex; gap: 6px; margin-bottom: 10px; }

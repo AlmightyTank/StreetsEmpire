@@ -73,6 +73,7 @@ var tests = new (string Name, Action Test)[]
     ("the news names who started the feud", FeudsNameTheAggressor),
     ("every town has ground, a price and a name of its own", EveryCityIsRealAndDistinct),
     ("a watchful town notices the same operation sooner", CityRiskReachesTheDailyLoop),
+    ("a buyer with a deadline pays over the counter", ContractsAreDemandWithAShape),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
@@ -2179,6 +2180,71 @@ static void BotAttackProfilesScaleWithPersonality()
 /// about living there. Two players running identical operations in Detroit and New York were in
 /// identical danger, which made the choice of town a price list rather than a place.
 /// </summary>
+/// <summary>
+/// The game had one buyer before this: the city itself, fixed price, any amount, any hour. That is a
+/// price list rather than a market, and it made producing a routine. An order has a shape - an
+/// amount, a deadline, sometimes a condition - and every refusal has to be a real one.
+/// </summary>
+static void ContractsAreDemandWithAShape()
+{
+    var options = Resolve(new GameOptions());
+    var config = options.Contracts;
+
+    // A buyer always beats the counter, or there is no reason to hold stock for a deadline.
+    AssertTrue(config.MinPremiumPercent > 0, "an order pays over the counter price");
+    // ...but never so far over that nothing else is worth doing.
+    AssertTrue(config.MinPremiumPercent + config.PremiumSpreadPercent + config.PurityPremiumPercent < 100,
+        "and never so far over that the rest of the game stops mattering");
+
+    // A purity floor sometimes rather than always: on every order it would make stretching pointless
+    // rather than a trade, which is the whole thing purity exists to be.
+    AssertTrue(config.PurityConditionChance is > 0 and < 1, "some buyers care about strength, not all");
+    // And a town leans towards what it values without ever ruling the other product out.
+    AssertTrue(config.FavouredGoodPercent is >= 50 and < 100, "a town has a taste, not a single note");
+
+    var order = new Contract
+    {
+        City = "Las Vegas",
+        Buyer = "The Sands Room",
+        Good = "coke",
+        Quantity = 20,
+        PricePerUnit = 300,
+        ListPricePerUnit = 225,
+        MinimumPurityPercent = 60,
+        ExpiresAtUtc = Landing().AddHours(4)
+    };
+    AssertEqual(6_000L, order.Payout);
+    AssertEqual(1_500L, order.Payout - order.FlatValue);
+
+    // Open until it is filled or it runs out, and never both.
+    AssertTrue(order.IsOpen(Landing()), "an order stands until its deadline");
+    AssertTrue(!order.IsOpen(Landing().AddHours(5)), "and not past it");
+
+    var service = CreateContracts(options);
+    var seller = new Player { City = "Las Vegas", Coke = 50, CokePurity = 0.9, Cash = 0 };
+
+    // Every refusal is a real one, against the same stock the rest of the game moves.
+    AssertRuleError(() => service.Fill(order, new Player { City = "Las Vegas", Coke = 5 }, Landing()), "and you have 5");
+    AssertRuleError(() => service.Fill(order, new Player { City = "Las Vegas", Coke = 50, CokePurity = 0.3 }, Landing()),
+        "at least 60% pure");
+    AssertRuleError(() => service.Fill(order, new Player { City = "Detroit", Coke = 50, CokePurity = 0.9 }, Landing()),
+        "You have to be there");
+
+    var fill = service.Fill(order, seller, Landing());
+    AssertEqual(6_000L, seller.Cash);
+    AssertEqual(30, seller.Coke);
+    AssertEqual(1_500L, fill.Premium);
+    // Selling a share of a blend leaves the blend alone, exactly as selling flat does.
+    AssertEqual(0.9, seller.CokePurity);
+
+    // Filled once, and then it is gone rather than a repeatable source of money.
+    AssertTrue(!order.IsOpen(Landing()), "a filled order is closed");
+    AssertRuleError(() => service.Fill(order, seller, Landing()), "already gone");
+}
+
+static ContractService CreateContracts(GameOptions options)
+    => new(null!, Snapshot(options), new MinimumRandom());
+
 static void CityRiskReachesTheDailyLoop()
 {
     var options = Resolve(new GameOptions());

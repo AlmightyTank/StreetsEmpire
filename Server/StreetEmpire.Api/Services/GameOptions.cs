@@ -89,6 +89,7 @@ public sealed class GameOptions
     public MarketOptions Market { get; set; } = new();
     public CityMarketOptions CityMarkets { get; set; } = new();
     public MuleOptions Mules { get; set; } = new();
+    public ContractOptions Contracts { get; set; } = new();
 }
 
 /// <summary>
@@ -814,6 +815,49 @@ public sealed class WorkshopLevelOptions
 /// fewer turns, but it takes real time, it locks up crew who earn nothing while they are gone, and it
 /// is paid for in cash before anybody leaves. Neither is strictly better, which is the whole point.
 /// </summary>
+/// <summary>
+/// Buyers with a shape. The game had one buyer before this - the city itself, fixed price, any
+/// amount, any hour - which is a price list rather than a market.
+/// </summary>
+public sealed class ContractOptions
+{
+    /// <summary>How many stand open in a town at once. Enough to choose between, few enough to read.</summary>
+    public int OpenPerCity { get; set; } = 3;
+
+    public int MinQuantity { get; set; } = 15;
+    public int MaxQuantity { get; set; } = 60;
+
+    /// <summary>
+    /// What a buyer pays over the town's own price, as a percentage. It has to clear the effort of
+    /// holding stock for a deadline, and stay under what a good mule route makes, or contracts become
+    /// the only thing worth doing.
+    /// </summary>
+    public int MinPremiumPercent { get; set; } = 20;
+    public int PremiumSpreadPercent { get; set; } = 35;
+
+    /// <summary>
+    /// How often a coke buyer cares about strength, what they insist on, and what they pay extra for
+    /// it. Sometimes rather than always: a floor on every order would make stretching pointless rather
+    /// than a trade.
+    /// </summary>
+    public double PurityConditionChance { get; set; } = 0.4;
+    public int MinimumPurityFloorPercent { get; set; } = 60;
+    public int PurityPremiumPercent { get; set; } = 25;
+
+    /// <summary>
+    /// What gets asked for. Weapons and moonshine are the standing minority, and between weed and coke
+    /// a town leans towards whatever it values most without ever ruling the other out: asking only for
+    /// the dearer one made every town a one-note board.
+    /// </summary>
+    public int WeaponsPercent { get; set; } = 20;
+    public int MoonshinePercent { get; set; } = 10;
+    public int FavouredGoodPercent { get; set; } = 70;
+
+    /// <summary>How long an order stands. Long enough to go and make the goods, short enough to matter.</summary>
+    public int MinLifetimeHours { get; set; } = 4;
+    public int MaxLifetimeHours { get; set; } = 14;
+}
+
 public sealed class MuleOptions
 {
     /// <summary>

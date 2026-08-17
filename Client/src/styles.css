@@ -632,6 +632,25 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .room-copy small { color: #c08a4a; font-size: .73rem; }
 .room-row.illegal { border-left: 3px solid #b4534a; }
 
+/* Home board or the whole world. Two ladders, one panel. */
+.scope-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+.scope-toggle button {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #303532;
+  border-radius: 7px;
+  background: #101314;
+  color: #8d9793;
+  font-size: .8rem;
+}
+.scope-toggle button:hover:not(.on) { color: #d8d2c8; }
+.scope-toggle button.on {
+  border-color: #a98245;
+  background: linear-gradient(180deg, #1d1a15, #131110);
+  color: #f0c875;
+  font-weight: 600;
+}
+
 /* Suggested cut-downs, so nobody has to work out the number themselves. */
 .crew-trims { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 3px; font-size: .78rem; color: #7f8b87; }
 .trim-link {

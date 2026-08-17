@@ -167,6 +167,8 @@ export type Dashboard = {
   bankCash: number
   netWorth: number
   rank: number
+  cityRank: number
+  cityPlayers: number
   turns: number
   maxTurns: number
   maxActionTurns: number
@@ -654,7 +656,8 @@ export const api = {
     }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
-  leaderboard: () => request<LeaderboardEntry[]>('/api/game/leaderboard'),
+  leaderboard: (city?: string) => request<LeaderboardEntry[]>(
+    city ? `/api/game/leaderboard?city=${encodeURIComponent(city)}` : '/api/game/leaderboard'),
   targets: (query = '') => request<PlayerTarget[]>(`/api/game/targets${query ? `?query=${encodeURIComponent(query)}` : ''}`),
   playerProfile: (playerId: string) => request<PlayerProfile>(`/api/game/players/${encodeURIComponent(playerId)}/profile`),
   combatLogs: () => request<CombatLog[]>('/api/game/combat/logs'),

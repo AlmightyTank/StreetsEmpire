@@ -8,6 +8,14 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Added
+- Per-city leaderboards. Eight towns on one global board means most players never appear on it and
+  never will, so the town they chose is now the place their standing is actually legible. Standings
+  opens on your own city and toggles to everywhere, and the dashboard carries both ranks.
+- Both ranks come from the same definition of who outranks whom, narrowed to a town, so the two can
+  never disagree - and a city board reads 1..n for that town rather than showing global positions.
+- Nine more rivals, three in each new town. A city with nobody in it has an empty leaderboard and
+  nobody to fight, so putting a town on the map without names in it only looks like a choice at
+  sign-up. A test now fails if any town has fewer than three.
 - Three more towns - Las Vegas, Atlanta and Houston - bringing the map to eight, each with its own
   ground, prices, risk and distance rather than being reskins of the same place.
 - Houston takes coke off the water and is the second place it is cheap; Las Vegas is where it is spent,

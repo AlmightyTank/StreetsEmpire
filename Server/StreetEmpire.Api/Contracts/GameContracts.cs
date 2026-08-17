@@ -127,6 +127,9 @@ public sealed record DashboardResponse(
     long BankCash,
     long NetWorth,
     int Rank,
+    /// <summary>Standing among the players in your own town, and how many that is.</summary>
+    int CityRank,
+    int CityPlayers,
     int Turns,
     int MaxTurns,
     int MaxActionTurns,

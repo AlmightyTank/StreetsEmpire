@@ -78,6 +78,21 @@ internal static class BotSeeding
         new("ai_dollar_wren", "Dollar Wren", "Chicago", 6_500, 14_000, 18, 2, 17, 13, 130, 175, 17, 48, 16, 30, 82, 90),
         new("ai_queen_mercer", "Queen Mercer", "Miami", 18_000, 9_000, 60, 3, 30, 12, 240, 190, 16, 165, 58, 40, 95, 90),
         new("ai_brick_falcon", "Brick Falcon", "Detroit", 10_000, 12_000, 28, 5, 21, 20, 170, 260, 26, 70, 30, 30, 83, 97),
-        new("ai_halo_vice", "Halo Vice", "Los Angeles", 22_000, 3_000, 75, 2, 34, 9, 255, 135, 12, 205, 70, 45, 97, 86)
+        new("ai_halo_vice", "Halo Vice", "Los Angeles", 22_000, 3_000, 75, 2, 34, 9, 255, 135, 12, 205, 70, 45, 97, 86),
+
+        // Three to a town, every town. A city with no rivals is a city with an empty leaderboard and
+        // nobody to fight, so adding a town to the map without adding names to it only looks like a
+        // choice at sign-up.
+        new("ai_desert_lily", "Desert Lily", "Las Vegas", 21_000, 4_000, 65, 2, 31, 8, 235, 125, 11, 190, 64, 40, 94, 85),
+        new("ai_chip_calloway", "Chip Calloway", "Las Vegas", 9_500, 13_000, 22, 4, 18, 15, 145, 195, 19, 60, 22, 30, 81, 93),
+        new("ai_neon_royce", "Neon Royce", "Las Vegas", 14_000, 6_500, 42, 3, 26, 11, 195, 155, 14, 130, 46, 35, 90, 88),
+
+        new("ai_peach_dandridge", "Peach Dandridge", "Atlanta", 13_000, 7_500, 38, 3, 27, 10, 200, 145, 13, 125, 40, 35, 92, 87),
+        new("ai_bank_holloway", "Bank Holloway", "Atlanta", 5_000, 19_000, 14, 5, 19, 19, 155, 265, 25, 32, 11, 30, 79, 95),
+        new("ai_stax_pemberton", "Stax Pemberton", "Atlanta", 17_500, 5_500, 52, 2, 29, 9, 225, 140, 12, 155, 52, 40, 93, 86),
+
+        new("ai_gulf_marchetti", "Gulf Marchetti", "Houston", 19_000, 8_000, 58, 3, 30, 13, 230, 185, 16, 175, 56, 40, 94, 89),
+        new("ai_derrick_salas", "Derrick Salas", "Houston", 7_000, 16_000, 19, 5, 17, 21, 135, 270, 27, 38, 14, 30, 80, 96),
+        new("ai_bayou_kincaid", "Bayou Kincaid", "Houston", 11_500, 9_500, 33, 3, 23, 12, 175, 170, 15, 100, 34, 35, 88, 90)
     ];
 }

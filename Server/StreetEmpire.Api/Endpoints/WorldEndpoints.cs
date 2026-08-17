@@ -30,10 +30,22 @@ internal static class WorldEndpoints
         app.MapGet("/api/game/leaderboard", async (
             GameDbContext db,
             EconomyService economy,
+            IOptionsSnapshot<GameOptions> gameOptions,
+            string? city,
             CancellationToken ct) =>
         {
-            // Ordered and capped by the database: rank is the row's position in the global order.
+            // A town's own ladder. Eight cities on one global board means most players never appear on
+            // it and never will, so the town they chose is the one place their standing is legible.
+            var options = gameOptions.Value;
+            options.Territory.ApplyDefaultsWhereEmpty();
+            var scope = options.CityMarkets.ResolveCity(city);
+            if (city is not null && scope is null)
+                return Results.BadRequest(new { error = $"Pick one of: {string.Join(", ", options.Territory.Cities())}." });
+
+            // Ordered and capped by the database: rank is the row's position within whatever is asked
+            // for, so a city board reads 1..n for that town rather than showing global positions.
             var top = await db.Players.AsNoTracking()
+                .Where(x => scope == null || x.City == scope)
                 .OrderByDescending(economy.NetWorthExpression)
                 .ThenBy(x => x.CreatedAtUtc)
                 .Take(50)

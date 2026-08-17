@@ -42,6 +42,7 @@ function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null)
   const [leaders, setLeaders] = useState<LeaderboardEntry[]>([])
+  const [cityLeaders, setCityLeaders] = useState<LeaderboardEntry[]>([])
   const [targets, setTargets] = useState<PlayerTarget[]>([])
   const [selectedTarget, setSelectedTarget] = useState<PlayerProfile | null>(null)
   const [combatLogs, setCombatLogs] = useState<CombatLog[]>([])
@@ -79,10 +80,13 @@ function App() {
   const refresh = async () => {
     try {
       const [d, l, news, targetList, combatHistory, missions] = await Promise.all([api.dashboard(), api.leaderboard(), api.worldNews(), api.targets(targetQuery), api.combatLogs(), api.combatMissions()])
+      // The town's own ladder, fetched alongside the global one so switching between them is instant.
+      const cityLeaders = await api.leaderboard(d.city)
       const admin = d.isAdmin ? await api.adminOverview() : null
       setDashboard(d)
       setAdminOverview(admin)
       setLeaders(l)
+      setCityLeaders(cityLeaders)
       setWorldNews(news)
       setTargets(targetList)
       setCombatLogs(combatHistory)
@@ -264,6 +268,7 @@ function App() {
     dashboard,
     adminOverview,
     leaders,
+    cityLeaders,
     targets,
     selectedTarget,
     worldNews,
@@ -369,6 +374,7 @@ type PageContext = {
   dashboard: Dashboard
   adminOverview: AdminOverview | null
   leaders: LeaderboardEntry[]
+  cityLeaders: LeaderboardEntry[]
   targets: PlayerTarget[]
   selectedTarget: PlayerProfile | null
   worldNews: WorldNews
@@ -484,8 +490,7 @@ function OverviewPage(ctx: PageContext) {
       </section>
 
       <section className="panel">
-        <div className="panel-title"><h2>Top Players</h2><span>Net worth</span></div>
-        <Leaderboard leaders={leaders.slice(0, 8)} currentPlayer={dashboard.name} />
+        <StandingsPanel dashboard={dashboard} leaders={leaders} cityLeaders={ctx.cityLeaders} limit={8} />
       </section>
     </div>
 
@@ -1537,8 +1542,7 @@ function ReconPage(ctx: PageContext) {
     <CombatMissionsPanel ctx={ctx} />
     <CombatHistoryPanel entries={ctx.combatLogs} currentPlayerId={ctx.dashboard.playerId} />
     <section className="panel">
-      <div className="panel-title"><h2>Top Players</h2><span>Net worth</span></div>
-      <Leaderboard leaders={ctx.leaders} currentPlayer={ctx.dashboard.name} />
+      <StandingsPanel dashboard={ctx.dashboard} leaders={ctx.leaders} cityLeaders={ctx.cityLeaders} limit={50} />
     </section>
   </div>
 }
@@ -2992,6 +2996,40 @@ function MiniInventory({ dashboard }: { dashboard: Dashboard }) {
     <StatusRow label="Weed" value={number.format(dashboard.weed)} />
     <StatusRow label="Coke" value={number.format(dashboard.coke)} />
   </div>
+}
+
+/**
+ * Two ladders behind one toggle, home first.
+ *
+ * Eight towns on a single global board means most players never appear on it and never will, so the
+ * town they chose is the only place their standing is legible. The global board still exists, because
+ * being seventieth in the world is worth knowing once you are first at home.
+ */
+function StandingsPanel({ dashboard, leaders, cityLeaders, limit }: {
+  dashboard: Dashboard
+  leaders: LeaderboardEntry[]
+  cityLeaders: LeaderboardEntry[]
+  limit: number
+}) {
+  const [scope, setScope] = useState<'city' | 'world'>('city')
+  const rows = scope === 'city' ? cityLeaders : leaders
+  const standing = scope === 'city'
+    ? `#${dashboard.cityRank} of ${number.format(dashboard.cityPlayers)} in ${dashboard.city}`
+    : `#${dashboard.rank} in the world`
+
+  return <>
+    <div className="panel-title">
+      <h2>Standings</h2>
+      <span>{standing}</span>
+    </div>
+    <div className="scope-toggle">
+      <button type="button" className={scope === 'city' ? 'on' : ''} onClick={() => setScope('city')}>{dashboard.city}</button>
+      <button type="button" className={scope === 'world' ? 'on' : ''} onClick={() => setScope('world')}>Everywhere</button>
+    </div>
+    {rows.length === 0
+      ? <p className="coming">Nobody else has set up in {dashboard.city} yet. That makes you first.</p>
+      : <Leaderboard leaders={rows.slice(0, limit)} currentPlayer={dashboard.name} />}
+  </>
 }
 
 function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], currentPlayer: string }) {

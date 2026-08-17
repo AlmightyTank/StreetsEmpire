@@ -74,6 +74,12 @@ internal static class GameEndpoints
                 .ToListAsync(ct);
             var rank = await db.Players.AsNoTracking()
                 .CountAsync(economy.RanksAbove(netWorth, player.CreatedAtUtc), ct) + 1;
+            // The same count narrowed to one town, so both ranks come from one definition of who
+            // outranks whom rather than from two that could disagree.
+            var cityRank = await db.Players.AsNoTracking()
+                .Where(x => x.City == player.City)
+                .CountAsync(economy.RanksAbove(netWorth, player.CreatedAtUtc), ct) + 1;
+            var cityPlayers = await db.Players.AsNoTracking().CountAsync(x => x.City == player.City, ct);
             // Baseline is the morale going into the player's most recent action, so the arrow reports
             // the direction morale is moving now: the last action's own effect plus whatever has
             // recovered since. Measured from the oldest row in the window instead, the arrow kept
@@ -132,6 +138,8 @@ internal static class GameEndpoints
                 player.BankCash,
                 netWorth,
                 rank,
+                cityRank,
+                cityPlayers,
                 player.Turns,
                 opts.MaxTurns,
                 opts.MaxActionTurns,

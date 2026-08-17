@@ -3,6 +3,7 @@ using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
 using StreetEmpire.Api.Services;
 using static StreetEmpire.Api.Mapping.ResponseMappers;
+using static StreetEmpire.Api.Support.BotSeeding;
 
 var tests = new (string Name, Action Test)[]
 {
@@ -2199,6 +2200,13 @@ static void EveryCityIsRealAndDistinct()
     // Ground names are the seeding key, so a duplicate would silently swallow a second town's piece.
     var duplicated = territory.Map.GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
     AssertTrue(duplicated.Count == 0, $"every piece of ground is named once: {string.Join(", ", duplicated)}");
+
+    // Every town needs rivals in it. One with none has an empty leaderboard and nobody to fight, so
+    // putting it on the map only looks like a choice at sign-up.
+    var templates = BotTemplates();
+    foreach (var city in cities)
+        AssertTrue(templates.Count(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase)) >= 3,
+            $"{city} has rivals living in it");
 
     // The map only pays if towns actually differ, so somewhere has to buy cheap and somewhere dear.
     foreach (var good in new[] { "weed", "coke" })

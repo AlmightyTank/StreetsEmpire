@@ -417,6 +417,8 @@ public sealed record HideoutResponse(
     int MaxOfflineProductionHours,
     int IntelligenceLevel,
     int ConcurrentRunCap,
+    int LookoutLevel,
+    int BustRiskReductionPercent,
     double Heat,
     string HeatLabel,
     string HeatDetail,
@@ -426,6 +428,7 @@ public sealed record HideoutResponse(
     HideoutRoomUpgradeResponse? WeedLabUpgrade,
     HideoutRoomUpgradeResponse? CokeLabUpgrade,
     HideoutRoomUpgradeResponse? IntelligenceUpgrade,
+    HideoutRoomUpgradeResponse? LookoutUpgrade,
     HideoutTierUpgradeResponse? NextTier,
     HideoutBuildResponse? Building,
     IReadOnlyList<HideoutStationResponse> Stations);

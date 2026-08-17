@@ -30,6 +30,19 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 - The strip reports the rate you actually earn at, not the base one. Paying a boosted rate while
   displaying the flat one would make the countdown quietly wrong for every new player.
 
+### The hole in the first tier
+
+- Measured rather than assumed, the ladder turned out to be denser than it looked: eight things a Trap
+  House can buy between $10,000 and $75,000. The problem was one gap after it, $75,000 to $150,000,
+  which is a session and a half of earning with nothing to save for.
+- The **lookout** fills it at $100,000. Someone on the street watching for the law, cutting the odds of
+  a raid landing by a quarter. It never removes the risk, or holding would be free.
+- It is also the only new verb in the tier after the workshop. Everything else a first-tier player can
+  buy is a bigger version of something already owned, and the lookout is the first answer to heat that
+  is not selling everything and waiting.
+- A test walks the whole first-tier ladder and fails if any two rungs sit more than two sessions of
+  earning apart, so a later re-pricing cannot quietly reopen the hole.
+
 ### Neither panel is stored
 
 - Neither is stored. A lab built is a lab on the ladder, and a sale in the log is a sale: asking the

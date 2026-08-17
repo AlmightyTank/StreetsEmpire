@@ -677,6 +677,17 @@ function HideoutPage(ctx: PageContext) {
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
         />
         <RoomRow
+          name="Lookout"
+          level={hideout.lookoutLevel}
+          detail={hideout.lookoutLevel === 0
+            ? 'Not built. Someone on the street watching for the law, so a raid is less likely to land.'
+            : `Cuts the odds of a raid by ${hideout.bustRiskReductionPercent}%`}
+          upgrade={hideout.lookoutUpgrade}
+          funds={dashboard.cash + dashboard.bankCash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('lookout'))}
+        />
+        <RoomRow
           name="Intelligence Centre"
           level={hideout.intelligenceLevel}
           detail={hideout.intelligenceLevel === 0

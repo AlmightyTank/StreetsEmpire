@@ -88,6 +88,9 @@ export type Hideout = {
   intelligenceUpgrade?: HideoutRoomUpgrade | null
   intelligenceLevel: number
   concurrentRunCap: number
+  lookoutUpgrade?: HideoutRoomUpgrade | null
+  lookoutLevel: number
+  bustRiskReductionPercent: number
   nextTier?: HideoutTierUpgrade | null
   building?: HideoutBuild | null
   stations: HideoutStation[]
@@ -132,7 +135,7 @@ export type HideoutBuild = {
   secondsRemaining: number
 }
 
-export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'still' | 'mix' | 'intelligence'
+export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'still' | 'mix' | 'intelligence' | 'lookout'
 
 export type Pimp = {
   id: number

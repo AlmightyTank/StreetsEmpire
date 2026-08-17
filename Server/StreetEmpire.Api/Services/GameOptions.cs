@@ -246,6 +246,7 @@ public sealed class HideoutOptions
     public List<WorkshopLevelOptions> Still { get; set; } = [];
     public List<WorkshopLevelOptions> Mix { get; set; } = [];
     public List<IntelligenceLevelOptions> Intelligence { get; set; } = [];
+    public List<LookoutLevelOptions> Lookout { get; set; } = [];
 
     /// <summary>
     /// How much notice each contraband good draws per unit held. Weighted rather than flat because
@@ -375,6 +376,18 @@ public sealed class HideoutOptions
             [
                 new WorkshopLevelOptions { Level = 1, MinTier = 2, WeaponsPerTurn = 4, CostPerWeapon = 6, UpgradeCost = 25_000 },
                 new WorkshopLevelOptions { Level = 2, MinTier = 2, WeaponsPerTurn = 7, CostPerWeapon = 5, UpgradeCost = 80_000 }
+            ];
+
+        // The lookout fills the one hole in the first tier's ladder. Everything else a Trap House can
+        // buy lands between ten and seventy-five thousand, and then there is nothing until a hundred
+        // and fifty: a session and a half of earning with nothing to want. It is also the only new
+        // verb in the tier after the workshop, and the only answer to heat besides selling down.
+        if (Lookout.Count == 0)
+            Lookout =
+            [
+                new LookoutLevelOptions { Level = 1, MinTier = 1, BustChanceReductionPercent = 25, UpgradeCost = 100_000 },
+                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, UpgradeCost = 260_000 },
+                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, UpgradeCost = 700_000 }
             ];
 
         // The intelligence centre buys capacity, not output: how many runs can be out at once, and how
@@ -814,6 +827,21 @@ public sealed class MuleOptions
 
     /// <summary>Runs allowed out with no intelligence centre. Zero: the room is what unlocks them.</summary>
     public int BaseConcurrentRuns { get; set; } = 0;
+}
+
+/// <summary>
+/// A level of the lookout. Buys warning rather than output: someone watching the street means the
+/// stash is moved and the door is shut before anyone reaches it.
+/// </summary>
+public sealed class LookoutLevelOptions
+{
+    public int Level { get; set; }
+    public int MinTier { get; set; } = 1;
+
+    /// <summary>How much of an hour's raid chance the warning takes off. Never all of it.</summary>
+    public int BustChanceReductionPercent { get; set; }
+
+    public long UpgradeCost { get; set; }
 }
 
 public sealed class IntelligenceLevelOptions

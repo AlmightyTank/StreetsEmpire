@@ -40,6 +40,12 @@ public sealed class Hideout
     public int MixLevel { get; set; }
 
     /// <summary>
+    /// Eyes on the street. The only answer a first-tier player has to heat besides selling everything
+    /// and waiting: it does not stop them noticing you, it buys the warning that keeps the door shut.
+    /// </summary>
+    public int LookoutLevel { get; set; }
+
+    /// <summary>
     /// Runs the routes. Unlike the other stations it makes nothing: it decides how many mule runs can
     /// be out at once, and how well briefed they are when they go. A room that buys capacity rather
     /// than output, which is what stops mule running from being free once you can afford one pimp.

@@ -15,6 +15,13 @@
   the normal rate by a quarter of a million net worth. A flat twelve an hour meant a new player who
   spent their bank waited most of a day to play again, at exactly the point they had least reason to
   come back. An established empire is untouched.
+- A Lookout room, and the end of the first tier's dead zone. Everything a Trap House could buy landed
+  between $10,000 and $75,000, and then nothing until $150,000: a session and a half of earning with
+  nothing to want. The lookout sits at $100,000 and cuts the odds of a raid landing by a quarter.
+- It is also the only new verb in the tier after the workshop, and the first answer to heat that is
+  not selling everything and waiting. It never removes the risk, or holding contraband would be free.
+- A test now walks the tier's whole ladder and fails if any two rungs are more than two sessions of
+  earning apart, so a future re-pricing cannot quietly reopen the hole.
 - The status strip reports the rate a player actually earns at rather than the base one, and the
   advice panel says plainly that the help exists and will fade.
 - Both guidance panels are read from the world rather than stored, so a rung cannot drift out of step with the empire

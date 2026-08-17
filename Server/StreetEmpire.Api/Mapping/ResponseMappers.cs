@@ -237,6 +237,8 @@ internal static class ResponseMappers
             options.Hideout.MaxOfflineProductionHours,
             player.Hideout?.IntelligenceLevel ?? 0,
             hideouts.ConcurrentRunCap(player.Hideout),
+            player.Hideout?.LookoutLevel ?? 0,
+            (int)Math.Round(hideouts.BustRiskReduction(player.Hideout) * 100),
             Math.Round(heat, 1),
             HeatLabel(heat, options),
             HeatDetail(heat, options),
@@ -246,6 +248,7 @@ internal static class ResponseMappers
             ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),
             ToRoomUpgrade(hideouts, player.Hideout, "cokelab"),
             ToRoomUpgrade(hideouts, player.Hideout, "intelligence"),
+            ToRoomUpgrade(hideouts, player.Hideout, "lookout"),
             nextTier is null
                 ? null
                 : new HideoutTierUpgradeResponse(

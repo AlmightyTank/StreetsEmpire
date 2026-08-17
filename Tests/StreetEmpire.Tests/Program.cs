@@ -45,6 +45,7 @@ var tests = new (string Name, Action Test)[]
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
     ("turns come back faster while you are small", EarlyGameTurnsTaper),
+    ("the first tier always has something worth saving for", TheFirstTierHasNoDeadZone),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1350,6 +1351,63 @@ static void ContrabandGoodsDoTheirJob()
 /// meant a new player who spent their bank waited most of a day to play again, at exactly the point
 /// they had the least reason to come back. The help tapers with net worth and ends entirely.
 /// </summary>
+/// <summary>
+/// A tier with a hole in its ladder is a tier where earning stops meaning anything. Everything a Trap
+/// House could buy landed between ten and seventy-five thousand, and then nothing until a hundred and
+/// fifty: a session and a half with nothing to want. The lookout fills it, and this keeps it filled.
+/// </summary>
+static void TheFirstTierHasNoDeadZone()
+{
+    var options = Resolve(new GameOptions());
+    var config = options.Hideout;
+
+    var ladder = new List<long>();
+    foreach (var levels in new IEnumerable<(int Level, int MinTier, long Cost)>[]
+             {
+                 config.Storage.Select(x => (x.Level, x.MinTier, x.UpgradeCost)),
+                 config.Safe.Select(x => (x.Level, x.MinTier, x.UpgradeCost)),
+                 config.WeedLab.Select(x => (x.Level, x.MinTier, x.UpgradeCost)),
+                 config.CokeLab.Select(x => (x.Level, x.MinTier, x.UpgradeCost)),
+                 config.Workshop.Select(x => (x.Level, x.MinTier, x.UpgradeCost)),
+                 config.Lookout.Select(x => (x.Level, x.MinTier, x.UpgradeCost))
+             })
+        ladder.AddRange(levels.Where(x => x.MinTier <= 1 && x.Cost > 0).Select(x => x.Cost));
+
+    var warehouse = config.Tiers.Single(x => x.Level == 2).UpgradeCost;
+    ladder.Add(warehouse);
+    ladder.Sort();
+
+    // Roughly what a full bank of turns earns, so a gap wider than this is a session with nothing
+    // to aim at. Two of them is the hole this exists to stop coming back.
+    const long sessionEarnings = 50_000;
+    for (var i = 1; i < ladder.Count; i++)
+        AssertTrue(ladder[i] - ladder[i - 1] <= sessionEarnings * 2,
+            $"nothing to save for between {ladder[i - 1]:C0} and {ladder[i]:C0}");
+
+    AssertTrue(ladder[0] <= 15_000, "and something is reachable in the first session");
+
+    // The lookout is a real answer to heat rather than a bigger number, and it is reachable at the
+    // first tier: it is the only thing in the tier that is not more of something already owned.
+    var hideouts = CreateHideouts(options);
+    AssertEqual(0.0, hideouts.BustRiskReduction(null));
+    var watched = new Hideout { Tier = 1, LookoutLevel = 1 };
+    AssertTrue(hideouts.BustRiskReduction(watched) > 0, "a lookout lowers the odds");
+    AssertTrue(hideouts.BustRiskReduction(watched) < 1, "but never to nothing, or holding would be free");
+
+    // And it actually reaches the roll rather than only reading well in the options.
+    var exposed = new Player { Coke = 400, Cash = 50_000, Hideout = new Hideout { Tier = 1, StorageLevel = 6 } };
+    var guarded = new Player { Coke = 400, Cash = 50_000, Hideout = watched };
+    var risky = Resolve(new GameOptions());
+    risky.Hideout.HeatDecayPerHour = 0;
+    var service = CreateHideouts(risky);
+    // A roll that lands just under the unguarded chance but over the guarded one: the same night
+    // takes the exposed player and misses the one with somebody on the corner.
+    var unguardedChance = (400 * risky.Hideout.CokeHeatPerUnit - risky.Hideout.HeatBustFloor) * risky.Hideout.BustChancePerHeat;
+    var roll = unguardedChance * 0.9;
+    AssertTrue(service.RollBust(exposed, 1, new FixedRandom(roll)).Happened, "an unwatched stash is taken");
+    AssertTrue(!service.RollBust(guarded, 1, new FixedRandom(roll)).Happened, "a watched one is not");
+}
+
 static void EarlyGameTurnsTaper()
 {
     var options = Resolve(new GameOptions());
@@ -3071,6 +3129,13 @@ sealed class AlwaysRandom : IGameRandom
 {
     public int NextInclusive(int min, int max) => min;
     public double NextDouble() => 0;
+}
+
+/// <summary>Rolls exactly what it is told, for testing a threshold from both sides.</summary>
+sealed class FixedRandom(double value) : IGameRandom
+{
+    public int NextInclusive(int min, int max) => min;
+    public double NextDouble() => value;
 }
 
 sealed class MinimumRandom : IGameRandom

@@ -71,6 +71,16 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 "crew", _options.Morale.HqRestCashPerCrew * (player.Pimps + player.Hoes + player.Thugs));
         }
 
+        if (heat > _options.Hideout.HeatBustFloor
+            && (player.Hideout?.LookoutLevel ?? 0) == 0
+            && hideouts.NextUpgrade(player.Hideout, "lookout") is { TierLocked: false } watch
+            && funds >= watch.Cost)
+        {
+            Add(15, "Post a lookout",
+                "Eyes on the street cut the odds of a raid landing. The only answer to heat that is not selling everything and waiting.",
+                "hideout", watch.Cost);
+        }
+
         if (heat > _options.Hideout.HeatBustFloor)
         {
             Add(14, "Sell down, or lie low",
@@ -181,7 +191,8 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         [
             ("storage", "storage room", "A deeper room is what lets a lab run all night without spilling."),
             ("safe", "safe", "A bigger safe is more cash a raid cannot reach."),
-            ("cokelab", "coke lab", "Coke is worth several times what weed is, and the lab makes it while you are away.")
+            ("cokelab", "coke lab", "Coke is worth several times what weed is, and the lab makes it while you are away."),
+            ("lookout", "lookout", "Someone watching the street cuts the odds of a raid, which is otherwise only answered by holding nothing.")
         ];
 
         foreach (var (room, label, why) in rooms)

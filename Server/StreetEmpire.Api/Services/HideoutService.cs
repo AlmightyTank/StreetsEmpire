@@ -108,6 +108,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             return ContrabandBust.None;
 
         var chance = Math.Clamp((heat - config.HeatBustFloor) * config.BustChancePerHeat, 0, Math.Clamp(config.MaxBustChancePerHour, 0, 1));
+        // Someone watching the street. It never takes the risk away, or holding would be free.
+        chance *= 1 - BustRiskReduction(player.Hideout);
         var caught = false;
         for (var hour = 0; hour < hours && !caught; hour++)
             caught = random.NextDouble() < chance;
@@ -156,6 +158,18 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     }
 
     public WorkshopLevelOptions? WorkshopFor(Hideout? hideout) => StationFor(hideout, "workshop");
+
+    /// <summary>
+    /// The share of an hour's raid chance a lookout takes off. Capped below one on purpose: a room
+    /// that made a stash safe would end the decision heat exists to create.
+    /// </summary>
+    public double BustRiskReduction(Hideout? hideout)
+    {
+        var level = hideout?.LookoutLevel ?? 0;
+        if (level <= 0) return 0;
+        var percent = Level(_options.Hideout.Lookout, level, x => x.Level)?.BustChanceReductionPercent ?? 0;
+        return Math.Clamp(percent / 100.0, 0, 0.85);
+    }
 
     /// <summary>
     /// How many mule runs may be in the air at once. Zero without the room, which is what makes the
@@ -350,8 +364,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 level => hideout.MixLevel = level, "mix house"),
             "intelligence" => ApplyUpgrade(player, hideout, config.Intelligence, hideout.IntelligenceLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.IntelligenceLevel = level, "intelligence centre"),
+            "lookout" => ApplyUpgrade(player, hideout, config.Lookout, hideout.LookoutLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
+                level => hideout.LookoutLevel = level, "lookout"),
             _ => throw new GameRuleException(
-                "Room must be 'tier', 'storage', 'safe', 'weedlab', 'cokelab', 'workshop', 'still', 'mix', or 'intelligence'.")
+                "Room must be 'tier', 'storage', 'safe', 'weedlab', 'cokelab', 'workshop', 'still', 'mix', 'intelligence', or 'lookout'.")
         };
     }
 
@@ -412,6 +428,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             "still" => Next(config.Still, hideout?.StillLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "mix" => Next(config.Mix, hideout?.MixLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "intelligence" => Next(config.Intelligence, hideout?.IntelligenceLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "lookout" => Next(config.Lookout, hideout?.LookoutLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             _ => null
         };
     }

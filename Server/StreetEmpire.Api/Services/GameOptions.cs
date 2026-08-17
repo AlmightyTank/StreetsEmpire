@@ -496,7 +496,13 @@ public sealed class CityMarketOptions
                 new CityMarketProfileOptions { City = "New York", Weed = "Medium", Coke = "High", Risk = "High", TravelTurns = 4 },
                 new CityMarketProfileOptions { City = "Detroit", Weed = "Cheap", Coke = "Medium", Risk = "Low", TravelTurns = 2 },
                 new CityMarketProfileOptions { City = "Los Angeles", Weed = "Medium", Coke = "Cheap", Risk = "Medium", TravelTurns = 6 },
-                new CityMarketProfileOptions { City = "Chicago", Weed = "High", Coke = "Medium", Risk = "High", TravelTurns = 3 }
+                new CityMarketProfileOptions { City = "Chicago", Weed = "High", Coke = "Medium", Risk = "High", TravelTurns = 3 },
+                // Vegas is where product is spent rather than made: tourist money, and eyes everywhere.
+                new CityMarketProfileOptions { City = "Las Vegas", Weed = "Medium", Coke = "Expensive", Risk = "High", TravelTurns = 5 },
+                // Atlanta is a distribution town, so weed is cheap and it is close to everything.
+                new CityMarketProfileOptions { City = "Atlanta", Weed = "Cheap", Coke = "Medium", Risk = "Medium", TravelTurns = 3 },
+                // Houston takes it off the water, which makes it the second place coke is cheap.
+                new CityMarketProfileOptions { City = "Houston", Weed = "Medium", Coke = "Cheap", Risk = "Medium", TravelTurns = 4 }
             ];
 
         foreach (var city in cities)
@@ -661,7 +667,31 @@ public sealed class TerritoryOptions
                 new TerritorySeedOptions { Name = "Biscayne Docks", City = "Miami", Type = "dock" },
                 new TerritorySeedOptions { Name = "Ocean Drive Room", City = "Miami", Type = "club" },
                 new TerritorySeedOptions { Name = "Star Island Room", City = "Miami", Type = "club" },
-                new TerritorySeedOptions { Name = "Port Stash", City = "Miami", Type = "stash" }
+                new TerritorySeedOptions { Name = "Port Stash", City = "Miami", Type = "stash" },
+
+                // Vegas leans on its rooms, but still carries one of each type. A player picks their
+                // town at sign-up knowing nothing, so a town missing an effect entirely would punish a
+                // blind choice forever: the character is in the mix, never in leaving a gap.
+                new TerritorySeedOptions { Name = "Fremont Corner", City = "Las Vegas", Type = "corner" },
+                new TerritorySeedOptions { Name = "Naked City Blocks", City = "Las Vegas", Type = "corner" },
+                new TerritorySeedOptions { Name = "Union Pacific Yard", City = "Las Vegas", Type = "dock" },
+                new TerritorySeedOptions { Name = "The Sands Room", City = "Las Vegas", Type = "club" },
+                new TerritorySeedOptions { Name = "Glitter Gulch Room", City = "Las Vegas", Type = "club" },
+                new TerritorySeedOptions { Name = "Desert Stash", City = "Las Vegas", Type = "stash" },
+
+                new TerritorySeedOptions { Name = "Bankhead Corner", City = "Atlanta", Type = "corner" },
+                new TerritorySeedOptions { Name = "Bluff Blocks", City = "Atlanta", Type = "corner" },
+                new TerritorySeedOptions { Name = "Inman Yard", City = "Atlanta", Type = "dock" },
+                new TerritorySeedOptions { Name = "Hartsfield Freight", City = "Atlanta", Type = "dock" },
+                new TerritorySeedOptions { Name = "Peachtree Room", City = "Atlanta", Type = "club" },
+                new TerritorySeedOptions { Name = "Westside Stash", City = "Atlanta", Type = "stash" },
+
+                new TerritorySeedOptions { Name = "Third Ward Corner", City = "Houston", Type = "corner" },
+                new TerritorySeedOptions { Name = "Sunnyside Blocks", City = "Houston", Type = "corner" },
+                new TerritorySeedOptions { Name = "Ship Channel Docks", City = "Houston", Type = "dock" },
+                new TerritorySeedOptions { Name = "Galveston Wharf", City = "Houston", Type = "dock" },
+                new TerritorySeedOptions { Name = "Montrose Room", City = "Houston", Type = "club" },
+                new TerritorySeedOptions { Name = "Acres Home Stash", City = "Houston", Type = "stash" }
             ];
     }
 }

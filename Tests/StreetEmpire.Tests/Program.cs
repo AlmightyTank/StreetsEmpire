@@ -70,6 +70,7 @@ var tests = new (string Name, Action Test)[]
     ("bot mule appetite follows what each rival is for", BotMuleProfilesScaleWithPersonality),
     ("rivals remember who robbed them", BotsHoldGrudges),
     ("the news names who started the feud", FeudsNameTheAggressor),
+    ("every town has ground, a price and a name of its own", EveryCityIsRealAndDistinct),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
@@ -2163,6 +2164,53 @@ static void BotAttackProfilesScaleWithPersonality()
 /// the one kicking the door in about half the time. Ids group the two directions; they say nothing
 /// about who started it.
 /// </summary>
+/// <summary>
+/// A town is only a town if it has ground to fight over and prices of its own. Both are easy to get
+/// silently wrong: the city list is derived from the map, so a town with no ground simply is not
+/// there, and the market fills any gap with a bland Medium/Medium profile rather than complaining.
+/// </summary>
+static void EveryCityIsRealAndDistinct()
+{
+    var options = Resolve(new GameOptions());
+    var territory = options.Territory;
+    var cities = territory.Cities();
+
+    string[] expected = ["Atlanta", "Chicago", "Detroit", "Houston", "Las Vegas", "Los Angeles", "Miami", "New York"];
+    AssertEqual(expected.Length, cities.Count);
+    foreach (var city in expected)
+        AssertTrue(cities.Contains(city), $"{city} is a town you can set up in");
+
+    foreach (var city in cities)
+    {
+        // Ground, or the territory page is an empty room. That every town carries all four types is
+        // checked elsewhere, and matters because a town is chosen at sign-up knowing nothing: one
+        // missing an effect would punish a blind choice for as long as the player stayed there.
+        var ground = territory.Map.Count(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase));
+        AssertTrue(ground >= 4, $"{city} has {ground} piece(s) of ground to fight over");
+
+        // A profile of its own. Without one the market quietly invents Medium/Medium, and a town that
+        // prices everything the same as everywhere else is a town with no reason to travel to it.
+        var profile = options.CityMarkets.Profiles
+            .SingleOrDefault(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase));
+        AssertTrue(profile is not null, $"{city} has its own market profile");
+        AssertTrue(profile!.TravelTurns is > 0, $"{city} is a real distance away");
+    }
+
+    // Ground names are the seeding key, so a duplicate would silently swallow a second town's piece.
+    var duplicated = territory.Map.GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+    AssertTrue(duplicated.Count == 0, $"every piece of ground is named once: {string.Join(", ", duplicated)}");
+
+    // The map only pays if towns actually differ, so somewhere has to buy cheap and somewhere dear.
+    foreach (var good in new[] { "weed", "coke" })
+    {
+        var prices = cities.Select(c => options.CityMarkets.ProductPrice(c, good, 100)).Distinct().ToList();
+        AssertTrue(prices.Count >= 3, $"{good} is priced at least three different ways across the map");
+    }
+    AssertTrue(cities.Any(c => options.CityMarkets.ProductPrice(c, "coke", 100) < 100)
+               && cities.Any(c => options.CityMarkets.ProductPrice(c, "coke", 100) > 100),
+        "there is somewhere to buy coke cheap and somewhere to sell it dear");
+}
+
 static void FeudsNameTheAggressor()
 {
     // Deliberately the id that sorts second, since sorting is exactly what the bug relied on.

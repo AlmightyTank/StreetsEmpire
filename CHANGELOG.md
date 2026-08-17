@@ -8,6 +8,18 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Added
+- Three more towns - Las Vegas, Atlanta and Houston - bringing the map to eight, each with its own
+  ground, prices, risk and distance rather than being reskins of the same place.
+- Houston takes coke off the water and is the second place it is cheap; Las Vegas is where it is spent,
+  pricing it dearest alongside Miami; Atlanta is a distribution town, close to everything with cheap
+  weed. That widens the best coke route on the map to $112 a unit.
+- Every town still carries all four kinds of ground. A player picks their town at sign-up knowing
+  nothing about any of them, so a town missing an effect entirely would punish a blind choice for as
+  long as they stayed there: the character is in the mix, never in leaving a gap.
+- New ground seeds itself into an existing world by name the first time the territory page is opened,
+  so the three towns arrive without a migration.
+
+### Added
 - AI rivals hold grudges. They already fought each other, but picked whoever was richest every time
   and forgot being robbed the moment it happened, so nothing between two of them ever became a story
   and the world read as weather rather than as people.

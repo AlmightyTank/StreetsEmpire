@@ -224,6 +224,21 @@ forward.
   rather than at each endpoint: there are two dozen ways to act and only one set of places where
   acting happens, and a guard the endpoints have to remember is one that will eventually be forgotten.
 
+### Rivals with a history
+
+- They already fought each other. What they lacked was memory: a rival picked whoever was richest
+  every single time and forgot being robbed the moment it happened, so nothing between two of them
+  ever turned into a story and the world read as weather rather than as people.
+- A grudge is read from the fights that actually happened, not kept as a score, so it is exactly as
+  old as the last punch and there is nothing to prune. It also never makes a rival reckless: the win
+  margin and the anti-farm rules still decide what they will take on, and a grudge only settles which
+  of the fights they were already willing to have they actually pick.
+- How hard it lands is character. The Hard Charger weights a score at nearly the target's own worth
+  and carries it for three days; the Banker treats a robbery as a cost of doing business and has
+  forgotten by the morning.
+- World news carries the loudest quarrel, mutual ahead of one-sided, so it is something you can watch
+  rather than something happening out of sight.
+
 ### How the rivals play
 
 - A rival used to take one action every twenty-odd minutes, evenly, forever. Nothing about that is

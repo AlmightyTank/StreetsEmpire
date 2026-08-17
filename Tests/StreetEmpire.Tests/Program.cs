@@ -68,6 +68,8 @@ var tests = new (string Name, Action Test)[]
     ("bot targeting picks the richest beatable target", BotTargetingPicksRichestBeatable),
     ("bot attack profiles scale with personality", BotAttackProfilesScaleWithPersonality),
     ("bot mule appetite follows what each rival is for", BotMuleProfilesScaleWithPersonality),
+    ("rivals remember who robbed them", BotsHoldGrudges),
+    ("the news names who started the feud", FeudsNameTheAggressor),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
@@ -2150,6 +2152,89 @@ static void BotAttackProfilesScaleWithPersonality()
 /// The runner moves goods for a living; the banker wants the money where it can see it; the hard
 /// charger wants a fight rather than a wait.
 /// </summary>
+/// <summary>
+/// A rival that forgets an attack the moment it lands goes back to picking whoever is richest, so
+/// nothing between two of them ever becomes a story and the world reads as weather rather than
+/// people. A grudge decides between fights they were already willing to take - never more than that.
+/// </summary>
+/// <summary>
+/// The first version grouped a pair by comparing their ids and then read the aggressor off that
+/// ordering, so a one-sided feud credited whichever name happened to sort first: it called the victim
+/// the one kicking the door in about half the time. Ids group the two directions; they say nothing
+/// about who started it.
+/// </summary>
+static void FeudsNameTheAggressor()
+{
+    // Deliberately the id that sorts second, since sorting is exactly what the bug relied on.
+    var bully = new Guid("ffffffff-0000-0000-0000-000000000000");
+    var victim = new Guid("00000000-0000-0000-0000-000000000001");
+    var oneSided = Enumerable.Repeat(new FeudRound(bully, victim, "Grit Baron", "Velvet Bishop"), 3).ToList();
+
+    var feud = WorldFeuds.Pick(oneSided)!;
+    AssertEqual("Grit Baron", feud.Aggressor);
+    AssertEqual("Velvet Bishop", feud.Victim);
+    AssertTrue(!feud.BothWays, "one name doing all the hitting is not a mutual quarrel");
+    AssertTrue(WorldFeuds.Describe(feud).StartsWith("Grit Baron has been through Velvet Bishop"),
+        $"the news names the right aggressor: {WorldFeuds.Describe(feud)}");
+
+    // Blows in both directions are one quarrel, counted together and reported as mutual.
+    var mutual = oneSided.Concat([new FeudRound(victim, bully, "Velvet Bishop", "Grit Baron")]).ToList();
+    var traded = WorldFeuds.Pick(mutual)!;
+    AssertEqual(4, traded.Rounds);
+    AssertTrue(traded.BothWays, "hits in both directions are a mutual quarrel");
+    AssertTrue(WorldFeuds.Describe(traded).Contains("both have been on the receiving end"), "and it reads that way");
+
+    // A mutual quarrel outranks a longer one-sided beating, because it is the better story.
+    var third = new Guid("88888888-0000-0000-0000-000000000000");
+    var mixed = mutual
+        .Concat(Enumerable.Repeat(new FeudRound(third, victim, "Switch Lane", "Velvet Bishop"), 9))
+        .ToList();
+    AssertTrue(WorldFeuds.Pick(mixed)!.BothWays, "a feud beats a beating");
+
+    // One or two scraps are not a feud, or every fight in the world becomes a headline.
+    AssertTrue(WorldFeuds.Pick(oneSided.Take(2).ToList()) is null, "two raids is not yet a story");
+    AssertTrue(WorldFeuds.Pick([]) is null, "and a quiet week has no headline at all");
+}
+
+static void BotsHoldGrudges()
+{
+    var antiFarm = new AntiFarmOptions { MinDefenderNetWorth = 0, MaxNetWorthRatio = 100, MaxIncomingAttacks = 2 };
+    var rich = new BotTarget(Guid.NewGuid(), "Fat Wallet", 500_000, 10, false, 0);
+    var enemy = new BotTarget(Guid.NewGuid(), "The One Who Robbed Me", 300_000, 10, false, 0);
+    var field = new[] { rich, enemy };
+
+    // With no memory, the fattest target wins every time. That was the whole behaviour before.
+    AssertEqual(rich.Name, BotTargeting.Choose(field, 400_000, 100, antiFarm, 1)!.Name);
+
+    // A rival who holds grudges goes after the one who robbed them instead, even though it pays less.
+    var grudges = new Dictionary<Guid, int> { [enemy.PlayerId] = 2 };
+    AssertEqual(enemy.Name, BotTargeting.Choose(field, 400_000, 100, antiFarm, 1, grudges, 0.9)!.Name);
+
+    // One who does not still takes the better deal, which is what keeps the personalities distinct.
+    AssertEqual(rich.Name, BotTargeting.Choose(field, 400_000, 100, antiFarm, 1, grudges, 0.1)!.Name);
+
+    // A grudge never makes them reckless: a target they cannot beat is still refused, however personal.
+    var untouchable = new BotTarget(Guid.NewGuid(), "Too Strong", 900_000, 5_000, false, 0);
+    var hopeless = new Dictionary<Guid, int> { [untouchable.PlayerId] = 9 };
+    AssertTrue(BotTargeting.Choose([untouchable], 400_000, 100, antiFarm, 1, hopeless, 0.9) is null,
+        "a score to settle is not a reason to lose");
+    // Nor does it reach past a shield or through the incoming cap.
+    var shielded = enemy with { IsProtected = true };
+    AssertEqual(rich.Name, BotTargeting.Choose([rich, shielded], 400_000, 100, antiFarm, 1, grudges, 0.9)!.Name);
+
+    // Who carries it follows from character: the hard charger takes it personally, the banker does not.
+    var charger = BotGrudgeProfile.For(BotBrainFocus.MoraleNeglecter);
+    var banker = BotGrudgeProfile.For(BotBrainFocus.Banker);
+    AssertTrue(charger.Weight > banker.Weight, "hard chargers take it personally");
+    AssertTrue(charger.MemoryHours > banker.MemoryHours, "and hold it for longer");
+    foreach (var focus in Enum.GetValues<BotBrainFocus>())
+    {
+        var profile = BotGrudgeProfile.For(focus);
+        AssertTrue(profile.Weight is > 0 and <= 1, $"{focus} carries a usable grudge");
+        AssertTrue(profile.MemoryHours > 0, $"{focus} remembers for some length of time");
+    }
+}
+
 static void BotMuleProfilesScaleWithPersonality()
 {
     var runner = BotMuleProfile.For(BotBrainFocus.ProductRunner);

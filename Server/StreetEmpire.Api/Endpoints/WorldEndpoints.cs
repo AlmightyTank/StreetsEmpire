@@ -146,6 +146,21 @@ internal static class WorldEndpoints
                 landlord.Pieces == 1 ? $"{landlord.Name} holds ground" : $"{landlord.Name} runs {landlord.Pieces:N0} pieces",
                 $"{landlord.Thugs:N0} thug(s) standing on it across {landlord.City}."));
 
+        // A feud: two names that keep turning up on opposite sides of the same fight. This is the one
+        // headline that is about the world rather than about a single best-of, and the whole point of
+        // rivals holding grudges - a story running whether or not the player is in it.
+        var quarrels = await db.CombatLogs.AsNoTracking()
+            .Where(x => x.CreatedAtUtc >= sinceUtc && x.Outcome != "Pending" && x.Outcome != "Canceled")
+            .Select(x => new FeudRound(x.AttackerId, x.DefenderId, x.Attacker.Name, x.Defender.Name))
+            .ToListAsync(ct);
+        // The one headline that is about the world rather than a single best-of, and the whole point
+        // of rivals holding grudges: a story running whether or not the player is in it.
+        if (WorldFeuds.Pick(quarrels) is { } feud)
+            headlines.Add(new WorldHeadlineResponse(
+                "feud",
+                $"{feud.Aggressor} and {feud.Victim} are at each other",
+                WorldFeuds.Describe(feud)));
+
         var arrival = await db.Players.AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)
             .Select(x => new { x.Name, x.City, x.CreatedAtUtc })

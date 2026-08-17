@@ -571,7 +571,17 @@ public sealed class BotSimulationService(
         var weapons = Math.Min(thugs, committed.AvailableWeapons);
         var attackPower = AttackPower(CombatMissionService.CommandingPimps, thugs, weapons, (bot.HoeHappiness + bot.ThugHappiness) / 2);
 
-        var target = BotTargeting.Choose(targets, botNetWorth, attackPower, antiFarm, profile.WinMargin);
+        // Who has hit this rival lately. Read from the fights that actually happened rather than kept
+        // as a score, so a grudge is exactly as old as the last punch and nothing has to be pruned.
+        var grudge = BotGrudgeProfile.For(brain.Focus);
+        var since = nowUtc.AddHours(-Math.Max(1, grudge.MemoryHours));
+        var grudges = await db.CombatLogs.AsNoTracking()
+            .Where(x => x.DefenderId == bot.Id && x.CreatedAtUtc >= since && x.Outcome == "Victory")
+            .GroupBy(x => x.AttackerId)
+            .Select(g => new { Attacker = g.Key, Hits = g.Count() })
+            .ToDictionaryAsync(x => x.Attacker, x => x.Hits, ct);
+
+        var target = BotTargeting.Choose(targets, botNetWorth, attackPower, antiFarm, profile.WinMargin, grudges, grudge.Weight);
         if (target is null)
             return 0;
 

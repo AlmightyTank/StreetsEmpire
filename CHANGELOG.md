@@ -3,6 +3,18 @@
 ## 0.2.5 (in progress)
 
 ### Added
+- AI rivals hold grudges. They already fought each other, but picked whoever was richest every time
+  and forgot being robbed the moment it happened, so nothing between two of them ever became a story
+  and the world read as weather rather than as people.
+- A grudge never makes a rival reckless. The win margin and the anti-farm rules still decide what they
+  will take on: it only settles which of the fights they were already willing to have they pick.
+- How hard it is taken follows from character. A Hard Charger weights a score at nearly its own worth
+  and remembers for three days; a Banker treats a robbery as a cost of doing business and has
+  forgotten by the morning.
+- Grudges are read from the fights that actually happened rather than kept as a score, so one is
+  exactly as old as the last punch and nothing has to be pruned or migrated.
+- A feud headline in world news, one-sided or mutual, so a quarrel between two rivals is something the
+  player can watch rather than something happening out of sight.
 - Next Moves is advice now rather than a status readout. It ranks what is actually worth doing against
   the state you are in, names what each move costs, and says why it is worth it. The old panel showed
   the same four rows on day one and day one hundred and never once named a move.

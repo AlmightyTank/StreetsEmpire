@@ -178,6 +178,32 @@ internal sealed record BotMuleProfile(
         };
 }
 
+/// <summary>
+/// How hard a rival takes being robbed.
+///
+/// Without this every rival forgets an attack the moment it lands and goes back to picking whoever is
+/// richest, which is why nothing between two of them ever turned into a story. A grudge never makes
+/// them reckless - the win margin and the anti-farm rules still decide what they will take on - it
+/// only settles which of the fights they were already willing to have they actually pick.
+/// </summary>
+internal sealed record BotGrudgeProfile(double Weight, int MemoryHours)
+{
+    internal static BotGrudgeProfile For(BotBrainFocus focus)
+        => focus switch
+        {
+            // Takes it personally and does not let go.
+            BotBrainFocus.MoraleNeglecter => new(0.9, 72),
+            BotBrainFocus.BigSpender => new(0.6, 48),
+            BotBrainFocus.CrewBuilder => new(0.45, 48),
+            BotBrainFocus.BalancedOperator => new(0.4, 36),
+            BotBrainFocus.ProductRunner => new(0.25, 24),
+            BotBrainFocus.ResourceManager => new(0.2, 24),
+            // Sees a robbery as a cost of doing business, and goes on taking the best deal going.
+            BotBrainFocus.Banker => new(0.1, 12),
+            _ => new(0.4, 36)
+        };
+}
+
 internal enum BotBrainFocus
 {
     BalancedOperator,

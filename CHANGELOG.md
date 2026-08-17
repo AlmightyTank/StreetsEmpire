@@ -15,6 +15,10 @@
   the normal rate by a quarter of a million net worth. A flat twelve an hour meant a new player who
   spent their bank waited most of a day to play again, at exactly the point they had least reason to
   come back. An established empire is untouched.
+- The storage supply warning offers the answer that costs nothing as well as the one that costs money.
+  Outgrowing a room has two fixes - buy a bigger one, or work a shorter shift - and it only ever named
+  the first. It now names the longest shift the room actually supplies, which for eleven hoes in a
+  level 1 room is eighteen turns rather than twenty.
 - A Lookout room, and the end of the first tier's dead zone. Everything a Trap House could buy landed
   between $10,000 and $75,000, and then nothing until $150,000: a session and a half of earning with
   nothing to want. The lookout sits at $100,000 and cuts the odds of a raid landing by a quarter.

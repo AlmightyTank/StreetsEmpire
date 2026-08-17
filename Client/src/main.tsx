@@ -3126,6 +3126,10 @@ function StorageSupplyNotice({ dashboard }: { dashboard: Dashboard }) {
       {report.storageLevelToSupplyCrew
         ? ` A level ${report.storageLevelToSupplyCrew} storage room would cover them.`
         : ' No storage room in the game is big enough for a crew this size.'}
+      {/* The answer that costs nothing: a crew too big for a full shift is usually fine on a shorter one. */}
+      {report.suppliedStreetActionTurns > 0
+        ? ` Or work ${number.format(report.suppliedStreetActionTurns)} turns at a time instead of ${number.format(dashboard.maxActionTurns)}, which this room does supply.`
+        : ' Until then even a single turn runs short.'}
     </span>
   </div>
 }

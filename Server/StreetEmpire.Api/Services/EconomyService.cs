@@ -143,6 +143,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var storageLevelToSupplyCrew = player.Hoes <= hoesStorageCanSupply && player.Thugs <= thugsStorageCanSupply
             ? null
             : hideout.StorageLevelThatHolds(condomsNeeded, beerNeeded);
+        // Whichever of the two runs out first decides how long a shift can actually be supplied.
+        var suppliedTurns = Math.Clamp(
+            Math.Min(
+                SuppliedTurns(capacity.MaxCondoms, player.Hoes, morale.TurnsPerCondom, _options.MaxActionTurns),
+                SuppliedTurns(capacity.MaxBeer, player.Thugs, morale.TurnsPerBeer, _options.MaxActionTurns)),
+            0,
+            _options.MaxActionTurns);
 
         return new CrewReportResponse(
             managementCapacity,
@@ -154,6 +161,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             hoesStorageCanSupply,
             thugsStorageCanSupply,
             storageLevelToSupplyCrew,
+            suppliedTurns,
             condomCost,
             beerCost,
             condomCost + beerCost,
@@ -1117,6 +1125,15 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         => shortage <= 0 || needed <= 0 ? 0 : penaltyPerTurn * turns * ((double)shortage / needed);
 
     /// <summary>How much crew a given stock of upkeep carries through an action of this length.</summary>
+    /// <summary>
+    /// The longest shift this much supply covers this much crew for. A crew with nobody in it is not
+    /// limited by supply at all, so it gets the full length rather than nothing.
+    /// </summary>
+    private static int SuppliedTurns(int supplyHeld, int crewCount, double turnsPerSupply, int maxTurns)
+        => crewCount <= 0 || turnsPerSupply <= 0
+            ? maxTurns
+            : (int)Math.Floor(supplyHeld * turnsPerSupply / crewCount);
+
     private static int SupportableCrew(int supplyHeld, int turns, double turnsPerSupply)
         => turns <= 0 ? 0 : (int)Math.Floor(supplyHeld * turnsPerSupply / turns);
 

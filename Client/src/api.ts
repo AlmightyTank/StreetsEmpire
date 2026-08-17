@@ -26,6 +26,7 @@ export type CrewReport = {
   hoesStorageCanSupply: number
   thugsStorageCanSupply: number
   storageLevelToSupplyCrew?: number | null
+  suppliedStreetActionTurns: number
   condomCostForMaxStreetAction: number
   beerCostForMaxStreetAction: number
   supplyCostForMaxStreetAction: number

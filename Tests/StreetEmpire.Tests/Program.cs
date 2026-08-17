@@ -46,6 +46,7 @@ var tests = new (string Name, Action Test)[]
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
     ("turns come back faster while you are small", EarlyGameTurnsTaper),
     ("the first tier always has something worth saving for", TheFirstTierHasNoDeadZone),
+    ("a crew too big for a full shift is told the shorter one", ShortShiftsAreASupplyAnswer),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -1356,6 +1357,42 @@ static void ContrabandGoodsDoTheirJob()
 /// House could buy landed between ten and seventy-five thousand, and then nothing until a hundred and
 /// fifty: a session and a half with nothing to want. The lookout fills it, and this keeps it filled.
 /// </summary>
+/// <summary>
+/// Outgrowing a storage room has two answers, and the warning only ever gave one. Buying a bigger room
+/// costs money the player may not have; working a shorter shift costs nothing and is available now.
+/// </summary>
+static void ShortShiftsAreASupplyAnswer()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+
+    // Eleven hoes need nineteen condoms for a full shift, and a level one room holds seventeen. There
+    // is nothing to buy: the room is the limit. But it does cover a shorter shift.
+    var stretched = new Player { Hoes = 11, Thugs = 1, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    var report = economy.GetCrewReport(stretched);
+    AssertEqual(10, report.HoesStorageCanSupply);
+    AssertEqual(2, report.StorageLevelToSupplyCrew);
+    AssertTrue(report.SuppliedStreetActionTurns > 0 && report.SuppliedStreetActionTurns < options.MaxActionTurns,
+        $"a shorter shift is supplied ({report.SuppliedStreetActionTurns} turns)");
+
+    // And the number is true: a shift that length needs no more than the room holds.
+    var capacity = CreateHideouts(options).CapacityFor(stretched.Hideout);
+    var needed = (int)Math.Ceiling(stretched.Hoes * report.SuppliedStreetActionTurns / options.Morale.TurnsPerCondom);
+    AssertTrue(needed <= capacity.MaxCondoms,
+        $"{report.SuppliedStreetActionTurns} turns needs {needed} condoms and the room holds {capacity.MaxCondoms}");
+    // One turn longer would not be, or the answer is needlessly short.
+    var oneMore = (int)Math.Ceiling(stretched.Hoes * (report.SuppliedStreetActionTurns + 1) / options.Morale.TurnsPerCondom);
+    AssertTrue(oneMore > capacity.MaxCondoms, "and it is the longest shift that fits, not merely a safe one");
+
+    // A crew the room comfortably covers is not limited at all.
+    var comfortable = new Player { Hoes = 3, Thugs = 1, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    AssertEqual(options.MaxActionTurns, economy.GetCrewReport(comfortable).SuppliedStreetActionTurns);
+
+    // Neither is an empire with nobody in it, which would otherwise divide by a crew of zero.
+    var empty = new Player { Hoes = 0, Thugs = 0, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    AssertEqual(options.MaxActionTurns, economy.GetCrewReport(empty).SuppliedStreetActionTurns);
+}
+
 static void TheFirstTierHasNoDeadZone()
 {
     var options = Resolve(new GameOptions());

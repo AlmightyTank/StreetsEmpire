@@ -205,6 +205,12 @@ public sealed record CrewReportResponse(
     int ThugsStorageCanSupply,
     /// <summary>The storage level that would cover the crew, or null when the room already does.</summary>
     int? StorageLevelToSupplyCrew,
+    /// <summary>
+    /// The longest shift a completely full room can supply this crew through. The second answer to
+    /// outgrowing a storage room, and the one that costs nothing: a crew too big for a full-length
+    /// action is usually fine on a shorter one.
+    /// </summary>
+    int SuppliedStreetActionTurns,
     long CondomCostForMaxStreetAction,
     long BeerCostForMaxStreetAction,
     long SupplyCostForMaxStreetAction,

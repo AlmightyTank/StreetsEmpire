@@ -587,6 +587,12 @@ function CrewPage(ctx: PageContext) {
           onHire={() => void act(() => api.hireCrew('hoes', crewQty.hoes))}
           onFire={() => void act(() => api.fireCrew('hoes', crewQty.hoes))}
           note={`${dashboard.hoeHappiness.toFixed(0)}% morale, ${dashboard.crewReport.minHoeMoraleToHire.toFixed(0)}% needed to hire`}
+          firePenalty={dashboard.crewReport.fireHoeMoralePenalty}
+          maxFirePenalty={dashboard.crewReport.maxFireMoralePenalty}
+          trims={[
+            { label: `what your pimps manage (${number.format(managementCapacity)})`, cut: dashboard.hoes - managementCapacity },
+            { label: `what your store supplies (${number.format(dashboard.crewReport.hoesStorageCanSupply)})`, cut: dashboard.hoes - dashboard.crewReport.hoesStorageCanSupply }
+          ]}
         />
         <CrewManageRow
           label="Thugs"
@@ -601,6 +607,11 @@ function CrewPage(ctx: PageContext) {
           onHire={() => void act(() => api.hireCrew('thugs', crewQty.thugs))}
           onFire={() => void act(() => api.fireCrew('thugs', crewQty.thugs))}
           note={`${dashboard.crewReport.armedThugs}/${dashboard.thugs} armed`}
+          firePenalty={dashboard.crewReport.fireThugMoralePenalty}
+          maxFirePenalty={dashboard.crewReport.maxFireMoralePenalty}
+          trims={[
+            { label: `what your store supplies (${number.format(dashboard.crewReport.thugsStorageCanSupply)})`, cut: dashboard.thugs - dashboard.crewReport.thugsStorageCanSupply }
+          ]}
         />
       </div>
     </section>
@@ -3146,7 +3157,7 @@ function InventoryCard({ name, count, note }: { name: string, count: number, not
   return <div className="inventory-card"><span>{name}</span><strong>{number.format(count)}</strong><small>{note}</small></div>
 }
 
-function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire = true, canFire, onQuantity, onHire, onFire, note }: {
+function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire = true, canFire, onQuantity, onHire, onFire, note, trims = [], firePenalty = 0, maxFirePenalty = 0 }: {
   label: string
   owned: number
   quantity: number
@@ -3159,10 +3170,36 @@ function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire =
   onHire: () => void
   onFire: () => void
   note: string
+  /** Sizes worth cutting down to, so the player is not left doing the arithmetic themselves. */
+  trims?: { label: string, cut: number }[]
+  firePenalty?: number
+  maxFirePenalty?: number
 }) {
   const totalCost = quantity * hireCost
+  // What letting this many go actually costs. The button used to give no hint until after it landed,
+  // and firing a dozen is a severe hit.
+  const moraleCost = Math.min(maxFirePenalty || Infinity, quantity * firePenalty)
+  const worthTrimming = trims.filter(t => t.cut > 0 && t.cut <= owned)
+
   return <div className="crew-manage-row">
-    <div><strong>{label}</strong><span>{number.format(owned)} owned | {money.format(hireCost)} each | {note}</span></div>
+    <div>
+      <strong>{label}</strong>
+      <span>{number.format(owned)} owned | {money.format(hireCost)} each | {note}</span>
+      {worthTrimming.length > 0 && <span className="crew-trims">
+        {worthTrimming.map(trim => <button
+          type="button"
+          key={trim.label}
+          className="trim-link"
+          disabled={busy}
+          onClick={() => onQuantity(trim.cut)}
+        >
+          let {number.format(trim.cut)} go to {trim.label}
+        </button>)}
+      </span>}
+      {firePenalty > 0 && quantity > 0 && <span className="crew-trims">
+        Firing {number.format(quantity)} costs {moraleCost.toFixed(0)}% morale{moraleCost >= (maxFirePenalty || Infinity) ? ', the most a single cut can' : ''}.
+      </span>}
+    </div>
     <input aria-label={`${label} quantity`} type="number" min={1} max={1000} value={quantity} onChange={e => onQuantity(Number(e.target.value))} />
     <button className="primary compact" disabled={busy || quantity < 1 || !canHire || cash < totalCost} onClick={onHire}>Hire</button>
     <button className="secondary compact" disabled={busy || quantity < 1 || !canFire} onClick={onFire}>Fire</button>

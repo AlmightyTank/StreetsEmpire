@@ -211,6 +211,13 @@ public sealed record CrewReportResponse(
     /// action is usually fine on a shorter one.
     /// </summary>
     int SuppliedStreetActionTurns,
+    /// <summary>
+    /// What letting crew go costs in morale, per head and in total. Quoted because firing fifteen hoes
+    /// is a severe hit that the button gave no hint of until after it landed.
+    /// </summary>
+    double FireHoeMoralePenalty,
+    double FireThugMoralePenalty,
+    double MaxFireMoralePenalty,
     long CondomCostForMaxStreetAction,
     long BeerCostForMaxStreetAction,
     long SupplyCostForMaxStreetAction,

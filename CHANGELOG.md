@@ -15,6 +15,13 @@
   the normal rate by a quarter of a million net worth. A flat twelve an hour meant a new player who
   spent their bank waited most of a day to play again, at exactly the point they had least reason to
   come back. An established empire is untouched.
+- Crew rows suggest what to cut down to instead of leaving the player to work it out. Firing in bulk
+  already worked - the quantity box takes up to a thousand - but nothing told you the number, so the
+  hoes row now offers "let 14 go to what your pimps manage" and "let 24 go to what your store
+  supplies", filling in the box rather than firing on the spot.
+- And it quotes the morale cost before the button is pressed, including when a cut is large enough to
+  hit the ceiling. Firing fourteen hoes costs 21% morale, which the button previously gave no hint of
+  until after it had landed.
 - The storage supply warning offers the answer that costs nothing as well as the one that costs money.
   Outgrowing a room has two fixes - buy a bigger one, or work a shorter shift - and it only ever named
   the first. It now names the longest shift the room actually supplies, which for eleven hoes in a

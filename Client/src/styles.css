@@ -632,6 +632,19 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .room-copy small { color: #c08a4a; font-size: .73rem; }
 .room-row.illegal { border-left: 3px solid #b4534a; }
 
+/* Suggested cut-downs, so nobody has to work out the number themselves. */
+.crew-trims { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 3px; font-size: .78rem; color: #7f8b87; }
+.trim-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #d9ae62;
+  font-size: .78rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.trim-link:hover:not(:disabled) { color: #f0c875; }
+
 /* Advice carries a price, so the cost sits with the label rather than buried in the reason. */
 .flow-cost { float: right; color: #d9ae62; font-weight: 600; font-size: .82rem; }
 

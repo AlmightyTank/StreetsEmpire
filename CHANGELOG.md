@@ -2,6 +2,11 @@
 
 ## 0.2.5 (in progress)
 
+### Fixed
+- The raw action breakdown is admin-only. Every action popped a table of internal keys and unrounded
+  figures at every player - "Item Key / condoms", "Unit Price / $10" - which is a debugging aid and
+  reads like one. Players keep the summary sentence, which is written for them.
+
 ### Added
 - AI rivals hold grudges. They already fought each other, but picked whoever was richest every time
   and forgot being robbed the moment it happened, so nothing between two of them ever became a story

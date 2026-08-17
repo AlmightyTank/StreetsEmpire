@@ -345,7 +345,12 @@ function App() {
       <section className="alerts">
         {error && <DismissibleMessage className="error banner" onClose={() => setError('')}>{error}</DismissibleMessage>}
         {notice && <DismissibleMessage className="notice banner" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
-        {lastBreakdown && <div className="breakdown banner notification">
+        {/*
+          The raw action breakdown: internal keys, unrounded figures, every field the endpoint
+          happened to return. It is a debugging aid and reads like one, so only an admin sees it.
+          Players get the summary sentence above, which is written for them.
+        */}
+        {lastBreakdown && dashboard.isAdmin && <div className="breakdown banner notification">
           <div className="breakdown-items">
             {Object.entries(lastBreakdown).filter(([, value]) => value !== 0 && value !== null).slice(0, 18).map(([key, value]) =>
               <span key={key}><strong>{formatBreakdownKey(key)}</strong>{formatBreakdownValue(key, value)}</span>

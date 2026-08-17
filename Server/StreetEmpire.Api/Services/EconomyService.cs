@@ -100,17 +100,24 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         new("weapons", "Weapons", "Security", _options.WeaponPrice, "Permanent security equipment. One weapon covers one thug.")
     ];
 
-    public long CalculateNetWorth(Player player)
+    public long CalculateNetWorth(Player player) => NetWorthOf(player, _options);
+
+    /// <summary>
+    /// Net worth without needing the service, for the places that measure how established a player is
+    /// rather than rank them. Delegated to rather than copied, so there are still only two forms of
+    /// this sum - this one and the expression tree - and the test that compares them still guards it.
+    /// </summary>
+    public static long NetWorthOf(Player player, GameOptions options)
         => player.Cash
            + player.BankCash
-           + (long)player.Pimps * _options.PimpNetWorth
-           + (long)player.Hoes * _options.HoeNetWorth
-           + (long)player.Thugs * _options.ThugNetWorth
-           + (long)player.Condoms * _options.CondomPrice
-           + (long)player.Beer * _options.BeerPrice
-           + (long)player.Weapons * _options.WeaponPrice
-           + (long)player.Weed * _options.WeedNetWorth
-           + (long)(player.Coke * _options.CokeNetWorth * _options.PurityMultiplier(player.CokePurity));
+           + (long)player.Pimps * options.PimpNetWorth
+           + (long)player.Hoes * options.HoeNetWorth
+           + (long)player.Thugs * options.ThugNetWorth
+           + (long)player.Condoms * options.CondomPrice
+           + (long)player.Beer * options.BeerPrice
+           + (long)player.Weapons * options.WeaponPrice
+           + (long)player.Weed * options.WeedNetWorth
+           + (long)(player.Coke * options.CokeNetWorth * options.PurityMultiplier(player.CokePurity));
 
     public CrewReportResponse GetCrewReport(Player player)
     {

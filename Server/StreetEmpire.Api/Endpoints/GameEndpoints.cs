@@ -135,7 +135,9 @@ internal static class GameEndpoints
                 player.Turns,
                 opts.MaxTurns,
                 opts.MaxActionTurns,
-                opts.TurnsPerTick,
+                // The rate this player actually earns at, not the base one. Reporting the base while
+                // paying the boosted rate would make the strip quietly wrong for every new player.
+                opts.TurnsPerTickFor(player),
                 opts.TurnTickMinutes,
                 clock.SecondsUntilNextTick(player, now),
                 player.Pimps,

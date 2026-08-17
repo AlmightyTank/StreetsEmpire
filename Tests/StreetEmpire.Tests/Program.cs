@@ -44,6 +44,7 @@ var tests = new (string Name, Action Test)[]
     ("stepping on coke turns cut into more of it", CuttingStretchesWhatYouAlreadyHold),
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
+    ("turns come back faster while you are small", EarlyGameTurnsTaper),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -206,7 +207,10 @@ static void TurnRefreshCatchesUp()
     {
         TurnsPerTick = 2,
         TurnTickMinutes = 10,
-        MaxTurns = 20
+        MaxTurns = 20,
+        // Held flat: this is about catching up whole ticks and stopping at the cap, and the
+        // early-game taper is covered on its own elsewhere.
+        EarlyGameTurnBoost = 1
     });
     var player = new Player
     {
@@ -1341,6 +1345,45 @@ static void ContrabandGoodsDoTheirJob()
 /// the best purchase available to them unmentioned. Guidance ranks what is actually worth doing, and
 /// the opening ladder is read from the world rather than stored, so it cannot drift out of step.
 /// </summary>
+/// <summary>
+/// A flat turn rate is a wall that falls hardest on the people least able to take it: twelve an hour
+/// meant a new player who spent their bank waited most of a day to play again, at exactly the point
+/// they had the least reason to come back. The help tapers with net worth and ends entirely.
+/// </summary>
+static void EarlyGameTurnsTaper()
+{
+    var options = Resolve(new GameOptions());
+
+    // A new player earns several times the base rate.
+    var rookie = Rookie(options);
+    var opening = options.TurnsPerTickFor(rookie);
+    AssertTrue(opening > options.TurnsPerTick, $"a new player is helped along ({opening} against {options.TurnsPerTick})");
+
+    // It fades as they grow rather than switching off at a line.
+    var halfway = Rookie(options);
+    halfway.BankCash = options.EarlyGameNetWorthCeiling / 2;
+    var middling = options.TurnsPerTickFor(halfway);
+    AssertTrue(middling < opening, "the help shrinks as the empire grows");
+    AssertTrue(middling >= options.TurnsPerTick, "but never drops below the normal rate");
+
+    // And an established empire is left exactly as it was.
+    var veteran = Rookie(options);
+    veteran.BankCash = options.EarlyGameNetWorthCeiling * 4;
+    AssertEqual(options.TurnsPerTick, options.TurnsPerTickFor(veteran));
+
+    // The opening bank is the whole cap, so the first sitting is not five clicks.
+    AssertEqual(options.MaxTurns, options.StartingTurns);
+    AssertTrue(options.StartingTurns / options.MaxActionTurns >= 10, "a first session is ten shifts, not five");
+
+    // The boost is what a turn refresh actually pays out, not just what the option reports.
+    var clock = new TurnService(Snapshot(options), new PimpRoster(Snapshot(options), new MinimumRandom()));
+    var earning = Rookie(options);
+    earning.Turns = 0;
+    earning.LastTurnUpdateUtc = DateTime.UtcNow.AddMinutes(-options.TurnTickMinutes);
+    clock.Refresh(earning, DateTime.UtcNow);
+    AssertEqual(opening, earning.Turns);
+}
+
 static void GuidancePointsAtTheGame()
 {
     var options = Resolve(new GameOptions());

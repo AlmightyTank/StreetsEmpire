@@ -9,7 +9,15 @@
 - A Getting Started ladder covering the verbs the game never introduced: work the streets, bank what
   you make, build the weed lab, run production, sell it, arm your thugs, hire a second pimp, deepen
   the store, and reach the Warehouse. It hides itself once finished.
-- Both are read from the world rather than stored, so a rung cannot drift out of step with the empire
+- The opening bank is the full 200 turns rather than half of it, so a first sitting is ten shifts
+  instead of five - long enough to buy the first lab and still have turns left to watch it work.
+- Turns come back faster while a player is small, tapering from three times the rate at the start to
+  the normal rate by a quarter of a million net worth. A flat twelve an hour meant a new player who
+  spent their bank waited most of a day to play again, at exactly the point they had least reason to
+  come back. An established empire is untouched.
+- The status strip reports the rate a player actually earns at rather than the base one, and the
+  advice panel says plainly that the help exists and will fade.
+- Both guidance panels are read from the world rather than stored, so a rung cannot drift out of step with the empire
   it describes, and no migration was needed for either.
 
 ### Changed

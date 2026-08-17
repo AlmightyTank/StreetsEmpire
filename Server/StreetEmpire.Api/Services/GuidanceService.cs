@@ -124,8 +124,12 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
 
         if (player.Turns <= 0)
         {
+            var rate = _options.TurnsPerTickFor(player);
+            var boosted = rate > _options.TurnsPerTick
+                ? " You are still small, so they come back faster than they will later."
+                : string.Empty;
             Add(90, "Wait for turns",
-                $"You earn {_options.TurnsPerTick:N0} every {_options.TurnTickMinutes:N0} minutes whether you are here or not. Labs and ground keep working too.",
+                $"You earn {rate:N0} every {_options.TurnTickMinutes:N0} minutes whether you are here or not, and labs and ground keep working.{boosted}",
                 "overview");
         }
 

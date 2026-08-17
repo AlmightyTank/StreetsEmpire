@@ -22,7 +22,9 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
         if (completedTicks <= 0)
             return false;
 
-        var turnsToAdd = completedTicks * _options.TurnsPerTick;
+        // Faster while they are small, tapering to the normal rate as the empire grows. Read per
+        // refresh rather than stored, so it follows the player rather than needing to be recalculated.
+        var turnsToAdd = completedTicks * _options.TurnsPerTickFor(player);
         var moraleRecovery = completedTicks
             * Math.Max(0, _options.Morale.PassiveRecoveryPerTick)
             * (1 + Math.Max(0, moraleRecoveryPercent) / 100.0);

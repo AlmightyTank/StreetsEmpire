@@ -17,6 +17,21 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
   is actively costing you money comes before what would merely pay.
 - A Getting Started ladder covers the verbs nothing else introduces, and hides itself when finished.
   A checklist a veteran still scrolls past is clutter; the point of it is to stop being needed.
+### The wall after five clicks
+
+- The opening bank was half the cap, which read as a courtesy and played as a wall. It is the whole
+  cap now: ten shifts instead of five, enough to buy the first lab and still have turns to use it.
+- Turns come back faster while you are small and taper to the normal rate by a quarter of a million
+  net worth, which is just past the Warehouse. A flat rate is a wall that falls hardest on the people
+  least able to take it: twelve an hour meant a new player who spent their bank waited most of a day
+  to play again, at the exact moment they had least reason to come back.
+- It tapers rather than switching off at a line, so nothing lurches the day you cross a threshold, and
+  an established empire earns exactly what it always did.
+- The strip reports the rate you actually earn at, not the base one. Paying a boosted rate while
+  displaying the flat one would make the countdown quietly wrong for every new player.
+
+### Neither panel is stored
+
 - Neither is stored. A lab built is a lab on the ladder, and a sale in the log is a sale: asking the
   world what happened cannot drift out of step with it the way a checklist column would.
 

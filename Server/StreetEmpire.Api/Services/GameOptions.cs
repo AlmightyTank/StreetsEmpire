@@ -1,3 +1,5 @@
+using StreetEmpire.Api.Models;
+
 namespace StreetEmpire.Api.Services;
 
 public sealed class GameOptions
@@ -5,8 +7,35 @@ public sealed class GameOptions
     public int TurnsPerTick { get; set; } = 2;
     public int TurnTickMinutes { get; set; } = 10;
     public int MaxTurns { get; set; } = 200;
-    public int StartingTurns { get; set; } = 100;
+    /// <summary>
+    /// The opening bank. Half of the cap read as a courtesy and played as a wall: a hundred turns at
+    /// twenty a shift is five clicks, and then eight hours of nothing. A full bank makes the first
+    /// sitting long enough to buy the first lab and still have turns left to watch it work.
+    /// </summary>
+    public int StartingTurns { get; set; } = 200;
     public int MaxActionTurns { get; set; } = 20;
+
+    /// <summary>
+    /// How much faster turns come back while a player is still small, and the net worth at which that
+    /// help has entirely faded.
+    ///
+    /// A flat rate is a wall that falls hardest on the people least able to take it: twelve turns an
+    /// hour means a new player who spends their bank waits most of a day to play again, at exactly the
+    /// point they have the least reason to come back. This tapers with net worth rather than switching
+    /// off at a line, and the ceiling sits just past the Warehouse, so the help ends as the first real
+    /// milestone comes into reach. An established empire is untouched.
+    /// </summary>
+    public double EarlyGameTurnBoost { get; set; } = 3;
+    public long EarlyGameNetWorthCeiling { get; set; } = 250_000;
+
+    /// <summary>Turns a tick is worth for this player, after the early-game taper.</summary>
+    public int TurnsPerTickFor(Player player)
+    {
+        var ceiling = Math.Max(1, EarlyGameNetWorthCeiling);
+        var boost = Math.Max(1, EarlyGameTurnBoost);
+        var room = Math.Clamp(1 - EconomyService.NetWorthOf(player, this) / (double)ceiling, 0, 1);
+        return Math.Max(TurnsPerTick, (int)Math.Round(TurnsPerTick * (1 + (boost - 1) * room)));
+    }
 
     public long StartingCash { get; set; } = 5_000;
     public long StartingBankCash { get; set; } = 0;

@@ -34,6 +34,18 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
         if (open.Count >= wanted)
             return open;
 
+        // A town posts orders at a pace rather than on demand. Without this the board refilled the
+        // instant anybody looked, so a player could fill one, look again for a fresh one, and keep
+        // going: the counter price would never be worth taking again and every sale in the game would
+        // quietly be worth a third more. Filling one now means waiting for the next.
+        var lastPosted = await db.Contracts
+            .Where(x => x.City == city)
+            .OrderByDescending(x => x.PostedAtUtc)
+            .Select(x => (DateTime?)x.PostedAtUtc)
+            .FirstOrDefaultAsync(ct);
+        if (lastPosted is { } posted && posted.AddMinutes(Math.Max(0, config.PostIntervalMinutes)) > nowUtc)
+            return open;
+
         var places = _options.Territory.Map
             .Where(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase))
             .Select(x => x.Name)
@@ -41,7 +53,11 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
         if (places.Count == 0)
             return open;
 
-        for (var i = open.Count; i < wanted; i++)
+        // One at a time, so a stripped board recovers at the town's pace rather than all at once.
+        // A town nobody has visited fills up on the first look, which is what makes it feel settled
+        // rather than empty.
+        var toPost = lastPosted is null ? wanted - open.Count : 1;
+        for (var i = 0; i < toPost; i++)
         {
             var contract = Compose(city, places, nowUtc);
             db.Contracts.Add(contract);

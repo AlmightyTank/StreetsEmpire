@@ -18,6 +18,7 @@ public sealed class BotSimulationService(
     PimpRoster pimps,
     MarketService market,
     MuleService mules,
+    ContractService contracts,
     IOptions<BotAutomationOptions> botOptions)
 {
     private readonly GameOptions _options = options.Value;
@@ -68,7 +69,11 @@ public sealed class BotSimulationService(
                 }
 
                 await clock.AdvanceAsync(bot, nowUtc, ct: ct);
-                var botActions = await TryMarketAsync(bot, brain, nowUtc, ct);
+                // Before any other way of selling: a contract pays over the counter for stock a rival
+                // already holds, so a rival that ignored one would be turning down the better price.
+                var botActions = await TryFillContractAsync(bot, nowUtc, ct);
+                if (botActions == 0)
+                    botActions = await TryMarketAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = await TryMuleRunAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
@@ -296,6 +301,43 @@ public sealed class BotSimulationService(
     /// lesson as rivals not upgrading their hideouts. Ground is checked before a house raid because
     /// both use a lane, and a bot that always robbed houses would never take any.
     /// </summary>
+    /// <summary>
+    /// Takes an order off the town's board when the stock is already in the room.
+    ///
+    /// No dice roll and no personality dial: a contract pays over the counter for goods a rival is
+    /// holding anyway, so every one of them should take it, and a rival that did not would simply be
+    /// selling at a worse price. What decides whether they get there first is whose hours fall when,
+    /// which is the competition the board is supposed to create.
+    /// </summary>
+    private async Task<int> TryFillContractAsync(Player bot, DateTime nowUtc, CancellationToken ct)
+    {
+        var open = await db.Contracts
+            .Where(x => x.City == bot.City && x.FilledAtUtc == null && x.ExpiresAtUtc > nowUtc)
+            .ToListAsync(ct);
+        if (open.Count == 0) return 0;
+
+        var purity = (int)Math.Round(bot.CokePurity * 100);
+        // Best premium first, and only ones they can actually satisfy. Filtered here rather than by
+        // catching the refusals, so a rival is not walking through exceptions to find its own stock.
+        var fillable = open
+            .Where(x => TradeGoods.Held(bot, x.Good) >= x.Quantity)
+            .Where(x => x.MinimumPurityPercent is not { } floor || purity >= floor)
+            .OrderByDescending(x => x.Payout - x.FlatValue)
+            .ToList();
+
+        foreach (var contract in fillable)
+        {
+            var filled = TryAction(bot, "CONTRACT", 0, nowUtc, () =>
+            {
+                var fill = contracts.Fill(contract, bot, nowUtc);
+                return new ActionResultResponse(fill.Summary, bot.Turns, new Dictionary<string, object?>());
+            });
+            if (filled > 0) return filled;
+        }
+
+        return 0;
+    }
+
     /// <summary>
     /// Sends crew out of town when a route is worth it.
     ///

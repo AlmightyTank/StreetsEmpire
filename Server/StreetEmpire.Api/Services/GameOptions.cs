@@ -824,6 +824,17 @@ public sealed class ContractOptions
     /// <summary>How many stand open in a town at once. Enough to choose between, few enough to read.</summary>
     public int OpenPerCity { get; set; } = 3;
 
+    /// <summary>
+    /// How often a town posts another order once its board has been thinned.
+    ///
+    /// This is what makes the board a limited supply rather than a tap. Refilled on demand, a player
+    /// could fill an order, look again for a fresh one and repeat until their stock ran out, which
+    /// would make the counter price never worth taking and quietly raise the value of every sale in
+    /// the game. It is also what gives rivals taking orders a consequence: a stripped board stays
+    /// thin, and whoever got there first actually took something.
+    /// </summary>
+    public int PostIntervalMinutes { get; set; } = 45;
+
     public int MinQuantity { get; set; } = 15;
     public int MaxQuantity { get; set; } = 60;
 

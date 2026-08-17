@@ -8,6 +8,15 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Added
+- AI rivals fill contracts too, so the board is a race rather than a menu. No dice roll and no
+  personality dial: an order pays over the counter for stock a rival is already holding, so every one
+  of them takes it, and what decides who gets there first is whose hours fall when.
+- A town posts orders at a pace instead of refilling on demand. Live testing showed rivals stripping
+  23 of 24 boards, which was fine on its own - the board topped up when a player looked - but it meant
+  anybody could fill an order, look again for a fresh one and repeat until their stock ran out. That
+  would have made the counter price never worth taking and quietly raised the value of every sale in
+  the game. Now filling one means waiting for the next, and a rival taking one actually takes it.
+
 - Contracts: people in a town who want a set amount of something by a deadline and pay over the
   counter for it. The game had exactly one buyer before this - the city itself, fixed price, any
   amount, any hour - which is a price list rather than a market and made producing a routine.

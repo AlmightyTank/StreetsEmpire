@@ -35,6 +35,7 @@ internal static class CombatEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            TitleService titles,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -45,6 +46,9 @@ internal static class CombatEndpoints
             await combatResolver.ResolveDueAsync(now, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
             var viewerNetWorth = economy.CalculateNetWorth(player);
+            // Read once for the whole page. A title lookup per row would be twenty queries to answer
+            // one question about the same twenty-four hours.
+            var board = await titles.BoardAsync(now, ct);
 
             var candidates = db.Players
                 .Include(x => x.Account)
@@ -66,7 +70,7 @@ internal static class CombatEndpoints
                 .ToListAsync(ct);
             var ranked = await RankPageAsync(page, db, economy, ct);
             var targets = ranked
-                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt, viewerNetWorth: viewerNetWorth))
+                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt, viewerNetWorth: viewerNetWorth, titles: board))
                 .ToList();
 
             return Results.Ok(targets);
@@ -81,6 +85,7 @@ internal static class CombatEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            TitleService titles,
             CancellationToken ct) =>
         {
             var viewer = await current.GetAsync(ct);
@@ -120,7 +125,7 @@ internal static class CombatEndpoints
             var recentDefenses = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.DefenderId == playerId && x.CreatedAtUtc >= combatSince, ct);
 
-            return Results.Ok(ToProfileResponse(target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt, economy.CalculateNetWorth(viewer)));
+            return Results.Ok(ToProfileResponse(target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt, economy.CalculateNetWorth(viewer), await titles.BoardAsync(now, ct)));
         }).RequireAuthorization();
 
 
@@ -386,6 +391,9 @@ internal static class CombatEndpoints
             return Results.Ok(new AlertsResponse(0, player.CombatAlertsSeenAtUtc, []));
         }).RequireAuthorization();
 
+        // One endpoint for the whole attack menu. A raid launches a travelling mission; the four strikes
+        // settle here and now. Keeping them behind one route means the client sends the same shape
+        // whichever it picked, and a caller that names no method still gets the raid it always got.
         app.MapPost("/api/game/combat/attack", async (
             CombatAttackRequest request,
             CurrentPlayerService current,
@@ -393,6 +401,7 @@ internal static class CombatEndpoints
             PlayerClock clock,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            StreetStrikeService strikes,
             CancellationToken ct) =>
         {
             var attacker = await current.GetAsync(ct);
@@ -410,11 +419,36 @@ internal static class CombatEndpoints
             var before = Snapshot(attacker);
             try
             {
+                if (AttackMethods.IsStrike(request.Method))
+                {
+                    // Whoever the defender still has at home, and what they still have to hold. Crew
+                    // already out attacking someone else cannot also be guarding the garage - and
+                    // neither can the guns that went with them, which is what makes striking a player
+                    // who is mid-raid the opening it should be. Their best guns are precisely the ones
+                    // a raiding party takes.
+                    var committed = await combatMissions.ActiveAttackMissions(defender.Id)
+                        .Select(x => new { x.RemainingAttackers, x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles })
+                        .ToListAsync(ct);
+                    var away = committed.Aggregate(
+                        Armoury.Empty,
+                        (rack, x) => rack + new Armoury(x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles));
+                    var defence = new StrikeDefence(
+                        Math.Max(0, defender.Thugs - committed.Sum(x => x.RemainingAttackers)),
+                        defender.Armoury - away);
+
+                    var strike = strikes.Resolve(attacker, defender, request, defence, now);
+                    db.CombatLogs.Add(strike.Log);
+                    AddLog(db, attacker, before, "ATTACK", strike.Log.TurnsSpent, strike.Log.Summary);
+                    await db.SaveChangesAsync(ct);
+                    return Results.Ok(strike.Result);
+                }
+
                 var mission = await combatMissions.LaunchAsync(attacker, defender, request, now, ct);
                 AddLog(db, attacker, before, "ATTACK", mission.TurnsSpent, mission.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new ActionResultResponse(mission.Summary, attacker.Turns, new Dictionary<string, object?>
                 {
+                    ["method"] = AttackMethods.Raid,
                     ["missionId"] = mission.Id,
                     ["status"] = mission.Status,
                     ["assignedPimps"] = mission.AssignedPimps,

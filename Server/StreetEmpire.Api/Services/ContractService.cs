@@ -159,7 +159,11 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
         var roll = random.NextInclusive(0, 99);
         // Weapons and moonshine are the standing minority: everybody needs weapons and moonshine is
         // always worth something, but a town's identity is in its weed and its coke.
-        if (roll < config.WeaponsPercent) return "weapons";
+        //
+        // A gun order names the gun. "Forty weapons" would let a player fill a rifle-priced order with
+        // pistols, and the whole point of a contract is that the buyer knows what they want.
+        if (roll < config.WeaponsPercent)
+            return WeaponTiers.All[random.NextInclusive(0, WeaponTiers.All.Length - 1)];
         if (roll < config.WeaponsPercent + config.MoonshinePercent) return "moonshine";
 
         // Between the two products, lean towards whichever this town values more without ever ruling

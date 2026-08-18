@@ -86,7 +86,8 @@ internal static class AuthEndpoints
                 Thugs = opts.StartingThugs,
                 Condoms = opts.StartingCondoms,
                 Beer = opts.StartingBeer,
-                Weapons = opts.StartingWeapons,
+                // Everyone starts with the cheapest gun there is.
+                Pistols = opts.StartingWeapons,
                 HoeCutPercent = opts.StartingHoeCutPercent,
                 HoeHappiness = 100,
                 ThugHappiness = 100,

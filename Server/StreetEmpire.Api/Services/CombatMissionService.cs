@@ -14,7 +14,8 @@ public sealed class CombatMissionService(
     CombatSchedule schedule,
     PimpRoster pimps,
     EconomyService economy,
-    TerritoryService territories)
+    TerritoryService territories,
+    AllianceService alliances)
 {
     // Shared so the cancel path and the lane query cannot drift apart on the spelling.
     private const string CanceledOutcome = "Canceled";
@@ -96,11 +97,37 @@ public sealed class CombatMissionService(
         var commander = pimps.ChooseCommander(attacker, commanding, request.CommanderPimpId)
             ?? throw new GameRuleException("You need a free pimp to command the attack.");
 
+        // Best guns first. Nobody walks past a rifle to pick up a pistol, and settling the mix here
+        // rather than at the first round means it is decided before anything is at stake.
+        var carried = committed.AvailableRack.Best(request.Weapons);
+
+        // Borrowed thugs leave the pool now and are not in it for anybody else until this raid comes
+        // home. That is the coordination cost the pool exists to create: what you take tonight, your
+        // ally does not have.
+        var borrowed = 0;
+        if (request.AllianceThugs > 0)
+        {
+            var crew = attacker.Alliance
+                ?? throw new GameRuleException("You are not running with a crew.");
+            var borrowLimit = alliances.BorrowLimit(request.Thugs);
+            if (request.AllianceThugs > borrowLimit)
+                throw new GameRuleException(borrowLimit == 0
+                    ? "Send thugs of your own and the crew will send the same again."
+                    : $"You sent {request.Thugs:N0} of your own, so the crew will send {borrowLimit:N0} at most.");
+            if (crew.OffensiveThugs < request.AllianceThugs)
+                throw new GameRuleException($"{crew.Name} has {crew.OffensiveThugs:N0} offensive thug(s) spare.");
+
+            borrowed = request.AllianceThugs;
+            crew.OffensiveThugs -= borrowed;
+        }
+
         var travelSeconds = RollSeconds(combat.AttackTravelSecondsMin, combat.AttackTravelSecondsMax);
         var arrivesAt = nowUtc.AddSeconds(travelSeconds);
         var attackerMorale = AverageMorale(attacker);
         var defenderMorale = Math.Min(100, AverageMorale(defender) + 5);
-        var summary = $"{attacker.Name} sent {commander.Name} commanding {request.Thugs:N0} thug(s) and {request.Weapons:N0} weapon(s) toward {defender.Name}.";
+        var summary = borrowed > 0
+            ? $"{attacker.Name} sent {commander.Name} commanding {request.Thugs:N0} thug(s) and {borrowed:N0} of {attacker.Alliance!.Name}'s, carrying {carried.Describe()}, toward {defender.Name}."
+            : $"{attacker.Name} sent {commander.Name} commanding {request.Thugs:N0} thug(s) carrying {carried.Describe()} toward {defender.Name}.";
 
         attacker.Turns -= combat.AttackTurnCost;
         attacker.LastAttackAtUtc = nowUtc;
@@ -122,9 +149,11 @@ public sealed class CombatMissionService(
             CommanderName = commander.Name,
             CommanderBonusPercent = commander.Specialty == PimpSpecialties.Enforcer ? commander.BonusPercent : 0,
             AssignedThugs = request.Thugs,
-            AssignedWeapons = request.Weapons,
+            AssignedWeapons = carried.Total,
             RemainingAttackers = request.Thugs,
-            RemainingWeapons = request.Weapons,
+            // Setting the rack sets RemainingWeapons too, so the count and the four shelves cannot disagree.
+            Carried = carried,
+            AllianceThugs = borrowed,
             AttackerMorale = attackerMorale,
             DefenderMorale = defenderMorale,
             MaxRounds = Math.Clamp(combat.MaxFightRounds, 1, 20),
@@ -238,6 +267,9 @@ public sealed class CombatMissionService(
             throw new GameRuleException($"You need ${cost:N0} cash on hand to cancel this mission.");
 
         attacker.Cash -= cost;
+        // Calling it off sends the crew's men home as well. A cancelled raid that kept them would be a
+        // way of holding the pool indefinitely for the price of one cancellation.
+        ReturnBorrowedThugs(mission);
         mission.Status = "Complete";
         mission.Outcome = CanceledOutcome;
         mission.CompletedAtUtc = nowUtc;
@@ -357,6 +389,10 @@ public sealed class CombatMissionService(
     {
         if (attacker.Id == defender.Id)
             throw new GameRuleException("You cannot attack yourself.");
+        // The whole of what an alliance buys. Checked here rather than at the endpoint so every way of
+        // reaching a raid - the player's, a rival's brain, the admin's directive - runs into it.
+        if (AllianceService.AreAllied(attacker, defender))
+            throw new GameRuleException($"{defender.Name} runs with your crew.");
         if (attacker.Turns < combat.AttackTurnCost)
             throw new GameRuleException($"You need {combat.AttackTurnCost:N0} turns to attack.");
         if (laneReadyAt is { } readyAt && readyAt > nowUtc)
@@ -404,17 +440,32 @@ public sealed class CombatMissionService(
     {
         var combat = _options.Combat;
         var defenderCommitted = await ActiveAttackMissions(mission.DefenderId)
-            .Select(x => new { x.AssignedPimps, x.RemainingAttackers, x.RemainingWeapons, x.CommanderPimpId })
+            .Select(x => new { x.AssignedPimps, x.RemainingAttackers, x.RemainingWeapons, x.CommanderPimpId, x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles })
             .ToListAsync(cancellationToken);
         var defenderAway = defenderCommitted.Where(x => x.CommanderPimpId != null).Select(x => x.CommanderPimpId!.Value).ToList();
         // A pimp posted to ground is not at home either, so they cannot also be sharpening the house.
         defenderAway.AddRange(await territories.GarrisonedPimpIdsAsync(mission.DefenderId, cancellationToken));
         var defenderHomePimps = Math.Max(0, mission.Defender.Pimps - defenderCommitted.Sum(x => x.AssignedPimps));
-        var defenderHomeThugs = Math.Max(0, mission.Defender.Thugs - defenderCommitted.Sum(x => x.RemainingAttackers));
+        // Whatever the crew has posted to this house stands in it too, and is armed the same way.
+        var postedDefenders = Math.Max(0, mission.Defender.AllianceDefenders);
+        var defenderHomeThugs = Math.Max(0, mission.Defender.Thugs - defenderCommitted.Sum(x => x.RemainingAttackers)) + postedDefenders;
         var defenderHomeWeapons = Math.Max(0, mission.Defender.Weapons - defenderCommitted.Sum(x => x.RemainingWeapons));
+        // The guns still in the house are whatever the defender's own raiding parties did not take.
+        var defenderHomeRack = mission.Defender.Armoury - defenderCommitted.Aggregate(
+            Armoury.Empty,
+            (rack, x) => rack + new Armoury(x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles));
 
         mission.CurrentRound++;
-        var attackerPower = AttackPower(mission.AssignedPimps, mission.RemainingAttackers, mission.RemainingWeapons, mission.AttackerMorale, mission.CommanderBonusPercent);
+        // Borrowed thugs stand in the line like anybody else, and they arrive armed - at fifteen
+        // thousand each they are not turning up empty-handed - so they carry their own firepower on top
+        // of whatever the attacker's own crew brought out of the rack.
+        var borrowedFirepower = mission.AllianceThugs * Math.Max(0, _options.Alliances.ThugFirepower);
+        var attackerPower = AttackPower(
+            mission.AssignedPimps,
+            mission.RemainingAttackers + mission.AllianceThugs,
+            new Firepower(Guns(mission.Carried, mission.RemainingAttackers).InPistols + borrowedFirepower),
+            mission.AttackerMorale,
+            mission.CommanderBonusPercent);
 
         // A raid for ground fights the garrison standing on it, not everyone back at the holder's
         // house. Fighting the whole house would make ground effectively untakeable: the garrison is a
@@ -424,10 +475,19 @@ public sealed class CombatMissionService(
             ? DefensePower(
                 ground.GarrisonPimpId is null ? 0 : 1,
                 ground.GarrisonThugs,
-                ground.GarrisonThugs,
+                // Ground is held by bodies. A garrison carries sidearms and nothing heavier, which is
+                // exactly what it was worth before tiers existed.
+                Firepower.Sidearms(ground.GarrisonThugs, ground.GarrisonThugs),
                 mission.DefenderMorale,
                 pimps.GarrisonBonusPercent(ground.GarrisonPimp))
-            : DefensePower(defenderHomePimps, defenderHomeThugs, defenderHomeWeapons, mission.DefenderMorale, pimps.DefenceBonusPercent(mission.Defender, defenderAway));
+            : DefensePower(
+                defenderHomePimps,
+                defenderHomeThugs,
+                new Firepower(
+                    Guns(defenderHomeRack, Math.Max(0, defenderHomeThugs - postedDefenders)).InPistols
+                    + postedDefenders * Math.Max(0, _options.Alliances.ThugFirepower)),
+                mission.DefenderMorale,
+                pimps.DefenceBonusPercent(mission.Defender, defenderAway));
         var attackRoll = ApplyPowerVariance(attackerPower, combat.PowerRandomnessPercent);
         var defenseRoll = ApplyPowerVariance(defenderPower, combat.PowerRandomnessPercent);
         var difference = attackRoll - defenseRoll;
@@ -544,6 +604,23 @@ public sealed class CombatMissionService(
     /// cannot see ground change hands and then have the crew that took it walk away: the surviving
     /// attackers become the garrison.
     /// </summary>
+    /// <summary>
+    /// Hands the surviving borrowed thugs back to the pool.
+    ///
+    /// On the way home rather than at the last round, because they are out until the crew is out: an
+    /// ally looking at the pool while a raid is still running should see what is actually available to
+    /// them, not what will be available once somebody else's fight finishes.
+    /// </summary>
+    private void ReturnBorrowedThugs(CombatMission mission)
+    {
+        if (mission.AllianceThugs <= 0)
+            return;
+
+        if (mission.Attacker.Alliance is { } crew)
+            crew.OffensiveThugs += mission.AllianceThugs;
+        mission.AllianceThugs = 0;
+    }
+
     private void SettleTerritory(CombatMission mission, DateTime nowUtc)
     {
         if (mission.Territory is not { } ground)
@@ -634,6 +711,7 @@ public sealed class CombatMissionService(
     private void Complete(CombatMission mission, DateTime nowUtc)
     {
         ApplyMoraleAftermath(mission);
+        ReturnBorrowedThugs(mission);
 
         // The commander's own reckoning: a win lifts them, a beating can cost their life.
         var commanderFate = pimps.SettleMission(mission.Attacker, mission.CommanderPimp, mission.Outcome, nowUtc);
@@ -762,29 +840,61 @@ public sealed class CombatMissionService(
 
     private void ApplyAttackerLosses(CombatMission mission, int thugsLost, int weaponsLost)
     {
-        thugsLost = Math.Min(thugsLost, mission.RemainingAttackers);
+        // Split across the whole line rather than off one end of it. Borrowed thugs dying first would
+        // empty a pool in a single raid; the attacker's own dying first would make borrowing a way of
+        // using somebody else's men as armour.
+        var line = mission.RemainingAttackers + mission.AllianceThugs;
+        thugsLost = Math.Min(thugsLost, line);
         weaponsLost = Math.Min(weaponsLost, mission.RemainingWeapons);
+
+        var borrowedLost = line <= 0
+            ? 0
+            : Math.Min(mission.AllianceThugs, (int)Math.Round(thugsLost * (double)mission.AllianceThugs / line));
+        mission.AllianceThugs -= borrowedLost;
+        mission.AllianceThugsLost += borrowedLost;
+
+        thugsLost = Math.Min(thugsLost - borrowedLost, mission.RemainingAttackers);
         mission.RemainingAttackers -= thugsLost;
-        mission.RemainingWeapons -= weaponsLost;
+
+        // Which guns were dropped is decided against what the crew is actually carrying, cheapest
+        // first, and the same guns then come off the rack at home. Taking a flat count off the rack
+        // instead could destroy rifles that never left the house while the crew's pistols came back.
+        var dropped = mission.Carried.WorstFirst(weaponsLost);
+        mission.Carried = mission.Carried - dropped;
+        mission.Attacker.Armoury -= dropped;
+
         mission.Attacker.Thugs = Math.Max(0, mission.Attacker.Thugs - thugsLost);
-        mission.Attacker.Weapons = Math.Max(0, mission.Attacker.Weapons - weaponsLost);
         mission.AttackerThugsLost += thugsLost;
-        mission.AttackerWeaponsLost += weaponsLost;
+        mission.AttackerWeaponsLost += dropped.Total;
     }
 
     private void ApplyDefenderLosses(CombatMission mission, int thugsLost, int weaponsLost)
     {
+        // The same split on the other side. Posted defenders take their share and are gone from the
+        // pool for good, which is what makes stationing them a real cost to the crew rather than a free
+        // wall around whoever asked first.
+        var held = mission.Defender.Thugs + mission.Defender.AllianceDefenders;
+        var postedLost = held <= 0
+            ? 0
+            : Math.Min(mission.Defender.AllianceDefenders, (int)Math.Round(thugsLost * (double)mission.Defender.AllianceDefenders / held));
+        mission.Defender.AllianceDefenders -= postedLost;
+        thugsLost = Math.Max(0, thugsLost - postedLost);
+
         mission.Defender.Thugs = Math.Max(0, mission.Defender.Thugs - thugsLost);
-        mission.Defender.Weapons = Math.Max(0, mission.Defender.Weapons - weaponsLost);
-        mission.DefenderThugsLost += thugsLost;
-        mission.DefenderWeaponsLost += weaponsLost;
+        mission.DefenderWeaponsLost += mission.Defender.RemoveWeapons(weaponsLost).Total;
+        // Every body that fell here, borrowed or not: the record is of what the house lost.
+        mission.DefenderThugsLost += thugsLost + postedLost;
     }
 
-    private int AttackPower(int pimps, int thugs, int weapons, double morale, int commanderBonusPercent = 0)
-        => CombatPower.Attack(pimps, thugs, weapons, morale, _options.Combat.Power, commanderBonusPercent);
+    /// <summary>What a rack is worth to the crew holding it.</summary>
+    private Firepower Guns(Armoury rack, int thugs)
+        => Firepower.Of(rack, thugs, _options.WeaponFirepower());
 
-    private int DefensePower(int pimps, int thugs, int weapons, double morale, int enforcerBonusPercent = 0)
-        => CombatPower.Defence(pimps, thugs, weapons, morale, _options.Combat.Power, enforcerBonusPercent);
+    private int AttackPower(int pimps, int thugs, Firepower firepower, double morale, int commanderBonusPercent = 0)
+        => CombatPower.Attack(pimps, thugs, firepower, morale, _options.Combat.Power, commanderBonusPercent);
+
+    private int DefensePower(int pimps, int thugs, Firepower firepower, double morale, int enforcerBonusPercent = 0)
+        => CombatPower.Defence(pimps, thugs, firepower, morale, _options.Combat.Power, enforcerBonusPercent);
 
     private static int WithBonus(int power, int bonusPercent)
         => bonusPercent <= 0 ? power : (int)Math.Round(power * (1 + bonusPercent / 100.0), MidpointRounding.AwayFromZero);
@@ -856,6 +966,11 @@ public sealed class CombatMissionService(
     }
 }
 
+/// <param name="AvailableRack">
+/// Which guns are still on the rack at home, tier by tier. A second raid cannot arm itself from the
+/// rifles the first one is already carrying, and a total alone could not tell it that: it would happily
+/// hand the same four rifles to both crews and let the loser lose guns the winner was still holding.
+/// </param>
 public sealed record CombatCommitment(
     int CommittedPimps,
     int CommittedThugs,
@@ -863,6 +978,7 @@ public sealed record CombatCommitment(
     int AvailablePimps,
     int AvailableThugs,
     int AvailableWeapons,
+    Armoury AvailableRack,
     int ActiveAttackMissions,
     int MaxActiveAttackMissions)
 {
@@ -871,6 +987,7 @@ public sealed record CombatCommitment(
         var committedPimps = activeMissions.Sum(x => x.AssignedPimps);
         var committedThugs = activeMissions.Sum(x => x.RemainingAttackers);
         var committedWeapons = activeMissions.Sum(x => x.RemainingWeapons);
+        var committedRack = activeMissions.Aggregate(Armoury.Empty, (rack, mission) => rack + mission.Carried);
         return new CombatCommitment(
             committedPimps,
             committedThugs,
@@ -878,6 +995,7 @@ public sealed record CombatCommitment(
             Math.Max(0, player.Pimps - committedPimps),
             Math.Max(0, player.Thugs - committedThugs),
             Math.Max(0, player.Weapons - committedWeapons),
+            player.Armoury - committedRack,
             activeMissions.Count,
             Math.Max(1, maxActiveMissions));
     }

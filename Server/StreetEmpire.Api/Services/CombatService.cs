@@ -144,23 +144,20 @@ public sealed class CombatService(IOptionsSnapshot<GameOptions> options, IGameRa
     }
 
     public int AttackPower(Player player)
-    {
-        var armedThugs = Math.Min(player.Weapons, player.Thugs);
-        var averageMorale = AverageMorale(player);
-        return CombatPower.Attack(player.Pimps, player.Thugs, player.Weapons, averageMorale, _options.Combat.Power);
-    }
+        => CombatPower.Attack(player.Pimps, player.Thugs, FirepowerOf(player), AverageMorale(player), _options.Combat.Power);
 
     public int DefensePower(Player player)
-    {
-        var armedThugs = Math.Min(player.Weapons, player.Thugs);
-        var averageMorale = AverageMorale(player);
-        return CombatPower.Defence(player.Pimps, player.Thugs, player.Weapons, averageMorale, _options.Combat.Power);
-    }
+        => CombatPower.Defence(player.Pimps, player.Thugs, FirepowerOf(player), AverageMorale(player), _options.Combat.Power);
+
+    private Firepower FirepowerOf(Player player)
+        => Firepower.Of(player.Armoury, player.Thugs, _options.WeaponFirepower());
 
     private void ValidateAttack(Player attacker, Player defender, DateTime nowUtc, CombatOptions combat)
     {
         if (attacker.Id == defender.Id)
             throw new GameRuleException("You cannot attack yourself.");
+        if (AllianceService.AreAllied(attacker, defender))
+            throw new GameRuleException($"{defender.Name} runs with your crew.");
         if (attacker.Turns < combat.AttackTurnCost)
             throw new GameRuleException($"You need {combat.AttackTurnCost:N0} turns to attack.");
         if (attacker.LastAttackAtUtc is { } lastAttack && lastAttack.AddMinutes(combat.AttackCooldownMinutes) > nowUtc)
@@ -206,7 +203,7 @@ public sealed class CombatService(IOptionsSnapshot<GameOptions> options, IGameRa
         player.Thugs = Math.Max(0, player.Thugs - Losses(player.Thugs, crewLossPercent));
         player.Hoes = Math.Max(0, player.Hoes - Losses(player.Hoes, crewLossPercent / 2));
         player.Pimps = Math.Max(1, player.Pimps - Losses(Math.Max(0, player.Pimps - 1), crewLossPercent / 3));
-        player.Weapons = Math.Max(0, player.Weapons - Losses(player.Weapons, weaponLossPercent));
+        player.RemoveWeapons(Losses(player.Weapons, weaponLossPercent));
     }
 
     private int Losses(int count, double percent)

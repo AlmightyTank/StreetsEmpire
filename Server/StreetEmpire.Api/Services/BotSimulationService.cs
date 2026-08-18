@@ -19,6 +19,7 @@ public sealed class BotSimulationService(
     MarketService market,
     MuleService mules,
     ContractService contracts,
+    StreetStrikeService strikes,
     IOptions<BotAutomationOptions> botOptions)
 {
     private readonly GameOptions _options = options.Value;
@@ -40,6 +41,9 @@ public sealed class BotSimulationService(
         var bots = await db.Players
             .Include(x => x.Account)
             .Include(x => x.Hideout)
+            // Rivals pay dues out of the same shift a player does, and the tithe is written onto this
+            // navigation. Without it a seeded crew's treasury would never move.
+            .Include(x => x.Alliance)
             .Include(x => x.Crew)
             .Where(x => x.Account.IsBot && !x.Account.IsBotPaused)
             .Where(x => onlyPlayerId == null || x.Id == onlyPlayerId)
@@ -80,6 +84,11 @@ public sealed class BotSimulationService(
                     botActions = await TryTerritoryAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = await TryAttackAsync(bot, brain, nowUtc, ct);
+                // After the raid, because a rival that can afford an operation should run the operation.
+                // A strike is what it does when it cannot: no lane free, not enough crew to commit, or
+                // nobody on the board worth a full raid but somebody with a car left out.
+                if (botActions == 0)
+                    botActions = await TryStrikeAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
                     botActions = RunBotRound(bot, brain, nowUtc);
 
@@ -213,6 +222,20 @@ public sealed class BotSimulationService(
             .SingleOrDefaultAsync(x => x.Id == defenderId, ct)
             ?? throw new GameRuleException("That target does not exist.");
 
+        // The admin can drive a rival through any of the five, which is the only way to watch a specific
+        // strike land against a specific target on demand rather than waiting for a personality to pick it.
+        if (AttackMethods.IsStrike(request.Method))
+        {
+            var strike = strikes.Resolve(
+                bot,
+                defender,
+                new CombatAttackRequest(defenderId, Method: request.Method, Coke: Math.Max(0, request.Coke ?? PoachStake(bot))),
+                StrikeDefence.Everyone(defender),
+                nowUtc);
+            db.CombatLogs.Add(strike.Log);
+            return strike.Result;
+        }
+
         var thugs = Math.Max(1, request.Thugs ?? 1);
         var mission = await missions.LaunchAsync(
             bot,
@@ -222,6 +245,7 @@ public sealed class BotSimulationService(
             ct);
         return new ActionResultResponse(mission.Summary, bot.Turns, new Dictionary<string, object?>
         {
+            ["method"] = AttackMethods.Raid,
             ["missionId"] = mission.Id,
             ["defender"] = defender.Name
         });
@@ -241,11 +265,14 @@ public sealed class BotSimulationService(
 
         // Weapons first, because uncovered thugs are the gap a rival most needs to close and the one
         // good a player is likely to be selling.
+        var weaponKeys = WeaponTiers.All;
         if (report.UncoveredThugs > 0)
         {
             var offer = await db.MarketListings
                 .Include(x => x.Seller)
-                .Where(x => x.CancelledAtUtc == null && x.Quantity > 0 && x.Item == "weapons" && x.SellerId != bot.Id)
+                // Any gun covers a thug, so a rival shopping for coverage takes the cheapest one on
+                // the board rather than holding out for a particular kind.
+                .Where(x => x.CancelledAtUtc == null && x.Quantity > 0 && weaponKeys.Contains(x.Item) && x.SellerId != bot.Id)
                 .Where(x => x.PricePerUnit < _options.WeaponPrice)
                 .OrderBy(x => x.PricePerUnit)
                 .FirstOrDefaultAsync(ct);
@@ -261,7 +288,7 @@ public sealed class BotSimulationService(
                     {
                         var purchase = await market.BuyAsync(bot, offer.Id, want, ct);
                         AddLog(bot, before, "MARKET", 0, nowUtc,
-                            $"AI: Bought {purchase.Quantity:N0} weapons off {purchase.Listing.Seller.Name} for {purchase.Cost:C0}.");
+                            $"AI: Bought {purchase.Quantity:N0} {TradeGoods.Label(offer.Item).ToLowerInvariant()} off {purchase.Listing.Seller.Name} for {purchase.Cost:C0}.");
                         return 1;
                     }
                     catch (GameRuleException)
@@ -273,16 +300,19 @@ public sealed class BotSimulationService(
         }
 
         // Then sell what it is sitting on and cannot use. Priced under the shop, or nobody would buy.
+        // The guns a full crew is not carrying, which are always the cheapest ones on the rack.
         var spare = Math.Max(0, bot.Weapons - bot.Thugs - 5);
         if (spare >= 5 && hideouts.StationFor(bot.Hideout, "workshop") is not null)
         {
             var before = Snapshot(bot);
             try
             {
-                var price = (long)Math.Round(_options.WeaponPrice * 0.85);
-                var listing = await market.ListAsync(bot, "weapons", spare, price, nowUtc, ct);
+                var surplus = bot.Armoury.WorstFirst(spare);
+                var tier = WeaponTiers.All.First(x => surplus.Of(x) > 0);
+                var price = (long)Math.Round(TradeGoods.ReferencePrice(_options, tier, bot.City) * 0.85);
+                var listing = await market.ListAsync(bot, tier, surplus.Of(tier), price, nowUtc, ct);
                 AddLog(bot, before, "MARKET", 0, nowUtc,
-                    $"AI: Listed {listing.Quantity:N0} weapons at {listing.PricePerUnit:C0} each.");
+                    $"AI: Listed {listing.Quantity:N0} {TradeGoods.Label(tier).ToLowerInvariant()} at {listing.PricePerUnit:C0} each.");
                 return 1;
             }
             catch (GameRuleException)
@@ -440,7 +470,7 @@ public sealed class BotSimulationService(
                 // Only what there is somewhere to put. Cargo that will not fit is dumped on arrival,
                 // so buying past the room is buying nothing: a rival that ignored this spent thousands
                 // on coke and stored none of it.
-                var room = Math.Max(0, TradeGoods.Capacity(storage, good) - TradeGoods.Held(bot, good) - inbound.GetValueOrDefault(good));
+                var room = Math.Max(0, TradeGoods.Room(bot, storage, good) - inbound.GetValueOrDefault(good));
                 var units = Math.Min(quote.UnitsAffordable, room);
                 if (units <= 0) continue;
 
@@ -503,11 +533,12 @@ public sealed class BotSimulationService(
         // is the same correction the house-raid path needed.
         if (random.NextDouble() >= profile.AttackChance)
             return 0;
-        var attackPower = AttackPower(CombatMissionService.CommandingPimps, commit, Math.Min(commit, free), (bot.HoeHappiness + bot.ThugHappiness) / 2);
+        var attackPower = AttackPower(CombatMissionService.CommandingPimps, commit, bot.Armoury.Best(Math.Min(commit, free)), (bot.HoeHappiness + bot.ThugHappiness) / 2);
         var candidates = await db.Territories
             .Include(x => x.Holder)
             .Where(x => x.City == bot.City)
             .Where(x => x.HolderId != null && x.HolderId != bot.Id)
+            .Where(x => bot.AllianceId == null || x.Holder!.AllianceId != bot.AllianceId)
             .Where(x => x.ProtectedUntilUtc == null || x.ProtectedUntilUtc <= nowUtc)
             .OrderBy(x => x.GarrisonThugs)
             .Take(5)
@@ -518,7 +549,7 @@ public sealed class BotSimulationService(
             // The holder's morale, not the attacker's. Judging a garrison by how the raider feels is
             // nonsense, and it flattered thin garrisons held by a demoralised crew.
             var holderMorale = ground.Holder is { } owner ? (owner.HoeHappiness + owner.ThugHappiness) / 2 : 100;
-            var defence = DefensePower(0, ground.GarrisonThugs, ground.GarrisonThugs, holderMorale);
+            var defence = GarrisonDefence(ground.GarrisonThugs, holderMorale);
             if (attackPower < defence * profile.WinMargin)
                 continue;
 
@@ -582,6 +613,8 @@ public sealed class BotSimulationService(
         // the choice of who is worth hitting. Bounded to 25, so the cost is trivial.
         var candidates = await db.Players.AsNoTracking()
             .Where(x => x.Id != bot.Id)
+            // Never its own crew. The truce is the whole of what a rival gets for paying dues.
+            .Where(x => bot.AllianceId == null || x.AllianceId != bot.AllianceId)
             .Where(economy.NetWorthAtLeast(floor))
             .OrderByDescending(economy.NetWorthExpression)
             .Take(25)
@@ -601,7 +634,7 @@ public sealed class BotSimulationService(
                 x.Id,
                 x.Name,
                 economy.CalculateNetWorth(x),
-                DefensePower(x.Pimps, x.Thugs, x.Weapons, (x.HoeHappiness + x.ThugHappiness) / 2),
+                DefensePower(x.Pimps, x.Thugs, x.Armoury, (x.HoeHappiness + x.ThugHappiness) / 2),
                 x.CombatProtectionUntilUtc is { } until && until > nowUtc,
                 incoming.TryGetValue(x.Id, out var count) ? count : 0))
             .ToList();
@@ -611,7 +644,10 @@ public sealed class BotSimulationService(
         // of it, so it reliably picked fights it could not win.
         var thugs = Math.Clamp((int)Math.Round(committed.AvailableThugs * profile.ThugCommitShare), profile.MinThugsToAttack, committed.AvailableThugs);
         var weapons = Math.Min(thugs, committed.AvailableWeapons);
-        var attackPower = AttackPower(CombatMissionService.CommandingPimps, thugs, weapons, (bot.HoeHappiness + bot.ThugHappiness) / 2);
+        // Judged on the guns the crew would actually carry, which is the best of what is left on the
+        // rack after any raid already out. A rival that valued its rifles twice would pick fights on
+        // the strength of a crew it cannot field.
+        var attackPower = AttackPower(CombatMissionService.CommandingPimps, thugs, committed.AvailableRack.Best(weapons), (bot.HoeHappiness + bot.ThugHappiness) / 2);
 
         // Who has hit this rival lately. Read from the fights that actually happened rather than kept
         // as a score, so a grudge is exactly as old as the last punch and nothing has to be pruned.
@@ -647,11 +683,118 @@ public sealed class BotSimulationService(
         }
     }
 
-    private int AttackPower(int pimps, int thugs, int weapons, double morale)
-        => CombatPower.Attack(pimps, thugs, weapons, morale, _options.Combat.Power);
+    /// <summary>
+    /// Takes a cheap shot at somebody who left something uncovered.
+    ///
+    /// Its own path rather than a branch inside the raid, because a strike judges a target on entirely
+    /// different grounds. A raid needs a power comparison and a win margin; a strike needs to know
+    /// whether they own a car, whether their hoes are underpaid, and nothing else. Sharing the raid's
+    /// candidate query would mean loading and scoring defences that no strike ever consults.
+    ///
+    /// Every rule still applies: <see cref="StreetStrikeService.Resolve"/> validates turns, shields, the
+    /// anti-farm matchup and each method's own requirements, and a refusal is swallowed the same way the
+    /// other rival actions swallow theirs.
+    /// </summary>
+    private async Task<int> TryStrikeAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var profile = BotStrikeProfile.For(brain.Focus);
+        if (random.NextDouble() >= profile.StrikeChance)
+            return 0;
 
-    private int DefensePower(int pimps, int thugs, int weapons, double morale)
-        => CombatPower.Defence(pimps, thugs, weapons, morale, _options.Combat.Power);
+        // The cheapest thing on its list. No point reading the board for a rival that cannot pay for the
+        // one strike it would actually choose.
+        var affordable = profile.Preference.Where(x => strikes.TurnCostOf(x) <= bot.Turns).ToList();
+        if (affordable.Count == 0)
+            return 0;
+
+        var botNetWorth = economy.CalculateNetWorth(bot);
+        var antiFarm = _options.AntiFarm;
+        var floor = Math.Max(antiFarm.MinDefenderNetWorth, (long)(botNetWorth / Math.Max(1, antiFarm.MaxNetWorthRatio)));
+        // Tracked rather than AsNoTracking: a strike writes losses onto whichever of these it lands on,
+        // and the run's single SaveChanges is what persists them. No hideout join - every limit a strike
+        // reads belongs to the attacker's house, never the target's.
+        var candidates = await db.Players
+            .Where(x => x.Id != bot.Id)
+            .Where(x => bot.AllianceId == null || x.AllianceId != bot.AllianceId)
+            .Where(economy.NetWorthAtLeast(floor))
+            .Where(x => x.CombatProtectionUntilUtc == null || x.CombatProtectionUntilUtc <= nowUtc)
+            .Where(x => x.StrikeProtectionUntilUtc == null || x.StrikeProtectionUntilUtc <= nowUtc)
+            .OrderByDescending(economy.NetWorthExpression)
+            .Take(15)
+            .ToListAsync(ct);
+        if (candidates.Count == 0)
+            return 0;
+
+        // First method on the personality's list that some reachable target is actually exposed to.
+        // Ordered this way round - method first, then target - so a Banker looking for a car does not
+        // settle for infesting the richest player on the board just because they came up first.
+        foreach (var method in affordable)
+        {
+            var target = candidates.FirstOrDefault(x => Exposed(bot, x, method));
+            if (target is null)
+                continue;
+
+            var before = Snapshot(bot);
+            try
+            {
+                var request = new CombatAttackRequest(
+                    target.Id,
+                    Method: method,
+                    Coke: method == AttackMethods.Poach ? PoachStake(bot) : 0);
+                var strike = strikes.Resolve(bot, target, request, StrikeDefence.Everyone(target), nowUtc);
+                db.CombatLogs.Add(strike.Log);
+                AddLog(bot, before, "ATTACK", strike.Log.TurnsSpent, nowUtc, $"AI: {strike.Log.Summary}");
+                return 1;
+            }
+            catch (GameRuleException)
+            {
+                // Refused for a reason the cheap check above could not see. Try the next method rather
+                // than the next target: whatever blocked this one is very likely about the rival itself.
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Whether this target has left the thing a given strike is for uncovered. A cheap read, so the
+    /// rival never spends its one action of the tick on a strike that was always going to do nothing.
+    /// </summary>
+    private bool Exposed(Player bot, Player target, string method) => method switch
+    {
+        AttackMethods.DriveBy => bot.Rides > 0 && target.Thugs > 0,
+        AttackMethods.Jack => bot.Thugs > 0 && target.Rides > 0 && hideouts.RideRoom(bot) > 0,
+        // Nothing to gain from infesting a house whose medicine already covers everyone in it.
+        AttackMethods.Infest => target.Hoes > 0 && target.Medicine * Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate) < target.Hoes,
+        // A well-paid house cannot be poached at any price, so a rival should not spend the coke finding out.
+        AttackMethods.Poach => target.Hoes > 0
+                               && target.HoeHappiness < 85
+                               && hideouts.CrewRoom(bot, "hoes") > 0
+                               && bot.Coke >= _options.Strikes.Poach.CokePerHoe,
+        _ => false
+    };
+
+    /// <summary>
+    /// What a rival is willing to put on the street for a poaching run: enough for the cap, but never
+    /// more than a third of the pile. A rival that emptied its store to buy hoes would have nothing left
+    /// to sell, and the poach would cost it the week.
+    /// </summary>
+    private int PoachStake(Player bot)
+    {
+        var poach = _options.Strikes.Poach;
+        var forCap = Math.Max(1, poach.MaxHoes) * Math.Max(1, poach.CokePerHoe);
+        return Math.Max(Math.Max(1, poach.CokePerHoe), Math.Min(forCap, bot.Coke / 3));
+    }
+
+    private int AttackPower(int pimps, int thugs, Armoury rack, double morale)
+        => CombatPower.Attack(pimps, thugs, Firepower.Of(rack, thugs, _options.WeaponFirepower()), morale, _options.Combat.Power);
+
+    /// <summary>What a garrison is worth: bodies with sidearms, never the holder's rack at home.</summary>
+    private int GarrisonDefence(int thugs, double morale)
+        => CombatPower.Defence(0, thugs, Firepower.Sidearms(thugs, thugs), morale, _options.Combat.Power);
+
+    private int DefensePower(int pimps, int thugs, Armoury rack, double morale)
+        => CombatPower.Defence(pimps, thugs, Firepower.Of(rack, thugs, _options.WeaponFirepower()), morale, _options.Combat.Power);
 
     private int RunBotRound(Player bot, BotBrain brain, DateTime actionTimeUtc)
     {
@@ -900,10 +1043,60 @@ public sealed class BotSimulationService(
         if (bot.Weapons < targetWeapons)
         {
             var quantity = AffordableQuantity(bot, targetWeapons - bot.Weapons, _options.WeaponPrice, random.NextInclusive(1, brain.MaxWeaponBuy), brain);
-            return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "weapons", quantity));
+            return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, WeaponFor(bot, brain), quantity));
+        }
+
+        // Medicine, once somebody has actually been infesting them.
+        //
+        // Rivals restocking on their own matters more here than for any other good, because an
+        // infestation is only answered by a purchase. A field that never buys medicine is a field where
+        // the strike is a one-way ratchet: every rival who reaches for it lands it at full effect
+        // forever, and the whole AI population bleeds hoes with no counterplay. Driven by having been
+        // hit rather than bought up front on principle, so it stays a reaction to the world - a rival
+        // nobody bothers infesting goes on spending its money on crew, exactly as it should.
+        var perCrate = Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate);
+        var targetMedicine = Math.Min(capacity.MaxMedicine, (int)Math.Ceiling(bot.Hoes / (double)perCrate));
+        if (bot.Medicine < targetMedicine && WasRecentlyInfested(bot, actionTimeUtc))
+        {
+            var quantity = AffordableQuantity(bot, targetMedicine - bot.Medicine, _options.MedicinePrice, random.NextInclusive(1, brain.MaxWeaponBuy), brain);
+            return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "medicine", quantity));
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Which gun a rival reaches for.
+    ///
+    /// Coverage first, always: an uncovered thug is a morale leak whatever it is holding, and the
+    /// cheapest gun closes it. Only once the whole crew is armed does the question become what they are
+    /// armed with, and then it is a question about money - the rival buys the best gun it can pay for
+    /// out of spare cash, which is what makes a rich rival's house genuinely harder to break than a poor
+    /// one of the same size.
+    /// </summary>
+    private string WeaponFor(Player bot, BotBrain brain)
+    {
+        if (bot.Weapons < bot.Thugs)
+            return WeaponTiers.Pistol;
+
+        var spare = Math.Max(0, bot.Cash - CashReserve(bot, brain));
+        var best = WeaponTiers.Pistol;
+        foreach (var tier in _options.Weapons.OrderBy(x => x.Price))
+            if (spare >= tier.Price * Math.Max(1, brain.MaxWeaponBuy))
+                best = tier.Key;
+        return best;
+    }
+
+    /// <summary>
+    /// Whether anyone has put something through this rival's house lately. Read off the fights that
+    /// actually happened, like grudges are, so nothing has to be stored or pruned.
+    /// </summary>
+    private bool WasRecentlyInfested(Player bot, DateTime nowUtc)
+    {
+        var since = nowUtc.AddHours(-Math.Max(1, _options.AntiFarm.RepeatWindowHours));
+        return db.CombatLogs.Any(x => x.DefenderId == bot.Id
+                                      && x.Method == AttackMethods.Infest
+                                      && x.CreatedAtUtc >= since);
     }
 
     private int TryHireCrew(Player bot, BotBrain brain, DateTime actionTimeUtc)
@@ -984,7 +1177,34 @@ public sealed class BotSimulationService(
         if (bot.HoeHappiness < brain.LowMoraleStreetThreshold || bot.ThugHappiness < brain.LowMoraleStreetThreshold)
             turnsToSpend = Math.Min(turnsToSpend, random.NextInclusive(1, brain.LowMoraleMaxStreetTurns));
 
-        return TryAction(bot, "STREET", turnsToSpend, actionTimeUtc, () => economy.Scout(bot, turnsToSpend));
+        return TryAction(bot, "STREET", turnsToSpend, actionTimeUtc, () => economy.Scout(bot, turnsToSpend, district: DistrictFor(bot, brain)));
+    }
+
+    /// <summary>
+    /// Where a rival works its shift.
+    ///
+    /// Read off what the rival is short of rather than fixed to its personality, because that is how a
+    /// district is actually chosen: a crew builder with no thugs wants the slums today whatever it
+    /// usually prefers. Personality only decides the tie, which is what stops every rival converging on
+    /// the same corner and gives each of them a place they are usually found.
+    /// </summary>
+    private string DistrictFor(Player bot, BotBrain brain)
+    {
+        // Uncovered thugs and unmanaged hoes are the two shortages that actually cost a rival money
+        // every shift, so they outrank a preference.
+        if (bot.Thugs < Math.Max(1, brain.MinThugs))
+            return "winos";
+        if (bot.Hoes < bot.Thugs * Math.Max(1, brain.HoesPerThugTarget))
+            return "nightclub";
+
+        return brain.Focus switch
+        {
+            BotBrainFocus.Banker or BotBrainFocus.ResourceManager => "casino",
+            BotBrainFocus.ProductRunner => "ghetto",
+            BotBrainFocus.CrewBuilder => "nightclub",
+            BotBrainFocus.MoraleNeglecter => "winos",
+            _ => "lowrent"
+        };
     }
 
     private int TryDeposit(Player bot, BotBrain brain, DateTime actionTimeUtc)

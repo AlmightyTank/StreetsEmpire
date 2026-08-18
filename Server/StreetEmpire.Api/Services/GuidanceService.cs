@@ -115,6 +115,30 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 "market");
         }
 
+        // Nobody discovers medicine on their own. It is the only stock in the game bought purely against
+        // something another player might do, so a house with hoes and no medicine is a standing hole that
+        // nothing else in the interface would ever mention.
+        //
+        // Ranked below the lab, and silent until the player can actually be attacked. Insurance is not
+        // bleeding and it is not an opportunity: it is the thing worth buying once there is something to
+        // lose. Advising it to someone still under the net worth floor - who cannot legally be touched -
+        // would be selling them a policy against nothing, in the four rows they have to read.
+        var curable = player.Medicine * Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate);
+        var exposedHoes = Math.Max(0, player.Hoes - curable);
+        if (player.Hoes > 0
+            && exposedHoes > player.Hoes / 2
+            && economy.CalculateNetWorth(player) >= _options.AntiFarm.MinDefenderNetWorth)
+        {
+            var perCrate = Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate);
+            var crates = Math.Min(
+                Math.Max(1, (int)Math.Ceiling(exposedHoes / (double)perCrate)),
+                Math.Max(0, capacity.MaxMedicine - player.Medicine));
+            if (crates > 0)
+                Add(32, $"Buy {crates:N0} crate{(crates == 1 ? string.Empty : "s")} of medicine",
+                    $"A rival can infest your house, and each crate treats {perCrate:N0} hoes. Whatever the medicine cannot reach is simply gone.",
+                    "market", (long)crates * _options.MedicinePrice);
+        }
+
         if (player.Turns >= _options.MaxActionTurns)
         {
             // A full bank earns nothing further, which is worth saying - but as part of this row

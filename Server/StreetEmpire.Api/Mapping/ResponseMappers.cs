@@ -82,7 +82,7 @@ internal static class ResponseMappers
         return Math.Max(0, (int)Math.Round(share * 100, MidpointRounding.AwayFromZero));
     }
 
-    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerNetWorth = 0)
+    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerNetWorth = 0, IReadOnlyList<PlayerTitleResponse>? titles = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
@@ -100,6 +100,8 @@ internal static class ResponseMappers
             player.Hoes,
             player.Thugs,
             player.Weapons,
+            TitleService.For(player.Id, titles ?? []),
+            player.Rides,
             AverageMorale(player),
             ToCombatReadiness(player, options),
             ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch));
@@ -114,7 +116,8 @@ internal static class ResponseMappers
         int recentAttacksMade,
         int recentDefenses,
         DateTime? viewerLaneReadyAtUtc,
-        long viewerNetWorth = 0)
+        long viewerNetWorth = 0,
+        IReadOnlyList<PlayerTitleResponse>? titles = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
@@ -134,6 +137,10 @@ internal static class ResponseMappers
             player.Hoes,
             player.Thugs,
             player.Weapons,
+            ToWeaponRack(player, options),
+            TitleService.For(player.Id, titles ?? []),
+            player.Rides,
+            player.Medicine,
             player.Weed,
             player.Coke,
             Math.Round(player.HoeHappiness, 2),
@@ -144,6 +151,36 @@ internal static class ResponseMappers
             publicActivity);
     }
 
+    /// <summary>Where a shift can be worked, and what each place is actually for.</summary>
+    internal static List<StreetDistrictResponse> ToDistricts(GameOptions options)
+        => options.StreetAction.Districts
+            .Select(x => new StreetDistrictResponse(
+                x.Key,
+                x.Name,
+                x.Blurb,
+                x.IsDefault,
+                x.GrossPercent,
+                x.HoeRecruitPercent,
+                x.ThugRecruitPercent,
+                x.PimpRecruitPercent,
+                x.FindPercent,
+                x.HeatPercent))
+            .ToList();
+
+    /// <summary>The gun rack as the client sees it: what is held, what it costs, what it is worth.</summary>
+    internal static List<WeaponTierResponse> ToWeaponRack(Player player, GameOptions options)
+        => options.Weapons
+            .OrderBy(x => x.Price)
+            .Select(x => new WeaponTierResponse(
+                x.Key,
+                WeaponTiers.Label(x.Key),
+                player.Armoury.Of(x.Key),
+                x.Price,
+                x.Firepower,
+                x.CanForge ? x.ForgeCost : null,
+                x.CanForge ? x.MinWorkshopLevel : null))
+            .ToList();
+
     internal static CombatReadinessResponse ToCombatReadiness(Player player, GameOptions options)
     {
         var armedThugs = Math.Min(player.Weapons, player.Thugs);
@@ -151,8 +188,9 @@ internal static class ResponseMappers
         var weaponCoverage = player.Thugs == 0 ? 100 : Math.Round(armedThugs * 100.0 / player.Thugs, 2);
         var averageMorale = AverageMorale(player);
         var power = options.Combat.Power;
-        var attackPower = CombatPower.Attack(player.Pimps, player.Thugs, player.Weapons, averageMorale, power);
-        var defensePower = CombatPower.Defence(player.Pimps, player.Thugs, player.Weapons, averageMorale, power);
+        var firepower = Firepower.Of(player.Armoury, player.Thugs, options.WeaponFirepower());
+        var attackPower = CombatPower.Attack(player.Pimps, player.Thugs, firepower, averageMorale, power);
+        var defensePower = CombatPower.Defence(player.Pimps, player.Thugs, firepower, averageMorale, power);
         var riskBand = (averageMorale, weaponCoverage, uncoveredThugs) switch
         {
             (< 35, _, _) => "Fragile",
@@ -166,6 +204,7 @@ internal static class ResponseMappers
             attackPower,
             defensePower,
             armedThugs,
+            Math.Round(firepower.InPistols, 1),
             uncoveredThugs,
             weaponCoverage,
             averageMorale,
@@ -222,6 +261,7 @@ internal static class ResponseMappers
             capacity.MaxPimps,
             capacity.MaxHoes,
             capacity.MaxThugs,
+            capacity.MaxRides,
             capacity.MaxCash,
             capacity.MaxCondoms,
             capacity.MaxBeer,
@@ -230,6 +270,7 @@ internal static class ResponseMappers
             capacity.MaxCoke,
             capacity.MaxMoonshine,
             capacity.MaxCut,
+            capacity.MaxMedicine,
             hideouts.ProductionYieldBonusPercent(player.Hideout, "weed"),
             hideouts.ProductionYieldBonusPercent(player.Hideout, "coke"),
             hideouts.PassivePerHour(player.Hideout, "weed"),
@@ -272,11 +313,25 @@ internal static class ResponseMappers
     private static List<HideoutStationResponse> Stations(Player player, HideoutService hideouts, GameOptions options)
     {
         var cokePrice = options.CityMarkets.ProductPrice(player.City, "coke", options.CokeSellPrice);
-        (string Key, string Name, string Good, long Compare, string CompareLabel)[] shapes =
+        // What the workshop is currently turning out: the best gun its level has unlocked. That decides
+        // both the price it is meant to beat and the cost it is quoted at, so an upgrade shows up here as
+        // a different product rather than as the same one slightly cheaper.
+        var workshopLevel = hideouts.StationFor(player.Hideout, "workshop");
+        // An unbuilt shop advertises what building one would actually get you, which is the first
+        // level's reach rather than the cheapest gun in the game. The panel's whole job is to say what
+        // the money buys, and "makes pistols" undersells a shop that turns out shotguns on day one.
+        var reach = Math.Max(1, workshopLevel?.Level ?? 1);
+        var forging = options.Weapons
+            .Where(x => x.CanForge && x.MinWorkshopLevel <= reach)
+            .OrderByDescending(x => x.Price)
+            .FirstOrDefault();
+        var forgeGood = forging?.Key ?? WeaponTiers.Pistol;
+
+        (string Key, string Name, string Good, long Compare, string CompareLabel, long UnitCost)[] shapes =
         [
-            ("workshop", "Workshop", "weapons", options.WeaponPrice, "store weapons"),
-            ("still", "Still", "moonshine", options.BeerPrice, "store beer"),
-            ("mix", "Mix House", "cut", Math.Max(1, cokePrice / 4), "what it stretches")
+            ("workshop", "Workshop", forgeGood, forging?.Price ?? options.WeaponPrice, $"store {WeaponTiers.Label(forgeGood).ToLowerInvariant()}", forging?.ForgeCost ?? 0),
+            ("still", "Still", "moonshine", options.BeerPrice, "store beer", workshopLevelCost(hideouts, player, "still")),
+            ("mix", "Mix House", "cut", Math.Max(1, cokePrice / 4), "what it stretches", workshopLevelCost(hideouts, player, "mix"))
         ];
 
         return shapes.Select(shape =>
@@ -293,12 +348,15 @@ internal static class ResponseMappers
                     _ => player.Hideout?.WorkshopLevel ?? 0
                 },
                 level?.WeaponsPerTurn ?? 0,
-                level?.CostPerWeapon ?? 0,
+                shape.UnitCost,
                 shape.Compare,
                 shape.CompareLabel,
                 HeatPerUnit(options, shape.Good),
                 ToRoomUpgrade(hideouts, player.Hideout, shape.Key));
         }).ToList();
+
+        static long workshopLevelCost(HideoutService hideouts, Player player, string station)
+            => hideouts.StationFor(player.Hideout, station)?.CostPerWeapon ?? 0;
     }
 
     /// <summary>
@@ -406,6 +464,7 @@ internal static class ResponseMappers
     {
         var combat = options.Combat;
         var isProtected = player.CombatProtectionUntilUtc is { } protectionUntil && protectionUntil > nowUtc;
+        var isStrikeProtected = player.StrikeProtectionUntilUtc is { } strikeUntil && strikeUntil > nowUtc;
         var isOnCooldown = viewerLaneReadyAtUtc is { } readyAt && readyAt > nowUtc;
         var hasViewer = viewer is not null;
         var isSelf = viewer?.Id == player.Id;
@@ -425,6 +484,8 @@ internal static class ResponseMappers
         return new CombatStatusResponse(
             isProtected,
             player.CombatProtectionUntilUtc,
+            isStrikeProtected,
+            player.StrikeProtectionUntilUtc,
             player.LastAttackAtUtc,
             player.LastAttackedAtUtc,
             viewerLaneReadyAtUtc,
@@ -443,6 +504,8 @@ internal static class ResponseMappers
             log.Attacker.Name,
             log.DefenderId,
             log.Defender.Name,
+            log.Method,
+            AttackMethods.Label(log.Method),
             log.Outcome,
             log.Summary,
             log.TurnsSpent,
@@ -459,6 +522,8 @@ internal static class ResponseMappers
             log.DefenderHoesLost,
             log.DefenderThugsLost,
             log.DefenderWeaponsLost,
+            log.HoesTaken,
+            log.RidesTaken,
             log.DefenderProtectionUntilUtc,
             log.ResolvesAtUtc,
             log.ResolvedAtUtc,

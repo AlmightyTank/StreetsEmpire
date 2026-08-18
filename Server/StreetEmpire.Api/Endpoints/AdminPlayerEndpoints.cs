@@ -85,6 +85,8 @@ internal static class AdminPlayerEndpoints
                 target.Condoms,
                 target.Beer,
                 target.Weapons,
+                target.Medicine,
+                target.Rides,
                 target.Weed,
                 target.Coke,
                 Math.Round(target.HoeHappiness, 2),

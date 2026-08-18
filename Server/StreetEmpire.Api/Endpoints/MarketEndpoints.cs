@@ -40,7 +40,7 @@ internal static class MarketEndpoints
                     TradeGoods.Label(key),
                     TradeGoods.ReferencePrice(options, key, player.City),
                     TradeGoods.Held(player, key),
-                    Math.Max(0, TradeGoods.Capacity(capacity, key) - TradeGoods.Held(player, key)),
+                    TradeGoods.Room(player, capacity, key),
                     listings.Where(x => x.Item == key).Select(x => (long?)x.PricePerUnit).Min()))
                 .ToList();
 
@@ -192,7 +192,7 @@ internal static class MarketEndpoints
             try
             {
                 var station = request.Station?.Trim().ToLowerInvariant() ?? "workshop";
-                var result = economy.Make(player, station, request.Turns);
+                var result = economy.Make(player, station, request.Turns, request.Weapon);
                 AddLog(db, player, before, "WORKSHOP", request.Turns, result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

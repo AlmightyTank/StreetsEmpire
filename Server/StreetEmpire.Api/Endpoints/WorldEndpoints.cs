@@ -66,6 +66,68 @@ internal static class WorldEndpoints
         }).RequireAuthorization();
 
 
+        // Who leads at what today. Its own route rather than part of the news feed: the feed is a list of
+        // things that happened, and this is a standing fact about who people are this week.
+        app.MapGet("/api/world/titles", async (
+            TitleService titles,
+            CombatResolutionService combatResolver,
+            CancellationToken ct) =>
+        {
+            var now = DateTime.UtcNow;
+            await combatResolver.ResolveDueAsync(now, ct);
+            return Results.Ok(await titles.BoardAsync(now, ct));
+        }).RequireAuthorization();
+
+
+        app.MapGet("/api/game/prayer", async (
+            CurrentPlayerService current,
+            PrayerService prayer,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            return Results.Ok(ToPrayerBoard(player, prayer, now));
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/prayer", async (
+            PrayerRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            PrayerService prayer,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var result = prayer.Offer(player, request.Offered, now);
+                AddLog(db, player, before, "PRAYER", 0, result.Summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(result.Summary, player.Turns, new Dictionary<string, object?>
+                {
+                    ["good"] = result.Demand.Good,
+                    ["asked"] = result.Demand.Quantity,
+                    ["offered"] = result.Offered,
+                    ["generous"] = result.Generous,
+                    ["blessing"] = result.Blessing.Kind,
+                    ["nextPrayerAtUtc"] = prayer.NextPrayerAtUtc(player)
+                }));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
         app.MapGet("/api/world/news", async (
             GameDbContext db,
             EconomyService economy,
@@ -94,6 +156,34 @@ internal static class WorldEndpoints
                         x.Id, x.Name, x.City, x.Action, WorldNews.Category(x.Action), x.Summary, x.TurnsSpent, x.CreatedAtUtc))
                     .ToList()));
         }).RequireAuthorization();
+    }
+
+    /// <summary>
+    /// The shrine as the player sees it, including why it is shut when it is shut.
+    /// </summary>
+    private static PrayerBoardResponse ToPrayerBoard(Player player, PrayerService prayer, DateTime nowUtc)
+    {
+        var demand = prayer.DemandFor(player, nowUtc);
+        var held = demand.Good == "cash" ? player.Cash : TradeGoods.Held(player, demand.Good);
+        var canPray = prayer.CanPray(player, nowUtc);
+        var next = prayer.NextPrayerAtUtc(player);
+
+        var blocked = !canPray && next is { } due
+            ? $"The gods have heard from you. Come back in {Math.Max(1, (int)Math.Ceiling((due - nowUtc).TotalDays))} day(s)."
+            : held < demand.Quantity
+                ? $"They want {demand.Quantity:N0} {demand.Label} and you have {held:N0}."
+                : null;
+
+        return new PrayerBoardResponse(
+            canPray,
+            next,
+            demand.Good,
+            demand.Label,
+            demand.Quantity,
+            demand.ApproximateValue,
+            held,
+            demand.Quantity * 2,
+            blocked);
     }
 
     /// <summary>

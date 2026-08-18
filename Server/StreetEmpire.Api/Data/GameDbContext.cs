@@ -20,6 +20,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<MarketListing> MarketListings => Set<MarketListing>();
     public DbSet<MuleRun> MuleRuns => Set<MuleRun>();
     public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<Alliance> Alliances => Set<Alliance>();
+    public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,8 +39,42 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             entity.HasIndex(x => x.Name).IsUnique();
             entity.Property(x => x.Name).HasMaxLength(32);
+            // The rack, and the total across it, are views over the four gun columns rather than columns.
+            entity.Ignore(x => x.Armoury);
+            entity.Ignore(x => x.Weapons);
             entity.Property(x => x.HoeHappiness).HasPrecision(5, 2);
             entity.Property(x => x.ThugHappiness).HasPrecision(5, 2);
+        });
+
+        modelBuilder.Entity<Alliance>(entity =>
+        {
+            entity.HasIndex(x => x.Name).IsUnique();
+            entity.Property(x => x.Name).HasMaxLength(32);
+            entity.Property(x => x.Motto).HasMaxLength(140);
+            // Losing a crew must not take its members with it. They come out of it unaligned, which is
+            // exactly what disbanding one means.
+            entity.HasMany(x => x.Members)
+                .WithOne(x => x.Alliance!)
+                .HasForeignKey(x => x.AllianceId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AllianceRequest>(entity =>
+        {
+            // Every read is "what is outstanding for this crew" or "for this player", and the pair with
+            // the direction is what stops the same ask being sent twice.
+            entity.HasIndex(x => new { x.AllianceId, x.Kind });
+            entity.HasIndex(x => new { x.PlayerId, x.Kind });
+            entity.Property(x => x.Note).HasMaxLength(140);
+            entity.HasOne(x => x.Alliance)
+                .WithMany(x => x.Requests)
+                .HasForeignKey(x => x.AllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A player leaving the game takes their outstanding asks with them.
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Hideout>(entity =>
@@ -178,6 +214,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasIndex(x => new { x.AttackerId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.DefenderId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.Outcome, x.ResolvesAtUtc });
+            entity.Property(x => x.Method).HasMaxLength(16);
             entity.Property(x => x.Outcome).HasMaxLength(32);
             entity.Property(x => x.Summary).HasMaxLength(800);
             entity.HasOne(x => x.Attacker)
@@ -192,6 +229,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
 
         modelBuilder.Entity<CombatMission>(entity =>
         {
+            // The rack a crew is carrying is a view over the four Carried* columns, not a column itself.
+            entity.Ignore(x => x.Carried);
             entity.HasIndex(x => new { x.AttackerId, x.Status });
             entity.HasIndex(x => new { x.DefenderId, x.Status });
             entity.HasIndex(x => new { x.Status, x.ArrivesAtUtc, x.NextRoundAtUtc, x.ReturnsAtUtc });

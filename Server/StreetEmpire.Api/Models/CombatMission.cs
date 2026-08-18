@@ -32,7 +32,52 @@ public sealed class CombatMission
     public int AssignedThugs { get; set; }
     public int AssignedWeapons { get; set; }
     public int RemainingAttackers { get; set; }
+
+    /// <summary>
+    /// Guns still out with this crew, counted whole. Kept as a column rather than derived from the four
+    /// below because the commitment query and the defender's home-crew arithmetic both sum it across
+    /// every live mission, and doing that over four columns would cost four sums to answer one question.
+    /// It is maintained in step with them: <see cref="CarriedRifles"/> and friends are the same guns.
+    /// </summary>
     public int RemainingWeapons { get; set; }
+
+    /// <summary>
+    /// Which guns went, and which are still out. A crew arms itself from the best of the rack, so a raid
+    /// is not "twenty weapons" - it is four rifles and sixteen pistols, and losing five of them has to
+    /// take the right five off the right shelves back home.
+    ///
+    /// Decremented as the fight goes, so these are the survivors rather than the manifest; the manifest
+    /// is <see cref="AssignedWeapons"/>, frozen at launch.
+    /// </summary>
+    public int CarriedPistols { get; set; }
+    public int CarriedShotguns { get; set; }
+    public int CarriedSmgs { get; set; }
+    public int CarriedRifles { get; set; }
+
+    /// <summary>
+    /// Borrowed thugs out with this crew, and how many of them did not come back.
+    ///
+    /// Counted apart from the attacker's own because they belong to somebody else: what survives goes
+    /// back to the pool when the raid comes home, and what dies is gone from it for good. Folded into
+    /// RemainingAttackers they would return as the attacker's own men, which is a way of stealing from
+    /// the people you agreed not to steal from.
+    /// </summary>
+    public int AllianceThugs { get; set; }
+    public int AllianceThugsLost { get; set; }
+
+    /// <summary>The guns still out, as one value.</summary>
+    public Armoury Carried
+    {
+        get => new(CarriedPistols, CarriedShotguns, CarriedSmgs, CarriedRifles);
+        set
+        {
+            CarriedPistols = Math.Max(0, value.Pistols);
+            CarriedShotguns = Math.Max(0, value.Shotguns);
+            CarriedSmgs = Math.Max(0, value.Smgs);
+            CarriedRifles = Math.Max(0, value.Rifles);
+            RemainingWeapons = value.Total;
+        }
+    }
 
     public double AttackerMorale { get; set; }
     public double DefenderMorale { get; set; }

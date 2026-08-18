@@ -27,6 +27,9 @@ builder.Services.Configure<GameOptions>(builder.Configuration.GetSection("Game")
 builder.Services.AddOptions<GameOptions>().PostConfigure<GameOptionOverrides>((options, overrides) =>
 {
     overrides.Apply(options);
+    options.ApplyWeaponDefaultsWhereEmpty();
+    options.StreetAction.ApplyDistrictDefaultsWhereEmpty();
+    options.Alliances.ApplyDefaultsWhereEmpty();
     options.Hideout.ApplyDefaultsWhereEmpty();
     options.Territory.ApplyDefaultsWhereEmpty();
     options.CityMarkets.ApplyDefaultsWhereEmpty(options.Territory.Cities());
@@ -50,6 +53,10 @@ builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();
 builder.Services.AddScoped<CombatService>();
+builder.Services.AddScoped<StreetStrikeService>();
+builder.Services.AddScoped<PrayerService>();
+builder.Services.AddScoped<TitleService>();
+builder.Services.AddScoped<AllianceService>();
 builder.Services.AddSingleton<CombatSchedule>();
 builder.Services.AddScoped<CombatMissionService>();
 builder.Services.AddScoped<CombatResolutionService>();
@@ -203,6 +210,7 @@ app.MapAuthEndpoints();
 app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();
+app.MapAllianceEndpoints();
 app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();
 app.MapMuleEndpoints();

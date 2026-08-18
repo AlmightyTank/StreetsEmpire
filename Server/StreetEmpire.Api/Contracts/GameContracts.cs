@@ -2,7 +2,8 @@ using StreetEmpire.Api.Services;
 
 namespace StreetEmpire.Api.Contracts;
 
-public sealed record ScoutRequest(int Turns, bool AutoBuySupplies = false);
+/// <param name="District">Where to work. Null takes the neutral district.</param>
+public sealed record ScoutRequest(int Turns, bool AutoBuySupplies = false, string? District = null);
 public sealed record ProduceRequest(string? Product, int Turns);
 public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record TravelRequest(string? City);
@@ -31,19 +32,228 @@ public sealed record AdminBotActionRequest(
     string? Room = null,
     Guid? DefenderId = null,
     int? Thugs = null,
-    int? Weapons = null);
+    int? Weapons = null,
+    /// <summary>Which attack to drive them through. Null is a raid, as it was before the menu existed.</summary>
+    string? Method = null,
+    int? Coke = null);
 /// <summary>Null timings mean "leave as they are"; the reset flag restores the configured defaults.</summary>
 public sealed record AdminBotAutomationRequest(bool Enabled, int? TickSeconds = null, int? RoundsPerTick = null, bool ResetTiming = false);
 /// <summary>
 /// An attack carries exactly one commanding pimp, so there is no count to send. Naming a pimp picks
 /// the commander; leaving it null lets the server field the best Enforcer available.
 /// </summary>
-public sealed record CombatAttackRequest(Guid DefenderId, int Thugs = 1, int Weapons = 0, long? CommanderPimpId = null);
+/// <param name="Method">
+/// Which attack this is: a raid, or one of the quick strikes. Defaults to a raid, so every caller
+/// written before the menu existed keeps asking for exactly what it always got.
+/// </param>
+/// <param name="Coke">Product staked on a poaching run. Ignored by every other method.</param>
+public sealed record CombatAttackRequest(
+    Guid DefenderId,
+    int Thugs = 1,
+    int Weapons = 0,
+    long? CommanderPimpId = null,
+    string? Method = null,
+    int Coke = 0,
+    /// <summary>Borrowed thugs to bring. Capped at the size of your own crew on the raid.</summary>
+    int AllianceThugs = 0);
+
+/// <summary>
+/// One entry on the attack menu, priced and gated for the player looking at it. Sent from the server so
+/// the client never has to know a rule: a method it cannot use arrives already carrying the reason.
+/// </summary>
+public sealed record AttackMethodResponse(
+    string Key,
+    string Label,
+    int TurnCost,
+    string Description,
+    string? BlockedReason);
+
+public sealed record StoreSellRequest(string? ItemKey, int Quantity);
+
+public sealed record PrayerRequest(long Offered);
+
+public sealed record FoundAllianceRequest(string? Name, string? Motto);
+public sealed record JoinAllianceRequest(long AllianceId);
+public sealed record ExpelMemberRequest(Guid MemberId);
+/// <param name="Powers">
+/// Minimum rank per power, keyed by power name. Partial: only the ones named are changed, so a boss
+/// adjusting one line does not have to restate the other four.
+/// </param>
+public sealed record UpdateAllianceRequest(
+    int? DuesPercent,
+    string? Door,
+    string? Motto,
+    IReadOnlyDictionary<string, string>? Powers = null);
+
+public sealed record SetAllianceRankRequest(Guid MemberId, string? Rank);
+public sealed record HandOverAllianceRequest(Guid MemberId);
+public sealed record InvitePlayerRequest(Guid PlayerId, string? Note);
+public sealed record ApplyToAllianceRequest(long AllianceId, string? Note);
+public sealed record AnswerAllianceRequest(long RequestId, bool Accept);
+
+/// <summary>One outstanding ask, from whichever side it came.</summary>
+public sealed record AllianceRequestResponse(
+    long Id,
+    string Kind,
+    long AllianceId,
+    string AllianceName,
+    Guid PlayerId,
+    string PlayerName,
+    string? Note,
+    /// <summary>Whether this viewer is the one who has to answer it.</summary>
+    bool YoursToAnswer,
+    DateTime CreatedAtUtc);
+
+/// <summary>One of the three ways a crew can take people on.</summary>
+public sealed record AllianceDoorResponse(string Door, string Label, string Detail);
+
+/// <summary>A power, the rank it needs here, and whether the viewer has it.</summary>
+public sealed record AlliancePowerResponse(string Power, string Label, string MinRank, bool YouHaveIt);
+public sealed record BuyAllianceThugsRequest(string? Kind, int Quantity);
+
+/// <summary>
+/// Just enough of the crew for the pages that are not about the crew: the raid screen needs to know
+/// what it can borrow, and nothing else about who you run with.
+/// </summary>
+public sealed record AllianceBriefResponse(
+    long Id,
+    string Name,
+    int OffensiveThugs,
+    int DefensiveThugs,
+    int BorrowLimit,
+    int YourDefenders);
+/// <param name="Quantity">Negative sends them back to the pool.</param>
+public sealed record PostDefendersRequest(int Quantity);
+
+/// <summary>
+/// One crew on the board. Worth the sum of what its members are worth, which is the source game's own
+/// definition and the only one that cannot disagree with the individual leaderboard.
+/// </summary>
+public sealed record AllianceSummaryResponse(
+    long Id,
+    string Name,
+    string? Motto,
+    int Members,
+    int MaxMembers,
+    long NetWorth,
+    int DuesPercent,
+    int OffensiveThugs,
+    int DefensiveThugs,
+    /// <summary>How they take people on, and what that means in the words the board shows.</summary>
+    string Door,
+    string DoorLabel,
+    string DoorDetail,
+    bool Yours,
+    bool YouFounded,
+    int Rank = 0);
+
+/// <summary>One member, as their own crew sees them.</summary>
+public sealed record AllianceMemberResponse(
+    Guid PlayerId,
+    string Name,
+    string City,
+    long NetWorth,
+    int Pimps,
+    int Hoes,
+    int Thugs,
+    bool IsFounder,
+    bool IsYou,
+    /// <summary>Where they stand, and whether the viewer is above them.</summary>
+    string Rank,
+    string RankLabel,
+    bool YouOutrankThem,
+    /// <summary>Alliance thugs posted to their house, which came out of the shared pool.</summary>
+    int Defenders,
+    DateTime? JoinedAtUtc);
+
+/// <summary>The crew page: who is in it, what it holds, and what it costs to be here.</summary>
+public sealed record AllianceBoardResponse(
+    AllianceSummaryResponse? Yours,
+    IReadOnlyList<AllianceMemberResponse> Members,
+    long Treasury,
+    long FoundingCost,
+    int MaxDuesPercent,
+    long OffensiveThugCost,
+    long DefensiveThugCost,
+    /// <summary>Borrowed thugs this player may field, which is the size of their own crew.</summary>
+    int BorrowLimit,
+    int YourDefenders,
+    /// <summary>Where the viewer stands, and what that lets them do here.</summary>
+    string YourRank,
+    IReadOnlyList<AlliancePowerResponse> Powers,
+    IReadOnlyList<string> Ranks,
+    /// <summary>The three doors a boss can pick between.</summary>
+    IReadOnlyList<AllianceDoorResponse> Doors,
+    /// <summary>Asks waiting on somebody: invitations to the viewer, applications to their crew.</summary>
+    IReadOnlyList<AllianceRequestResponse> Requests,
+    IReadOnlyList<AllianceSummaryResponse> Board);
+
+/// <summary>
+/// One place to work a shift, as the difference it makes rather than as raw numbers. The source
+/// game had five of these and its own guide admits it never found a difference between any of them,
+/// so what a district is worth is stated outright instead of left to be discovered.
+/// </summary>
+public sealed record StreetDistrictResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    bool IsDefault,
+    int GrossPercent,
+    int HoeRecruitPercent,
+    int ThugRecruitPercent,
+    int PimpRecruitPercent,
+    int FindPercent,
+    int HeatPercent);
+
+/// <summary>
+/// The shrine as the player sees it: what the gods want this week, whether they will hear you, and what
+/// giving generously would mean.
+/// </summary>
+public sealed record PrayerBoardResponse(
+    bool CanPray,
+    DateTime? NextPrayerAtUtc,
+    string Good,
+    string Label,
+    long Quantity,
+    long ApproximateValue,
+    /// <summary>What the player actually holds of it, so the ask can be read against the shelf.</summary>
+    long Held,
+    /// <summary>Giving this much counts as generous, which is what the rarer blessings cost.</summary>
+    long GenerousQuantity,
+    string? BlockedReason);
+
+/// <summary>
+/// A name somebody has earned today, and what earned it. Half of these are for things done to a player
+/// rather than by them, which is the source game's own reading of what a stat board is for.
+/// </summary>
+public sealed record PlayerTitleResponse(
+    string Key,
+    string Title,
+    Guid PlayerId,
+    string PlayerName,
+    long Value,
+    string Detail);
+
+/// <summary>
+/// One shelf of the gun rack, as the player sees it. Carries what a gun is worth in a fight as well as
+/// what it costs, because that ratio is the entire decision and working it out from two other panels is
+/// not something anyone should have to do.
+/// </summary>
+public sealed record WeaponTierResponse(
+    string Key,
+    string Label,
+    int Held,
+    int Price,
+    double Firepower,
+    /// <summary>What making one costs, or null for a gun nobody makes in a back room.</summary>
+    long? ForgeCost,
+    int? MinWorkshopLevel);
 
 public sealed record MarketListRequest(string? Item, int Quantity, long PricePerUnit);
 public sealed record MarketBuyRequest(long ListingId, int Quantity);
 public sealed record MarketCancelRequest(long ListingId);
-public sealed record ForgeRequest(int Turns, string? Station = null);
+/// <param name="Weapon">Which gun to make. Null asks for the best the workshop can manage.</param>
+public sealed record ForgeRequest(int Turns, string? Station = null, string? Weapon = null);
 
 public sealed record MarketListingResponse(
     long Id,
@@ -145,7 +355,12 @@ public sealed record DashboardResponse(
     MoraleTrendResponse MoraleTrend,
     int Condoms,
     int Beer,
+    /// <summary>Guns of every kind, which is the coverage number: one gun covers one thug.</summary>
     int Weapons,
+    /// <summary>And which guns they are, since that is what decides a fight.</summary>
+    IReadOnlyList<WeaponTierResponse> WeaponRack,
+    int Medicine,
+    int Rides,
     int Weed,
     int Coke,
     int Moonshine,
@@ -164,6 +379,12 @@ public sealed record DashboardResponse(
     CombatStatusResponse CombatStatus,
     int UnreadDefenceAlerts,
     IReadOnlyList<StoreItemResponse> Store,
+    /// <summary>The attack menu, priced and gated for this player.</summary>
+    IReadOnlyList<AttackMethodResponse> AttackMethods,
+    /// <summary>Where a shift can be worked, and what each place is for.</summary>
+    IReadOnlyList<StreetDistrictResponse> Districts,
+    /// <summary>The crew, or null when running alone.</summary>
+    AllianceBriefResponse? Alliance,
     IReadOnlyList<ActivityResponse> RecentActivity);
 
 public sealed record CityMarketResponse(
@@ -278,6 +499,10 @@ public sealed record PlayerTargetResponse(
     int Hoes,
     int Thugs,
     int Weapons,
+    /// <summary>Names they have earned today, so the list says who somebody is before you open them.</summary>
+    IReadOnlyList<string> Titles,
+    /// <summary>Rides parked here, since an unguarded garage is what a jacking is looking for.</summary>
+    int Rides,
     double AverageMorale,
     CombatReadinessResponse CombatReadiness,
     CombatStatusResponse CombatStatus);
@@ -296,6 +521,17 @@ public sealed record PlayerProfileResponse(
     int Hoes,
     int Thugs,
     int Weapons,
+    /// <summary>What they are armed with, not merely how many. A house of rifles is a different fight.</summary>
+    IReadOnlyList<WeaponTierResponse> WeaponRack,
+    /// <summary>Names they have earned today. Empty for almost everybody, which is what makes them worth having.</summary>
+    IReadOnlyList<string> Titles,
+    int Rides,
+    /// <summary>
+    /// Their medicine, which decides whether infesting them would achieve anything. Public on purpose:
+    /// a strike whose one counter is invisible is a coin flip, and the point of the menu is that each
+    /// method is a read of what the target has left uncovered.
+    /// </summary>
+    int Medicine,
     int Weed,
     int Coke,
     double HoeHappiness,
@@ -435,6 +671,8 @@ public sealed record HideoutResponse(
     int MaxPimps,
     int MaxHoes,
     int MaxThugs,
+    /// <summary>Garage spaces. Held by the building rather than the storage room.</summary>
+    int MaxRides,
     long MaxCash,
     int MaxCondoms,
     int MaxBeer,
@@ -443,6 +681,7 @@ public sealed record HideoutResponse(
     int MaxCoke,
     int MaxMoonshine,
     int MaxCut,
+    int MaxMedicine,
     int WeedLabYieldBonusPercent,
     int CokeLabYieldBonusPercent,
     int WeedLabPassivePerHour,
@@ -523,6 +762,11 @@ public sealed record CombatReadinessResponse(
     int AttackPower,
     int DefensePower,
     int ArmedThugs,
+    /// <summary>
+    /// What the guns actually carried are worth, in pistols. Shown next to the armed count because the
+    /// two answer different questions: how many thugs are covered, and how hard they hit.
+    /// </summary>
+    double Firepower,
     int UncoveredThugs,
     double WeaponCoveragePercent,
     double AverageMorale,
@@ -541,6 +785,13 @@ public sealed record CombatCrewResponse(
 public sealed record CombatStatusResponse(
     bool IsProtected,
     DateTime? ProtectionUntilUtc,
+    /// <summary>
+    /// The lighter shield the quick strikes set and respect. Separate from the raid shield because a
+    /// player can be open to a raid and closed to another drive-by at the same time, and the recon page
+    /// has to be able to say which.
+    /// </summary>
+    bool IsStrikeProtected,
+    DateTime? StrikeProtectionUntilUtc,
     DateTime? LastAttackAtUtc,
     DateTime? LastAttackedAtUtc,
     DateTime? AttackCooldownUntilUtc,
@@ -557,6 +808,9 @@ public sealed record CombatLogResponse(
     string AttackerName,
     Guid DefenderId,
     string DefenderName,
+    /// <summary>Which attack this was, so the history can say "jacking" rather than only "Victory".</summary>
+    string Method,
+    string MethodLabel,
     string Outcome,
     string Summary,
     int TurnsSpent,
@@ -573,6 +827,8 @@ public sealed record CombatLogResponse(
     int DefenderHoesLost,
     int DefenderThugsLost,
     int DefenderWeaponsLost,
+    int HoesTaken,
+    int RidesTaken,
     DateTime? DefenderProtectionUntilUtc,
     DateTime? ResolvesAtUtc,
     DateTime? ResolvedAtUtc,
@@ -734,6 +990,8 @@ public sealed record AdminPlayerDetailResponse(
     int Condoms,
     int Beer,
     int Weapons,
+    int Medicine,
+    int Rides,
     int Weed,
     int Coke,
     double HoeHappiness,
@@ -829,6 +1087,8 @@ public sealed record AdminConfigResponse(
 public sealed record DefenceAlertResponse(
     long Id,
     string AttackerName,
+    string Method,
+    string MethodLabel,
     string Outcome,
     bool HeldTheHouse,
     string Headline,
@@ -837,6 +1097,8 @@ public sealed record DefenceAlertResponse(
     int WeedLost,
     int CokeLost,
     int ThugsLost,
+    int HoesLost,
+    int RidesLost,
     int PimpsLost,
     bool IsUnread,
     DateTime CreatedAtUtc);

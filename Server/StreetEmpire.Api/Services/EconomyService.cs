@@ -17,19 +17,38 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public Expression<Func<Player, long>> NetWorthExpression { get; } = BuildNetWorthExpression(options.Value);
 
     private static Expression<Func<Player, long>> BuildNetWorthExpression(GameOptions options)
-        => player => player.Cash
+    {
+        // Pulled out as locals so the expression tree closes over four plain numbers rather than over a
+        // list it would have to walk in the database. A rack is worth what the shop charges for the guns
+        // on it, tier by tier, which is why this cannot be a count times one price any more.
+        var pistol = PriceOf(options, WeaponTiers.Pistol);
+        var shotgun = PriceOf(options, WeaponTiers.Shotgun);
+        var smg = PriceOf(options, WeaponTiers.Smg);
+        var rifle = PriceOf(options, WeaponTiers.Rifle);
+
+        return player => player.Cash
                      + player.BankCash
                      + (long)player.Pimps * options.PimpNetWorth
                      + (long)player.Hoes * options.HoeNetWorth
                      + (long)player.Thugs * options.ThugNetWorth
                      + (long)player.Condoms * options.CondomPrice
                      + (long)player.Beer * options.BeerPrice
-                     + (long)player.Weapons * options.WeaponPrice
+                     + (long)player.Pistols * pistol
+                     + (long)player.Shotguns * shotgun
+                     + (long)player.Smgs * smg
+                     + (long)player.Rifles * rifle
+                     + (long)player.Medicine * options.MedicineNetWorth
+                     + (long)player.Rides * options.RideNetWorth
                      + (long)player.Weed * options.WeedNetWorth
                      // Coke is worth what it is, not what it weighs. Math.Pow translates to the
                      // database's own power(), so ranking still happens there rather than in memory.
                      + (long)(player.Coke * options.CokeNetWorth
                               * Math.Pow(player.CokePurity, options.CokePurityPricePower));
+    }
+
+    /// <summary>A tier's shop price, or the legacy single-weapon price if the table has no such gun.</summary>
+    private static int PriceOf(GameOptions options, string tier)
+        => options.WeaponTier(tier)?.Price ?? options.WeaponPrice;
 
     /// <summary>
     /// Players ranked above the given standing, for turning a net worth into a rank without
@@ -78,6 +97,26 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     }
 
     /// <summary>
+    /// Projects each player to the crew they run with and what they are worth.
+    ///
+    /// Built by composition for the same reason <see cref="StandingExpression"/> is: the net worth sum
+    /// is one expression tree and every reader of it has to be the same sum. EF cannot take a
+    /// pre-built expression as the selector of a grouped Sum, so the grouping happens in memory over
+    /// the aligned players alone - which is dozens of rows, and every one of their net worths was still
+    /// worked out by the database.
+    /// </summary>
+    public Expression<Func<Player, AllianceStanding>> AllianceStandingExpression()
+    {
+        var player = NetWorthExpression.Parameters[0];
+        var standing = Expression.New(
+            typeof(AllianceStanding).GetConstructor([typeof(long?), typeof(long)])!,
+            Expression.Property(player, nameof(Player.AllianceId)),
+            NetWorthExpression.Body);
+
+        return Expression.Lambda<Func<Player, AllianceStanding>>(standing, player);
+    }
+
+    /// <summary>
     /// The in-memory twin of <see cref="RanksAbove"/>, for ranking a page of players against the
     /// contenders already fetched for it. A rule test keeps the two in agreement.
     /// </summary>
@@ -93,12 +132,38 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public static int RankOf(PlayerStanding standing, IReadOnlyList<PlayerStanding> contenders)
         => contenders.Count(x => Outranks(x, standing)) + 1;
 
-    public IReadOnlyList<StoreItemResponse> GetStore() =>
-    [
-        new("condoms", "Condoms", "Crew Supplies", _options.CondomPrice, "Consumed while your hoes work the streets."),
-        new("beer", "Beer", "Crew Supplies", _options.BeerPrice, "Consumed by thugs during street operations."),
-        new("weapons", "Weapons", "Security", _options.WeaponPrice, "Permanent security equipment. One weapon covers one thug.")
-    ];
+    public IReadOnlyList<StoreItemResponse> GetStore()
+    {
+        var store = new List<StoreItemResponse>
+        {
+            new("condoms", "Condoms", "Crew Supplies", _options.CondomPrice, "Consumed while your hoes work the streets."),
+            new("beer", "Beer", "Crew Supplies", _options.BeerPrice, "Consumed by thugs during street operations."),
+            new("medicine", "Medicine", "Crew Supplies", _options.MedicinePrice, $"Treats {Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate)} hoes when a rival infests your house. Does nothing until then.")
+        };
+
+        // The gun counter, cheapest first. Every row says the same two things because they are the two
+        // that decide the purchase: any gun covers one thug for morale, and what separates them is what
+        // that thug is worth in a fight.
+        foreach (var tier in _options.Weapons.OrderBy(x => x.Price))
+            store.Add(new StoreItemResponse(
+                tier.Key,
+                WeaponTiers.Label(tier.Key),
+                "Security",
+                tier.Price,
+                tier.Firepower <= 1
+                    ? "Covers one thug. The cheapest way to keep a big crew content."
+                    : $"Covers one thug like any gun, and fights {tier.Firepower:0.#}x as hard as a pistol."));
+
+        store.Add(new StoreItemResponse("rides", "Low-Rider", "Chop Shop", _options.RidePrice, $"Needed for a drive-by, and worth jacking. The shop buys them back at ${_options.RideSalePrice:N0}."));
+        return store;
+    }
+
+    /// <summary>
+    /// What this player's rack is worth in a fight, in units of one pistol. Capped by the crew that
+    /// would carry it, so buying guns nobody can hold buys nothing.
+    /// </summary>
+    public double FirepowerOf(Player player, int? thugs = null)
+        => player.Armoury.Firepower(thugs ?? player.Thugs, _options.WeaponFirepower());
 
     public long CalculateNetWorth(Player player) => NetWorthOf(player, _options);
 
@@ -115,7 +180,9 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
            + (long)player.Thugs * options.ThugNetWorth
            + (long)player.Condoms * options.CondomPrice
            + (long)player.Beer * options.BeerPrice
-           + (long)player.Weapons * options.WeaponPrice
+           + options.WeaponValue(player.Armoury)
+           + (long)player.Medicine * options.MedicineNetWorth
+           + (long)player.Rides * options.RideNetWorth
            + (long)player.Weed * options.WeedNetWorth
            + (long)(player.Coke * options.CokeNetWorth * options.PurityMultiplier(player.CokePurity));
 
@@ -192,12 +259,22 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// Pimps who are not at home. Street work is blocked while a mission is out, so this used to be
     /// empty by definition, but a pimp posted to ground is away while the player carries on working.
     /// </param>
-    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null)
+    /// <param name="district">
+    /// Where the crew is working. Null takes the neutral district, which is exactly the base numbers, so
+    /// every caller written before there was anywhere to choose keeps working the shift it always did.
+    /// </param>
+    public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null, string? district = null)
     {
         TravelGate.EnsureLanded(player);
         ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
 
         var street = _options.StreetAction;
+        // Named rather than accepted quietly: asking for a district that does not exist is a caller
+        // getting it wrong, and silently working somewhere else would hide that from them.
+        var where = district is null
+            ? street.DefaultDistrict()
+            : street.District(district)
+              ?? throw new GameRuleException($"Work one of: {string.Join(", ", street.Districts.Select(x => x.Name))}.");
         var morale = _options.Morale;
         var stockBefore = StockLevels.From(player);
         var restock = autoBuySupplies ? RestockForAction(player, turns) : Restock.None;
@@ -221,14 +298,15 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 + player.Hoes * Roll(street.HoeGrossPerTurn)
                 + player.Pimps * Roll(street.PimpGrossPerTurn);
 
-            if (RollChance(street.PimpRecruitChance)) recruitedPimps++;
-            if (RollChance(street.HoeRecruitChance)) recruitedHoes++;
-            if (RollChance(street.ThugRecruitChance)) recruitedThugs++;
+            if (RollChance(street.PimpRecruitChance * where.Scale(where.PimpRecruitPercent))) recruitedPimps++;
+            if (RollChance(street.HoeRecruitChance * where.Scale(where.HoeRecruitPercent))) recruitedHoes++;
+            if (RollChance(street.ThugRecruitChance * where.Scale(where.ThugRecruitPercent))) recruitedThugs++;
 
-            condomsFound += RollFind(street.Finds.Condoms);
-            beerFound += RollFind(street.Finds.Beer);
-            weedFound += RollFind(street.Finds.Weed);
-            cokeFound += RollFind(street.Finds.Coke);
+            var finds = where.Scale(where.FindPercent);
+            condomsFound += RollFind(street.Finds.Condoms, finds);
+            beerFound += RollFind(street.Finds.Beer, finds);
+            weedFound += RollFind(street.Finds.Weed, finds);
+            cokeFound += RollFind(street.Finds.Coke, finds);
         }
 
         // The hideout only has so many beds, so recruits beyond it walk away.
@@ -238,6 +316,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         recruitedThugs = Math.Min(recruitedThugs, hideout.CrewRoom(player, "thugs"));
         var recruitsTurnedAway = recruitsOffered - (recruitedPimps + recruitedHoes + recruitedThugs);
 
+        // Where they worked decides what the take was worth before anybody's cut of it. Applied to the
+        // whole shift rather than per turn so the rounding happens once.
+        gross = (long)Math.Round(gross * where.Scale(where.GrossPercent), MidpointRounding.AwayFromZero);
+
         // Hustlers at home lift the take. Street work is blocked while a mission is out, so nobody
         // is away commanding at this point.
         var streetBonusPercent = pimps.StreetBonusPercent(player, awayPimpIds ?? []) + (territory?.StreetIncomePercent ?? 0);
@@ -245,14 +327,30 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         gross += (long)Math.Round(gross * (streetBonusPercent / 100.0), MidpointRounding.AwayFromZero);
 
         var crewPayout = (long)Math.Round(gross * (player.HoeCutPercent / 100.0), MidpointRounding.AwayFromZero);
-        var playerProfit = Math.Max(0, gross - crewPayout);
+
+        // The crew's cut comes off first and the crew's crew comes off next. Dues are taken here, beside
+        // the hoe cut, because it is the same kind of thing and reads in the same sentence: a share of
+        // what the shift grossed, gone before the money reaches you.
+        //
+        // Taken off the gross rather than off what is left, so the two cuts do not compound - a house
+        // paying 40% and dues of 20% gives up 60% of a shift, not 52%. Compounding would make the second
+        // rate quietly mean something different depending on the first.
+        var duesPercent = player.Alliance is { } crew ? Math.Clamp(crew.DuesPercent, 0, 100) : 0;
+        var dues = (long)Math.Round(gross * (duesPercent / 100.0), MidpointRounding.AwayFromZero);
+        var playerProfit = Math.Max(0, gross - crewPayout - dues);
+        // Never more than there was. A crew and a house between them cannot take more than the shift
+        // made, whatever the two rates add up to.
+        dues = Math.Min(dues, Math.Max(0, gross - crewPayout));
+        if (player.Alliance is { } paid && dues > 0)
+            paid.Treasury += dues;
 
         player.Turns -= turns;
         player.Cash += playerProfit;
         // Working the streets is illegal too, so it draws attention whether or not anything is held,
         // and a watchful town notices a shift sooner than a quiet one does.
         player.Heat += Math.Max(0, _options.Hideout.HeatPerStreetTurn) * turns
-                       * _options.CityMarkets.HeatMultiplier(player.City);
+                       * _options.CityMarkets.HeatMultiplier(player.City)
+                       * where.Scale(where.HeatPercent);
         // Recruited pimps arrive as named crew, which also moves the counter.
         var recruitedPimpNames = pimps.Hire(player, recruitedPimps, DateTime.UtcNow).Select(x => x.Name).ToList();
         player.Hoes += recruitedHoes;
@@ -303,7 +401,9 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var summary = string.Empty;
         if (restock.Any)
             summary += $"Auto-bought {restock.Describe()} for ${restock.Cost:N0}. ";
-        summary += $"Worked the streets for {turns} turn{Plural(turns)}. Grossed ${gross:N0}; crew cut was ${crewPayout:N0}; you kept ${playerProfit:N0}.";
+        summary += $"Worked the {where.Name} for {turns} turn{Plural(turns)}. Grossed ${gross:N0}; crew cut was ${crewPayout:N0}; you kept ${playerProfit:N0}.";
+        if (dues > 0)
+            summary += $" {player.Alliance!.Name} took ${dues:N0} in dues.";
         if (recruitedPimps + recruitedHoes + recruitedThugs > 0)
             summary += $" Recruited {recruitedPimps} pimp(s), {recruitedHoes} hoe(s), and {recruitedThugs} thug(s).";
         if (recruitedPimpNames.Count > 0)
@@ -332,6 +432,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
         {
             ["turnsSpent"] = turns,
+            ["district"] = where.Key,
+            ["districtName"] = where.Name,
             ["hustlerBonusPercent"] = streetBonusPercent,
             ["grossBeforeHustlers"] = grossBeforeBonus,
             ["autoBoughtCondoms"] = restock.Condoms,
@@ -345,6 +447,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             ["cokeLostToStorage"] = overflow.CokeLost,
             ["gross"] = gross,
             ["crewPayout"] = crewPayout,
+            ["allianceDues"] = dues,
+            ["allianceDuesPercent"] = duesPercent,
             ["playerProfit"] = playerProfit,
             ["recruitedPimps"] = recruitedPimps,
             ["recruitedHoes"] = recruitedHoes,
@@ -506,13 +610,17 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// sell to the game at a fixed price: they are a supply everyone burns, which is what makes them
     /// worth putting on the board.
     /// </summary>
-    public ActionResultResponse Forge(Player player, int turns) => Make(player, "workshop", turns);
+    public ActionResultResponse Forge(Player player, int turns, string? weapon = null) => Make(player, "workshop", turns, weapon);
 
     /// <summary>
     /// Turns and materials into one good. The workshop, the still and the mix house are the same shape,
     /// so they share a path rather than three near-copies that can drift apart on the storage rule.
     /// </summary>
-    public ActionResultResponse Make(Player player, string station, int turns)
+    /// <param name="weapon">
+    /// Which gun the workshop is turning out. Ignored by the still and the mix house, which each make
+    /// exactly one thing; null at the workshop means the best gun that shop is able to make.
+    /// </param>
+    public ActionResultResponse Make(Player player, string station, int turns, string? weapon = null)
     {
         TravelGate.EnsureLanded(player);
         if (turns < 1 || turns > _options.MaxActionTurns)
@@ -520,29 +628,40 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         if (player.Turns < turns)
             throw new GameRuleException("You do not have that many turns.");
 
-        var (good, label, refusal) = station switch
+        var refusal = station switch
         {
-            "still" => ("moonshine", "moonshine", "You need a still before you can brew moonshine."),
-            "mix" => ("cut", "cut", "You need a mix house before you can make cut."),
-            _ => ("weapons", "weapon(s)", "You need a workshop before you can make weapons.")
+            "still" => "You need a still before you can brew moonshine.",
+            "mix" => "You need a mix house before you can make cut.",
+            _ => "You need a workshop before you can make weapons."
         };
         var workshop = hideout.StationFor(player.Hideout, station) ?? throw new GameRuleException(refusal);
+
+        // The still and the mix house have one product and one price. The workshop has four, so what it
+        // costs to make one is a property of the gun rather than of the room: a level buys throughput
+        // and which guns are unlocked, not a discount on a single thing.
+        var (good, label, unitCost) = station switch
+        {
+            "still" => ("moonshine", "moonshine", workshop.CostPerWeapon),
+            "mix" => ("cut", "cut", workshop.CostPerWeapon),
+            _ => ForgeTarget(workshop, weapon)
+        };
+
         if (hideout.StationRequiredTier(station) is { } needed && (player.Hideout?.Tier ?? 1) < needed)
-            throw new GameRuleException($"Making {good} needs the {hideout.TierName(needed)} or better.");
+            throw new GameRuleException($"Making {label} needs the {hideout.TierName(needed)} or better.");
 
         var capacity = hideout.CapacityFor(player.Hideout);
-        var room = Math.Max(0, TradeGoods.Capacity(capacity, good) - TradeGoods.Held(player, good));
+        var room = TradeGoods.Room(player, capacity, good);
         if (room == 0)
-            throw new GameRuleException($"Your storage has no room for more {good}.");
+            throw new GameRuleException($"Your storage has no room for more {label}.");
 
         // Bounded by the room up front rather than made and spilled, so nobody pays for materials that
         // turn into nothing.
         var wanted = workshop.WeaponsPerTurn * turns;
         var made = Math.Min(wanted, room);
         var turnsUsed = (int)Math.Ceiling((double)made / Math.Max(1, workshop.WeaponsPerTurn));
-        var cost = workshop.CostPerWeapon * made;
+        var cost = unitCost * made;
         if (player.Cash < cost)
-            throw new GameRuleException($"Materials for {made:N0} weapon(s) cost {cost:C0}.");
+            throw new GameRuleException($"Materials for {made:N0} {label} cost {cost:C0}.");
 
         player.Turns -= turnsUsed;
         player.Cash -= cost;
@@ -558,10 +677,48 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             ["weaponsMade"] = made,
             ["unitsMade"] = made,
             ["turnsSpent"] = turnsUsed,
-            ["costPerWeapon"] = workshop.CostPerWeapon,
+            ["costPerWeapon"] = unitCost,
             ["totalCost"] = cost,
-            ["storePrice"] = _options.WeaponPrice
+            ["storePrice"] = TradeGoods.ReferencePrice(_options, good, player.City)
         });
+    }
+
+    /// <summary>
+    /// Which gun this workshop is making, and what one costs it.
+    ///
+    /// A shop can always make anything below what it has unlocked, so an upgrade never takes an option
+    /// away - it only adds a better one. Asking for a gun the shop cannot reach is refused by name
+    /// rather than quietly downgraded, because a player who asked for rifles and silently received
+    /// pistols would have paid for a decision they did not make.
+    /// </summary>
+    private (string Good, string Label, long UnitCost) ForgeTarget(WorkshopLevelOptions workshop, string? weapon)
+    {
+        var buildable = _options.Weapons
+            .Where(x => x.CanForge && x.MinWorkshopLevel <= workshop.Level)
+            .OrderByDescending(x => x.Price)
+            .ToList();
+        if (buildable.Count == 0)
+            throw new GameRuleException("Your workshop cannot make any weapon yet.");
+
+        // Null means "the best you can", which is what a caller written before the shop made more than
+        // one kind of gun was always asking for.
+        if (string.IsNullOrWhiteSpace(weapon))
+        {
+            var best = buildable[0];
+            return (best.Key, WeaponTiers.Label(best.Key).ToLowerInvariant(), best.ForgeCost);
+        }
+
+        var key = weapon.Trim().ToLowerInvariant();
+        if (!WeaponTiers.IsWeapon(key))
+            throw new GameRuleException($"A workshop makes {string.Join(", ", buildable.Select(x => WeaponTiers.Label(x.Key).ToLowerInvariant()))}.");
+
+        var wanted = _options.WeaponTier(key);
+        if (wanted is null || !wanted.CanForge)
+            throw new GameRuleException($"Nobody makes {WeaponTiers.Label(key).ToLowerInvariant()} in a back room. You buy those.");
+        if (wanted.MinWorkshopLevel > workshop.Level)
+            throw new GameRuleException($"{WeaponTiers.Label(key)} need a level {wanted.MinWorkshopLevel} workshop. Yours is level {workshop.Level}.");
+
+        return (wanted.Key, WeaponTiers.Label(wanted.Key).ToLowerInvariant(), wanted.ForgeCost);
     }
 
     public ActionResultResponse SellProduct(Player player, string? product, int quantity)
@@ -751,25 +908,37 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         // Purchases are refused rather than clamped: losing goods you paid for is worse than a refusal.
         var capacity = hideout.CapacityFor(player.Hideout);
-        var (held, cap) = item.Key switch
+        // Rides are the one purchase held by the building rather than the storage room, so the refusal
+        // has to name the right thing to upgrade: telling someone to buy a bigger shelf for a car would
+        // send them to spend money that cannot help.
+        var (held, cap, roomName) = item.Key switch
         {
-            "condoms" => (player.Condoms, capacity.MaxCondoms),
-            "beer" => (player.Beer, capacity.MaxBeer),
-            "weapons" => (player.Weapons, capacity.MaxWeapons),
+            "condoms" => (player.Condoms, capacity.MaxCondoms, "storage room"),
+            "beer" => (player.Beer, capacity.MaxBeer, "storage room"),
+            "medicine" => (player.Medicine, capacity.MaxMedicine, "storage room"),
+            "rides" => (player.Rides, capacity.MaxRides, "garage"),
+            // Guns share one shelf whatever kind they are, so what is already on it is the whole
+            // rack. Counting only the tier being bought would let a player fill the room four times.
+            _ when WeaponTiers.IsWeapon(item.Key) => (player.Weapons, capacity.MaxWeapons, "storage room"),
             _ => throw new GameRuleException("Store item is not implemented.")
         };
         var room = Math.Max(0, cap - held);
         if (quantity > room)
             throw new GameRuleException(room == 0
-                ? $"Your storage room is full at {cap:N0} {item.Name.ToLowerInvariant()}. Upgrade it to hold more."
-                : $"Your storage room only has space for {room:N0} more {item.Name.ToLowerInvariant()}.");
+                ? $"Your {roomName} is full at {cap:N0} {item.Name.ToLowerInvariant()}. {(roomName == "garage" ? "A bigger hideout parks more." : "Upgrade it to hold more.")}"
+                : $"Your {roomName} only has space for {room:N0} more {item.Name.ToLowerInvariant()}.");
 
         player.Cash -= total;
         switch (item.Key)
         {
             case "condoms": player.Condoms += quantity; break;
             case "beer": player.Beer += quantity; break;
-            case "weapons": player.Weapons += quantity; break;
+            case "medicine": player.Medicine += quantity; break;
+            case "rides": player.Rides += quantity; break;
+            default:
+                // Every remaining store key is a gun, and the rack knows which shelf it goes on.
+                player.AddWeapons(item.Key, quantity);
+                break;
         }
 
         return new ActionResultResponse(
@@ -781,6 +950,46 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["quantity"] = quantity,
                 ["unitPrice"] = item.Price,
                 ["total"] = total
+            });
+    }
+
+    /// <summary>
+    /// Sells rides back to the chop shop.
+    ///
+    /// Only rides, because they are the only store item worth anything second hand: supplies are
+    /// consumed and weapons already have a player market that pays better than any shop would. The
+    /// buy-back exists so a garage is not a one-way purchase - a player who has decided they are done
+    /// with drive-bys, or who needs the cash tonight, can get most of it back.
+    /// </summary>
+    public ActionResultResponse SellRides(Player player, int quantity)
+    {
+        TravelGate.EnsureLanded(player);
+        if (quantity is < 1 or > 10_000)
+            throw new GameRuleException("Quantity must be between 1 and 10,000.");
+        if (player.Rides < quantity)
+            throw new GameRuleException(player.Rides == 0
+                ? "You do not own a ride."
+                : $"You only own {player.Rides:N0} ride(s).");
+
+        var unitPrice = Math.Max(0, _options.RideSalePrice);
+        var total = (long)unitPrice * quantity;
+        player.Rides -= quantity;
+        player.Cash += total;
+        // The safe still binds what can sit at the house, and a fleet is worth more than an early safe
+        // holds, so a big sale would otherwise vanish at the next settle.
+        var overflow = hideout.Settle(player, StockLevels.From(player) with { Cash = player.Cash - total });
+
+        return new ActionResultResponse(
+            $"Sold {quantity:N0} ride(s) to the chop shop for ${total:N0}.{overflow.Describe()}",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["itemKey"] = "rides",
+                ["quantity"] = quantity,
+                ["unitPrice"] = unitPrice,
+                ["total"] = total,
+                ["ridesRemaining"] = player.Rides,
+                ["cashBankedByOverflow"] = overflow.CashBanked
             });
     }
 
@@ -1098,8 +1307,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     private bool RollChance(double chance) => random.NextDouble() < Math.Clamp(chance, 0, 1);
 
-    private int RollFind(FindOptions find)
-        => RollChance(find.Chance) ? random.NextInclusive(find.Min, find.Max) : 0;
+    /// <param name="scale">
+    /// What the district does to the odds of finding anything. Applied to the chance rather than to
+    /// the amount, so a rich district turns things up more often rather than turning up impossible
+    /// quantities of them at the same rate.
+    /// </param>
+    private int RollFind(FindOptions find, double scale = 1)
+        => RollChance(find.Chance * Math.Max(0, scale)) ? random.NextInclusive(find.Min, find.Max) : 0;
 
     private int RollDeserters(int crewCount, double happiness, MoraleOptions morale)
     {
@@ -1224,3 +1438,6 @@ public sealed record Restock(int Condoms, int Beer, long Cost)
 
 /// <summary>A player's position in the net worth order, without the rest of the player row.</summary>
 public sealed record PlayerStanding(long NetWorth, DateTime CreatedAtUtc);
+
+/// <summary>One player's crew and what they are worth, for totalling a board of crews.</summary>
+public sealed record AllianceStanding(long? AllianceId, long NetWorth);

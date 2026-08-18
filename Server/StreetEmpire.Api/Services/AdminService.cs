@@ -30,7 +30,14 @@ public sealed class AdminService(
         ["thugs"] = new(p => p.Thugs, (p, v) => p.Thugs = (int)v, int.MaxValue),
         ["condoms"] = new(p => p.Condoms, (p, v) => p.Condoms = (int)v, int.MaxValue),
         ["beer"] = new(p => p.Beer, (p, v) => p.Beer = (int)v, int.MaxValue),
-        ["weapons"] = new(p => p.Weapons, (p, v) => p.Weapons = (int)v, int.MaxValue),
+        // A gun per shelf. "Weapons" as one adjustable number would have had to guess which kind to give
+        // or take, and an admin fixing a rack needs to say.
+        ["pistols"] = new(p => p.Pistols, (p, v) => p.Pistols = (int)v, int.MaxValue),
+        ["shotguns"] = new(p => p.Shotguns, (p, v) => p.Shotguns = (int)v, int.MaxValue),
+        ["smgs"] = new(p => p.Smgs, (p, v) => p.Smgs = (int)v, int.MaxValue),
+        ["rifles"] = new(p => p.Rifles, (p, v) => p.Rifles = (int)v, int.MaxValue),
+        ["medicine"] = new(p => p.Medicine, (p, v) => p.Medicine = (int)v, int.MaxValue),
+        ["rides"] = new(p => p.Rides, (p, v) => p.Rides = (int)v, int.MaxValue),
         ["weed"] = new(p => p.Weed, (p, v) => p.Weed = (int)v, int.MaxValue),
         ["coke"] = new(p => p.Coke, (p, v) => p.Coke = (int)v, int.MaxValue)
     };

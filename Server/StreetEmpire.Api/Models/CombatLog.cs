@@ -15,6 +15,13 @@ public sealed class CombatLog
     /// </summary>
     public long? TerritoryId { get; set; }
 
+    /// <summary>
+    /// Which of the attack methods this was: a raid, or one of the quick strikes. Stored rather than
+    /// inferred from what was taken, because a strike that failed took nothing and would otherwise be
+    /// indistinguishable from any other loss in the history and the defence alerts.
+    /// </summary>
+    public string Method { get; set; } = AttackMethods.Raid;
+
     public string Outcome { get; set; } = "Prepared";
     public string Summary { get; set; } = string.Empty;
     public int TurnsSpent { get; set; }
@@ -31,6 +38,15 @@ public sealed class CombatLog
     public int DefenderHoesLost { get; set; }
     public int DefenderThugsLost { get; set; }
     public int DefenderWeaponsLost { get; set; }
+
+    /// <summary>
+    /// Crew and rides that changed hands rather than simply died. A poached hoe walks into someone
+    /// else's house and a jacked ride is parked in someone else's garage, which is a different event
+    /// from the same hoe catching a disease, even though both read as a loss to the defender.
+    /// </summary>
+    public int HoesTaken { get; set; }
+    public int RidesTaken { get; set; }
+
     public DateTime? DefenderProtectionUntilUtc { get; set; }
     public DateTime? ResolvesAtUtc { get; set; }
     public DateTime? ResolvedAtUtc { get; set; }

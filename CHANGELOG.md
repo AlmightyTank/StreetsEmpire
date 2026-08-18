@@ -7,7 +7,245 @@
   figures at every player - "Item Key / condoms", "Unit Price / $10" - which is a debugging aid and
   reads like one. Players keep the summary sentence, which is written for them.
 
+### Changed
+- **The interface works on a phone.** The layout already collapsed to one column at 760px, but the
+  navigation, the status numbers and every panel added since that breakpoint was last revisited did
+  not, so the parts that mattered most were the parts that had drifted furthest.
+- **Navigation moved to a bottom tab bar.** The side rail used to fold down into a strip of two-letter
+  codes that scrolled sideways: three of the nine destinations sat off the right-hand edge with nothing
+  to say they were there, and the six you could see were abbreviations you had to learn. Four named
+  destinations now hold a permanent slot with the rest a tap away behind More, which is also where a
+  thumb can actually reach. More carries the name of wherever you are when you are somewhere it holds,
+  so the bar never shows a page you cannot find yourself on.
+- **The status strip no longer hides your money.** Seven cards in a horizontal scroller put cash and
+  heat - the two numbers every decision in the game is weighed against - past the right edge, behind a
+  gesture nothing advertised. They wrap into two columns and all seven are on screen at once.
+- **The alliance panels were the only ones that actually broke**, having been built after the mobile
+  breakpoint was last touched: member rows kept their desktop columns and crushed a name and town into
+  35 pixels. Rows built around a name now give the name the width and put the controls beneath it.
+- **Every control clears 44 pixels on a touch screen**, including the compact ones. Compact exists to
+  fit another row on screen, which is a good trade for a mouse and a bad one for a thumb - a row you
+  can see is no help if the button in it takes two goes to hit. Desktop density is untouched, because
+  the rule only applies where the pointer is actually coarse.
+- The page reaches under a notch and pays it back with safe-area padding, so the tab bar clears the
+  home indicator rather than sitting beneath it, and heights measure the viewport that is actually
+  visible rather than the taller one a phone's address bar claims.
+- **The palette has names.** It had grown to 175 loose hex literals, which meant there was no design to
+  change - only 175 separate decisions to find and re-make by hand. The eleven carrying most of the
+  weight are now named for the job they do rather than the colour they are, and 212 uses point at them.
+
+- **The typeface is real now.** The stylesheet had asked for Inter since the beginning and nothing ever
+  loaded it - no `@font-face`, no link, no package - so every player had been reading the fallback, and
+  the two weights above bold were rendering as plain bold because a system font has nothing between.
+  Inter is self-hosted rather than pulled from a font CDN: one dependency, and no third-party request
+  on page load.
+- **A type scale of eight steps, down from 33 hand-picked sizes.** Fifteen of those sat between .72rem
+  and .88rem - steps of about a fifth of a pixel, which no eye resolves - so they read as one muddled
+  size rather than as hierarchy. Two sizes that cannot be told apart should be the same size.
+- **Three weights, down from six.** 900 and 950 were both in use against a font that had neither. The
+  variable Inter does have them, which would have made the difference visible for the first time and
+  immediately far too much.
+- Naming `b` and `strong` stopped a bug the new font would have exposed: the browser's own stylesheet
+  gives them `bolder`, which is relative, so one nested inside a parent already at 700 computed to 900.
+  That was invisible while the fallback had nothing heavier than bold to give.
+- **Spacing snapped to a 4px rhythm**, replacing 19 gap values and 51 padding values that included 3px,
+  5px, 9px and 13px. Off-grid spacing is not wrong so much as arbitrary: no two panels agreed on what a
+  small gap was, and the eye reads that disagreement as untidiness it cannot name. Ties round tighter
+  rather than looser, so nothing grew into the overflow the mobile pass had just removed.
+- **Figures hold still.** Every number in the game changes while you watch it, and proportional digits
+  are different widths, so a figure re-flowed its own row each time it ticked. Tabular figures are one
+  width: columns stop shuffling and numbers line up on their digits the way a ledger does.
+- Body copy is capped at 68 characters. A line stops being comfortable past about 75 because the eye
+  loses the return sweep, and the wide desktop panels were running paragraphs to 1,400px.
+
 ### Added
+- Alliances: the crew, ranks and permissions, the treasury, and the shared thug pool it pays for.
+- **Four ranks** - Soldier, Enforcer, Underboss, Boss - rather than the seven or eight a clan system in
+  a game with thousands of players carries, for the same reason a crew holds six and not twenty: ranks
+  only mean anything when there are enough people for the gaps to matter.
+- **The boss sets a minimum rank for each power**, which is the part of a rank system that actually gets
+  used. Ranks on their own are decoration; what makes two crews with identical ranks run completely
+  differently is where their boss drew the lines. Five powers are configurable - opening the door,
+  throwing people out, spending the treasury, taking thugs on a raid, posting defenders at home - and
+  the settings, promotions and handover stay with the boss.
+- **You can only act on somebody below you.** Strictly below, never equal: two Underbosses able to throw
+  each other out is not a chain of command, it is a fight the crew loses either way.
+- **The door is one setting with three states**, set by the boss: open to anyone, by application, or
+  invitation only. It replaces a boolean that had two paths always open underneath it - the old shape
+  said "open or not" and quietly accepted applications either way, so a crew that had shut its door was
+  still fielding requests it had no way to stop.
+- The three states are the three things an outsider can do on their own initiative, which is the only
+  axis a door has: walk in, ask, or wait to be asked. Each one turns the other two away by name rather
+  than silently, so asking an open crew is told to walk in. Invitations sit deliberately off that axis -
+  they are the crew reaching out rather than somebody arriving, they work in every state, and a crew
+  that could not invite while set to invitation-only would be a contradiction.
+- Invitations and applications are one table read from opposite ends, because they are the same row with
+  different people waiting on it, and every road in ends at the same place - joining at the bottom, so
+  no route can accidentally hand out a rank.
+- Both are re-checked at the moment they are accepted rather than trusted from when they were sent:
+  weeks can pass, and in that time a crew fills up or the player joins somebody else. Accepting one
+  clears every other ask that player had outstanding, in both directions.
+- A boss can see and take back the invitations their crew has sent, not only the ones waiting on them.
+  Leaving that out is how a crew ends up with invitations outstanding to people who quit months ago.
+- Promotion stops below the top. Handing the crew on is its own move precisely because it is the one
+  that gives yours away, and a promotion that could reach Boss would let a crew acquire two by accident.
+- **A crew is people who have agreed not to rob each other**, and that is enforced rather than asked
+  for. The source game left the interesting half of this to the message board - "don't form super
+  alliances, it's against the rules" - which is a rule that only works while somebody is reading. Here
+  members cannot attack each other by any method: raid, drive-by, jacking, infestation, poaching, or a
+  raid on their ground. The check lives in the launch rules, so every route into a fight runs into it -
+  a player's, a rival's brain, and the admin's directive alike.
+- **Dues** are a founder-set share of every member's shift, taken off the gross beside the hoe cut
+  because it is the same kind of thing and reads in the same sentence. Off the gross rather than off
+  what is left, so a house paying 40% and dues of 20% gives up 60% of a shift and not 52% - compounding
+  would make the second rate quietly mean something different depending on the first. Between them the
+  two can never take more than the shift actually made.
+- **Crew ranks** are the sum of what the members are worth, off the same net worth expression the
+  individual leaderboard ranks by, so a crew's standing and its members' can never tell two stories.
+- Six members rather than the source game's twenty. That was a game with thousands of players signing up
+  every month; this world is two dozen rivals and a handful of people, where twenty would not be an
+  alliance but everybody against nobody.
+- Rivals already run with each other. Crews seed themselves into an existing world on first read, the
+  way ground does, formed around towns because that is the alliance a world would actually make. A share
+  of rivals is always left unaligned, because a board where everybody has agreed not to fight has
+  nothing left in it.
+- **The shared thug pool.** The founder buys offensive and defensive thugs out of the treasury at the
+  source game's $15,000. Offensive ones ride along on a member's raid; defensive ones are posted to a
+  member's house and stand in it until released or killed. Both fight as an armed thug apiece, both die,
+  and what dies is gone from the pool for good.
+- The pool is finite and that is the whole of its interest. Thugs committed to a raid leave the pool for
+  as long as the raid is out, so what you take tonight your ally does not have; survivors come back when
+  the crew comes home, and calling a raid off sends them back too.
+- **A member may field at most as many borrowed thugs as they brought of their own.** This is the rule
+  that keeps the pool from breaking the game. Alliance thugs ignore the hideout's thug cap, which is the
+  constraint every combat number is measured against - without a limit a Trap House with a rich crew
+  behind it could field a Penthouse army and the whole ladder would stop meaning anything. Tied to the
+  member's own crew, the pool amplifies instead of substituting: your tier still sets your ceiling and
+  the crew only doubles it. Posting defenders runs under the same rule, so an empty house cannot be made
+  a fortress with borrowed men.
+- Losses fall across the whole line in proportion. Borrowed thugs dying first would empty a pool in one
+  raid; the member's own dying first would make borrowing a way of using other people's men as armour.
+- Two things from the guide left out on purpose. The **99/99 trick** is the guide documenting an exploit
+  - a price tier you game by stockpiling to $10M and buying in one burst - and reproducing it would mean
+  deliberately building the bug. **Alliance chat** is a different kind of project with no gameplay in it.
+
+- Named scouting districts, and a reason to pick between them. The source game had five and its own
+  guide admits it never found a difference between any of them - "I've yet to find a significant
+  difference", and the FAQ answer to which is best is a shrug. Five names on a dropdown that all do the
+  same thing is a wasted click, so each one here changes what a shift is actually for.
+- The **Casino District** pays 45% more and hires almost nobody, and the law is watching all of it.
+  The **Wino Slums** pay badly and are full of men who will take any work going - the place to go for
+  thugs, and the quietest street in the game. The **Nightclub District** is where hoes and the pimps who
+  manage them turn up. The **Urban Ghetto** is where product changes hands, and where the law knows it.
+- The **Low Rent District** is the neutral one, at exactly the base numbers, and the default. It is also
+  the district the source game's own guide-writer said they preferred, which turns out to have been a
+  reasonable call. A player who never touches the picker works precisely the shift they always did.
+- Every district is best at something and costs something - in what it gives up, or in how much notice
+  it draws - and a test fails if any of them is better at something and worse at nothing.
+- Each tile says what it is for, written from the numbers rather than from a stored sentence, so
+  retuning a district retunes what it says about itself.
+- Rivals pick a district from what they are short of rather than from a fixed preference: a crew builder
+  with no thugs goes to the slums today whatever it usually does. Personality only breaks the tie.
+
+- The shrine, and the names the day hands out. The last two things the source game had that this did not.
+- **Praying to the pimp gods**, once a week. The source game made this a slot machine: burn whatever you
+  like, roll, maybe something happens. That is a lever rather than a decision, so here the gods say what
+  they want - a specific good, a specific number - and meeting it is answered every time. Only which
+  blessing lands is uncertain, and even that is narrowed to the ones that would actually help you.
+- What they ask for is worked out from the player and the week rather than stored, the same trick the
+  rival personalities use, so the ask holds all week without a row to keep or a job to run. It is sized
+  against net worth, banded to two significant figures so ordinary earning does not move it, and capped
+  at half a storage shelf - a value share in a cheap good is otherwise hundreds of bottles of moonshine
+  that no room in the game could hold.
+- Nothing the shrine gives back is money. Every blessing is something money cannot buy at all: notice
+  the law has already taken, the mood of the house, a pimp's faith in you. Turns are the one rationed
+  behind giving twice what was asked, because they are the only thing that touches the rate the whole
+  game runs at. A player who prays every week for a year is no richer for it.
+- **Daily titles**: seven names, held by whoever leads a category over the last day. Read out of the
+  fights that actually happened rather than kept as counters - the source game held eight running totals
+  and a button to wipe them, and a tally you can clear is not a record of anything.
+- Half the titles are for things done to you, which is the source game's own reading and the half that
+  makes the board worth looking at: Silver Tongue and Picked Clean are the same number counted from
+  opposite ends. A board of nothing but winners says only who is winning, which the leaderboard already
+  says.
+- Titles show on a player's row and profile, so the target list says who somebody is before you open
+  them, and a floor under each category stops a quiet day handing out names for one of anything.
+
+- Weapon tiers. One generic weapon could only ever answer "is this thug armed", which made arming a
+  crew a purchase rather than a decision. There are four guns now - pistols, shotguns, SMGs and rifles -
+  and the point of them is that a weapon does two jobs which come apart.
+- Any gun covers a thug for morale. A thug with a pistol is exactly as content as a thug with a rifle,
+  so covering a big crew cheaply is a real strategy. What a gun changes is the fight: firepower is
+  measured in pistols, and a crew picks up the best guns on the rack rather than a sample of them.
+- That turns the hideout's thug cap into the binding constraint. More bodies is the efficient way to
+  get stronger right up until there is nowhere to put another one, and past that the only thing left to
+  buy is better guns - which are steeply worse value per point of firepower, and priced to be.
+- Source prices throughout: $250, $1,250, $2,500 and $5,500. Every weapon that already existed became a
+  pistol, so **nobody's fighting strength moved at all** - a pistol is worth exactly what the single
+  weapon was. What moved is paper value: a rack halves, uniformly, across every player and rival alike.
+- The workshop makes what its level has unlocked: pistols and shotguns from the start, SMGs at level 2,
+  and never rifles - the one gun nobody makes in a back room, which is what stops the workshop from
+  eventually replacing the shop. Its per-weapon cost moved onto the guns, so a level now buys throughput
+  and reach rather than a discount on a single thing.
+- All four trade separately on the player market and can be asked for by name in a contract. A board
+  that listed a rack of pistols and a rack of rifles both as "weapons" would price them as if they were
+  the same offer.
+- Losses and storage overflow take the cheapest guns first, always. The alternative - a lost fight
+  destroying your rifles before your pistols - would make owning good ones a liability.
+- A raid carries a specific mix, recorded when it leaves, so losing five weapons takes the right five
+  off the right shelves at home. Two raids at once cannot arm themselves from the same rifles.
+- Rivals arm for coverage first and trade up with spare cash, so a rich rival's house is genuinely
+  harder to break than a poor one of the same size.
+- A jacking reads both halves of the guard on the garage. Bodies are eyes on the door - however lightly
+  armed, more of them means more chance somebody is looking at the one you came in through - and guns
+  are what happens once you are seen. Six riflemen shut a garage that six pistols would only make risky.
+  Only the firepower above one pistol each counts in the second term, so the two never describe the same
+  thug twice and an all-pistol guard has precisely the odds it had before guns had tiers.
+- Guns out on a raid are not guarding the garage either, so striking somebody mid-raid is the opening it
+  ought to be: a raiding party takes exactly the guns that would otherwise have stopped you.
+- A drive-by reads the same two halves, and weights them the other way round. Whether the pass finds
+  anybody leans on bodies - a crowded street is one where somebody sees you coming and everybody is
+  behind a wall before you arrive - while whether the car comes back leans on guns, because a pistol
+  rarely stops a moving car and a rifle very often does. Against the same six guards, swapping their
+  pistols for rifles takes the hit chance from 78% to 64% and the odds of losing the car from 11% to
+  24%. It is also what gives the drive-by a ceiling: past a certain quality of guard it costs more cars
+  than it is worth, whoever is driving.
+
+- The rest of the attack menu. One attack verb made every holding one undifferentiated pile of loot: a
+  garage of cars and a hundred hoes were numbers feeding the same defence roll, and no decision a
+  defender made about either of them mattered. There are five ways to move on somebody now, and four of
+  them are aimed at exactly one thing.
+- A **raid** is unchanged: ten turns, an attack lane, travel, rounds, and whatever the crew can carry.
+  The four **strikes** are the opposite in every respect - four to eight turns, settled on the spot, no
+  lane, no crew committed, and each answered by something different.
+- A **drive-by** needs a low-rider. It kills thugs and dents their morale, takes nothing at all, and the
+  better armed the street the likelier it is you lose the car. It is how a player who cannot yet win a
+  raid makes one winnable.
+- **Jacking** takes their rides. Its odds are almost entirely the defender's own doing: a garage behind
+  a full armed crew is close to untouchable, and one behind nobody is a car park with the keys in.
+- **Infesting** their hoes is the only attack in the game answered by a purchase. Medicine treats who it
+  can and the rest are lost, which is what makes a crate on a shelf - costing money, doing nothing -
+  worth owning.
+- **Poaching** buys their hoes away with coke, and is the reason the payout slider is a decision rather
+  than a dial nobody touches. A fully happy house cannot be poached at any price; a squeezed one can be
+  emptied. Stepped-on product tempts fewer people, through the same purity multiplier the market prices
+  by, and the coke goes out whether or not anybody comes back with it.
+- Low-riders and medicine, the two things the menu needed. Rides are held by the building rather than
+  the storage room - a garage of two at the Trap House, fifteen at the Penthouse - and the chop shop is
+  the one counter in the game that buys as well as sells, at $15,000 against a $25,000 sticker. Net worth
+  counts a ride at what the shop would pay, not what it cost, or buying one would be a free climb.
+- Two shields on two clocks. A raid's protection covers everything, because walking in behind somebody
+  else's victory is the dogpile it exists to stop; a strike sets only its own twenty-minute shield, or a
+  four-turn drive-by could buy its victim an hour of immunity from the raid that was actually coming.
+- Rivals use all five. Each personality has its own appetite for a cheap shot and its own order of
+  preference, which is what gives them a signature in the news: the Hard Charger shoots up streets, the
+  Banker quietly drives off with cars, the Crew Builder poaches. They reach for a strike when they cannot
+  afford an operation, and they restock medicine once somebody has actually been infesting them - a field
+  that never bought any would make the infestation a one-way ratchet forever.
+- The defence alert says which of the five hit you. "Broke through your defence" is true of a raid and
+  absurd of a drive-by, and a defender told only that they lost has no idea whether to buy medicine, move
+  the cars, or pay the house better. Hoes were missing from the loss list even before this, which
+  understated every raid that took any.
 - AI rivals fill contracts too, so the board is a race rather than a menu. No dice roll and no
   personality dial: an order pays over the counter for stock a rival is already holding, so every one
   of them takes it, and what decides who gets there first is whose hours fall when.

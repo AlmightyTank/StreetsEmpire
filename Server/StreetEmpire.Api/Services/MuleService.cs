@@ -239,7 +239,7 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
     {
         if (units <= 0) return (0, 0);
         var capacity = TradeGoods.Capacity(hideouts.CapacityFor(player.Hideout), good);
-        var room = Math.Max(0, capacity - TradeGoods.Held(player, good));
+        var room = TradeGoods.Room(player, hideouts.CapacityFor(player.Hideout), good);
         var stored = Math.Min(units, room);
         TradeGoods.Add(player, good, stored, 1);
         return (stored, units - stored);

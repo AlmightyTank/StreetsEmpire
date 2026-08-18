@@ -45,7 +45,16 @@ internal static class BotSeeding
             ThugHappiness = template.ThugHappiness,
             Condoms = options.StartingCondoms + template.Condoms,
             Beer = options.StartingBeer + template.Beer,
-            Weapons = options.StartingWeapons + template.Weapons,
+            // Seeded as pistols. Rivals trade up through the shop like anyone else, which is what
+            // keeps a seeded field from starting out better armed than a player could ever get.
+            Pistols = options.StartingWeapons + template.Weapons,
+            // Derived from each rival's shape rather than given a column of its own in every template
+            // row. What matters is that the whole field owns some of both: a jacking with nobody in the
+            // world to jack, and an infestation nobody has ever bought medicine against, are dead verbs
+            // in a world that is mostly rivals. A well-armed rival is the sort to keep a second car, and
+            // a big house keeps medicine in it. Both are clamped to capacity below like everything else.
+            Rides = template.Weapons >= 20 ? 2 : 1,
+            Medicine = Math.Max(1, template.Hoes / 6),
             Weed = template.Weed,
             Coke = template.Coke,
             LastTurnUpdateUtc = createdAtUtc,

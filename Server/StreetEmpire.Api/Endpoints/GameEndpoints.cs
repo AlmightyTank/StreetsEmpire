@@ -38,6 +38,8 @@ internal static class GameEndpoints
             PimpRoster pimps,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            StreetStrikeService strikes,
+            AllianceService allianceRules,
             StandingsRecorder standings,
             CancellationToken ct) =>
         {
@@ -158,6 +160,9 @@ internal static class GameEndpoints
                 player.Condoms,
                 player.Beer,
                 player.Weapons,
+                ToWeaponRack(player, opts),
+                player.Medicine,
+                player.Rides,
                 player.Weed,
                 player.Coke,
                 player.Moonshine,
@@ -179,6 +184,11 @@ internal static class GameEndpoints
                 ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
                 unreadAlerts,
                 economy.GetStore(),
+                strikes.MethodsFor(player),
+                ToDistricts(opts),
+                player.Alliance is { } crew
+                    ? new AllianceBriefResponse(crew.Id, crew.Name, crew.OffensiveThugs, crew.DefensiveThugs, allianceRules.BorrowLimit(player.Thugs), player.AllianceDefenders)
+                    : null,
                 activity));
         }).RequireAuthorization();
 
@@ -244,7 +254,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct), request.District);
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -280,7 +290,7 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct));
+                var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct), request.District);
                 AddLog(db, player, before, "STREET", request.Turns, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -392,6 +402,37 @@ internal static class GameEndpoints
             try
             {
                 var result = economy.BuyStoreItem(player, request.ItemKey, request.Quantity);
+                AddLog(db, player, before, "STORE", 0, result.Summary);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        // Only rides come back here. Supplies are consumed and weapons have a player market that pays
+        // better than any shop, so the chop shop is the one counter in the game that buys as well as sells.
+        app.MapPost("/api/game/store/sell", async (
+            StoreSellRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            EconomyService economy,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var before = Snapshot(player);
+            try
+            {
+                var key = request.ItemKey?.Trim().ToLowerInvariant();
+                if (key is not ("rides" or "ride"))
+                    return Results.BadRequest(new { error = "The only thing anyone buys back is a ride." });
+
+                var result = economy.SellRides(player, request.Quantity);
                 AddLog(db, player, before, "STORE", 0, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

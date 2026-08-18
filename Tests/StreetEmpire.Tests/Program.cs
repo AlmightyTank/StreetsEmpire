@@ -91,7 +91,32 @@ var tests = new (string Name, Action Test)[]
     ("combat mission cancel price scales by status", CombatMissionCancelPriceScalesByStatus),
     ("combat mission launch respects the attacker cooldown", CombatMissionLaunchRespectsAttackerCooldown),
     ("combat victory steals cash and product without touching bank", CombatVictoryStealsCashAndProductWithoutTouchingBank),
-    ("combat attack spends turns and creates log", CombatAttackSpendsTurnsAndCreatesLog)
+    ("combat attack spends turns and creates log", CombatAttackSpendsTurnsAndCreatesLog),
+    ("the attack menu prices every method and says what is missing", AttackMenuPricesEveryMethod),
+    ("a drive-by thins the guard and risks the car", DriveByThinsTheGuard),
+    ("a jacking is decided by the guard on the garage", JackingIsDecidedByTheGuard),
+    ("a jacking reads the guards' guns as well as their number", JackingReadsTheGuardsGunsAsWellAsTheirNumber),
+    ("a drive-by weighs bodies for the hit and guns for the car", DriveByWeighsBodiesAndGunsDifferently),
+    ("the gods ask for something specific and the ask holds all week", TheGodsAskForSomethingSpecific),
+    ("praying is answered, and can never pay", PrayingIsAnsweredAndNeverPays),
+    ("titles name the leader of each category, both ways round", TitlesNameLeadersBothWaysRound),
+    ("every district is worth going to for something", DistrictsAreWorthChoosingBetween),
+    ("a crew is people who have agreed not to rob each other", AllianceIsATruce),
+    ("dues come off the gross beside the crew cut, and never compound", DuesComeOffTheGross),
+    ("the pool amplifies a crew rather than replacing one", PoolAmplifiesRatherThanReplaces),
+    ("rank decides what a member may do, and to whom", RanksGatePowersAndPeople),
+    ("a boss draws the lines every other rank runs under", BossDrawsTheLines),
+    ("the door is one setting with three states", TheDoorIsOneSettingWithThreeStates),
+    ("medicine is the answer to an infestation", MedicineAnswersAnInfestation),
+    ("a well-paid house cannot be poached at any price", PayoutAnswersPoaching),
+    ("the two shields keep their own clocks", StrikeAndRaidShieldsAreSeparate),
+    ("the chop shop sells rides and buys them back for less", ChopShopBuysBackUnderTheSticker),
+    ("defence alerts name the strike that hit you", DefenceAlertsNameTheStrike),
+    ("a pistol fights exactly as the one weapon used to", PistolsReproduceTheOldWeapon),
+    ("any gun covers a thug, but only the good ones fight", CoverageAndFirepowerComeApart),
+    ("a crew carries the best guns and drops the worst", CrewsCarryTheBestAndDropTheWorst),
+    ("one shelf holds every gun", OneShelfHoldsEveryGun),
+    ("better guns cost more per point than more thugs", TradingUpIsForWhenTheHouseIsFull)
 };
 
 var failed = 0;
@@ -123,7 +148,17 @@ static void NetWorthIncludesAllValue()
         HoeNetWorth = 550,
         ThugNetWorth = 1_250,
         WeedNetWorth = 30,
-        CokeNetWorth = 120
+        CokeNetWorth = 120,
+        // A ride counts at what the chop shop pays, not what it cost, or buying one would be a free
+        // climb up the board.
+        RideNetWorth = 15_000,
+        MedicineNetWorth = 250,
+        // A rack is worth the shop price of each gun on it, so the sum has to know the tiers.
+        Weapons =
+        [
+            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1 },
+            new WeaponTierOptions { Key = WeaponTiers.Rifle, Price = 5_500, Firepower = 2.5 }
+        ]
     });
     var player = new Player
     {
@@ -134,12 +169,16 @@ static void NetWorthIncludesAllValue()
         Thugs = 3,
         Condoms = 4,
         Beer = 5,
-        Weapons = 6,
+        Pistols = 6,
+        Rifles = 2,
+        Medicine = 2,
+        Rides = 1,
         Weed = 7,
         Coke = 8
     };
 
-    AssertEqual(10_435, service.CalculateNetWorth(player));
+    // Six pistols at $250 and two rifles at $5,500: a rack is worth what is on it, not what it counts.
+    AssertEqual(35_435, service.CalculateNetWorth(player));
 }
 
 // The database sorts and counts by the expression while the API reports the method's value, so a
@@ -150,7 +189,7 @@ static void NetWorthExpressionAgreesWithCalculation()
     var players = new[]
     {
         new Player(),
-        new Player { Cash = 5_000, Pimps = 1, Hoes = 3, Thugs = 1, Condoms = 25, Beer = 12, Weapons = 1 },
+        new Player { Cash = 5_000, Pimps = 1, Hoes = 3, Thugs = 1, Condoms = 25, Beer = 12, Pistols = 1 },
         new Player
         {
             Cash = 1_234,
@@ -160,7 +199,7 @@ static void NetWorthExpressionAgreesWithCalculation()
             Thugs = 19,
             Condoms = 310,
             Beer = 225,
-            Weapons = 17,
+            Pistols = 17,
             Weed = 88,
             Coke = 46
         }
@@ -298,7 +337,7 @@ static void StreetActionBreakdownIsDeterministic()
         Thugs = 1,
         Condoms = 10,
         Beer = 10,
-        Weapons = 1,
+        Pistols = 1,
         HoeCutPercent = 25,
         HoeHappiness = 50,
         ThugHappiness = 50
@@ -379,7 +418,7 @@ static void CrewReportCalculatesRequirements()
             MinThugMoraleToHire = 40
         }
     });
-    var player = new Player { Pimps = 2, Hoes = 23, Thugs = 7, Weapons = 5 };
+    var player = new Player { Pimps = 2, Hoes = 23, Thugs = 7, Pistols = 5 };
 
     var report = service.GetCrewReport(player);
 
@@ -1232,7 +1271,7 @@ static void WorldNewsKeepsFightsAndDropsNoise()
 /// </summary>
 static void TradeGoodsMapKeysToPiles()
 {
-    var player = new Player { Condoms = 1, Beer = 2, Weapons = 3, Weed = 4, Coke = 5 };
+    var player = new Player { Condoms = 1, Beer = 2, Pistols = 3, Weed = 4, Coke = 5 };
     var capacity = CreateHideouts().CapacityFor(new Hideout { StorageLevel = 3 });
 
     foreach (var key in TradeGoods.Keys)
@@ -1260,9 +1299,15 @@ static void TradeGoodsMapKeysToPiles()
 static void WorkshopMakesWeaponsUnderStorePrice()
 {
     var options = Resolve(null);
-    foreach (var level in options.Hideout.Workshop)
-        AssertTrue(level.CostPerWeapon < options.WeaponPrice,
-            $"workshop level {level.Level} costs {level.CostPerWeapon} against a store price of {options.WeaponPrice}");
+    // A maker who cannot undercut the shop has nothing to sell, so every gun it can forge has to
+    // cost less to make than to buy. The cost belongs to the gun now rather than to the room.
+    foreach (var tier in options.Weapons.Where(x => x.CanForge))
+        AssertTrue(tier.ForgeCost < tier.Price,
+            $"{tier.Key} cost {tier.ForgeCost} to make against a store price of {tier.Price}");
+
+    // And the rifle is the one gun nobody makes in a back room, which is what stops the workshop
+    // from eventually replacing the shop.
+    AssertTrue(!options.WeaponTier(WeaponTiers.Rifle)!.CanForge, "rifles are bought, never made");
 
     var service = CreateEconomy(options);
     var maker = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
@@ -1271,8 +1316,21 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     AssertEqual(5, maker.Weapons);
     AssertEqual(15, maker.Turns);
 
+    // Left to itself a shop makes the best gun it has unlocked, and a level 1 shop tops out at
+    // shotguns. Asking for what it cannot reach is refused by name rather than quietly downgraded.
+    AssertEqual(WeaponTiers.Shotgun, Value<string>(RequiredBreakdown(made), "good"));
+    AssertEqual(5, maker.Shotguns);
+    AssertRuleError(() => service.Forge(maker, 1, WeaponTiers.Smg), "forging above the workshop level");
+    AssertRuleError(() => service.Forge(maker, 1, WeaponTiers.Rifle), "forging a gun nobody makes");
+
+    // A shop can always make anything below what it has unlocked, so an upgrade only ever adds.
+    var pistols = service.Forge(maker, 2, WeaponTiers.Pistol);
+    AssertEqual(WeaponTiers.Pistol, Value<string>(RequiredBreakdown(pistols), "good"));
+    AssertTrue(maker.Pistols > 0, "a shop that has moved on can still make the cheap ones");
+
     // Bounded by the room up front rather than made and spilled, so nobody pays for nothing.
-    var cramped = new Player { Turns = 20, Cash = 100_000, Weapons = 24, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
+    // Twenty-four guns already on a shelf that holds twenty-five, whatever kind they are.
+    var cramped = new Player { Turns = 20, Cash = 100_000, Pistols = 24, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
     var partial = service.Forge(cramped, 10);
     AssertEqual(1, Value<int>(RequiredBreakdown(partial), "weaponsMade"));
     AssertEqual(25, cramped.Weapons);
@@ -1498,7 +1556,7 @@ static void GuidancePointsAtTheGame()
     // morale every shift; a lab is only an opportunity.
     var bleeding = Rookie(options);
     bleeding.Thugs = 6;
-    bleeding.Weapons = 0;
+    bleeding.Pistols = 0;
     bleeding.Cash = 50_000;
     var advice = guidance.NextMoves(bleeding, 0).ToList();
     var arm = advice.FindIndex(x => x.Label.StartsWith("Arm "));
@@ -1520,7 +1578,7 @@ static void GuidancePointsAtTheGame()
     // Never a wall of text. Four at most, or the ranking was pointless.
     var swamped = Rookie(options);
     swamped.Thugs = 9;
-    swamped.Weapons = 0;
+    swamped.Pistols = 0;
     swamped.Hoes = 90;
     swamped.Condoms = 0;
     swamped.Beer = 0;
@@ -1542,7 +1600,7 @@ static void GuidancePointsAtTheGame()
     var veteran = Rookie(options);
     veteran.Pimps = 4;
     veteran.Thugs = 2;
-    veteran.Weapons = 8;
+    veteran.Pistols = 8;
     veteran.Hideout = new Hideout { Tier = 2, StorageLevel = 3, WeedLabLevel = 2 };
     var finished = guidance.Objectives(veteran, ["STREET", "BANK", "PRODUCTION", "SALE"]);
     AssertTrue(finished.All(x => x.Done),
@@ -1559,7 +1617,7 @@ static Player Rookie(GameOptions options) => new()
     Thugs = options.StartingThugs,
     Condoms = options.StartingCondoms,
     Beer = options.StartingBeer,
-    Weapons = options.StartingWeapons,
+    Pistols = options.StartingWeapons,
     HoeHappiness = 100,
     ThugHappiness = 100,
     Hideout = new Hideout { Tier = 1, StorageLevel = 1, SafeLevel = 1 }
@@ -2292,7 +2350,7 @@ static void CityRiskReachesTheDailyLoop()
         Thugs = 2,
         Condoms = 500,
         Beer = 500,
-        Weapons = 2,
+        Pistols = 2,
         HoeHappiness = 90,
         ThugHappiness = 90,
         HoeCutPercent = 30,
@@ -2996,8 +3054,8 @@ static void CombatPowerBalanceTarget()
 
     foreach (var (thugs, pimps) in new[] { (5, 2), (10, 3), (20, 5), (25, 6) })
     {
-        var attackAtParity = CombatPower.Attack(1, thugs, thugs, morale, power);
-        var defence = CombatPower.Defence(pimps, thugs, thugs, morale, power);
+        var attackAtParity = CombatPower.Attack(1, thugs, Firepower.Sidearms(thugs, thugs), morale, power);
+        var defence = CombatPower.Defence(pimps, thugs, Firepower.Sidearms(thugs, thugs), morale, power);
         AssertTrue(attackAtParity < defence,
             $"at {thugs} armed each, the defender should hold ({attackAtParity} vs {defence})");
 
@@ -3010,23 +3068,23 @@ static void CombatPowerBalanceTarget()
     }
 
     // Weapons matter to both sides, and unarmed crew is worth strictly less.
-    AssertTrue(CombatPower.Attack(1, 10, 10, morale, power) > CombatPower.Attack(1, 10, 0, morale, power),
+    AssertTrue(CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), morale, power) > CombatPower.Attack(1, 10, Firepower.Sidearms(10, 0), morale, power),
         "arming the raid helps");
-    AssertTrue(CombatPower.Defence(3, 10, 10, morale, power) > CombatPower.Defence(3, 10, 0, morale, power),
+    AssertTrue(CombatPower.Defence(3, 10, Firepower.Sidearms(10, 10), morale, power) > CombatPower.Defence(3, 10, Firepower.Sidearms(10, 0), morale, power),
         "arming the house helps");
 
     // Morale counts for both, and more for the defender.
-    AssertTrue(CombatPower.Attack(1, 10, 10, 100, power) > CombatPower.Attack(1, 10, 10, 0, power),
+    AssertTrue(CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), 100, power) > CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), 0, power),
         "morale lifts an attack");
     AssertTrue(
-        CombatPower.Defence(3, 10, 10, 100, power) - CombatPower.Defence(3, 10, 10, 0, power)
-        > CombatPower.Attack(1, 10, 10, 100, power) - CombatPower.Attack(1, 10, 10, 0, power),
+        CombatPower.Defence(3, 10, Firepower.Sidearms(10, 10), 100, power) - CombatPower.Defence(3, 10, Firepower.Sidearms(10, 10), 0, power)
+        > CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), 100, power) - CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), 0, power),
         "morale is worth more at home than on the road");
 
     // The commander bonus scales the whole figure and never drops it below one.
-    AssertEqual(CombatPower.Attack(1, 10, 10, morale, power) * 2,
-        CombatPower.Attack(1, 10, 10, morale, power, bonusPercent: 100));
-    AssertTrue(CombatPower.Attack(0, 0, 0, 0, power) >= 1, "power never falls below one");
+    AssertEqual(CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), morale, power) * 2,
+        CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), morale, power, bonusPercent: 100));
+    AssertTrue(CombatPower.Attack(0, 0, Firepower.Sidearms(0, 0), 0, power) >= 1, "power never falls below one");
 
     // The ceiling matchup. Under the previous weights a maxed defender needed 34 attacking thugs to
     // crack while the crew cap was 25, so a fully built house was literally unbeatable. Now brute force
@@ -3037,14 +3095,14 @@ static void CombatPowerBalanceTarget()
     var maxPimps = tier.Tiers[0].MaxPimps;
     var bestBonus = new PimpOptions().MaxBonusPercent;
 
-    var fortress = CombatPower.Defence(maxPimps, maxThugs, maxThugs, morale, power);
-    var maxedRaid = CombatPower.Attack(1, maxThugs, maxThugs, morale, power);
+    var fortress = CombatPower.Defence(maxPimps, maxThugs, Firepower.Sidearms(maxThugs, maxThugs), morale, power);
+    var maxedRaid = CombatPower.Attack(1, maxThugs, Firepower.Sidearms(maxThugs, maxThugs), morale, power);
     AssertTrue(maxedRaid < fortress, "a full raid alone should not crack a fully built house");
-    AssertTrue(CombatPower.Attack(1, maxThugs, maxThugs, morale, power, bestBonus) >= fortress,
+    AssertTrue(CombatPower.Attack(1, maxThugs, Firepower.Sidearms(maxThugs, maxThugs), morale, power, bestBonus) >= fortress,
         "a top Enforcer commander should bring a full raid level with a fully built house");
 
     // And a house with crew out attacking is beatable without any commander bonus at all.
-    var stretched = CombatPower.Defence(maxPimps, maxThugs - 5, maxThugs - 5, morale, power);
+    var stretched = CombatPower.Defence(maxPimps, maxThugs - 5, Firepower.Sidearms(maxThugs - 5, maxThugs - 5), morale, power);
     AssertTrue(maxedRaid > stretched, "a house with its crew away is exposed");
 }
 
@@ -3123,7 +3181,7 @@ static void CombatStartCreatesPendingMission()
 
 static void CombatCommitmentCalculatesAvailableCrew()
 {
-    var player = new Player { Pimps = 3, Thugs = 20, Weapons = 15 };
+    var player = new Player { Pimps = 3, Thugs = 20, Pistols = 15 };
     var active = new[]
     {
         new CombatMission { AssignedPimps = 1, RemainingAttackers = 8, RemainingWeapons = 6 },
@@ -3247,7 +3305,7 @@ static void CombatVictoryStealsCashAndProductWithoutTouchingBank()
         Turns = 30,
         Pimps = 3,
         Thugs = 20,
-        Weapons = 20,
+        Pistols = 20,
         HoeHappiness = 100,
         ThugHappiness = 100
     };
@@ -3259,7 +3317,7 @@ static void CombatVictoryStealsCashAndProductWithoutTouchingBank()
         BankCash = 50_000,
         Pimps = 1,
         Thugs = 1,
-        Weapons = 1,
+        Pistols = 1,
         Weed = 100,
         Coke = 50,
         HoeHappiness = 50,
@@ -3318,6 +3376,1322 @@ static void CombatAttackSpendsTurnsAndCreatesLog()
     AssertTrue(resolution.Log.Summary.Contains("Defender"), "combat summary should name the defender");
 }
 
+// The menu is built on the server so the client never has to know a rule. What matters here is that a
+// method a player cannot use arrives already carrying the reason, rather than being silently absent or
+// silently clickable.
+static void AttackMenuPricesEveryMethod()
+{
+    var options = Resolve(new GameOptions());
+    var strikes = CreateStrikes(options);
+
+    var broke = Rookie(options);
+    var menu = strikes.MethodsFor(broke);
+    AssertEqual(5, menu.Count);
+    AssertTrue(menu.All(x => x.TurnCost > 0), "every method costs turns");
+
+    // A raid is the heavyweight and should cost more than any of the cheap shots.
+    var raid = menu.Single(x => x.Key == AttackMethods.Raid);
+    AssertTrue(menu.Where(x => x.Key != AttackMethods.Raid).All(x => x.TurnCost < raid.TurnCost),
+        "a strike is cheaper than an operation");
+
+    // With no car and no product, two of the four are shut, and each says so itself.
+    AssertTrue(menu.Single(x => x.Key == AttackMethods.DriveBy).BlockedReason is not null, "no ride, no drive-by");
+    AssertTrue(menu.Single(x => x.Key == AttackMethods.Poach).BlockedReason is not null, "no coke, no poaching");
+    AssertTrue(menu.Single(x => x.Key == AttackMethods.Infest).BlockedReason is null, "infesting needs nothing of yours");
+
+    // Buy the car and the reason goes away.
+    broke.Rides = 1;
+    AssertTrue(strikes.MethodsFor(broke).Single(x => x.Key == AttackMethods.DriveBy).BlockedReason is null,
+        "a ride opens the drive-by");
+
+    // An unknown or missing method is a raid, which is what every caller written before the menu
+    // existed was asking for.
+    AssertEqual(AttackMethods.Raid, AttackMethods.Normalize(null));
+    AssertEqual(AttackMethods.Raid, AttackMethods.Normalize("nonsense"));
+    AssertTrue(!AttackMethods.IsStrike(AttackMethods.Raid), "a raid is not a strike");
+    AssertTrue(AttackMethods.Strikes.All(AttackMethods.IsStrike), "and all four strikes are");
+}
+
+// A drive-by takes nothing, which is the whole reason it is cheap: it is how a player who cannot yet win
+// a raid makes one winnable. What it must never be is free.
+static void DriveByThinsTheGuard()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+
+    // AlwaysRandom rolls zero, which lands every chance check and takes the minimum of every range.
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+    var attacker = Attacker(options, rides: 1);
+    var defender = Defender(options);
+    var thugsBefore = defender.Thugs;
+    var moraleBefore = defender.ThugHappiness;
+
+    var result = strikes.Resolve(attacker, defender, Strike(defender, AttackMethods.DriveBy), StrikeDefence.Everyone(defender), now);
+
+    AssertEqual("Victory", result.Outcome);
+    AssertTrue(defender.Thugs < thugsBefore, "thugs go down");
+    AssertTrue(defender.ThugHappiness < moraleBefore, "and the survivors like it less");
+    AssertEqual(0L, result.Log.CashStolen);
+    AssertEqual(0, result.Log.DefenderHoesLost);
+    AssertEqual(options.Strikes.DriveBy.TurnCost, result.Log.TurnsSpent);
+    AssertTrue(attacker.Heat > 0, "shooting up a street gets you noticed");
+    // Zero rolls also land the return-fire check, so the car is gone.
+    AssertEqual(0, attacker.Rides);
+
+    // MinimumRandom rolls one, which fails every chance check: the pass finds nobody and the car comes
+    // home. A miss is a real outcome, or a full turn bank would grind any rival to nothing for free.
+    var unlucky = CreateStrikes(options, new MinimumRandom());
+    var misser = Attacker(options, rides: 1);
+    var untouched = Defender(options);
+    var missed = unlucky.Resolve(misser, untouched, Strike(untouched, AttackMethods.DriveBy), StrikeDefence.Everyone(untouched), now);
+    AssertEqual("Defeat", missed.Outcome);
+    AssertEqual(Defender(options).Thugs, untouched.Thugs);
+    AssertEqual(1, misser.Rides);
+
+    // The better armed the street, the worse the odds of getting away clean.
+    var config = options.Strikes.DriveBy;
+    var quiet = Math.Clamp(config.RideLossChance, 0, config.MaxRideLossChance);
+    var busy = Math.Clamp(config.RideLossChance + 20 * config.RideLossChancePerArmedThug, 0, config.MaxRideLossChance);
+    AssertTrue(busy > quiet, "a defended street shoots back harder");
+}
+
+// The strike whose odds are almost entirely the defender's own doing. A garage behind a full armed crew
+// should be close to untouchable, and one behind nobody should be a car park with the keys in.
+static void JackingIsDecidedByTheGuard()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+
+    var attacker = Attacker(options);
+    var defender = Defender(options);
+    defender.Rides = 3;
+
+    // Nobody home: the cars leave, bounded by the attacker's own garage rather than by their nerve.
+    var open = strikes.Resolve(attacker, defender, Strike(defender, AttackMethods.Jack), Nobody(), now);
+    AssertEqual("Victory", open.Outcome);
+    AssertTrue(open.Log.RidesTaken > 0, "an unguarded garage is emptied");
+    AssertEqual(open.Log.RidesTaken, attacker.Rides);
+    AssertEqual(3 - open.Log.RidesTaken, defender.Rides);
+
+    // A full armed crew standing in it turns the odds the other way. MinimumRandom rolls one, which
+    // fails against any chance below certainty.
+    var guarded = CreateStrikes(options, new MinimumRandom());
+    var thief = Attacker(options);
+    var held = Defender(options);
+    held.Rides = 3;
+    var caught = guarded.Resolve(thief, held, Strike(held, AttackMethods.Jack), Guard(40, WeaponTiers.Pistol), now);
+    AssertEqual("Defeat", caught.Outcome);
+    AssertEqual(3, held.Rides);
+    AssertEqual(0, thief.Rides);
+
+    // A ride with nowhere to park is a ride left behind, which is the same rule the chop shop refuses a
+    // purchase under.
+    var full = Attacker(options);
+    full.Rides = CreateHideouts(options).CapacityFor(full.Hideout).MaxRides;
+    AssertRuleError(
+        () => strikes.Resolve(full, Defender(options, rides: 2), Strike(Defender(options), AttackMethods.Jack), Nobody(), now),
+        "jacking with a full garage");
+}
+
+// Bodies are eyes on the door; guns are what happens once you are seen. Both have to count, or a garage
+// held by riflemen is exactly as easy to rob as the same garage held by the same number of pistols.
+static void JackingReadsTheGuardsGunsAsWellAsTheirNumber()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+
+    // FixedRandom rolls exactly what it is told, so a roll lands only against a chance above it. Six
+    // guards with pistols leave the odds well above this; the same six with rifles do not.
+    const double roll = 0.5;
+    var attacker = Attacker(options);
+    var withPistols = Defender(options, rides: 2);
+    var withRifles = Defender(options, rides: 2);
+
+    var soft = CreateStrikes(options, new FixedRandom(roll))
+        .Resolve(attacker, withPistols, Strike(withPistols, AttackMethods.Jack), Guard(6, WeaponTiers.Pistol), now);
+    AssertEqual("Victory", soft.Outcome);
+
+    var hard = CreateStrikes(options, new FixedRandom(roll))
+        .Resolve(Attacker(options), withRifles, Strike(withRifles, AttackMethods.Jack), Guard(6, WeaponTiers.Rifle), now);
+    AssertEqual("Defeat", hard.Outcome);
+    AssertEqual(2, withRifles.Rides);
+
+    // The odds themselves, reported so a player can see which half of the garage beat them.
+    var softOdds = Value<int>(RequiredBreakdown(soft.Result), "successChancePercent");
+    var hardOdds = Value<int>(RequiredBreakdown(hard.Result), "successChancePercent");
+    AssertTrue(hardOdds < softOdds, $"rifles guard better than pistols ({hardOdds}% against {softOdds}%)");
+    AssertEqual(6, Value<int>(RequiredBreakdown(hard.Result), "guardArmedThugs"));
+    AssertEqual(15.0, Value<double>(RequiredBreakdown(hard.Result), "guardFirepower"));
+
+    // Only the firepower over one pistol each counts, so the two terms never describe the same thug
+    // twice - and a pistol guard is worth exactly what it was before guns had tiers at all.
+    AssertEqual(0.0, Value<double>(RequiredBreakdown(soft.Result), "guardFirepowerOverSidearms"));
+    AssertEqual(9.0, Value<double>(RequiredBreakdown(hard.Result), "guardFirepowerOverSidearms"));
+
+    var jack = options.Strikes.Jack;
+    AssertEqual(
+        (int)Math.Round((jack.BaseChance - 6 * jack.ChancePerArmedThug) * 100),
+        softOdds);
+
+    // Guns nobody is holding guard nothing. A rack of forty rifles behind two thugs is two riflemen.
+    var thin = new StrikeDefence(2, new Armoury(0, 0, 0, 40));
+    AssertEqual(2, thin.ArmedThugs);
+    AssertEqual(5.0, thin.Guns(options.WeaponFirepower()).InPistols);
+    AssertEqual(3.0, thin.FirepowerOverSidearms(options.WeaponFirepower()));
+
+    // And a body with no gun at all guards by standing there, not by shooting.
+    var unarmed = new StrikeDefence(6, Armoury.Empty);
+    AssertEqual(0, unarmed.ArmedThugs);
+    AssertEqual(0.0, unarmed.FirepowerOverSidearms(options.WeaponFirepower()));
+}
+
+/// <summary>An empty garage, for the strikes that want nobody standing in the way.</summary>
+static StrikeDefence Nobody() => new(0, Armoury.Empty);
+
+/// <summary>A guard of this many bodies, each carrying one gun of the given kind.</summary>
+static StrikeDefence Guard(int thugs, string tier)
+    => new(thugs, Armoury.Empty.With(tier, thugs));
+
+// The only attack in the game answered by a purchase rather than by crew or morale. Medicine sits on a
+// shelf doing nothing, costing money, until the day it is the only thing between a rival and the house.
+static void MedicineAnswersAnInfestation()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+    var perCrate = options.Strikes.Infest.HoesCuredPerCrate;
+
+    // No medicine: whoever is exposed is gone.
+    var attacker = Attacker(options);
+    var bare = Defender(options);
+    bare.Hoes = 40;
+    bare.Medicine = 0;
+    var landed = strikes.Resolve(attacker, bare, Strike(bare, AttackMethods.Infest), StrikeDefence.Everyone(bare), now);
+    AssertEqual("Victory", landed.Outcome);
+    AssertTrue(landed.Log.DefenderHoesLost > 0, "hoes are lost");
+    AssertEqual(40 - landed.Log.DefenderHoesLost, bare.Hoes);
+    // Nothing changed hands: an infestation kills, it does not recruit.
+    AssertEqual(0, landed.Log.HoesTaken);
+    AssertEqual(Attacker(options).Hoes, attacker.Hoes);
+
+    // Enough medicine to cover the whole house: the attack achieves nothing but a bad evening.
+    var stocked = Defender(options);
+    stocked.Hoes = 40;
+    stocked.Medicine = (int)Math.Ceiling(40.0 / perCrate);
+    var moraleBefore = stocked.HoeHappiness;
+    var held = strikes.Resolve(Attacker(options), stocked, Strike(stocked, AttackMethods.Infest), StrikeDefence.Everyone(stocked), now);
+    AssertEqual("Defeat", held.Outcome);
+    AssertEqual(40, stocked.Hoes);
+    AssertTrue(stocked.Medicine < (int)Math.Ceiling(40.0 / perCrate), "crates are used up treating them");
+    AssertTrue(stocked.HoeHappiness < moraleBefore, "being infested is still unpleasant");
+
+    // A part-used crate is a used crate. Keeping it would make one crate cover a house forever.
+    var thin = Defender(options);
+    thin.Hoes = 40;
+    thin.Medicine = 1;
+    strikes.Resolve(Attacker(options), thin, Strike(thin, AttackMethods.Infest), StrikeDefence.Everyone(thin), now);
+    AssertEqual(0, thin.Medicine);
+
+    // And a house with no hoes is not a target at all.
+    var empty = Defender(options);
+    empty.Hoes = 0;
+    AssertRuleError(
+        () => strikes.Resolve(Attacker(options), empty, Strike(empty, AttackMethods.Infest), StrikeDefence.Everyone(empty), now),
+        "infesting a house with no hoes");
+}
+
+// The reason the payout slider is a decision rather than a dial nobody touches. A house paid enough to
+// be entirely happy cannot be poached at any price; one squeezed for every dollar can be emptied.
+static void PayoutAnswersPoaching()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+    var perHoe = options.Strikes.Poach.CokePerHoe;
+    var stake = perHoe * 8;
+
+    // Fully happy: nobody goes, and the coke is spent anyway. That is the risk the move carries.
+    var buyer = Attacker(options, coke: 500);
+    var loyal = Defender(options);
+    loyal.Hoes = 30;
+    loyal.HoeHappiness = 100;
+    var refused = strikes.Resolve(buyer, loyal, Strike(loyal, AttackMethods.Poach, stake), StrikeDefence.Everyone(loyal), now);
+    AssertEqual("Defeat", refused.Outcome);
+    AssertEqual(30, loyal.Hoes);
+    AssertEqual(500 - stake, buyer.Coke);
+    AssertTrue(refused.Summary.Contains("paid too well"), $"and it says why: {refused.Summary}");
+
+    // Squeezed: the same pile walks people out of the house.
+    var raider = Attacker(options, coke: 500);
+    var squeezed = Defender(options);
+    squeezed.Hoes = 30;
+    squeezed.HoeHappiness = 20;
+    var taken = strikes.Resolve(raider, squeezed, Strike(squeezed, AttackMethods.Poach, stake), StrikeDefence.Everyone(squeezed), now);
+    AssertEqual("Victory", taken.Outcome);
+    AssertTrue(taken.Log.HoesTaken > 0, "underpaid hoes are temptable");
+    // They changed hands rather than died, so both sides move by the same number.
+    AssertEqual(30 - taken.Log.HoesTaken, squeezed.Hoes);
+    AssertEqual(Attacker(options).Hoes + taken.Log.HoesTaken, raider.Hoes);
+
+    // Stepped-on product tempts fewer people, through the same multiplier the market prices it by.
+    var cutBuyer = Attacker(options, coke: 500);
+    cutBuyer.CokePurity = 0.25;
+    var alsoSqueezed = Defender(options);
+    alsoSqueezed.Hoes = 30;
+    alsoSqueezed.HoeHappiness = 20;
+    var weaker = strikes.Resolve(cutBuyer, alsoSqueezed, Strike(alsoSqueezed, AttackMethods.Poach, stake), StrikeDefence.Everyone(alsoSqueezed), now);
+    AssertTrue(weaker.Log.HoesTaken < taken.Log.HoesTaken,
+        $"cut coke is worse at this too ({weaker.Log.HoesTaken} against {taken.Log.HoesTaken})");
+
+    // Poaching more than you hold is refused rather than quietly trimmed.
+    AssertRuleError(
+        () => strikes.Resolve(Attacker(options, coke: 5), squeezed, Strike(squeezed, AttackMethods.Poach, stake), StrikeDefence.Everyone(squeezed), now),
+        "staking coke you do not have");
+}
+
+// Two shields, two clocks. One column for both would let either loop lock the other out: a four-turn
+// drive-by must never buy its victim an hour of immunity from the raid that was actually coming.
+static void StrikeAndRaidShieldsAreSeparate()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+
+    var attacker = Attacker(options, rides: 4);
+    var defender = Defender(options);
+    strikes.Resolve(attacker, defender, Strike(defender, AttackMethods.DriveBy), StrikeDefence.Everyone(defender), now);
+
+    // The strike set its own clock and left the raid shield alone.
+    AssertTrue(defender.StrikeProtectionUntilUtc > now, "a strike shelters against more strikes");
+    AssertTrue(defender.CombatProtectionUntilUtc is null, "but grants no shelter from a raid");
+    AssertRuleError(
+        () => strikes.Resolve(attacker, defender, Strike(defender, AttackMethods.DriveBy), StrikeDefence.Everyone(defender), now),
+        "striking someone who was just struck");
+
+    // It expires, and the same target is open again.
+    var later = defender.StrikeProtectionUntilUtc!.Value.AddMinutes(1);
+    strikes.Resolve(attacker, defender, Strike(defender, AttackMethods.DriveBy), StrikeDefence.Everyone(defender), later);
+
+    // The raid shield, in the other direction, covers everything. Walking in behind somebody else's
+    // victory to finish the job is the dogpile the protection exists for.
+    var broken = Defender(options);
+    broken.CombatProtectionUntilUtc = now.AddHours(1);
+    AssertRuleError(
+        () => strikes.Resolve(attacker, broken, Strike(broken, AttackMethods.DriveBy), StrikeDefence.Everyone(broken), now),
+        "striking a house that has just been raided");
+
+    // And the anti-farm rules apply to strikes exactly as they do to raids.
+    var newcomer = Rookie(options);
+    AssertRuleError(
+        () => strikes.Resolve(attacker, newcomer, Strike(newcomer, AttackMethods.DriveBy), StrikeDefence.Everyone(newcomer), now),
+        "striking a target under the net worth floor");
+}
+
+// The one counter in the game that buys as well as sells, so a garage is not a one-way purchase.
+static void ChopShopBuysBackUnderTheSticker()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
+    var garage = hideouts.CapacityFor(new Hideout { Tier = 1 }).MaxRides;
+
+    var player = new Player
+    {
+        Cash = options.RidePrice * (garage + 2L),
+        Hideout = new Hideout { Tier = 1, StorageLevel = 3, SafeLevel = 5 }
+    };
+
+    economy.BuyStoreItem(player, "rides", garage);
+    AssertEqual(garage, player.Rides);
+
+    // Refused rather than clamped, and the refusal names the garage rather than sending them off to
+    // buy a bigger shelf.
+    AssertRuleError(() => economy.BuyStoreItem(player, "rides", 1), "buying past the garage");
+
+    var cashBefore = player.Cash + player.BankCash;
+    var sale = economy.SellRides(player, garage);
+    AssertEqual(0, player.Rides);
+    var proceeds = player.Cash + player.BankCash - cashBefore;
+    AssertEqual(options.RideSalePrice * (long)garage, proceeds);
+    AssertTrue(options.RideSalePrice < options.RidePrice, "a fleet held only to be resold loses money");
+    AssertTrue(sale.Summary.Contains("chop shop"), $"and the notice says where it went: {sale.Summary}");
+
+    AssertRuleError(() => economy.SellRides(player, 1), "selling a ride you do not own");
+}
+
+// A CombatLog records the outcome from the attacker's point of view. "Broke through your defence" is
+// true of a raid and absurd of a drive-by, and a defender told only that they lost has no idea whether
+// to buy medicine, move the cars, or pay the house better.
+static void DefenceAlertsNameTheStrike()
+{
+    var attacker = new Player { Name = "Brass Knox" };
+    var seen = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+
+    var jacked = DefenceAlerts.Describe(
+        new CombatLog { Attacker = attacker, Method = AttackMethods.Jack, Outcome = "Victory", RidesTaken = 2, CreatedAtUtc = seen.AddMinutes(1) },
+        seen);
+    AssertTrue(!jacked.HeldTheHouse, "the attacker's victory is the defender's loss");
+    AssertTrue(jacked.Headline.Contains("drove off"), $"a jacking reads as a jacking: {jacked.Headline}");
+    AssertTrue(jacked.Detail.Contains("2 ride(s)"), $"and names what left: {jacked.Detail}");
+    AssertEqual(2, jacked.RidesLost);
+    AssertTrue(jacked.IsUnread, "anything after the watermark is unread");
+
+    // A strike that failed is a win for the defender, and should read like one.
+    var treated = DefenceAlerts.Describe(
+        new CombatLog { Attacker = attacker, Method = AttackMethods.Infest, Outcome = "Defeat", CreatedAtUtc = seen.AddMinutes(1) },
+        seen);
+    AssertTrue(treated.HeldTheHouse, "their medicine held");
+    AssertTrue(treated.Headline.Contains("medicine"), $"and the alert says so: {treated.Headline}");
+
+    // Hoes were missing from the loss list even before the strikes existed, which understated every
+    // raid that took any. Two of the four strikes take nothing else.
+    var poached = DefenceAlerts.Describe(
+        new CombatLog { Attacker = attacker, Method = AttackMethods.Poach, Outcome = "Victory", DefenderHoesLost = 4, HoesTaken = 4, CreatedAtUtc = seen.AddMinutes(1) },
+        seen);
+    AssertTrue(poached.Detail.Contains("4 hoe(s)"), $"a poached house is told how many went: {poached.Detail}");
+
+    // A row written before the menu existed, or by any caller that names no method, is a raid.
+    var legacy = DefenceAlerts.Describe(
+        new CombatLog { Attacker = attacker, Method = string.Empty, Outcome = "Victory", CashStolen = 500, CreatedAtUtc = seen.AddMinutes(1) },
+        seen);
+    AssertTrue(legacy.Headline.Contains("broke through"), $"history still reads as raids: {legacy.Headline}");
+}
+
+/// <summary>
+/// A striker built without a database. Every rule in the service runs against two plain players: what
+/// the defender has standing at home is handed in rather than looked up, which is what keeps it testable.
+/// </summary>
+static StreetStrikeService CreateStrikes(GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new StreetStrikeService(Snapshot(resolved), random ?? new MinimumRandom(), new HideoutService(Snapshot(resolved)));
+}
+
+/// <summary>An established player, well clear of the anti-farm floor so strikes are legal both ways.</summary>
+static Player Attacker(GameOptions options, int rides = 0, int coke = 0) => new()
+{
+    Id = Guid.NewGuid(),
+    Name = "Attacker",
+    City = "Detroit",
+    Turns = options.MaxTurns,
+    Cash = 40_000,
+    Pimps = 2,
+    Hoes = 10,
+    Thugs = 10,
+    Pistols = 10,
+    Rides = rides,
+    Coke = coke,
+    HoeHappiness = 100,
+    ThugHappiness = 100,
+    Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 3 }
+};
+
+static Player Defender(GameOptions options, int rides = 0) => new()
+{
+    Id = Guid.NewGuid(),
+    Name = "Defender",
+    City = "Detroit",
+    Cash = 40_000,
+    Pimps = 2,
+    Hoes = 20,
+    Thugs = 10,
+    Pistols = 10,
+    Rides = rides,
+    HoeHappiness = 70,
+    ThugHappiness = 70,
+    Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 3 }
+};
+
+static CombatAttackRequest Strike(Player defender, string method, int coke = 0)
+    => new(defender.Id, Method: method, Coke: coke);
+
+// The property the whole migration rests on. Every weapon that existed before tiers became a pistol,
+// so a player who has never traded up has to fight with precisely the numbers they had the day before.
+static void PistolsReproduceTheOldWeapon()
+{
+    var options = Resolve(new GameOptions());
+    var power = options.Combat.Power;
+    var firepower = options.WeaponFirepower();
+
+    AssertEqual(1.0, options.WeaponTier(WeaponTiers.Pistol)!.Firepower);
+
+    // A rack of pistols is worth exactly its armed count, which is what the old weapon column was.
+    var pistols = new Armoury(Pistols: 10, Shotguns: 0, Smgs: 0, Rifles: 0);
+    AssertEqual(10.0, pistols.Firepower(10, firepower));
+    // And guns nobody is holding are worth nothing, which the old Math.Min did inside the calculation.
+    AssertEqual(6.0, pistols.Firepower(6, firepower));
+    AssertEqual(0.0, pistols.Firepower(0, firepower));
+
+    // So the power figures are identical to what the bare count produced.
+    AssertEqual(
+        CombatPower.Attack(1, 10, Firepower.Sidearms(10, 10), 80, power),
+        CombatPower.Attack(1, 10, Firepower.Of(pistols, 10, firepower), 80, power));
+    AssertEqual(
+        CombatPower.Defence(2, 10, Firepower.Sidearms(10, 10), 80, power),
+        CombatPower.Defence(2, 10, Firepower.Of(pistols, 10, firepower), 80, power));
+
+    // The balance target the fight is tuned around is stated in pistols on both sides, so it is
+    // untouched by tiers existing.
+    var needed = CombatPower.ThugsNeededToMatch(20, 2, 80, power);
+    AssertTrue(needed > 20, "a defender still holds at equal armed crew");
+    AssertTrue(needed <= 25, $"and an attacker still only needs a modest edge, not {needed} against 20");
+}
+
+// The split that makes tiers a decision rather than a bigger number. It is also the whole of the source
+// game's "pistol packing": cover the crew with the cheap guns, and fight with the good ones.
+static void CoverageAndFirepowerComeApart()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var firepower = options.WeaponFirepower();
+
+    var cheap = new Player { Thugs = 10, Pistols = 10 };
+    var dear = new Player { Thugs = 10, Rifles = 10 };
+
+    // Both crews are fully covered, so morale reads the same for each: a thug with a pistol is exactly
+    // as content as a thug with a rifle, and that is what makes the cheap gun worth buying at all.
+    AssertEqual(cheap.Weapons, dear.Weapons);
+    AssertEqual(0, Math.Max(0, cheap.Thugs - cheap.Weapons));
+    AssertEqual(0, Math.Max(0, dear.Thugs - dear.Weapons));
+
+    // But they do not fight the same.
+    AssertTrue(economy.FirepowerOf(dear) > economy.FirepowerOf(cheap) * 2,
+        "ten rifles hit far harder than ten pistols");
+
+    // A gun beyond the crew is a gun nobody is holding, whatever it cost. This is the reason the cap
+    // lives inside the rack rather than being left to each caller to remember.
+    var hoarder = new Player { Thugs = 2, Rifles = 40 };
+    AssertEqual(economy.FirepowerOf(new Player { Thugs = 2, Rifles = 2 }), economy.FirepowerOf(hoarder));
+
+    // And a crew picks up the best of what is on the rack, not a sample of it.
+    var mixed = new Armoury(Pistols: 20, Shotguns: 0, Smgs: 0, Rifles: 3);
+    var carried = mixed.Best(5);
+    AssertEqual(3, carried.Rifles);
+    AssertEqual(2, carried.Pistols);
+    AssertEqual(5.0 + 3 * (options.WeaponTier(WeaponTiers.Rifle)!.Firepower - 1) - 0, Math.Round(mixed.Firepower(5, firepower) + 0, 10));
+}
+
+// Two opposite rules, and both matter. A crew arms itself with the best guns; a bad day takes the
+// cheapest ones. The alternative - losses coming off the top - would make owning rifles a liability.
+static void CrewsCarryTheBestAndDropTheWorst()
+{
+    var rack = new Armoury(Pistols: 10, Shotguns: 4, Smgs: 2, Rifles: 1);
+    AssertEqual(17, rack.Total);
+
+    // Best first, down through the tiers.
+    var carried = rack.Best(5);
+    AssertEqual(1, carried.Rifles);
+    AssertEqual(2, carried.Smgs);
+    AssertEqual(2, carried.Shotguns);
+    AssertEqual(0, carried.Pistols);
+
+    // Worst first, up through them.
+    var lost = rack.WorstFirst(12);
+    AssertEqual(10, lost.Pistols);
+    AssertEqual(2, lost.Shotguns);
+    AssertEqual(0, lost.Smgs);
+    AssertEqual(0, lost.Rifles);
+
+    // Asking for more than there is gives everything, and never a negative shelf.
+    AssertEqual(rack, rack.Best(500));
+    AssertEqual(rack, rack.WorstFirst(500));
+    AssertEqual(Armoury.Empty, rack.Best(0));
+
+    // Every loss in the game goes through the player, cheapest first, and reports what actually went.
+    var player = new Player { Pistols = 3, Rifles = 2 };
+    var taken = player.RemoveWeapons(4);
+    AssertEqual(3, taken.Pistols);
+    AssertEqual(1, taken.Rifles);
+    AssertEqual(0, player.Pistols);
+    AssertEqual(1, player.Rifles);
+    AssertEqual(1, player.Weapons);
+
+    // Taking more than is there empties the rack rather than going negative.
+    player.RemoveWeapons(99);
+    AssertEqual(0, player.Weapons);
+    AssertEqual(Armoury.Empty, player.Armoury);
+}
+
+// The storage room holds one weapons count across all four tiers. Subtracting only the tier being
+// bought from that shared cap would let a player fill the shelf four times over, once per gun.
+static void OneShelfHoldsEveryGun()
+{
+    var options = Resolve(StorageCapOptions(condoms: 10));
+    var economy = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
+    var capacity = hideouts.CapacityFor(new Hideout());
+    AssertEqual(5, capacity.MaxWeapons);
+
+    var player = new Player { Cash = 1_000_000, Pistols = 3, Hideout = new Hideout() };
+
+    // Three pistols on a five-gun shelf leaves room for two more guns of any kind.
+    AssertEqual(2, TradeGoods.Room(player, capacity, WeaponTiers.Rifle));
+    AssertEqual(2, TradeGoods.Room(player, capacity, WeaponTiers.Pistol));
+
+    economy.BuyStoreItem(player, WeaponTiers.Rifle, 2);
+    AssertEqual(5, player.Weapons);
+    AssertEqual(0, TradeGoods.Room(player, capacity, WeaponTiers.Shotgun));
+
+    // The shelf is full, whatever kind is asked for next.
+    AssertRuleError(() => economy.BuyStoreItem(player, WeaponTiers.Shotgun, 1), "buying past a full gun shelf");
+    AssertRuleError(() => economy.BuyStoreItem(player, WeaponTiers.Pistol, 1), "buying past a full gun shelf");
+
+    // Holdings stay per tier even though the room is shared: the market lists rifles, not "weapons".
+    AssertEqual(3, TradeGoods.Held(player, WeaponTiers.Pistol));
+    AssertEqual(2, TradeGoods.Held(player, WeaponTiers.Rifle));
+    AssertTrue(TradeGoods.Keys.Contains(WeaponTiers.Rifle), "each gun trades on its own");
+
+    // Overflow takes the cheap ones, so a shrinking room never eats the rifles first.
+    var squeezed = new Player { Pistols = 4, Rifles = 2, Hideout = new Hideout() };
+    hideouts.ClampToCapacity(squeezed);
+    AssertEqual(5, squeezed.Weapons);
+    AssertEqual(2, squeezed.Rifles);
+    AssertEqual(3, squeezed.Pistols);
+}
+
+// Better guns are steeply worse value per point of firepower, and that is deliberate. Trading up has to
+// be the thing you do when the hideout will not hold another thug, not the efficient way to spend money.
+static void TradingUpIsForWhenTheHouseIsFull()
+{
+    var options = Resolve(new GameOptions());
+    var tiers = options.Weapons.OrderBy(x => x.Price).ToList();
+    AssertEqual(4, tiers.Count);
+
+    // Prices climb, firepower climbs, and cost per point of firepower climbs fastest.
+    for (var i = 1; i < tiers.Count; i++)
+    {
+        AssertTrue(tiers[i].Price > tiers[i - 1].Price, $"{tiers[i].Key} costs more than {tiers[i - 1].Key}");
+        AssertTrue(tiers[i].Firepower > tiers[i - 1].Firepower, $"{tiers[i].Key} hits harder than {tiers[i - 1].Key}");
+        AssertTrue(tiers[i].Price / tiers[i].Firepower > tiers[i - 1].Price / tiers[i - 1].Firepower,
+            $"{tiers[i].Key} is worse value per point than {tiers[i - 1].Key}, or nobody would ever buy the cheap ones");
+    }
+
+    // So at the first tier's thug cap, filling the crew with more bodies beats upgrading their guns for
+    // the same money - right up until there is nowhere to put another body.
+    var options2 = Resolve(new GameOptions());
+    var crewCap = options2.Hideout.Tiers.Single(x => x.Level == 1).MaxThugs;
+    var rifle = options2.WeaponTier(WeaponTiers.Rifle)!;
+    var pistol = options2.WeaponTier(WeaponTiers.Pistol)!;
+    var armThemAll = crewCap * (long)pistol.Price;
+    var upgradeThemAll = crewCap * (long)rifle.Price;
+    AssertTrue(upgradeThemAll > armThemAll * 10,
+        "arming a whole crew is cheap; re-arming it with rifles is an entirely different kind of purchase");
+
+    // And the cap is what makes it worth doing at all: past it, guns are the only thing left to buy.
+    AssertTrue(rifle.Firepower > pistol.Firepower, "which only pays because a full house cannot grow");
+}
+
+// Both of a drive-by's rolls read the guard, and they weight it differently on purpose. Finding somebody
+// in the open is mostly about how many were watching the road; losing the car is mostly about what they
+// were holding, because a pistol rarely stops a moving car and a rifle very often does.
+static void DriveByWeighsBodiesAndGunsDifferently()
+{
+    var options = Resolve(new GameOptions());
+    var config = options.Strikes.DriveBy;
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+
+    // The weights themselves, since the asymmetry is the design rather than an accident of tuning.
+    AssertTrue(config.HitChancePerArmedThug > config.HitChancePerGuardFirepower,
+        "bodies decide whether the pass finds anybody");
+    AssertTrue(config.RideLossChancePerGuardFirepower > config.RideLossChancePerArmedThug,
+        "guns decide whether the car comes back");
+
+    // Six bodies either way. Only what they are carrying changes.
+    const double roll = 0.2;
+    var withPistols = Defender(options);
+    var withRifles = Defender(options);
+
+    var softDriver = Attacker(options, rides: 1);
+    var hardDriver = Attacker(options, rides: 1);
+    var soft = CreateStrikes(options, new FixedRandom(roll))
+        .Resolve(softDriver, withPistols, Strike(withPistols, AttackMethods.DriveBy), Guard(6, WeaponTiers.Pistol), now);
+    var hard = CreateStrikes(options, new FixedRandom(roll))
+        .Resolve(hardDriver, withRifles, Strike(withRifles, AttackMethods.DriveBy), Guard(6, WeaponTiers.Rifle), now);
+
+    var softOdds = RequiredBreakdown(soft.Result);
+    var hardOdds = RequiredBreakdown(hard.Result);
+
+    // An all-pistol street is worth exactly what it was before guns had tiers: the second term is zero.
+    AssertEqual(0.0, Value<double>(softOdds, "guardFirepowerOverSidearms"));
+    AssertEqual(
+        (int)Math.Round((config.BaseHitChance - 6 * config.HitChancePerArmedThug) * 100),
+        Value<int>(softOdds, "hitChancePercent"));
+    AssertEqual(
+        (int)Math.Round((config.RideLossChance + 6 * config.RideLossChancePerArmedThug) * 100),
+        Value<int>(softOdds, "rideLossChancePercent"));
+
+    // Rifles make the street harder to shoot up and much more likely to keep your car.
+    AssertEqual(9.0, Value<double>(hardOdds, "guardFirepowerOverSidearms"));
+    AssertTrue(Value<int>(hardOdds, "hitChancePercent") < Value<int>(softOdds, "hitChancePercent"),
+        "a rifle street is harder to catch anybody on");
+    AssertTrue(Value<int>(hardOdds, "rideLossChancePercent") > Value<int>(softOdds, "rideLossChancePercent"),
+        "and far likelier to take the car");
+
+    // Which is the difference that actually lands. Identical roll, identical six guards: the pistol
+    // street lets the car go home and the rifle street keeps it, in the garage as well as in the log.
+    AssertEqual(0, Value<int>(softOdds, "ridesLost"));
+    AssertEqual(1, softDriver.Rides);
+    AssertEqual(1, Value<int>(hardOdds, "ridesLost"));
+    AssertEqual(0, hardDriver.Rides);
+
+    // A street nobody is standing on is the cheapest pass there is, whatever is in the gun cabinet.
+    var empty = CreateStrikes(options, new FixedRandom(roll))
+        .Resolve(Attacker(options, rides: 1), Defender(options), Strike(Defender(options), AttackMethods.DriveBy), new StrikeDefence(0, new Armoury(0, 0, 0, 40)), now);
+    var emptyOdds = RequiredBreakdown(empty.Result);
+    AssertEqual(0, Value<int>(emptyOdds, "guardArmedThugs"));
+    AssertEqual(0.0, Value<double>(emptyOdds, "guardFirepowerOverSidearms"));
+    AssertEqual((int)Math.Round(config.BaseHitChance * 100), Value<int>(emptyOdds, "hitChancePercent"));
+}
+
+// The demand is worked out from the player and the week rather than stored, so it has to come back the
+// same all week and differ between players. If it moved when the page was reloaded it would not be a
+// demand at all, it would be a slot machine with extra steps.
+static void TheGodsAskForSomethingSpecific()
+{
+    var options = Resolve(new GameOptions());
+    var prayer = CreatePrayer(options);
+    var monday = new DateTime(2026, 8, 17, 9, 0, 0, DateTimeKind.Utc);
+    var friday = new DateTime(2026, 8, 21, 23, 0, 0, DateTimeKind.Utc);
+    var nextWeek = new DateTime(2026, 8, 25, 9, 0, 0, DateTimeKind.Utc);
+
+    var faithful = Rookie(options);
+    faithful.Id = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    var asked = prayer.DemandFor(faithful, monday);
+    AssertTrue(asked.Quantity > 0, "they always want something");
+    AssertEqual(asked.Good, prayer.DemandFor(faithful, friday).Good);
+    AssertEqual(asked.Quantity, prayer.DemandFor(faithful, friday).Quantity);
+
+    // A different player is asked a different thing, and the same player a different thing next week.
+    var other = Rookie(options);
+    other.Id = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    var differs = prayer.DemandFor(other, monday).Good != asked.Good
+        || prayer.DemandFor(faithful, nextWeek).Good != asked.Good
+        || prayer.DemandFor(faithful, nextWeek).Quantity != asked.Quantity;
+    AssertTrue(differs, "the ask is not the same thing for everybody forever");
+
+    // Scaled to what the player is worth, so it means the same to a rookie and to an empire. Measured
+    // with a room big enough that the shelf is not what is deciding the number, since the two limits
+    // would otherwise be tested at once and neither of them properly.
+    var small = Rookie(options);
+    small.Id = faithful.Id;
+    small.Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 };
+    var empire = Rookie(options);
+    empire.Id = faithful.Id;
+    empire.Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 };
+    empire.BankCash = 5_000_000;
+
+    var smallAsk = prayer.DemandFor(small, monday);
+    var bigAsk = prayer.DemandFor(empire, monday);
+    AssertEqual(smallAsk.Good, bigAsk.Good);
+    AssertTrue(bigAsk.Quantity > smallAsk.Quantity, "a bigger empire is asked for more");
+
+    // And never more than the player could physically keep. A share is a value, and a value in a cheap
+    // good is an enormous pile: four percent of a mid empire is hundreds of bottles of moonshine, which
+    // no storage room in the game holds. Generously is still reachable too, or the only choice the
+    // shrine offers would be closed for every good with a shelf.
+    var hideouts = CreateHideouts(options);
+    foreach (var tier in new[] { 1, 2, 4 })
+    {
+        var stocked = Rookie(options);
+        stocked.BankCash = 20_000_000;
+        stocked.Hideout = new Hideout { Tier = tier, StorageLevel = tier, SafeLevel = 1 };
+        var capacity = hideouts.CapacityFor(stocked.Hideout);
+        for (var day = 0; day < 40; day++)
+        {
+            var ask = prayer.DemandFor(stocked, monday.AddDays(day * 7));
+            if (ask.Good == "cash") continue;
+            var shelf = TradeGoods.Capacity(capacity, ask.Good);
+            AssertTrue(ask.Quantity <= shelf,
+                $"they ask for {ask.Quantity:N0} {ask.Label} against a shelf holding {shelf:N0}");
+            AssertTrue(ask.Quantity * options.Prayer.GenerousMultiplier <= shelf,
+                $"and generosity in {ask.Label} still fits the room");
+        }
+    }
+
+    // But banded, so ordinary play does not move it. Net worth changes every time anything happens, and
+    // an ask that tracked it exactly would quote one number on the shrine and enforce another the moment
+    // the player clicked - including when the thing they are buying to offer is what moves it.
+    var earner = Rookie(options);
+    earner.Id = faithful.Id;
+    earner.Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 };
+    earner.BankCash = 5_000_000;
+    var beforeEarning = prayer.DemandFor(earner, monday).Quantity;
+    earner.BankCash += 20_000;
+    AssertEqual(beforeEarning, prayer.DemandFor(earner, monday).Quantity);
+}
+
+// Meeting the demand is answered every time, and none of the answers is money. A shrine a player can
+// farm is a printer with a candle in front of it.
+static void PrayingIsAnsweredAndNeverPays()
+{
+    var options = Resolve(new GameOptions());
+    var prayer = CreatePrayer(options);
+    var now = new DateTime(2026, 8, 17, 9, 0, 0, DateTimeKind.Utc);
+
+    // Stocked first, then asked. Reading the demand and then changing what the player owns would be
+    // asking about a different player than the one who turns up at the shrine.
+    var player = Worshipper(options, now);
+    Stock(player, prayer.DemandFor(player, now).Good, 10_000_000);
+    var demand = prayer.DemandFor(player, now);
+
+    var cashBefore = player.Cash + player.BankCash;
+    var heldBefore = Held(player, demand.Good);
+
+    // Short of the ask is refused before anything is taken. Taking the offering and reporting that the
+    // gods were unmoved is the kind of mechanic that teaches people never to touch a thing again.
+    AssertRuleError(() => prayer.Offer(player, demand.Quantity - 1, now), "offering less than was asked");
+    AssertEqual(heldBefore, Held(player, demand.Good));
+    AssertTrue(player.LastPrayedAtUtc is null, "and a refused offering is not a prayer");
+
+    var result = prayer.Offer(player, demand.Quantity, now);
+    AssertEqual(demand.Quantity, result.Offered);
+    AssertEqual(heldBefore - demand.Quantity, Held(player, demand.Good));
+    AssertTrue(result.Summary.Length > 0, "something is always said back");
+    AssertEqual(now, player.LastPrayedAtUtc);
+
+    // Whatever landed, it was not money. This is the property that makes the shrine safe to keep.
+    var cashAfter = player.Cash + player.BankCash;
+    AssertTrue(cashAfter <= cashBefore, $"the shrine never pays out ({cashBefore} in, {cashAfter} out)");
+
+    // Once a week, and the refusal says when.
+    var soon = now.AddDays(options.Prayer.CooldownDays - 1);
+    AssertTrue(!prayer.CanPray(player, soon), "the shrine is shut for the week");
+    AssertRuleError(() => prayer.Offer(player, demand.Quantity, soon), "praying twice in a week");
+
+    var later = now.AddDays(options.Prayer.CooldownDays);
+    AssertTrue(prayer.CanPray(player, later), "and open again when the week turns");
+
+    // Generosity is the only thing the player controls, and it is what buys the rationed blessing.
+    var generous = Worshipper(options, later);
+    Stock(generous, prayer.DemandFor(generous, later).Good, 10_000_000);
+    var generousDemand = prayer.DemandFor(generous, later);
+    generous.Turns = 0;
+    var big = prayer.Offer(generous, generousDemand.Quantity * options.Prayer.GenerousMultiplier, later);
+    AssertTrue(big.Generous, "twice the ask is a generous offering");
+
+    // Offering more than is held is refused rather than quietly trimmed.
+    var broke = Worshipper(options, later);
+    var brokeDemand = prayer.DemandFor(broke, later);
+    AssertRuleError(() => prayer.Offer(broke, brokeDemand.Quantity * 1000, later), "offering what you do not have");
+
+    static long Held(Player player, string good)
+        => good == "cash" ? player.Cash : TradeGoods.Held(player, good);
+
+    static void Stock(Player player, string good, long amount)
+    {
+        if (good == "cash") player.Cash = amount;
+        else TradeGoods.Add(player, good, (int)amount);
+    }
+}
+
+// Titles are read out of the fights that happened rather than kept as counters, and half of them are
+// for things done to a player rather than by them - which is the source game's own reading of what a
+// stat board is for, and the half that makes it funny.
+static void TitlesNameLeadersBothWaysRound()
+{
+    var options = Resolve(new GameOptions());
+    var minimum = options.Titles.MinimumToHold;
+    var winner = Guid.NewGuid();
+    var loser = Guid.NewGuid();
+    var nobody = Guid.NewGuid();
+
+    // Every category is named, and each says which end of the fight it reads.
+    AssertEqual(7, TitleCategories.All.Count);
+    AssertTrue(TitleCategories.All.Any(x => x.FromTheAttackersSide), "some titles are for what you did");
+    AssertTrue(TitleCategories.All.Any(x => !x.FromTheAttackersSide), "and some for what was done to you");
+    AssertEqual(TitleCategories.All.Count, TitleCategories.All.Select(x => x.Key).Distinct().Count());
+    AssertEqual(TitleCategories.All.Count, TitleCategories.All.Select(x => x.Title).Distinct().Count());
+
+    // A player carrying a category leads it; one under the floor carries nothing.
+    var poaching = TitleCategories.All.Single(x => x.Key == "poacher");
+    AssertEqual(minimum + 5, poaching.Measure(new TitleTally(winner, "Winner", minimum + 5, 0, 0, 0, 0)));
+
+    // The floor is what stops every category always having a holder in a quiet world.
+    AssertTrue(minimum > 1, "one of anything should not earn a name");
+
+    // The same column read from the other side is a different title, which is the whole design: the
+    // hoes one player walked off with are the hoes another player lost.
+    var poached = TitleCategories.All.Single(x => x.Key == "poached");
+    AssertTrue(poaching.FromTheAttackersSide && !poached.FromTheAttackersSide,
+        "the same number is a boast on one side and a bruise on the other");
+    AssertEqual(poaching.Measure(new TitleTally(loser, "Loser", 9, 0, 0, 0, 0)), poached.Measure(new TitleTally(loser, "Loser", 9, 0, 0, 0, 0)));
+
+    // Reading a player's own titles off a board is a filter, not a query.
+    var board = new List<PlayerTitleResponse>
+    {
+        new("poacher", "Silver Tongue", winner, "Winner", 9, "took nine"),
+        new("killer", "Body Count", winner, "Winner", 12, "killed twelve"),
+        new("onfoot", "On Foot", loser, "Loser", 4, "lost four")
+    };
+    AssertEqual(2, TitleService.For(winner, board).Count);
+    AssertTrue(TitleService.For(winner, board).Contains("Body Count"), "a player can hold more than one");
+    AssertEqual(1, TitleService.For(loser, board).Count);
+    AssertEqual(0, TitleService.For(nobody, board).Count);
+}
+
+static PrayerService CreatePrayer(GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new PrayerService(
+        Snapshot(resolved),
+        random ?? new MinimumRandom(),
+        new PimpRoster(Snapshot(resolved), new MinimumRandom()),
+        new HideoutService(Snapshot(resolved)));
+}
+
+/// <summary>A player established enough that the shrine asks them for something real.</summary>
+static Player Worshipper(GameOptions options, DateTime nowUtc) => new()
+{
+    Id = Guid.NewGuid(),
+    Name = "Faithful",
+    City = "Detroit",
+    Turns = options.MaxTurns,
+    Cash = 250_000,
+    Pimps = 2,
+    Hoes = 20,
+    Thugs = 10,
+    Pistols = 10,
+    HoeHappiness = 70,
+    ThugHappiness = 70,
+    Hideout = new Hideout { Tier = 2, StorageLevel = 6, SafeLevel = 5 },
+    CreatedAtUtc = nowUtc.AddMonths(-1)
+};
+
+// The source game had five districts and its own guide admits it never found a difference between any
+// of them. Five names on a dropdown that all do the same thing is a wasted click, so the only version
+// worth building is one where each is worth going to for something and costs something to go to.
+static void DistrictsAreWorthChoosingBetween()
+{
+    var options = Resolve(new GameOptions());
+    var districts = options.StreetAction.Districts;
+    AssertEqual(5, districts.Count);
+    AssertEqual(5, districts.Select(x => x.Key).Distinct().Count());
+    AssertEqual(1, districts.Count(x => x.IsDefault));
+
+    // The default is the neutral one, at exactly the base numbers, so a player who never touches the
+    // picker works precisely the shift they always did and nothing about the old balance moved.
+    var neutral = options.StreetAction.DefaultDistrict();
+    AssertEqual("lowrent", neutral.Key);
+    AssertEqual(100, neutral.GrossPercent);
+    AssertEqual(100, neutral.HoeRecruitPercent);
+    AssertEqual(100, neutral.ThugRecruitPercent);
+    AssertEqual(100, neutral.PimpRecruitPercent);
+    AssertEqual(100, neutral.FindPercent);
+    AssertEqual(100, neutral.HeatPercent);
+
+    // Every other district leads at something. A district nobody would ever pick is decoration.
+    foreach (var district in districts.Where(x => !x.IsDefault))
+    {
+        var best = new[]
+        {
+            district.GrossPercent,
+            district.HoeRecruitPercent,
+            district.ThugRecruitPercent,
+            district.PimpRecruitPercent,
+            district.FindPercent
+        }.Max();
+        AssertTrue(best > 100, $"{district.Key} is not the best place for anything");
+
+        // And costs something to go to, in what it gives up or in what it draws.
+        var gives = new[]
+        {
+            district.GrossPercent,
+            district.HoeRecruitPercent,
+            district.ThugRecruitPercent,
+            district.PimpRecruitPercent,
+            district.FindPercent
+        }.Min();
+        AssertTrue(gives < 100 || district.HeatPercent > 100,
+            $"{district.Key} is better at something and worse at nothing");
+    }
+
+    // The two that pay best are the two the law is already watching, which is the trade the whole set
+    // is built on: what you go home with against how much notice you drew getting it.
+    var casino = districts.Single(x => x.Key == "casino");
+    var slums = districts.Single(x => x.Key == "winos");
+    AssertTrue(casino.GrossPercent > neutral.GrossPercent && casino.HeatPercent > neutral.HeatPercent,
+        "the rich district pays more and is watched harder");
+    AssertTrue(slums.GrossPercent < neutral.GrossPercent && slums.HeatPercent < neutral.HeatPercent,
+        "and the poor one pays less and is watched less");
+    AssertTrue(slums.ThugRecruitPercent > casino.ThugRecruitPercent,
+        "which is why you go to the slums for men rather than for money");
+
+    // It reaches the shift, rather than reading well in the options and doing nothing. AlwaysRandom
+    // rolls zero, so every chance lands and the difference is entirely the multipliers.
+    var tuned = Resolve(Tuned());
+    var takings = new Dictionary<string, long>();
+    var heat = new Dictionary<string, double>();
+    foreach (var key in new[] { "lowrent", "casino", "winos" })
+    {
+        var worker = Rookie(tuned);
+        worker.Hoes = 20;
+        worker.Thugs = 10;
+        worker.Condoms = 500;
+        worker.Beer = 500;
+        var shift = CreateEconomy(tuned, new AlwaysRandom()).Scout(worker, 10, district: key);
+        takings[key] = Value<long>(RequiredBreakdown(shift), "gross");
+        heat[key] = worker.Heat;
+        AssertEqual(key, Value<string>(RequiredBreakdown(shift), "district"));
+        AssertTrue(shift.Summary.Contains(tuned.StreetAction.District(key)!.Name),
+            $"the notice says where they worked: {shift.Summary}");
+    }
+
+    AssertTrue(takings["casino"] > takings["lowrent"], "the casino pays better");
+    AssertTrue(takings["winos"] < takings["lowrent"], "and the slums pay worse");
+    AssertTrue(heat["casino"] > heat["lowrent"] && heat["lowrent"] > heat["winos"],
+        "and notice follows the money in the same order");
+
+    // A district nobody has heard of is a caller getting it wrong, not a reason to work somewhere else.
+    AssertRuleError(
+        () => CreateEconomy(tuned).Scout(Rookie(tuned), 1, district: "nowhere"),
+        "working a district that does not exist");
+
+    // Naming nothing is the neutral district, which is what every caller written before there was a
+    // choice was always asking for.
+    var plain = CreateEconomy(tuned, new AlwaysRandom()).Scout(Rookie(tuned), 1);
+    AssertEqual("lowrent", Value<string>(RequiredBreakdown(plain), "district"));
+
+    static GameOptions Tuned() => new()
+    {
+        StreetAction = new StreetActionOptions
+        {
+            // No finds, so the takings compared above are the district's doing and nothing else.
+            Finds = NoFinds()
+        }
+    };
+}
+
+// The truce is the whole of what an alliance is for, and it has to hold on every way of moving on
+// somebody. Enforced in the rules rather than socially, which is the half the source game left to the
+// message board and a rule nobody enforces is not a rule.
+static void AllianceIsATruce()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 18, 9, 0, 0, DateTimeKind.Utc);
+
+    var ally = Attacker(options, rides: 2, coke: 500);
+    var friend = Defender(options, rides: 2);
+    var stranger = Defender(options, rides: 2);
+
+    // Unaligned is not allied. Two people with nothing between them are not on the same side.
+    AssertTrue(!AllianceService.AreAllied(ally, friend), "no crew is not the same crew");
+
+    ally.AllianceId = 7;
+    AssertTrue(!AllianceService.AreAllied(ally, friend), "one of them in a crew is still not a truce");
+
+    friend.AllianceId = 7;
+    AssertTrue(AllianceService.AreAllied(ally, friend), "the same crew is");
+    stranger.AllianceId = 9;
+    AssertTrue(!AllianceService.AreAllied(ally, stranger), "a different one is not");
+
+    // Every strike refuses an ally, and the refusal names the reason rather than a generic block.
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+    foreach (var method in AttackMethods.Strikes)
+    {
+        AssertRuleError(
+            () => strikes.Resolve(ally, friend, Strike(friend, method, 200), StrikeDefence.Everyone(friend), now),
+            $"{method} against your own crew");
+    }
+
+    // And the same player, out of the crew, is a target again. The truce is membership, not friendship.
+    friend.AllianceId = null;
+    var landed = strikes.Resolve(ally, friend, Strike(friend, AttackMethods.DriveBy), StrikeDefence.Everyone(friend), now);
+    AssertTrue(landed.Log.TurnsSpent > 0, "leaving the crew ends the truce");
+
+    // The legacy instant path holds it too, so no route into a fight can miss it.
+    var combat = CreateCombat(options);
+    var aligned = new Player { Id = Guid.NewGuid(), Name = "One", Turns = 50, Pimps = 1, Thugs = 5, AllianceId = 3 };
+    var alsoAligned = new Player { Id = Guid.NewGuid(), Name = "Two", Cash = 5_000, Pimps = 1, Thugs = 1, AllianceId = 3 };
+    AssertRuleError(() => combat.Attack(aligned, alsoAligned, now), "attacking your own crew");
+}
+
+// Dues sit beside the hoe cut because they are the same kind of thing: a share of what the shift
+// grossed, gone before the money reaches you. Off the gross rather than off what is left, or the second
+// rate would quietly mean something different depending on the first.
+static void DuesComeOffTheGross()
+{
+    var options = Resolve(new GameOptions());
+    options.StreetAction.Finds = NoFinds();
+    var economy = CreateEconomy(options, new AlwaysRandom());
+
+    var crew = new Alliance { Id = 1, Name = "The Table", DuesPercent = 20, FounderId = Guid.NewGuid() };
+
+    var loyal = Rookie(options);
+    loyal.Hoes = 20;
+    loyal.Thugs = 5;
+    loyal.Condoms = 500;
+    loyal.Beer = 500;
+    loyal.HoeCutPercent = 40;
+    loyal.Alliance = crew;
+    loyal.AllianceId = crew.Id;
+
+    var result = economy.Scout(loyal, 10);
+    var breakdown = RequiredBreakdown(result);
+    var gross = Value<long>(breakdown, "gross");
+    var crewCut = Value<long>(breakdown, "crewPayout");
+    var dues = Value<long>(breakdown, "allianceDues");
+    var kept = Value<long>(breakdown, "playerProfit");
+
+    // Both cuts are taken off the same number, so 40% and 20% give up 60% of the shift rather than 52%.
+    AssertEqual((long)Math.Round(gross * 0.40, MidpointRounding.AwayFromZero), crewCut);
+    AssertEqual((long)Math.Round(gross * 0.20, MidpointRounding.AwayFromZero), dues);
+    AssertEqual(gross - crewCut - dues, kept);
+
+    // The money is in the treasury rather than nowhere, and it is the same money.
+    AssertEqual(dues, crew.Treasury);
+    AssertTrue(dues > 0, "a crew with a rate actually collects");
+    AssertTrue(result.Summary.Contains("The Table"), $"and the shift says who took it: {result.Summary}");
+
+    // A player with no crew pays nothing and is told nothing about dues.
+    var alone = Rookie(options);
+    alone.Hoes = 20;
+    alone.Thugs = 5;
+    alone.Condoms = 500;
+    alone.Beer = 500;
+    alone.HoeCutPercent = 40;
+    var solo = economy.Scout(alone, 10);
+    AssertEqual(0L, Value<long>(RequiredBreakdown(solo), "allianceDues"));
+    AssertTrue(!solo.Summary.Contains("dues"), $"and nothing is said about them: {solo.Summary}");
+
+    // Between them a crew and a house can never take more than the shift actually made.
+    var squeezed = Rookie(options);
+    squeezed.Hoes = 20;
+    squeezed.Thugs = 5;
+    squeezed.Condoms = 500;
+    squeezed.Beer = 500;
+    squeezed.HoeCutPercent = 95;
+    squeezed.Alliance = new Alliance { Id = 2, Name = "The Vice", DuesPercent = 20, FounderId = Guid.NewGuid() };
+    squeezed.AllianceId = 2;
+    var thin = economy.Scout(squeezed, 10);
+    var thinBreakdown = RequiredBreakdown(thin);
+    AssertTrue(Value<long>(thinBreakdown, "playerProfit") >= 0, "a shift never pays out less than nothing");
+    AssertTrue(
+        Value<long>(thinBreakdown, "crewPayout") + Value<long>(thinBreakdown, "allianceDues")
+        <= Value<long>(thinBreakdown, "gross"),
+        "and the two cuts together never exceed what was earned");
+
+    // The ceiling on a founder's rate is a real rule, not advice.
+    AssertTrue(options.Alliances.MaxDuesPercent < 100, "a founder cannot take everything");
+    // And a crew is sized against this world rather than the one the source game had.
+    AssertTrue(options.Alliances.MaxMembers < 20, "six-ish, not twenty: this world is two dozen rivals");
+    AssertEqual(3, options.Alliances.RivalCrews.Count);
+}
+
+// The one rule keeping the shared pool from breaking the fight. Alliance thugs ignore the hideout's
+// thug cap, which is the constraint every combat number is measured against - so without a limit a Trap
+// House with a rich crew behind it could field a Penthouse army and the whole ladder would stop meaning
+// anything. Tied to the member's own crew, the pool doubles you rather than replacing you.
+static void PoolAmplifiesRatherThanReplaces()
+{
+    var options = Resolve(new GameOptions());
+    var alliances = CreateAlliances(options);
+
+    // You may bring as many as you brought yourself, and no more.
+    AssertEqual(0, alliances.BorrowLimit(0));
+    AssertEqual(10, alliances.BorrowLimit(10));
+    AssertEqual(45, alliances.BorrowLimit(45));
+
+    // Which means a tier still decides a ceiling: the pool moves it by a factor, never past it.
+    var trapHouse = options.Hideout.Tiers.Single(x => x.Level == 1).MaxThugs;
+    var penthouse = options.Hideout.Tiers.Single(x => x.Level == 4).MaxThugs;
+    AssertTrue(trapHouse + alliances.BorrowLimit(trapHouse) < penthouse,
+        "a first-tier player with the whole crew behind them still cannot field a top-tier army");
+
+    // Posting defenders runs under the same rule, so an empty house cannot be made a fortress with
+    // borrowed men.
+    var crew = new Alliance { Id = 1, Name = "The Table", FounderId = Guid.NewGuid(), DefensiveThugs = 50 };
+    var thin = Worshipper(options, DateTime.UtcNow);
+    thin.Thugs = 4;
+    thin.Alliance = crew;
+    thin.AllianceId = crew.Id;
+    thin.AllianceRank = AllianceRank.Soldier;
+
+    AssertEqual(4, alliances.BorrowLimit(thin.Thugs));
+
+    // They come out of the pool and stand somewhere specific, rather than defending everybody at once.
+    var posted = alliances.PostDefenders(thin, crew, 4);
+    AssertEqual(4, posted);
+    AssertEqual(4, thin.AllianceDefenders);
+    AssertEqual(46, crew.DefensiveThugs);
+
+    // Past the limit is refused, and what is already standing there counts towards it.
+    AssertRuleError(() => alliances.PostDefenders(thin, crew, 1),
+        "posting more of the crew's thugs than you have of your own");
+
+    // Sending them back returns them to the pool exactly.
+    var released = alliances.PostDefenders(thin, crew, -3);
+    AssertEqual(-3, released);
+    AssertEqual(1, thin.AllianceDefenders);
+    AssertEqual(49, crew.DefensiveThugs);
+
+    // Buying is gated by rank, because it is the crew's money and somebody has to answer for it.
+    var member = Worshipper(options, DateTime.UtcNow);
+    member.Alliance = crew;
+    member.AllianceId = crew.Id;
+    member.AllianceRank = AllianceRank.Soldier;
+    crew.Treasury = 100_000;
+    AssertRuleError(() => alliances.BuyThugs(member, crew, "offensive", 1),
+        "a member spending the crew's money");
+
+    // And it is bounded by the treasury rather than by optimism.
+    var founder = Worshipper(options, DateTime.UtcNow);
+    founder.Alliance = crew;
+    founder.AllianceId = crew.Id;
+    founder.AllianceRank = AllianceRank.Boss;
+    crew.FounderId = founder.Id;
+    AssertRuleError(() => alliances.BuyThugs(founder, crew, "offensive", 1_000),
+        "buying more than the treasury holds");
+
+    var cost = alliances.BuyThugs(founder, crew, "offensive", 4);
+    AssertEqual(options.Alliances.OffensiveThugCost * 4, cost);
+    AssertEqual(100_000 - cost, crew.Treasury);
+    AssertEqual(4, crew.OffensiveThugs);
+
+    // A pool is a long project rather than a purchase: a hundred of them is many millions of dues.
+    AssertTrue(options.Alliances.OffensiveThugCost * 100 > 1_000_000,
+        "a hundred borrowed thugs is a crew-sized undertaking");
+
+    // And one of them is worth exactly one armed thug, not a second combat system.
+    AssertEqual(1.0, options.Alliances.ThugFirepower);
+}
+
+/// <summary>
+/// An alliance service without a database. Every rule tested here decides what a member may do with the
+/// pool, and none of them reads a row: the crew is handed in on the player.
+/// </summary>
+static AllianceService CreateAlliances(GameOptions? options = null)
+{
+    var resolved = Resolve(options);
+    return new AllianceService(null!, Snapshot(resolved), CreateEconomy(resolved));
+}
+
+// Ranks on their own are decoration - words next to names. What makes them a system is that every
+// power is gated by one, and that acting on a person needs you to be above them rather than merely
+// entitled to the verb.
+static void RanksGatePowersAndPeople()
+{
+    var options = Resolve(new GameOptions());
+    var crew = new Alliance { Id = 1, Name = "The Table", FounderId = Guid.NewGuid(), DefensiveThugs = 40, Treasury = 500_000 };
+
+    var boss = Member(options, crew, AllianceRank.Boss);
+    var under = Member(options, crew, AllianceRank.Underboss);
+    var enforcer = Member(options, crew, AllianceRank.Enforcer);
+    var soldier = Member(options, crew, AllianceRank.Soldier);
+
+    // The ladder is ordered, and that order is the whole mechanism.
+    AssertTrue(AllianceRank.Boss > AllianceRank.Underboss, "the ladder is ordered");
+    AssertTrue(AllianceRanks.Outranks(AllianceRank.Underboss, AllianceRank.Enforcer), "above is above");
+    AssertTrue(!AllianceRanks.Outranks(AllianceRank.Enforcer, AllianceRank.Enforcer),
+        "equal is not above: two of the same rank throwing each other out is a fight, not a chain of command");
+
+    // Defaults: the door at Enforcer, throwing people out at Underboss, the treasury at Underboss.
+    AssertTrue(AllianceService.Can(enforcer, crew, AlliancePower.Invite), "an enforcer opens the door");
+    AssertTrue(!AllianceService.Can(soldier, crew, AlliancePower.Invite), "a soldier does not");
+    AssertTrue(AllianceService.Can(under, crew, AlliancePower.Expel), "an underboss throws people out");
+    AssertTrue(!AllianceService.Can(enforcer, crew, AlliancePower.Expel), "an enforcer does not");
+    AssertTrue(AllianceService.Can(soldier, crew, AlliancePower.PostDefenders), "everybody can stand men at their own door");
+
+    // Somebody outside the crew has no powers in it whatever their rank says.
+    var outsider = Member(options, crew, AllianceRank.Boss);
+    outsider.AllianceId = 99;
+    AssertTrue(!AllianceService.Can(outsider, crew, AlliancePower.Invite), "rank in one crew is nothing in another");
+
+    var alliances = CreateAlliances(options);
+
+    // Spending is gated, and the gate is the rank rather than who founded it.
+    AssertRuleError(() => alliances.BuyThugs(soldier, crew, "offensive", 1), "a soldier spending the treasury");
+    AssertTrue(alliances.BuyThugs(under, crew, "offensive", 1) > 0, "an underboss can");
+
+    // Posting is gated on the way out and deliberately not on the way back: somebody demoted while
+    // holding the crew's men must still be able to hand them over.
+    crew.SetMinRankFor(AlliancePower.PostDefenders, AllianceRank.Underboss);
+    soldier.Thugs = 10;
+    AssertRuleError(() => alliances.PostDefenders(soldier, crew, 2), "posting below the threshold");
+    soldier.AllianceDefenders = 3;
+    AssertEqual(-3, alliances.PostDefenders(soldier, crew, -3));
+    AssertEqual(0, soldier.AllianceDefenders);
+}
+
+// The boss configures where every line is drawn, which is the part of a clan system that actually gets
+// used: two crews with identical ranks and different thresholds run completely differently, and neither
+// of them had to be programmed.
+static void BossDrawsTheLines()
+{
+    var options = Resolve(new GameOptions());
+    var crew = new Alliance { Id = 1, Name = "The Table", FounderId = Guid.NewGuid() };
+
+    // Every power has a line, and every line is readable and settable.
+    foreach (var power in Enum.GetValues<AlliancePower>())
+    {
+        crew.SetMinRankFor(power, AllianceRank.Boss);
+        AssertEqual(AllianceRank.Boss, crew.MinRankFor(power));
+        crew.SetMinRankFor(power, AllianceRank.Soldier);
+        AssertEqual(AllianceRank.Soldier, crew.MinRankFor(power));
+    }
+
+    // Moving a line moves who can do the thing, with nothing else changing.
+    var enforcer = Member(options, crew, AllianceRank.Enforcer);
+    crew.SetMinRankFor(AlliancePower.Expel, AllianceRank.Underboss);
+    AssertTrue(!AllianceService.Can(enforcer, crew, AlliancePower.Expel), "below the line");
+    crew.SetMinRankFor(AlliancePower.Expel, AllianceRank.Enforcer);
+    AssertTrue(AllianceService.Can(enforcer, crew, AlliancePower.Expel), "and on it");
+
+    // An unknown rank on the wire is the one that can do the least, which is the safe way to fail.
+    AssertEqual(AllianceRank.Soldier, AllianceRanks.Parse("nonsense"));
+    AssertEqual(AllianceRank.Soldier, AllianceRanks.Parse(null));
+    AssertEqual(AllianceRank.Underboss, AllianceRanks.Parse("underboss"));
+    AssertEqual(AllianceRank.Boss, AllianceRanks.Parse("Boss"));
+
+    // Four rungs, each named once. A crew of six does not need more structure than this.
+    AssertEqual(4, AllianceRanks.All.Length);
+    AssertEqual(4, AllianceRanks.All.Select(AllianceRanks.Label).Distinct().Count());
+    AssertTrue(AllianceRanks.All.Length < options.Alliances.MaxMembers,
+        "fewer rungs than members, or the ladder is longer than the crew standing on it");
+}
+
+/// <summary>A member of a crew at a given rank, for the rules that are about standing rather than money.</summary>
+static Player Member(GameOptions options, Alliance crew, AllianceRank rank)
+{
+    var player = Worshipper(options, DateTime.UtcNow);
+    player.Alliance = crew;
+    player.AllianceId = crew.Id;
+    player.AllianceRank = rank;
+    return player;
+}
+
+// One setting with three states rather than a boolean with two paths always open underneath it. The
+// old shape said "open or not" and quietly accepted applications either way, so a crew that had shut
+// its door was still fielding requests it had no way to stop.
+static void TheDoorIsOneSettingWithThreeStates()
+{
+    var options = Resolve(new GameOptions());
+
+    // Three, and exactly the three things an outsider can do on their own: walk in, ask, or wait.
+    AssertEqual(3, AllianceDoors.All.Length);
+    AssertEqual(3, AllianceDoors.All.Select(AllianceDoors.Label).Distinct().Count());
+    AssertEqual(3, AllianceDoors.All.Select(AllianceDoors.Describe).Distinct().Count());
+
+    // A crew opens by default: a new one nobody can reach is a worse starting state than one anybody
+    // can walk into, since the boss can shut it the moment they want to.
+    AssertEqual(AllianceDoor.Open, new Alliance().Door);
+
+    // An unknown value off the wire is the most restrictive state. A door that failed open would hand
+    // a crew to anybody who sent a malformed setting.
+    AssertEqual(AllianceDoor.InviteOnly, AllianceDoors.Parse("nonsense"));
+    AssertEqual(AllianceDoor.InviteOnly, AllianceDoors.Parse(null));
+    AssertEqual(AllianceDoor.Open, AllianceDoors.Parse("open"));
+    AssertEqual(AllianceDoor.Application, AllianceDoors.Parse("Application"));
+
+    // The world ships one of each, so a player meets all three on their first look at the board rather
+    // than discovering two of them only after building a crew of their own.
+    var doors = options.Alliances.RivalCrews.Select(x => AllianceDoors.Parse(x.Door)).ToList();
+    AssertEqual(3, doors.Distinct().Count());
+    foreach (var door in AllianceDoors.All)
+        AssertTrue(doors.Contains(door), $"the world ships a crew that is {AllianceDoors.Label(door)}");
+}
+
 static EconomyService CreateEconomy(GameOptions? options = null, IGameRandom? random = null)
 {
     var resolved = Resolve(options);
@@ -3353,10 +4727,13 @@ static PimpRoster CreateRoster(GameOptions? options = null, IGameRandom? random 
 static HideoutService CreateHideouts(GameOptions? options = null)
     => new(Snapshot(Resolve(options)));
 
-/// <summary>Mirrors the API's PostConfigure step, which fills hideout tables config left empty.</summary>
+/// <summary>Mirrors the API's PostConfigure step, which fills the tables config left empty.</summary>
 static GameOptions Resolve(GameOptions? options)
 {
     var resolved = options ?? new GameOptions();
+    resolved.ApplyWeaponDefaultsWhereEmpty();
+    resolved.StreetAction.ApplyDistrictDefaultsWhereEmpty();
+    resolved.Alliances.ApplyDefaultsWhereEmpty();
     resolved.Hideout.ApplyDefaultsWhereEmpty();
     resolved.Territory.ApplyDefaultsWhereEmpty();
     resolved.CityMarkets.ApplyDefaultsWhereEmpty(resolved.Territory.Cities());

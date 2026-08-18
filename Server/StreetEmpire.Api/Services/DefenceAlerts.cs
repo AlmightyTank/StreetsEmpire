@@ -18,14 +18,32 @@ public static class DefenceAlerts
         var unread = seenAtUtc is null || log.CreatedAtUtc > seenAtUtc;
         var attacker = log.Attacker?.Name ?? "Someone";
 
-        var (headline, held) = log.Outcome switch
+        // Each method needs its own sentence. "Broke through your defence" is true of a raid and absurd
+        // of a drive-by, which never went inside, and a defender told only that they won or lost has no
+        // idea whether to buy medicine, park the cars somewhere else, or pay the house better.
+        var (headline, held) = AttackMethods.Normalize(log.Method) switch
         {
-            // The attacker won, so the defender is the one who lost something.
-            "Victory" => ($"{attacker} broke through your defence.", false),
-            "Defeat" => ($"You held {attacker} off.", true),
-            "Standstill" => ($"You fought {attacker} to a standstill.", true),
-            "Canceled" => ($"{attacker} called off an attack on you.", true),
-            _ => ($"{attacker} attacked you.", false)
+            AttackMethods.DriveBy => log.Outcome == "Victory"
+                ? ($"{attacker} shot up your street.", false)
+                : ($"{attacker} shot up your street and hit nobody.", true),
+            AttackMethods.Jack => log.Outcome == "Victory"
+                ? ($"{attacker} drove off with your rides.", false)
+                : ($"Your crew ran {attacker} out of your garage.", true),
+            AttackMethods.Infest => log.Outcome == "Victory"
+                ? ($"{attacker} put something through your house.", false)
+                : ($"{attacker} tried to infest your house. Your medicine held.", true),
+            AttackMethods.Poach => log.Outcome == "Victory"
+                ? ($"{attacker} bought your hoes away.", false)
+                : ($"{attacker} came for your hoes and nobody went with them.", true),
+            _ => log.Outcome switch
+            {
+                // The attacker won, so the defender is the one who lost something.
+                "Victory" => ($"{attacker} broke through your defence.", false),
+                "Defeat" => ($"You held {attacker} off.", true),
+                "Standstill" => ($"You fought {attacker} to a standstill.", true),
+                "Canceled" => ($"{attacker} called off an attack on you.", true),
+                _ => ($"{attacker} attacked you.", false)
+            }
         };
 
         var losses = new List<string>();
@@ -33,6 +51,10 @@ public static class DefenceAlerts
         if (log.WeedStolen > 0) losses.Add($"{log.WeedStolen:N0} weed");
         if (log.CokeStolen > 0) losses.Add($"{log.CokeStolen:N0} coke");
         if (log.DefenderThugsLost > 0) losses.Add($"{log.DefenderThugsLost:N0} thug(s)");
+        // Hoes were missing here even before the strikes existed, which understated every raid that took
+        // any. Two of the four strikes take nothing else, so it can no longer be left out.
+        if (log.DefenderHoesLost > 0) losses.Add($"{log.DefenderHoesLost:N0} hoe(s)");
+        if (log.RidesTaken > 0) losses.Add($"{log.RidesTaken:N0} ride(s)");
         if (log.DefenderWeaponsLost > 0) losses.Add($"{log.DefenderWeaponsLost:N0} weapon(s)");
         if (log.DefenderPimpsLost > 0) losses.Add($"{log.DefenderPimpsLost:N0} pimp(s)");
 
@@ -43,6 +65,8 @@ public static class DefenceAlerts
         return new DefenceAlertResponse(
             log.Id,
             attacker,
+            AttackMethods.Normalize(log.Method),
+            AttackMethods.Label(log.Method),
             log.Outcome,
             held,
             headline,
@@ -51,6 +75,8 @@ public static class DefenceAlerts
             log.WeedStolen,
             log.CokeStolen,
             log.DefenderThugsLost,
+            log.DefenderHoesLost,
+            log.RidesTaken,
             log.DefenderPimpsLost,
             unread,
             log.CreatedAtUtc);

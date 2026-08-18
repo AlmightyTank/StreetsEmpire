@@ -50,9 +50,34 @@ public sealed class GameOptions
 
     public int CondomPrice { get; set; } = 10;
     public int BeerPrice { get; set; } = 15;
-    public int WeaponPrice { get; set; } = 500;
+
+    /// <summary>
+    /// What the single generic weapon used to cost, kept only for the places that want one number to
+    /// stand for "a gun": the market's reference band and the guidance that says arming a crew is
+    /// worth doing. Everything that actually buys, fights with or values a weapon reads the tier table.
+    /// </summary>
+    public int WeaponPrice { get; set; } = 250;
+
     public int WeedSellPrice { get; set; } = 40;
     public int CokeSellPrice { get; set; } = 150;
+
+    /// <summary>
+    /// A crate of medicine, and a low-rider off the lot.
+    ///
+    /// Medicine is priced so that stocking against an infestation is an easy decision and stocking
+    /// against ten is not: a crate covers several hoes, so covering a whole house costs real money that
+    /// is doing nothing until someone attacks. The ride is priced against the first tier's ladder - it
+    /// sits between the workshop and the lookout - because a drive-by is the cheapest way into the
+    /// attack menu and should be reachable in a first tier that can already afford a lab.
+    /// </summary>
+    public int MedicinePrice { get; set; } = 250;
+    public int RidePrice { get; set; } = 25_000;
+
+    /// <summary>
+    /// What the chop shop gives you back for one. Well under the sticker, like every other second-hand
+    /// price here: rides are bought to use, and a fleet held only to be sold again should lose money.
+    /// </summary>
+    public int RideSalePrice { get; set; } = 15_000;
 
     /// <summary>
     /// How hard a sale price follows purity, as an exponent.
@@ -76,11 +101,70 @@ public sealed class GameOptions
     public int WeedNetWorth { get; set; } = 30;
     public int CokeNetWorth { get; set; } = 120;
 
+    /// <summary>
+    /// A ride counts at what the chop shop would actually pay for it, not at what it cost. Net worth is
+    /// what you could liquidate, and valuing a fleet at the sticker price would make buying rides a way
+    /// to climb the board for free.
+    /// </summary>
+    public int RideNetWorth { get; set; } = 15_000;
+    public int MedicineNetWorth { get; set; } = 250;
+
+    /// <summary>
+    /// The gun rack. Empty here on purpose, like the hideout tables: the configuration binder appends to
+    /// a pre-populated list rather than replacing it, so shipping defaults in the initializer would merge
+    /// them with appsettings and let a stale row win the lookup.
+    /// </summary>
+    public List<WeaponTierOptions> Weapons { get; set; } = [];
+
+    /// <summary>Firepower by tier, in units of one pistol, for the rack to measure itself against.</summary>
+    public IReadOnlyDictionary<string, double> WeaponFirepower()
+        => Weapons.ToDictionary(x => x.Key, x => x.Firepower);
+
+    public WeaponTierOptions? WeaponTier(string? key)
+        => Weapons.FirstOrDefault(x => string.Equals(x.Key, key?.Trim().ToLowerInvariant(), StringComparison.Ordinal));
+
+    /// <summary>What a rack is worth, at what the shop charges for each gun on it.</summary>
+    public long WeaponValue(Armoury armoury)
+    {
+        var total = 0L;
+        foreach (var tier in Weapons)
+            total += (long)armoury.Of(tier.Key) * tier.Price;
+        return total;
+    }
+
+    public void ApplyWeaponDefaultsWhereEmpty()
+    {
+        if (Weapons.Count > 0)
+            return;
+
+        // Prices are the source game's, and the firepower curve is the answer to what they buy. It falls
+        // away steeply against price - a pistol is $250 a point, a rifle $2,200 - so trading up is never
+        // the efficient way to spend money and always the only way left once the hideout's thug cap is
+        // full. That is the trade the tiers exist to create: more bodies while you have room for them,
+        // better guns once you do not.
+        //
+        // A pistol is exactly 1, which is what the old single weapon contributed, so nobody's fighting
+        // strength moved when tiers arrived - only what their rack is worth on paper.
+        Weapons =
+        [
+            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 1 },
+            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 1_250, Firepower = 1.4, ForgeCost = 880, MinWorkshopLevel = 1 },
+            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 2_500, Firepower = 1.9, ForgeCost = 1_800, MinWorkshopLevel = 2 },
+            // No forge cost and no workshop level: a rifle is the one gun nobody makes in a back room,
+            // which is what stops the workshop from eventually replacing the shop entirely.
+            new WeaponTierOptions { Key = WeaponTiers.Rifle, Price = 5_500, Firepower = 2.5 }
+        ];
+    }
+
     public StreetActionOptions StreetAction { get; set; } = new();
     public ProductionOptions Production { get; set; } = new();
     public MoraleOptions Morale { get; set; } = new();
     public CrewOptions Crew { get; set; } = new();
     public CombatOptions Combat { get; set; } = new();
+    public StrikeOptions Strikes { get; set; } = new();
+    public PrayerOptions Prayer { get; set; } = new();
+    public AllianceOptions Alliances { get; set; } = new();
+    public TitleOptions Titles { get; set; } = new();
     public HideoutOptions Hideout { get; set; } = new();
     public PimpOptions Pimps { get; set; } = new();
     public AntiFarmOptions AntiFarm { get; set; } = new();
@@ -150,6 +234,323 @@ public sealed class CombatPowerOptions
     public int ArmedThugDefence { get; set; } = 9;
     public int PimpDefence { get; set; } = 3;
     public double MoraleDefenceWeight { get; set; } = 1;
+}
+
+/// <summary>
+/// The quick strikes: drive-by, jacking, infestation, poaching.
+///
+/// Tuned against the turn bank rather than against each other, because turns are the only thing
+/// limiting them. A raid is rationed by lanes and a thirty-minute cooldown; a strike is rationed by
+/// what it costs, exactly as street work is, which is why the costs here are the whole balance. A full
+/// two-hundred turn bank buys about fifty drive-bys or twenty-five poachings, and every one of those
+/// turns is a turn not spent earning - so a player who spends an evening harassing rivals has spent an
+/// evening not making money, and that is the trade the prices are for.
+///
+/// Each strike also draws heat. They are loud, public crimes committed against people who have their
+/// own reasons to talk to the law, so a night of them puts a player on the radar the same way a night
+/// of working the streets does, only faster.
+/// </summary>
+public sealed class StrikeOptions
+{
+    /// <summary>
+    /// How long a strike shelters its victim from further strikes. Short by design: this is here to stop
+    /// a crowd emptying one player's garage in a minute, not to make anyone safe for an evening.
+    /// </summary>
+    public int ShieldMinutes { get; set; } = 20;
+
+    public DriveByOptions DriveBy { get; set; } = new();
+    public JackOptions Jack { get; set; } = new();
+    public InfestOptions Infest { get; set; } = new();
+    public PoachOptions Poach { get; set; } = new();
+}
+
+public sealed class DriveByOptions
+{
+    /// <summary>
+    /// The cheapest way into the attack menu, and the only one that needs no crew commitment beyond a
+    /// car and a driver. It takes nothing, which is what makes it affordable: it is how a player softens
+    /// a target they cannot yet raid.
+    /// </summary>
+    public int TurnCost { get; set; } = 4;
+    public double HeatPerStrike { get; set; } = 4;
+
+    /// <summary>
+    /// Odds the pass finds anybody: against an empty street, then per armed body on it, then per point
+    /// of firepower those bodies carry over a pistol each. A drive-by is barely contested compared with
+    /// a jacking, which is the point of it - but it cannot be a certainty, or a player with one car and
+    /// a full turn bank could grind any rival's crew to nothing for free.
+    ///
+    /// Bodies weigh more than guns here. Whether you find anybody in the open is mostly about how many
+    /// people were watching the road, not what they were holding when they got behind a wall.
+    /// </summary>
+    public double BaseHitChance { get; set; } = 0.9;
+    public double HitChancePerArmedThug { get; set; } = 0.02;
+    public double HitChancePerGuardFirepower { get; set; } = 0.015;
+    public double MinHitChance { get; set; } = 0.25;
+
+    public int ThugKillsMin { get; set; } = 1;
+    public int ThugKillsMax { get; set; } = 3;
+
+    /// <summary>Morale the defender's thugs lose from being shot at in the street.</summary>
+    public double ThugMoraleHit { get; set; } = 6;
+
+    /// <summary>
+    /// The odds of driving into return fire and losing the car, rising with the guard on the street and
+    /// with what that guard is carrying. A floor above zero on purpose: even an undefended drive-by
+    /// should sometimes cost the ride, or the move becomes free and there is no reason to stop doing it.
+    ///
+    /// This is the one roll in the game where the guns outweigh the bodies, and it is the honest
+    /// reading: a pistol rarely stops a moving car, and a rifle very often does. It is also what gives
+    /// the drive-by a ceiling - past a certain quality of guard, shooting up a street costs more cars
+    /// than it is worth, whoever is driving.
+    /// </summary>
+    public double RideLossChance { get; set; } = 0.05;
+    public double RideLossChancePerArmedThug { get; set; } = 0.01;
+    public double RideLossChancePerGuardFirepower { get; set; } = 0.015;
+    public double MaxRideLossChance { get; set; } = 0.45;
+}
+
+public sealed class JackOptions
+{
+    public int TurnCost { get; set; } = 6;
+    public double HeatPerStrike { get; set; } = 3;
+
+    /// <summary>Most rides one jacking can drive away, however thin the guard.</summary>
+    public int MaxRides { get; set; } = 2;
+
+    /// <summary>
+    /// Odds of getting away with it: against a bare garage, then per armed body standing in it, then per
+    /// point of firepower those bodies carry over and above a pistol each.
+    ///
+    /// This is the strike most sensitive to the defender's guard, and the two terms are what it is
+    /// sensitive to. Bodies are eyes on the door; guns are what happens once you are seen. A body is
+    /// worth slightly more than the marginal firepower of upgrading one, so hiring a guard is never
+    /// worse than re-arming the guard you have - but a rifle crew still shuts a garage that the same
+    /// number of pistols would only make risky.
+    ///
+    /// Counting only the firepower above sidearms is what stops the two terms describing the same thug
+    /// twice, and it means an all-pistol guard has precisely the odds it had before guns had tiers.
+    /// </summary>
+    public double BaseChance { get; set; } = 0.8;
+    public double ChancePerArmedThug { get; set; } = 0.035;
+    public double ChancePerGuardFirepower { get; set; } = 0.03;
+    public double MinChance { get; set; } = 0.05;
+
+    /// <summary>Thugs the attacker leaves behind when the garage crew catches them.</summary>
+    public int FailedThugLossesMin { get; set; }
+    public int FailedThugLossesMax { get; set; } = 2;
+}
+
+public sealed class InfestOptions
+{
+    public int TurnCost { get; set; } = 6;
+    public double HeatPerStrike { get; set; } = 2;
+
+    /// <summary>Share of the defender's hoes exposed, before medicine. Always at least one.</summary>
+    public double MinSharePercent { get; set; } = 6;
+    public double MaxSharePercent { get; set; } = 14;
+
+    /// <summary>
+    /// Hoes one crate treats. This is what makes medicine a real stock decision rather than a switch:
+    /// covering a big house costs a lot of money that does nothing until somebody attacks.
+    /// </summary>
+    public int HoesCuredPerCrate { get; set; } = 3;
+
+    /// <summary>Morale hit when it lands, and the smaller one for a house whose medicine held.</summary>
+    public double HoeMoraleHit { get; set; } = 8;
+    public double CuredHoeMoraleHit { get; set; } = 2;
+}
+
+public sealed class PoachOptions
+{
+    public int TurnCost { get; set; } = 8;
+    public double HeatPerStrike { get; set; } = 2;
+
+    /// <summary>
+    /// Coke it takes to tempt one hoe away, at full purity. Stepped-on product tempts fewer, through the
+    /// same purity multiplier the market prices with, so a stretched pile is worse at this too.
+    ///
+    /// Priced at roughly twice what hiring the same hoe off the street costs. It has to carry a premium
+    /// or nobody would ever hire again, and it has to stay within reach or the move is decoration: what
+    /// the premium buys is a hoe who arrives regardless of your own crew's morale, out of somebody
+    /// else's house.
+    /// </summary>
+    public int CokePerHoe { get; set; } = 10;
+
+    /// <summary>Most hoes one run can walk away with, whatever the pile spent.</summary>
+    public int MaxHoes { get; set; } = 8;
+
+    /// <summary>
+    /// How hard the defender's own morale resists. At 1 a fully happy house loses nobody at any price,
+    /// which is the whole point of the move: poaching is the attack the payout slider answers, and the
+    /// slider has to be able to answer it completely or nobody would ever touch it.
+    /// </summary>
+    public double MoraleResistance { get; set; } = 1;
+
+    /// <summary>Morale the house loses watching people leave.</summary>
+    public double HoeMoraleHit { get; set; } = 5;
+}
+
+/// <summary>
+/// The shrine. What the gods ask for, and what they are worth answering.
+///
+/// The whole table is sized so that praying can never be a way of making money. What goes on the altar
+/// is priced against net worth; what comes back is notice, mood and faith - none of which has a price
+/// anywhere else in the game. A player who prays every week for a year is no richer for it, only
+/// harder to raid and harder to demoralise.
+/// </summary>
+public sealed class PrayerOptions
+{
+    public int CooldownDays { get; set; } = 7;
+
+    /// <summary>
+    /// What the gods ask for, as a share of what the player is worth. Four percent is a real cost - a
+    /// week's coke for a mid empire - without ever being the difference between playing and not.
+    /// </summary>
+    public double DemandShareOfNetWorth { get; set; } = 0.04;
+
+    /// <summary>
+    /// A floor under the scaling, so the very first prayer is a real offering rather than a token. Below
+    /// this the ask would round to nothing and the ritual would be free.
+    /// </summary>
+    public long MinimumNetWorthForScale { get; set; } = 25_000;
+    public long MinimumCashDemand { get; set; } = 500;
+
+    /// <summary>Giving this many times what was asked opens the blessings that generosity buys.</summary>
+    public int GenerousMultiplier { get; set; } = 2;
+    public int GenerousBlessingMultiplier { get; set; } = 2;
+
+    /// <summary>
+    /// Thresholds for whether a blessing would actually help. A blessing landing on something the player
+    /// did not need reads as nothing happening, and a weekly ritual that mostly produces nothing is a
+    /// weekly ritual nobody keeps.
+    /// </summary>
+    public double HeatWorthClearing { get; set; } = 15;
+    public double MoraleWorthLifting { get; set; } = 85;
+    public double LoyaltyWorthRestoring { get; set; } = 80;
+
+    public double MoraleBlessing { get; set; } = 8;
+    public double LoyaltyBlessing { get; set; } = 12;
+
+    /// <summary>
+    /// Turns, and the one blessing rationed behind generosity. Everybody always wants more of these and
+    /// nothing else in the game grants them, so they cannot be something the gods hand out for meeting
+    /// a demand - they are what giving twice as much buys.
+    /// </summary>
+    public int TurnsBlessing { get; set; } = 25;
+}
+
+/// <summary>
+/// What a crew costs and how big it may get.
+/// </summary>
+public sealed class AllianceOptions
+{
+    /// <summary>
+    /// Members per crew.
+    ///
+    /// The source game said twenty, but it was a game with thousands of players signing up every month.
+    /// This world is two dozen rivals and a handful of people, so twenty would not be an alliance, it
+    /// would be everybody against nobody - and the one thing an alliance must not become is the whole
+    /// board agreeing to stop playing. Sized against the population it actually has.
+    /// </summary>
+    public int MaxMembers { get; set; } = 6;
+
+    /// <summary>
+    /// What starting one costs. High enough that founding a crew is a decision an established player
+    /// makes rather than the first thing anybody does, and it is paid once by one person.
+    /// </summary>
+    public long FoundingCost { get; set; } = 150_000;
+
+    public int DefaultDuesPercent { get; set; } = 5;
+
+    /// <summary>
+    /// The ceiling on the founder's cut. A founder who could set it to everything would be running a
+    /// scheme rather than a crew, and the members paying it cannot vote.
+    /// </summary>
+    public int MaxDuesPercent { get; set; } = 20;
+
+    /// <summary>
+    /// What a thug costs the treasury. The source game's price, and it is the first thing keeping the
+    /// pool honest: at eight percent of a shift, a hundred of them is somewhere near twenty million
+    /// dollars of gross street work by the whole crew. A pool is a long project, not a purchase.
+    /// </summary>
+    public long OffensiveThugCost { get; set; } = 15_000;
+    public long DefensiveThugCost { get; set; } = 15_000;
+
+    /// <summary>
+    /// What one thug out of the pool is worth in a fight, in pistols. They arrive armed - at fifteen
+    /// thousand each they are not turning up with their hands empty - so one of them is exactly an armed
+    /// thug and nothing more exotic. Anything cleverer would make the pool a second combat system.
+    /// </summary>
+    public double ThugFirepower { get; set; } = 1;
+
+    /// <summary>
+    /// How many borrowed thugs a member may field, as a multiple of their own.
+    ///
+    /// This is the rule that keeps the pool from breaking the game. Alliance thugs ignore the hideout's
+    /// thug cap entirely, which is the constraint every fight is balanced against - without a limit,
+    /// a Trap House with a rich crew behind it could field a Penthouse army and the whole hideout ladder
+    /// would stop meaning anything.
+    ///
+    /// Tying the limit to the member's own crew makes the pool amplify rather than substitute: you may
+    /// bring as many friends as you brought yourself, so your tier still sets your ceiling and the crew
+    /// only doubles it. It also means the pool is worth most to the players who have already built
+    /// something, which is the right way round for a thing a crew pays for together.
+    /// </summary>
+    public double MaxBorrowedPerOwnThug { get; set; } = 1;
+
+    /// <summary>
+    /// Crews the world already has. Seeded around towns on first read, because that is the alliance a
+    /// world would actually make - the people working the same streets - and it gives a player an
+    /// obvious door to knock on in their own city. Three towns rather than eight on purpose: a map where
+    /// everybody has agreed not to rob each other has nothing left to do.
+    /// </summary>
+    public List<RivalCrewOptions> RivalCrews { get; set; } = [];
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (RivalCrews.Count > 0)
+            return;
+
+        RivalCrews =
+        [
+            new RivalCrewOptions
+            {
+                Name = "The Eastside Table",
+                City = "New York",
+                Motto = "We eat first and we eat together.",
+                DuesPercent = 8,
+                Door = "Application"
+            },
+            new RivalCrewOptions
+            {
+                Name = "Riverworks",
+                City = "Detroit",
+                Motto = "Nobody here is asking anybody for anything.",
+                DuesPercent = 5
+            },
+            new RivalCrewOptions
+            {
+                Name = "The Causeway Set",
+                City = "Miami",
+                Motto = "Everything moves through us on the way to somewhere else.",
+                DuesPercent = 12,
+                Door = "InviteOnly"
+            }
+        ];
+    }
+}
+
+/// <summary>A crew the world starts with, formed from the rivals already working that town.</summary>
+public sealed class RivalCrewOptions
+{
+    public string Name { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string? Motto { get; set; }
+    public int DuesPercent { get; set; } = 5;
+
+    /// <summary>How they take people on: Open, Application, or InviteOnly.</summary>
+    public string Door { get; set; } = "Open";
 }
 
 public sealed class AntiFarmOptions
@@ -313,10 +714,10 @@ public sealed class HideoutOptions
         if (Tiers.Count == 0)
             Tiers =
             [
-                new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25 },
-                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, UpgradeCost = 200_000, UpgradeTurns = 40, BuildMinutes = 30 },
-                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, UpgradeCost = 600_000, UpgradeTurns = 80, BuildMinutes = 120 },
-                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, UpgradeCost = 1_800_000, UpgradeTurns = 120, BuildMinutes = 360 }
+                new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25, MaxRides = 2 },
+                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 200_000, UpgradeTurns = 40, BuildMinutes = 30 },
+                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 600_000, UpgradeTurns = 80, BuildMinutes = 120 },
+                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 1_800_000, UpgradeTurns = 120, BuildMinutes = 360 }
             ];
 
         // Condoms hold a full 20-turn action at the tier's hoe cap (one per 12 turns each), beer the same
@@ -325,15 +726,16 @@ public sealed class HideoutOptions
             Storage =
             [
                 // Level 1 supplies a fifth of a full-length action at the crew caps: 4 turns of both.
-                new StorageLevelOptions { Level = 1, Condoms = 17, Beer = 10, Weapons = 5, Weed = 25, Coke = 10, Moonshine = 10, Cut = 10 },
+                new StorageLevelOptions { Level = 1, Condoms = 17, Beer = 10, Weapons = 5, Weed = 25, Coke = 10, Moonshine = 10, Cut = 10, Medicine = 4 },
                 // Level 2 supplies exactly half a full-length action: 10 turns of both.
-                new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, UpgradeCost = 15_000 },
+                new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, Medicine = 9, UpgradeCost = 15_000 },
                 // Level 3 holds exactly what a full-length action consumes: 84 condoms for 50 hoes at
-                // 12 turns each, 50 beer for 25 thugs at 10. It drains the room dry each time.
-                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, UpgradeCost = 50_000 },
-                new StorageLevelOptions { Level = 4, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, UpgradeCost = 150_000 },
-                new StorageLevelOptions { Level = 5, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, UpgradeCost = 400_000 },
-                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, UpgradeCost = 1_000_000 }
+                // 12 turns each, 50 beer for 25 thugs at 10. It drains the room dry each time. Its 17
+                // crates of medicine treat all 50 hoes once, at three to a crate.
+                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, Medicine = 17, UpgradeCost = 50_000 },
+                new StorageLevelOptions { Level = 4, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, Medicine = 29, UpgradeCost = 150_000 },
+                new StorageLevelOptions { Level = 5, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, Medicine = 44, UpgradeCost = 400_000 },
+                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, Medicine = 67, UpgradeCost = 1_000_000 }
             ];
 
         if (Safe.Count == 0)
@@ -359,14 +761,16 @@ public sealed class HideoutOptions
                 new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 16, UpgradeCost = 700_000 }
             ];
 
-        // Priced under the store's $500 on purpose. A maker who cannot undercut the shop has nothing
-        // to sell, and the whole point of the workshop is to give the market a good with real demand.
+        // Throughput and nothing else. What a gun costs to make belongs to the gun, not to the room, so
+        // a level buys guns per turn and which guns are unlocked - the prices live on the tier table,
+        // each set under what the shop charges, because a maker who cannot undercut the shop has nothing
+        // to sell and the whole point of the workshop is to give the market a good with real demand.
         if (Workshop.Count == 0)
             Workshop =
             [
-                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 1, CostPerWeapon = 300, UpgradeCost = 60_000 },
-                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 2, CostPerWeapon = 270, UpgradeCost = 180_000 },
-                new WorkshopLevelOptions { Level = 3, MinTier = 3, WeaponsPerTurn = 3, CostPerWeapon = 240, UpgradeCost = 500_000 }
+                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 1, UpgradeCost = 60_000 },
+                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 2, UpgradeCost = 180_000 },
+                new WorkshopLevelOptions { Level = 3, MinTier = 3, WeaponsPerTurn = 3, UpgradeCost = 500_000 }
             ];
 
         // Moonshine undercuts the shop's beer, which is the only reason to run the risk of holding it.
@@ -759,6 +1163,14 @@ public sealed class HideoutTierOptions
     public int MaxHoes { get; set; }
     public int MaxThugs { get; set; }
 
+    /// <summary>
+    /// Rides the place has room for. A garage rather than a storage shelf, because a car is not stock:
+    /// it does not get consumed, it does not spoil, and there is nowhere to put a fleet of them but the
+    /// building itself. It is also what stops a rich player from parking twenty rides behind a Trap
+    /// House guard and treating the jacking strike as somebody else's problem.
+    /// </summary>
+    public int MaxRides { get; set; } = 2;
+
     /// <summary>What moving up to this tier costs. Tier 1 is where everyone starts, so it costs nothing.</summary>
     public long UpgradeCost { get; set; }
     public int UpgradeTurns { get; set; }
@@ -779,6 +1191,14 @@ public sealed class StorageLevelOptions
     public int Coke { get; set; }
     public int Moonshine { get; set; }
     public int Cut { get; set; }
+
+    /// <summary>
+    /// Crates of medicine. Sized so that the room which supplies a tier's crew through a full shift also
+    /// holds enough medicine to treat that whole crew once, which makes the ceiling legible: a full
+    /// shelf survives one catastrophic infestation, not a campaign of them.
+    /// </summary>
+    public int Medicine { get; set; }
+
     public long UpgradeCost { get; set; }
 }
 
@@ -795,12 +1215,33 @@ public sealed class WorkshopLevelOptions
     public int Level { get; set; }
     public int MinTier { get; set; } = 1;
 
-    /// <summary>Weapons a turn of work turns out.</summary>
+    /// <summary>Units a turn of work turns out.</summary>
     public int WeaponsPerTurn { get; set; }
 
-    /// <summary>Materials per weapon. Below the store price, or there is nothing to sell.</summary>
+    /// <summary>
+    /// Materials per unit, below the shop price or there is nothing to sell. Read by the still and the
+    /// mix house, which each make one thing. The workshop makes four, so its costs live on the weapon
+    /// tiers instead: a level is throughput and which guns are unlocked, not a single price.
+    /// </summary>
     public long CostPerWeapon { get; set; }
     public long UpgradeCost { get; set; }
+}
+
+/// <summary>
+/// One gun. Price is the shop's; firepower is what carrying it is worth in a fight, in units of one
+/// pistol; the forge fields are what making it takes, and are absent for a gun nobody makes.
+/// </summary>
+public sealed class WeaponTierOptions
+{
+    public string Key { get; set; } = WeaponTiers.Pistol;
+    public int Price { get; set; }
+    public double Firepower { get; set; } = 1;
+
+    /// <summary>Materials to forge one, and the workshop that can. Zero means it cannot be made at all.</summary>
+    public long ForgeCost { get; set; }
+    public int MinWorkshopLevel { get; set; }
+
+    public bool CanForge => ForgeCost > 0 && MinWorkshopLevel > 0;
 }
 
 /// <summary>
@@ -1038,6 +1479,124 @@ public sealed class StreetActionOptions
     public double HoeRecruitChance { get; set; } = 0.12;
     public double ThugRecruitChance { get; set; } = 0.04;
     public FindTableOptions Finds { get; set; } = new();
+
+    /// <summary>
+    /// Where the crew works. Empty here for the same reason the hideout tables are: the binder appends
+    /// to a pre-populated list rather than replacing it.
+    /// </summary>
+    public List<StreetDistrictOptions> Districts { get; set; } = [];
+
+    public StreetDistrictOptions? District(string? key)
+        => Districts.FirstOrDefault(x => string.Equals(x.Key, key?.Trim().ToLowerInvariant(), StringComparison.Ordinal));
+
+    /// <summary>The one every shift falls back to: the neutral district, at exactly the base numbers.</summary>
+    public StreetDistrictOptions DefaultDistrict()
+        => Districts.FirstOrDefault(x => x.IsDefault) ?? Districts.FirstOrDefault() ?? new StreetDistrictOptions();
+
+    public void ApplyDistrictDefaultsWhereEmpty()
+    {
+        if (Districts.Count > 0)
+            return;
+
+        // The source game had five districts and its own guide admits it never found a difference
+        // between any of them - which makes them five names on a dropdown and a wasted click. So each
+        // one here changes what a shift is actually for, and the trade is always the same shape: what
+        // you go home with against how much notice you drew getting it.
+        //
+        // Low Rent is the neutral one and the default, at exactly the base numbers, so a player who
+        // never touches the picker works precisely the shift they always did.
+        Districts =
+        [
+            new StreetDistrictOptions
+            {
+                Key = "casino",
+                Name = "Casino District",
+                Blurb = "Money everywhere and somebody watching all of it.",
+                GrossPercent = 145,
+                HoeRecruitPercent = 60,
+                ThugRecruitPercent = 40,
+                PimpRecruitPercent = 100,
+                FindPercent = 40,
+                HeatPercent = 175
+            },
+            new StreetDistrictOptions
+            {
+                Key = "winos",
+                Name = "Wino Slums",
+                Blurb = "Nothing to earn and nobody to stop you. Men who will take any work going.",
+                GrossPercent = 55,
+                HoeRecruitPercent = 70,
+                ThugRecruitPercent = 220,
+                PimpRecruitPercent = 40,
+                FindPercent = 90,
+                HeatPercent = 45
+            },
+            new StreetDistrictOptions
+            {
+                Key = "lowrent",
+                Name = "Low Rent District",
+                Blurb = "Nothing special in either direction, which is its own kind of useful.",
+                IsDefault = true
+            },
+            new StreetDistrictOptions
+            {
+                Key = "nightclub",
+                Name = "Nightclub District",
+                Blurb = "Where the work finds you. Hoes and the people who manage them.",
+                GrossPercent = 115,
+                HoeRecruitPercent = 185,
+                ThugRecruitPercent = 60,
+                PimpRecruitPercent = 200,
+                FindPercent = 80,
+                HeatPercent = 120
+            },
+            new StreetDistrictOptions
+            {
+                Key = "ghetto",
+                Name = "Urban Ghetto",
+                Blurb = "Product changes hands on every corner, and the law knows it.",
+                GrossPercent = 80,
+                HoeRecruitPercent = 90,
+                ThugRecruitPercent = 130,
+                PimpRecruitPercent = 60,
+                FindPercent = 230,
+                HeatPercent = 150
+            }
+        ];
+    }
+}
+
+/// <summary>
+/// One place to work a shift, as a set of multipliers over the base numbers.
+///
+/// Percentages rather than absolute figures on purpose: a district says how somewhere differs from an
+/// ordinary street, so retuning what a shift is worth retunes every district at once and none of them
+/// can silently drift away from the baseline it is supposed to be a variation on.
+/// </summary>
+public sealed class StreetDistrictOptions
+{
+    public string Key { get; set; } = "lowrent";
+    public string Name { get; set; } = "Low Rent District";
+    public string Blurb { get; set; } = string.Empty;
+
+    /// <summary>The district a shift with no district named works. Exactly one should carry it.</summary>
+    public bool IsDefault { get; set; }
+
+    public int GrossPercent { get; set; } = 100;
+    public int HoeRecruitPercent { get; set; } = 100;
+    public int ThugRecruitPercent { get; set; } = 100;
+    public int PimpRecruitPercent { get; set; } = 100;
+
+    /// <summary>What turns up on the ground: condoms, beer, weed and coke together.</summary>
+    public int FindPercent { get; set; } = 100;
+
+    /// <summary>
+    /// How much notice a turn of work draws here. The counterweight on every other number: the two
+    /// districts worth going out of your way for are also the two the law is already looking at.
+    /// </summary>
+    public int HeatPercent { get; set; } = 100;
+
+    public double Scale(int percent) => Math.Max(0, percent) / 100.0;
 }
 
 public sealed class FindTableOptions

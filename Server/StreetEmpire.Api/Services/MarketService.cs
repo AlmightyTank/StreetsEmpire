@@ -93,7 +93,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
         // Refused up front rather than delivered and spilled, the same way a store purchase is. Goods
         // paid for and then lost to an overflowing room would be the worst of both.
         var capacity = hideouts.CapacityFor(buyer.Hideout);
-        var room = TradeGoods.Capacity(capacity, listing.Item) - TradeGoods.Held(buyer, listing.Item);
+        var room = TradeGoods.Room(buyer, capacity, listing.Item);
         if (quantity > room)
             throw new GameRuleException($"Your storage has room for {Math.Max(0, room):N0} more {TradeGoods.Label(listing.Item).ToLowerInvariant()}.");
 
@@ -126,7 +126,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
             throw new GameRuleException("That listing is already closed.");
 
         var capacity = hideouts.CapacityFor(seller.Hideout);
-        var room = Math.Max(0, TradeGoods.Capacity(capacity, listing.Item) - TradeGoods.Held(seller, listing.Item));
+        var room = TradeGoods.Room(seller, capacity, listing.Item);
         var returned = Math.Min(listing.Quantity, room);
 
         TradeGoods.Add(seller, listing.Item, returned, listing.Purity);

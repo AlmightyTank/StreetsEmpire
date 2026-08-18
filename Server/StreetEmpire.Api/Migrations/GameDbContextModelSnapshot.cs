@@ -71,6 +71,103 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("AdminAuditLogs");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.Alliance", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DefensiveThugs")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Door")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DuesPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("FounderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("MinRankToBorrow")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinRankToExpel")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinRankToInvite")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinRankToPostDefenders")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinRankToSpendTreasury")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Motto")
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("OffensiveThugs")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Treasury")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Alliances");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AllianceId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(140)
+                        .HasColumnType("character varying(140)");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SentById")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AllianceId", "Kind");
+
+                    b.HasIndex("PlayerId", "Kind");
+
+                    b.ToTable("AllianceRequests");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.CombatLog", b =>
                 {
                     b.Property<long>("Id")
@@ -127,6 +224,14 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<int>("DefenderWeaponsLost")
                         .HasColumnType("integer");
 
+                    b.Property<int>("HoesTaken")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<string>("Outcome")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -137,6 +242,9 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<DateTime?>("ResolvesAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RidesTaken")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Summary")
                         .IsRequired()
@@ -171,6 +279,12 @@ namespace StreetEmpire.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<int>("AllianceThugs")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AllianceThugsLost")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("ArrivesAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -203,6 +317,18 @@ namespace StreetEmpire.Api.Migrations
                         .HasColumnType("integer");
 
                     b.Property<int>("AttackerWeaponsLost")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CarriedPistols")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CarriedRifles")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CarriedShotguns")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CarriedSmgs")
                         .HasColumnType("integer");
 
                     b.Property<long>("CashStolen")
@@ -840,6 +966,18 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<Guid>("AccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AllianceDefenders")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("AllianceId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("AllianceJoinedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("AllianceRank")
+                        .HasColumnType("integer");
+
                     b.Property<long>("BankCash")
                         .HasColumnType("bigint");
 
@@ -899,8 +1037,14 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<DateTime>("LastHeatRollUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("LastPrayedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("LastTurnUpdateUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Medicine")
+                        .HasColumnType("integer");
 
                     b.Property<int>("Moonshine")
                         .HasColumnType("integer");
@@ -912,6 +1056,24 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<int>("Pimps")
                         .HasColumnType("integer");
+
+                    b.Property<int>("Pistols")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Rides")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Rifles")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Shotguns")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Smgs")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("StrikeProtectionUntilUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<double>("ThugHappiness")
                         .HasPrecision(5, 2)
@@ -926,9 +1088,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<int>("Turns")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Weapons")
-                        .HasColumnType("integer");
-
                     b.Property<int>("Weed")
                         .HasColumnType("integer");
 
@@ -936,6 +1095,8 @@ namespace StreetEmpire.Api.Migrations
 
                     b.HasIndex("AccountId")
                         .IsUnique();
+
+                    b.HasIndex("AllianceId");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -1077,6 +1238,25 @@ namespace StreetEmpire.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("Territories");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceRequest", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.Alliance", "Alliance")
+                        .WithMany("Requests")
+                        .HasForeignKey("AllianceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Alliance");
+
+                    b.Navigation("Player");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.CombatLog", b =>
@@ -1222,7 +1402,14 @@ namespace StreetEmpire.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("StreetEmpire.Api.Models.Alliance", "Alliance")
+                        .WithMany("Members")
+                        .HasForeignKey("AllianceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Account");
+
+                    b.Navigation("Alliance");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.StandingSnapshot", b =>
@@ -1251,6 +1438,13 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("GarrisonPimp");
 
                     b.Navigation("Holder");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.Alliance", b =>
+                {
+                    b.Navigation("Members");
+
+                    b.Navigation("Requests");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.CombatMission", b =>

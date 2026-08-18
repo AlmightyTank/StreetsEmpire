@@ -84,6 +84,7 @@ export type Hideout = {
   maxPimps: number
   maxHoes: number
   maxThugs: number
+  maxRides: number
   maxCash: number
   maxCondoms: number
   maxBeer: number
@@ -92,6 +93,7 @@ export type Hideout = {
   maxCoke: number
   maxMoonshine: number
   maxCut: number
+  maxMedicine: number
   weedLabYieldBonusPercent: number
   cokeLabYieldBonusPercent: number
   weedLabPassivePerHour: number
@@ -200,7 +202,12 @@ export type Dashboard = {
   moraleTrend: MoraleTrend
   condoms: number
   beer: number
+  /** Guns of every kind: the coverage number, since one gun covers one thug. */
   weapons: number
+  /** And which guns they are, which is what decides a fight. */
+  weaponRack: WeaponTier[]
+  medicine: number
+  rides: number
   weed: number
   coke: number
   moonshine: number
@@ -218,7 +225,172 @@ export type Dashboard = {
   combatStatus: CombatStatus
   unreadDefenceAlerts: number
   store: StoreItem[]
+  attackMethods: AttackMethod[]
+  /** Where a shift can be worked, and what each place is for. */
+  districts: StreetDistrict[]
+  /** The crew, or null when running alone. */
+  alliance?: AllianceBrief | null
   recentActivity: Activity[]
+}
+
+/** One entry on the attack menu, already priced and gated by the server. */
+export type AttackMethod = {
+  key: AttackMethodKey
+  label: string
+  turnCost: number
+  description: string
+  blockedReason?: string | null
+}
+
+export type AttackMethodKey = 'raid' | 'driveby' | 'jack' | 'infest' | 'poach'
+
+/** One shelf of the gun rack, priced and rated by the server. */
+export type WeaponTier = {
+  key: WeaponTierKey
+  label: string
+  held: number
+  price: number
+  /** What carrying one is worth in a fight, in pistols. */
+  firepower: number
+  /** What making one costs, or null for a gun nobody makes in a back room. */
+  forgeCost: number | null
+  minWorkshopLevel: number | null
+}
+
+export type WeaponTierKey = 'pistols' | 'shotguns' | 'smgs' | 'rifles'
+
+/** The shrine: what the gods want this week, and whether they will hear you. */
+export type PrayerBoard = {
+  canPray: boolean
+  nextPrayerAtUtc?: string | null
+  good: string
+  label: string
+  quantity: number
+  approximateValue: number
+  held: number
+  generousQuantity: number
+  blockedReason?: string | null
+}
+
+/** One place to work a shift, and what going there is worth. */
+export type StreetDistrict = {
+  key: string
+  name: string
+  blurb: string
+  isDefault: boolean
+  grossPercent: number
+  hoeRecruitPercent: number
+  thugRecruitPercent: number
+  pimpRecruitPercent: number
+  findPercent: number
+  heatPercent: number
+}
+
+/** One crew on the board, worth the sum of what its members are worth. */
+export type AllianceSummary = {
+  id: number
+  name: string
+  motto?: string | null
+  members: number
+  maxMembers: number
+  netWorth: number
+  duesPercent: number
+  offensiveThugs: number
+  defensiveThugs: number
+  /** How they take people on, and what that means in the words the board shows. */
+  door: AllianceDoorKey
+  doorLabel: string
+  doorDetail: string
+  yours: boolean
+  youFounded: boolean
+  rank: number
+}
+
+/** Just enough of the crew for the pages that are not about the crew. */
+export type AllianceBrief = {
+  id: number
+  name: string
+  offensiveThugs: number
+  defensiveThugs: number
+  borrowLimit: number
+  yourDefenders: number
+}
+
+export type AllianceMember = {
+  playerId: string
+  name: string
+  city: string
+  netWorth: number
+  pimps: number
+  hoes: number
+  thugs: number
+  isFounder: boolean
+  isYou: boolean
+  rank: string
+  rankLabel: string
+  /** Whether the viewer stands above them, which is what expelling and promoting need. */
+  youOutrankThem: boolean
+  defenders: number
+  joinedAtUtc?: string | null
+}
+
+/** One outstanding ask, from whichever side it came. */
+export type AllianceRequest = {
+  id: number
+  kind: 'Invitation' | 'Application'
+  allianceId: number
+  allianceName: string
+  playerId: string
+  playerName: string
+  note?: string | null
+  yoursToAnswer: boolean
+  createdAtUtc: string
+}
+
+export type AllianceDoorKey = 'Open' | 'Application' | 'InviteOnly'
+
+/** One of the three ways a crew can take people on. */
+export type AllianceDoor = {
+  door: AllianceDoorKey
+  label: string
+  detail: string
+}
+
+/** A power, the rank it needs here, and whether the viewer has it. */
+export type AlliancePower = {
+  power: string
+  label: string
+  minRank: string
+  youHaveIt: boolean
+}
+
+export type AllianceBoard = {
+  yours?: AllianceSummary | null
+  members: AllianceMember[]
+  treasury: number
+  foundingCost: number
+  maxDuesPercent: number
+  offensiveThugCost: number
+  defensiveThugCost: number
+  /** Borrowed thugs you may field, which is the size of your own crew. */
+  borrowLimit: number
+  yourDefenders: number
+  yourRank: string
+  powers: AlliancePower[]
+  ranks: string[]
+  doors: AllianceDoor[]
+  requests: AllianceRequest[]
+  board: AllianceSummary[]
+}
+
+/** A name somebody earned today, and what earned it. */
+export type PlayerTitle = {
+  key: string
+  title: string
+  playerId: string
+  playerName: string
+  value: number
+  detail: string
 }
 
 export type CityMarket = {
@@ -267,6 +439,8 @@ export type CombatReadiness = {
   attackPower: number
   defensePower: number
   armedThugs: number
+  /** What the guns actually carried are worth, in pistols. */
+  firepower: number
   uncoveredThugs: number
   weaponCoveragePercent: number
   averageMorale: number
@@ -276,6 +450,8 @@ export type CombatReadiness = {
 export type CombatStatus = {
   isProtected: boolean
   protectionUntilUtc?: string | null
+  isStrikeProtected: boolean
+  strikeProtectionUntilUtc?: string | null
   lastAttackAtUtc?: string | null
   lastAttackedAtUtc?: string | null
   attackCooldownUntilUtc?: string | null
@@ -310,6 +486,9 @@ export type PlayerTarget = {
   hoes: number
   thugs: number
   weapons: number
+  /** Names they have earned today. Empty for almost everybody, which is what makes them worth having. */
+  titles: string[]
+  rides: number
   averageMorale: number
   combatReadiness: CombatReadiness
   combatStatus: CombatStatus
@@ -318,6 +497,9 @@ export type PlayerTarget = {
 export type PlayerProfile = PlayerTarget & {
   cash: number
   bankCash: number
+  /** What they are armed with, not merely how many. A house of rifles is a different fight. */
+  weaponRack: WeaponTier[]
+  medicine: number
   weed: number
   coke: number
   hoeHappiness: number
@@ -367,6 +549,8 @@ export type CombatLog = {
   attackerName: string
   defenderId: string
   defenderName: string
+  method: AttackMethodKey
+  methodLabel: string
   outcome: string
   summary: string
   turnsSpent: number
@@ -383,6 +567,8 @@ export type CombatLog = {
   defenderHoesLost: number
   defenderThugsLost: number
   defenderWeaponsLost: number
+  hoesTaken: number
+  ridesTaken: number
   defenderProtectionUntilUtc?: string | null
   resolvesAtUtc?: string | null
   resolvedAtUtc?: string | null
@@ -680,13 +866,52 @@ export const api = {
   combatMissions: () => request<CombatMission[]>('/api/game/combat/missions'),
   // Exactly one pimp commands. Pass a commanderPimpId to pick them, or null to let the server field
   // the best Enforcer available.
-  attack: (defenderId: string, thugs: number, weapons: number, commanderPimpId: number | null) =>
+  attack: (defenderId: string, thugs: number, weapons: number, commanderPimpId: number | null, allianceThugs = 0) =>
     request<ActionResult>('/api/game/combat/attack', {
       method: 'POST',
-      body: JSON.stringify({ defenderId, thugs, weapons, commanderPimpId }),
+      body: JSON.stringify({ defenderId, thugs, weapons, commanderPimpId, allianceThugs }),
+    }),
+  // The four quick strikes share the attack route with the raid: one shape, one endpoint, and the
+  // server decides whether the request becomes a travelling mission or settles on the spot. Coke is
+  // only read by a poaching run.
+  strike: (defenderId: string, method: AttackMethodKey, coke = 0) =>
+    request<ActionResult>('/api/game/combat/attack', {
+      method: 'POST',
+      body: JSON.stringify({ defenderId, method, coke }),
     }),
   cancelCombatMission: (missionId: number) => request<ActionResult>(`/api/game/combat/missions/${missionId}/cancel`, { method: 'POST' }),
   worldNews: () => request<WorldNews>('/api/world/news'),
+  titles: () => request<PlayerTitle[]>('/api/world/titles'),
+  alliances: () => request<AllianceBoard>('/api/game/alliances'),
+  foundAlliance: (name: string, motto: string) =>
+    request<ActionResult>('/api/game/alliances', { method: 'POST', body: JSON.stringify({ name, motto }) }),
+  joinAlliance: (allianceId: number) =>
+    request<ActionResult>('/api/game/alliances/join', { method: 'POST', body: JSON.stringify({ allianceId }) }),
+  leaveAlliance: () => request<ActionResult>('/api/game/alliances/leave', { method: 'POST' }),
+  expelMember: (memberId: string) =>
+    request<ActionResult>('/api/game/alliances/expel', { method: 'POST', body: JSON.stringify({ memberId }) }),
+  updateAlliance: (settings: { duesPercent?: number, door?: AllianceDoorKey, motto?: string, powers?: Record<string, string> }) =>
+    request<ActionResult>('/api/game/alliances', { method: 'PUT', body: JSON.stringify(settings) }),
+  setAllianceRank: (memberId: string, rank: string) =>
+    request<ActionResult>('/api/game/alliances/rank', { method: 'POST', body: JSON.stringify({ memberId, rank }) }),
+  handOverAlliance: (memberId: string) =>
+    request<ActionResult>('/api/game/alliances/hand-over', { method: 'POST', body: JSON.stringify({ memberId }) }),
+  invitePlayer: (playerId: string, note = '') =>
+    request<ActionResult>('/api/game/alliances/invite', { method: 'POST', body: JSON.stringify({ playerId, note }) }),
+  applyToAlliance: (allianceId: number, note = '') =>
+    request<ActionResult>('/api/game/alliances/apply', { method: 'POST', body: JSON.stringify({ allianceId, note }) }),
+  answerAllianceRequest: (requestId: number, accept: boolean) =>
+    request<ActionResult>('/api/game/alliances/answer', { method: 'POST', body: JSON.stringify({ requestId, accept }) }),
+  withdrawAllianceRequest: (requestId: number) =>
+    request<ActionResult>('/api/game/alliances/withdraw', { method: 'POST', body: JSON.stringify({ requestId, accept: false }) }),
+  buyAllianceThugs: (kind: 'offensive' | 'defensive', quantity: number) =>
+    request<ActionResult>('/api/game/alliances/thugs', { method: 'POST', body: JSON.stringify({ kind, quantity }) }),
+  // Negative sends them back to the pool.
+  postDefenders: (quantity: number) =>
+    request<ActionResult>('/api/game/alliances/defenders', { method: 'POST', body: JSON.stringify({ quantity }) }),
+  prayer: () => request<PrayerBoard>('/api/game/prayer'),
+  pray: (offered: number) =>
+    request<ActionResult>('/api/game/prayer', { method: 'POST', body: JSON.stringify({ offered }) }),
   territories: () => request<TerritoryBoard>('/api/game/territories'),
   market: () => request<MarketBoard>('/api/game/market'),
   listOnMarket: (item: string, quantity: number, pricePerUnit: number) =>
@@ -695,8 +920,10 @@ export const api = {
     request<ActionResult>('/api/game/market/buy', { method: 'POST', body: JSON.stringify({ listingId, quantity }) }),
   cancelListing: (listingId: number) =>
     request<ActionResult>('/api/game/market/cancel', { method: 'POST', body: JSON.stringify({ listingId }) }),
-  forge: (turns: number, station: string) =>
-    request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns, station }) }),
+  // Null weapon asks the workshop for the best gun it can manage, which is what every caller wanted
+  // back when it could only make one kind.
+  forge: (turns: number, station: string, weapon?: WeaponTierKey) =>
+    request<ActionResult>('/api/game/workshop/forge', { method: 'POST', body: JSON.stringify({ turns, station, weapon }) }),
   travel: (city: string) => request<ActionResult>('/api/game/travel', { method: 'POST', body: JSON.stringify({ city }) }),
   cutCoke: (turns: number) =>
     request<ActionResult>('/api/game/cut', { method: 'POST', body: JSON.stringify({ turns, product: 'coke' }) }),
@@ -731,9 +958,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ enabled, ...timing }),
     }),
-  workStreet: (turns: number, autoBuySupplies = false) => request<ActionResult>('/api/game/street', {
+  // Null district works the neutral one, which is what this call meant before there was anywhere to
+  // choose between.
+  workStreet: (turns: number, autoBuySupplies = false, district?: string) => request<ActionResult>('/api/game/street', {
     method: 'POST',
-    body: JSON.stringify({ turns, autoBuySupplies }),
+    body: JSON.stringify({ turns, autoBuySupplies, district }),
   }),
   produce: (product: 'weed' | 'coke', turns: number) => request<ActionResult>('/api/game/production', {
     method: 'POST',
@@ -744,6 +973,10 @@ export const api = {
     body: JSON.stringify({ product, quantity }),
   }),
   buyStoreItem: (itemKey: string, quantity: number) => request<ActionResult>('/api/game/store/buy', {
+    method: 'POST',
+    body: JSON.stringify({ itemKey, quantity }),
+  }),
+  sellStoreItem: (itemKey: string, quantity: number) => request<ActionResult>('/api/game/store/sell', {
     method: 'POST',
     body: JSON.stringify({ itemKey, quantity }),
   }),
@@ -813,6 +1046,8 @@ export type AdminPlayerDetail = {
   condoms: number
   beer: number
   weapons: number
+  medicine: number
+  rides: number
   weed: number
   coke: number
   hoeHappiness: number

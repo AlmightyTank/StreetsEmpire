@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      viewport-fit=cover lets the layout reach under a notch and rounded corners; the CSS pays that
+      back with safe-area padding, so the bottom tab bar clears the home indicator instead of
+      sitting beneath it.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!--
       SVG first for anything modern, .ico as the fallback every other browser still asks for by
       convention. The .ico carries 16, 32 and 48 so Windows picks its own rather than scaling one.

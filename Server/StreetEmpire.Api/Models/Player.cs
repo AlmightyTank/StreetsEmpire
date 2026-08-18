@@ -28,9 +28,73 @@ public sealed class Player
     // Inventory
     public int Condoms { get; set; }
     public int Beer { get; set; }
-    public int Weapons { get; set; }
+
+    // The gun rack, weakest to strongest. Four columns rather than one because a weapon does two jobs
+    // that come apart: any gun covers a thug for morale, but what it contributes to a fight is the gun.
+    public int Pistols { get; set; }
+    public int Shotguns { get; set; }
+    public int Smgs { get; set; }
+    public int Rifles { get; set; }
+
     public int Weed { get; set; }
     public int Coke { get; set; }
+
+    /// <summary>
+    /// The rack as one value, for everything that wants to reason about it rather than about a column.
+    /// </summary>
+    public Armoury Armoury
+    {
+        get => new(Pistols, Shotguns, Smgs, Rifles);
+        set
+        {
+            Pistols = Math.Max(0, value.Pistols);
+            Shotguns = Math.Max(0, value.Shotguns);
+            Smgs = Math.Max(0, value.Smgs);
+            Rifles = Math.Max(0, value.Rifles);
+        }
+    }
+
+    /// <summary>
+    /// How many guns there are, of any kind. This is the coverage number: one gun covers one thug, and
+    /// a thug with a pistol is exactly as content as a thug with a rifle.
+    ///
+    /// Deliberately read-only. It used to be the column, and making it derived is what forced every
+    /// place that used to add or subtract weapons to say which ones - which is the only way a rack
+    /// cannot quietly lose its rifles to a rule that was written when there was only one kind of gun.
+    /// </summary>
+    public int Weapons => Pistols + Shotguns + Smgs + Rifles;
+
+    /// <summary>Puts guns on the rack.</summary>
+    public void AddWeapons(string tier, int count)
+    {
+        if (count <= 0) return;
+        Armoury = Armoury.Add(tier, count);
+    }
+
+    /// <summary>
+    /// Takes guns off the rack, cheapest first, and reports what actually went. Every loss in the game
+    /// runs through here - fights, storage overflow, a jacking gone wrong - so a bad day can never cost
+    /// a player their rifles while the pistols sit untouched.
+    /// </summary>
+    public Armoury RemoveWeapons(int count)
+    {
+        var taken = Armoury.WorstFirst(count);
+        Armoury -= taken;
+        return taken;
+    }
+
+    /// <summary>
+    /// Treats a sick crew. It does nothing at all until somebody infects your hoes, which is the point:
+    /// it is the only stock in the game bought purely against something another player might do to you,
+    /// and a crate sitting unused is a bet that did not have to be called.
+    /// </summary>
+    public int Medicine { get; set; }
+
+    /// <summary>
+    /// Low-riders. A ride is what a drive-by is fired from and what a jacking takes, so it is the one
+    /// asset that is both a tool and a target: parking a fleet outside a thin guard is an invitation.
+    /// </summary>
+    public int Rides { get; set; }
 
     /// <summary>
     /// Home-brewed beer. Cheaper than the shop and it keeps thugs going the same way, but it is
@@ -99,6 +163,17 @@ public sealed class Player
     public DateTime? LastAttackedAtUtc { get; set; }
 
     /// <summary>
+    /// Shelter from the quick strikes - drive-bys, jackings, infestations, poaching - kept apart from
+    /// the shield a broken raid earns.
+    ///
+    /// One column for both would let either loop lock the other out. A player could fire a four-turn
+    /// drive-by at a rival to buy them an hour of immunity from the raid that was actually coming, and a
+    /// raid that took everything would also make its victim un-harassable. They are different scales of
+    /// violence and they cool down at different speeds, so they get different clocks.
+    /// </summary>
+    public DateTime? StrikeProtectionUntilUtc { get; set; }
+
+    /// <summary>
     /// Watermark for defence alerts: anything that happened to this player after it is unread. A single
     /// column rather than a notifications table, because the events already exist in CombatLogs and only
     /// the read position is missing.
@@ -106,11 +181,40 @@ public sealed class Player
     public DateTime? CombatAlertsSeenAtUtc { get; set; }
 
     /// <summary>
+    /// When this player last made an offering. Null means never. One column rather than a table of
+    /// prayers because only the most recent one gates anything: what the gods asked for is worked out
+    /// from the week rather than stored, so there is no history to keep.
+    /// </summary>
+    public DateTime? LastPrayedAtUtc { get; set; }
+
+    /// <summary>
     /// Watermark for the catch-up digest shown on arrival. Kept separate from the alert watermark on
     /// purpose: reading the bell should not silently swallow the summary of what happened while the
     /// player was away, and seeing that summary should not mark every attack as read.
     /// </summary>
     public DateTime? CatchUpSeenAtUtc { get; set; }
+
+    /// <summary>
+    /// The crew this player runs with, if any. One at a time: the point of an alliance is who you have
+    /// agreed not to rob, and a player in two of them would be quietly holding a truce with everybody.
+    /// </summary>
+    public long? AllianceId { get; set; }
+    public Alliance? Alliance { get; set; }
+    public DateTime? AllianceJoinedAtUtc { get; set; }
+
+    /// <summary>
+    /// Where they stand in it. Meaningless without a crew, and deliberately not nullable: a member is
+    /// always some rank, and the lowest one is a real answer rather than an absent one.
+    /// </summary>
+    public AllianceRank AllianceRank { get; set; } = AllianceRank.Soldier;
+
+    /// <summary>
+    /// Alliance thugs posted to this house, drawn out of the shared pool and standing here until they
+    /// are released or killed. Held on the member rather than the alliance because they are somewhere
+    /// specific: a pool that defended every member at once would be twenty houses guarded by one set of
+    /// men, which is the opposite of finite.
+    /// </summary>
+    public int AllianceDefenders { get; set; }
 
     public Hideout? Hideout { get; set; }
 

@@ -2,13 +2,21 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+/*
+  The stylesheet has asked for Inter since the beginning and nothing ever loaded it, so every player
+  has been reading the fallback - Segoe UI on Windows, SF on a Mac - and the weights above 700 were
+  rendering as plain bold because a system font has nothing between. Self-hosted rather than fetched
+  from a font CDN: it costs one dependency and removes a third-party request on every page load.
+  The variable axis is what makes 500/700/800 genuinely distinct rather than three names for bold.
+*/
+import '@fontsource-variable/inter/wght.css'
 import './styles.css'
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'territory' | 'market' | 'mules' | 'recon' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'territory' | 'market' | 'mules' | 'recon' | 'alliance' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -26,6 +34,14 @@ const adjustPresets: { label: string, resource: string, delta: number }[] = [
   { label: '+100 coke', resource: 'coke', delta: 100 },
 ]
 
+/**
+ * The pages that keep a permanent slot in the phone's bottom bar. A tab bar stops being navigation
+ * somewhere around five items - past that the targets get too narrow to hit and the labels too short
+ * to read - so the rest live behind More. These four are the loop the ladder itself teaches: work the
+ * streets, staff the crew, sell what you made, and a home to see it from.
+ */
+const primaryPages: AppPage[] = ['overview', 'street', 'crew', 'market']
+
 const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
   overview: { label: 'Overview', short: 'OV', kicker: 'Command center' },
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
@@ -35,7 +51,79 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   market: { label: 'Market', short: 'MK', kicker: 'Store, product, bank' },
   mules: { label: 'Mules', short: 'MU', kicker: 'Runs out of town' },
   recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
+  alliance: { label: 'Alliance', short: 'AL', kicker: 'Who you run with' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control center' },
+}
+
+/**
+ * Navigation for a phone.
+ *
+ * The desktop rail collapsed to a horizontal strip of two-letter codes that scrolled sideways, which
+ * failed twice over: three of the nine destinations sat off the edge with nothing to say they were
+ * there, and the six you could see were abbreviations you had to learn. A thumb also reaches the
+ * bottom of a phone far more easily than the top, which is where the strip was.
+ *
+ * So: a fixed bottom bar of four named destinations plus More, and a sheet for the rest. Every
+ * destination keeps its word, nothing hides off an edge, and the sheet closes on pick, on backdrop,
+ * and on Escape.
+ */
+function MobileNav({ pages, active, onPick, onLogout }: {
+  pages: AppPage[]
+  active: AppPage
+  onPick: (page: AppPage) => void
+  onLogout: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const primary = primaryPages.filter(page => pages.includes(page))
+  const rest = pages.filter(page => !primary.includes(page))
+
+  // A sheet that outlives its page would cover whatever you navigated to.
+  useEffect(() => {
+    if (!open) return
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [open])
+
+  const go = (page: AppPage) => { onPick(page); setOpen(false) }
+
+  return <>
+    {open && <div className="nav-sheet-backdrop" onClick={() => setOpen(false)}>
+      <div className="nav-sheet" role="dialog" aria-label="All pages" onClick={event => event.stopPropagation()}>
+        <div className="nav-sheet-grip" />
+        <div className="nav-sheet-grid">
+          {rest.map(page => <button
+            className={active === page ? 'active' : ''}
+            key={page}
+            type="button"
+            onClick={() => go(page)}
+          >
+            <strong>{pageMeta[page].label}</strong>
+            <small>{pageMeta[page].kicker}</small>
+          </button>)}
+        </div>
+        <button className="secondary nav-sheet-logout" type="button" onClick={onLogout}>Logout</button>
+      </div>
+    </div>}
+
+    <nav className="tab-bar" aria-label="Primary">
+      {primary.map(page => <button
+        className={active === page ? 'active' : ''}
+        key={page}
+        type="button"
+        aria-current={active === page ? 'page' : undefined}
+        onClick={() => onPick(page)}
+      >{pageMeta[page].label}</button>)}
+      {/* More carries the name of wherever you are when you are somewhere it holds, so the bar never
+          shows a page you cannot see yourself on. */}
+      <button
+        className={rest.includes(active) ? 'active' : ''}
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(value => !value)}
+      >{rest.includes(active) ? pageMeta[active].label : 'More'}</button>
+    </nav>
+  </>
 }
 
 function App() {
@@ -66,7 +154,13 @@ function App() {
   const [bankAmount, setBankAmount] = useState(1000)
   const [crewQty, setCrewQty] = useState<Record<'pimps' | 'hoes' | 'thugs', number>>({ pimps: 1, hoes: 1, thugs: 1 })
   const [attackCrew, setAttackCrew] = useState({ thugs: 1, weapons: 0 })
+  // Borrowed thugs to bring on a raid. Capped server-side at the size of your own party.
+  const [borrowedThugs, setBorrowedThugs] = useState(0)
   const [commanderId, setCommanderId] = useState<number | null>(null)
+  const [attackMethod, setAttackMethod] = useState<AttackMethodKey>('raid')
+  // Empty means the neutral district, which is what a shift was before there was a choice.
+  const [district, setDistrict] = useState('')
+  const [poachCoke, setPoachCoke] = useState(50)
   // Left empty so each page derives its own default until the player types a quantity.
   const [storeQty, setStoreQty] = useState<Record<string, number>>({})
   const [sellQty, setSellQty] = useState<Record<'weed' | 'coke', number>>({ weed: 10, coke: 5 })
@@ -224,7 +318,11 @@ function App() {
   }
 
   const attackTarget = async (defenderId: string) => {
-    await act(() => api.attack(defenderId, attackCrew.thugs, attackCrew.weapons, commanderId))
+    // The picked method decides which shape goes out. Kept in one place so the recon page only has to
+    // know that it is attacking somebody, not which of five things that means.
+    await act(() => attackMethod === 'raid'
+      ? api.attack(defenderId, attackCrew.thugs, attackCrew.weapons, commanderId, borrowedThugs)
+      : api.strike(defenderId, attackMethod, attackMethod === 'poach' ? poachCoke : 0))
     try {
       setSelectedTarget(await api.playerProfile(defenderId))
     } catch {
@@ -284,6 +382,10 @@ function App() {
     crewQty,
     attackCrew,
     commanderId,
+    attackMethod,
+    poachCoke,
+    borrowedThugs,
+    district,
     storeQty,
     sellQty,
     nextTurn,
@@ -300,6 +402,10 @@ function App() {
     setCrewQty,
     setAttackCrew,
     setCommanderId,
+    setAttackMethod,
+    setPoachCoke,
+    setBorrowedThugs,
+    setDistrict,
     setStoreQty,
     setSellQty,
     act,
@@ -314,6 +420,12 @@ function App() {
 
   return <main className="game-shell">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
+    <MobileNav
+      pages={visiblePages}
+      active={activePage}
+      onPick={setActivePage}
+      onLogout={() => void act(api.logout)}
+    />
     <aside className="app-nav">
       <div className="nav-brand"><span>SE</span><strong>Street Empire</strong><small>0.2.5</small></div>
       <nav>
@@ -321,6 +433,9 @@ function App() {
           className={activePage === page ? 'active' : ''}
           key={page}
           type="button"
+          /* Between 760 and 1180 the rail keeps the badge and drops the word to save room, which
+             leaves a two-letter code standing on its own. The title says it out loud on hover. */
+          title={pageMeta[page].label}
           onClick={() => setActivePage(page)}
         >
           <span>{pageMeta[page].short}</span>
@@ -390,6 +505,10 @@ type PageContext = {
   crewQty: Record<'pimps' | 'hoes' | 'thugs', number>
   attackCrew: { thugs: number, weapons: number }
   commanderId: number | null
+  attackMethod: AttackMethodKey
+  poachCoke: number
+  borrowedThugs: number
+  district: string
   storeQty: Record<string, number>
   sellQty: Record<'weed' | 'coke', number>
   nextTurn: string
@@ -405,6 +524,10 @@ type PageContext = {
   setBankAmount: (amount: number) => void
   setCrewQty: React.Dispatch<React.SetStateAction<Record<'pimps' | 'hoes' | 'thugs', number>>>
   setAttackCrew: React.Dispatch<React.SetStateAction<{ thugs: number, weapons: number }>>
+  setAttackMethod: (method: AttackMethodKey) => void
+  setPoachCoke: (coke: number) => void
+  setBorrowedThugs: (thugs: number) => void
+  setDistrict: (district: string) => void
   setCommanderId: (id: number | null) => void
   setStoreQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
   setSellQty: React.Dispatch<React.SetStateAction<Record<'weed' | 'coke', number>>>
@@ -427,6 +550,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
     case 'market': return <MarketPage {...ctx} />
     case 'mules': return <MulePage {...ctx} />
     case 'recon': return <ReconPage {...ctx} />
+    case 'alliance': return <AlliancePage {...ctx} />
     case 'admin': return ctx.adminOverview
       ? <AdminPage {...ctx} overview={ctx.adminOverview} />
       : <OverviewPage {...ctx} />
@@ -499,7 +623,7 @@ function OverviewPage(ctx: PageContext) {
 }
 
 function StreetPage(ctx: PageContext) {
-  const { dashboard, combatMissions, busy, streetTurns, autoBuySupplies, hoeCut, bankAmount, storeQty, setActivePage, setStreetTurns, setAutoBuySupplies, setHoeCut, setBankAmount, setStoreQty, act } = ctx
+  const { dashboard, combatMissions, busy, streetTurns, autoBuySupplies, hoeCut, bankAmount, storeQty, district, setActivePage, setStreetTurns, setAutoBuySupplies, setHoeCut, setBankAmount, setStoreQty, setDistrict, act } = ctx
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
   const restock = restockEstimate(dashboard, streetTurns)
   return <div className="page-grid two-column">
@@ -510,6 +634,7 @@ function StreetPage(ctx: PageContext) {
         <strong>Crew is out</strong>
         <span>Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
       </div>}
+      <DistrictPicker districts={dashboard.districts} selected={district} onSelect={setDistrict} />
       <StorageSupplyNotice dashboard={dashboard} />
       <StreetSupplyPanel
         dashboard={dashboard}
@@ -524,7 +649,7 @@ function StreetPage(ctx: PageContext) {
         <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
         <label>Hoe Cut %<input type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
         <button className="secondary" disabled={busy || hoeCut < 10 || hoeCut > 80 || hoeCut === dashboard.hoeCutPercent} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</button>
-        <button className="primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
+        <button className="primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
       </div>
       <label className={autoBuySupplies ? 'auto-buy active' : 'auto-buy'}>
         <input type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
@@ -551,6 +676,7 @@ function CrewPage(ctx: PageContext) {
   const { dashboard, busy, crewQty, totalCrew, weaponCoverage, managementCapacity, setCrewQty, act } = ctx
   const combatCrew = dashboard.combatCrew
   return <div className="page-grid">
+    <ShrinePanel busy={busy} act={act} />
     <section className="panel wide-panel">
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
       <StorageSupplyNotice dashboard={dashboard} />
@@ -641,6 +767,7 @@ function HideoutPage(ctx: PageContext) {
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
         <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
         <CapacityBar label="Thugs" used={dashboard.thugs} cap={hideout.maxThugs} />
+        <CapacityBar label="Garage" used={dashboard.rides} cap={hideout.maxRides} />
         <CapacityBar label="Cash on hand" used={dashboard.cash} cap={hideout.maxCash} money />
         <CapacityBar label="Condoms" used={dashboard.condoms} cap={hideout.maxCondoms} />
         <CapacityBar label="Beer" used={dashboard.beer} cap={hideout.maxBeer} />
@@ -649,6 +776,7 @@ function HideoutPage(ctx: PageContext) {
         <CapacityBar label="Coke" used={dashboard.coke} cap={hideout.maxCoke} />
         <CapacityBar label="Moonshine" used={dashboard.moonshine} cap={hideout.maxMoonshine} />
         <CapacityBar label="Cut" used={dashboard.cut} cap={hideout.maxCut} />
+        <CapacityBar label="Medicine" used={dashboard.medicine} cap={hideout.maxMedicine} />
       </div>
     </section>
 
@@ -941,8 +1069,14 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
  */
 function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
   const [turns, setTurns] = useState<Record<string, number>>({})
+  // Which gun the workshop is making. Only the workshop has a choice; the still and the mix house
+  // each make exactly one thing.
+  const [forging, setForging] = useState<WeaponTierKey | ''>('')
   const stations = dashboard.hideout.stations ?? []
   if (stations.length === 0) return null
+
+  const workshopLevel = stations.find(x => x.key === 'workshop')?.level ?? 0
+  const makeable = dashboard.weaponRack.filter(x => x.forgeCost !== null && (x.minWorkshopLevel ?? 99) <= workshopLevel)
 
   return <section className="panel wide-panel">
     <div className="panel-title"><h2>Production</h2><span>Turns and materials into goods</span></div>
@@ -977,10 +1111,19 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
                 value={runTurns}
                 onChange={e => setTurns(v => ({ ...v, [station.key]: Number(e.target.value) }))}
               /></label>
+              {/* A workshop that has unlocked more than one gun asks which. One gun, no question. */}
+              {station.key === 'workshop' && makeable.length > 1 && <label>Make
+                <select value={forging} onChange={event => setForging(event.target.value as WeaponTierKey | '')}>
+                  <option value="">Best available</option>
+                  {makeable.map(tier => <option key={tier.key} value={tier.key}>
+                    {tier.label} - {money.format(tier.forgeCost ?? 0)} each
+                  </option>)}
+                </select>
+              </label>}
               <button
                 className="primary compact"
                 disabled={busy || runTurns < 1 || runTurns > dashboard.turns}
-                onClick={() => void act(() => api.forge(runTurns, station.key))}
+                onClick={() => void act(() => api.forge(runTurns, station.key, station.key === 'workshop' && forging !== '' ? forging : undefined))}
               >
                 Make {number.format(station.perTurn * runTurns)}
               </button>
@@ -1372,7 +1515,16 @@ function MarketPage(ctx: PageContext) {
       <div className="inventory-grid">
         <InventoryCard name="Condoms" count={dashboard.condoms} note="Hoe upkeep" />
         <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
-        <InventoryCard name="Weapons" count={dashboard.weapons} note="Permanent security" />
+        {/* One card a gun. A single "weapons" number would hide the only thing that matters about
+            them, which is what a crew carrying them is worth in a fight. */}
+        {dashboard.weaponRack.map(tier => <InventoryCard
+          key={tier.key}
+          name={tier.label}
+          count={tier.held}
+          note={tier.firepower <= 1 ? "Covers a thug" : `${tier.firepower}x a pistol`}
+        />)}
+        <InventoryCard name="Medicine" count={dashboard.medicine} note="Treats an infestation" />
+        <InventoryCard name="Rides" count={dashboard.rides} note={`${dashboard.rides}/${dashboard.hideout.maxRides} garage`} />
         <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} ${dashboard.currentMarket.weed.toLowerCase()}`} />
         {/* Quotes what this pile actually fetches, not the list price, since cut coke is not coke. */}
         <InventoryCard
@@ -1408,6 +1560,12 @@ function MarketPage(ctx: PageContext) {
                 <strong>{money.format(qty * item.price)}</strong>
               </div>
               <button className="primary compact" disabled={busy || qty < 1 || dashboard.cash < qty * item.price} onClick={() => void act(() => api.buyStoreItem(item.key, qty))}>Buy</button>
+              {/* Rides are the only store item with a resale price, so the sell button only exists here. */}
+              {item.key === 'rides' && <button
+                className="secondary compact"
+                disabled={busy || qty < 1 || dashboard.rides < qty}
+                onClick={() => void act(() => api.sellStoreItem(item.key, qty))}
+              >Sell</button>}
             </div>
           </div>
         })}
@@ -1523,6 +1681,7 @@ function CityPrice({ price, base, showDelta }: { price: number, base: number | u
 
 function ReconPage(ctx: PageContext) {
   return <div className="page-grid two-column">
+    <TitleBoardPanel currentPlayerId={ctx.dashboard.playerId} />
     <TargetReconPanel
       targets={ctx.targets}
       selectedTarget={ctx.selectedTarget}
@@ -1535,6 +1694,12 @@ function ReconPage(ctx: PageContext) {
       setAttackCrew={ctx.setAttackCrew}
       commanderId={ctx.commanderId}
       setCommanderId={ctx.setCommanderId}
+      attackMethod={ctx.attackMethod}
+      setAttackMethod={ctx.setAttackMethod}
+      poachCoke={ctx.poachCoke}
+      setPoachCoke={ctx.setPoachCoke}
+      borrowedThugs={ctx.borrowedThugs}
+      setBorrowedThugs={ctx.setBorrowedThugs}
       onQuery={ctx.setTargetQuery}
       onSearch={ctx.searchTargets}
       onInspect={ctx.inspectTarget}
@@ -2493,6 +2658,76 @@ function PimpRosterPanel({ dashboard }: { dashboard: Dashboard }) {
   </section>
 }
 
+/** The rack in one line: what is on it, best guns first, or how bare it is. */
+function rackSummary(rack: WeaponTier[]) {
+  const carried = rack.filter(tier => tier.held > 0).slice().reverse()
+  if (carried.length === 0) return 'Unarmed'
+  return carried.map(tier => `${number.format(tier.held)} ${tier.label.toLowerCase()}`).join(', ')
+}
+
+/**
+ * Coverage first, then what the guns are worth. A crew can be fully covered and still be carrying
+ * nothing but pistols, and that difference is the whole reason the tiers exist.
+ */
+function weaponSummary(dashboard: Dashboard) {
+  const best = dashboard.weaponRack.filter(tier => tier.held > 0).slice().reverse()[0]
+  const covered = `${number.format(dashboard.weapons)}/${number.format(dashboard.thugs)}`
+  return best && best.firepower > 1 ? `${covered} (${best.label.toLowerCase()})` : covered
+}
+
+/**
+ * Where to work the shift.
+ *
+ * Every district states what it is for outright rather than leaving it to be discovered. The source
+ * game had these five and its own guide never worked out whether they differed at all - which is what
+ * happens when a choice is offered without being explained.
+ */
+function DistrictPicker({ districts, selected, onSelect }: {
+  districts: StreetDistrict[]
+  selected: string
+  onSelect: (district: string) => void
+}) {
+  if (districts.length === 0) return null
+  const active = selected || districts.find(x => x.isDefault)?.key || districts[0].key
+
+  return <div className="district-picker">
+    {districts.map(entry => <button
+      className={entry.key === active ? 'district active' : 'district'}
+      key={entry.key}
+      type="button"
+      title={entry.blurb}
+      onClick={() => onSelect(entry.key)}
+    >
+      <strong>{entry.name}</strong>
+      <small>{districtEdge(entry)}</small>
+    </button>)}
+  </div>
+}
+
+/**
+ * A district in one line: what it is best at, and what going there costs. Written from the numbers
+ * rather than a stored sentence, so retuning a district retunes what it says about itself.
+ */
+function districtEdge(district: StreetDistrict) {
+  const claims: { label: string, value: number }[] = [
+    { label: 'money', value: district.grossPercent },
+    { label: 'hoes', value: district.hoeRecruitPercent },
+    { label: 'thugs', value: district.thugRecruitPercent },
+    { label: 'pimps', value: district.pimpRecruitPercent },
+    { label: 'finds', value: district.findPercent },
+  ]
+  const best = claims.reduce((a, b) => (b.value > a.value ? b : a))
+  const worst = claims.reduce((a, b) => (b.value < a.value ? b : a))
+  if (best.value <= 100 && worst.value >= 100) return 'Even on everything'
+
+  const gain = best.value > 100 ? `${best.value - 100}% more ${best.label}` : ''
+  const cost = worst.value < 100 ? `${100 - worst.value}% less ${worst.label}` : ''
+  const heat = district.heatPercent > 100
+    ? `${district.heatPercent - 100}% more heat`
+    : district.heatPercent < 100 ? `${100 - district.heatPercent}% less heat` : ''
+  return [gain, cost, heat].filter(Boolean).join(' / ')
+}
+
 function moraleTone(value: number) {
   if (value < 30) return 'danger'
   if (value < 60) return 'warn'
@@ -2538,7 +2773,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
   </section>
 }
 
-function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerId, combatMissions, dashboard, attackCrew, setAttackCrew, commanderId, setCommanderId, onQuery, onSearch, onInspect, onAttack }: {
+function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerId, combatMissions, dashboard, attackCrew, setAttackCrew, commanderId, setCommanderId, attackMethod, setAttackMethod, poachCoke, setPoachCoke, borrowedThugs, setBorrowedThugs, onQuery, onSearch, onInspect, onAttack }: {
   targets: PlayerTarget[]
   selectedTarget: PlayerProfile | null
   query: string
@@ -2550,6 +2785,12 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   setAttackCrew: React.Dispatch<React.SetStateAction<{ thugs: number, weapons: number }>>
   commanderId: number | null
   setCommanderId: (id: number | null) => void
+  attackMethod: AttackMethodKey
+  setAttackMethod: (method: AttackMethodKey) => void
+  poachCoke: number
+  setPoachCoke: (coke: number) => void
+  borrowedThugs: number
+  setBorrowedThugs: (thugs: number) => void
   onQuery: (query: string) => void
   onSearch: (event: FormEvent<HTMLFormElement>) => void
   onInspect: (playerId: string) => void
@@ -2562,13 +2803,23 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     : undefined
   const crew = dashboard.combatCrew
   const freeCommanders = dashboard.crew.filter(pimp => !pimp.isCommanding)
-  const attackReady = crew.availablePimps >= 1
+  const raidReady = crew.availablePimps >= 1
     && attackCrew.thugs >= 1
     && attackCrew.weapons >= 0
     && attackCrew.weapons <= attackCrew.thugs
     && attackCrew.thugs <= crew.availableThugs
     && attackCrew.weapons <= crew.availableWeapons
     && crew.activeAttackMissions < crew.maxActiveAttackMissions
+  const method = dashboard.attackMethods.find(x => x.key === attackMethod) ?? dashboard.attackMethods[0]
+  const isRaid = method?.key === 'raid'
+  // A strike is gated by the method's own requirements, which the server has already worked out, plus
+  // the turns it costs. A raid is gated by crew, which only it commits.
+  const methodReady = !!method
+    && !method.blockedReason
+    && dashboard.turns >= method.turnCost
+    && (!isRaid || raidReady)
+    // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
+    && (method.key !== 'poach' || (poachCoke > 0 && poachCoke <= dashboard.coke))
   return <div className="panel target-panel">
     <div className="panel-title"><h2>Combat Targets</h2><span>Scout + launch</span></div>
     <form className="target-search" onSubmit={onSearch}>
@@ -2588,16 +2839,27 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <span>#{target.rank}</span>
           <strong>{target.name}</strong>
           <small>{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
-          <em className={target.combatStatus.mismatchReason ? 'blocked' : undefined}>{target.combatStatus.eligibility} / {target.combatReadiness.riskBand}</em>
+          <em className={target.combatStatus.mismatchReason ? 'blocked' : undefined}>{target.titles.length > 0 ? target.titles.join(', ') : `${target.combatStatus.eligibility} / ${target.combatReadiness.riskBand}`}{target.rides > 0 ? ` / ${target.rides} parked` : ''}</em>
           <b>{money.format(target.netWorth)}</b>
         </button>)}
       </div>
       {profile && <div className="target-profile">
         <div className="target-profile-head">
-          <div><strong>{profile.name}</strong><span>{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span></div>
+          <div>
+            <strong>{profile.name}</strong>
+            <span>{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span>
+            {profile.titles.length > 0 && <small className="profile-titles">{profile.titles.join(' / ')}</small>}
+          </div>
           <b>#{profile.rank}</b>
         </div>
-        <div className="attack-assign">
+        <AttackMethodPicker
+          methods={dashboard.attackMethods}
+          selected={attackMethod}
+          turns={dashboard.turns}
+          onSelect={setAttackMethod}
+        />
+        {/* A raid is the only method that commits crew, so it is the only one that asks for any. */}
+        {isRaid && <div className="attack-assign">
           <StatusRow label="Available" value={`${crew.availablePimps} P / ${crew.availableThugs} T / ${crew.availableWeapons} W`} warn={crew.availablePimps < 1 || crew.availableThugs < 1} />
           <StatusRow label="Committed" value={`${crew.committedPimps} P / ${crew.committedThugs} T / ${crew.committedWeapons} W`} warn={crew.committedThugs > 0} />
           <div className="attack-inputs">
@@ -2614,23 +2876,56 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
             </label>
             <label>Thugs<input type="number" min={1} max={Math.max(1, crew.availableThugs)} value={attackCrew.thugs} onChange={e => setAttackCrew(value => ({ ...value, thugs: Number(e.target.value), weapons: Math.min(value.weapons, Number(e.target.value)) }))} /></label>
             <label>Weapons<input type="number" min={0} max={Math.max(0, Math.min(crew.availableWeapons, attackCrew.thugs))} value={attackCrew.weapons} onChange={e => setAttackCrew(value => ({ ...value, weapons: Number(e.target.value) }))} /></label>
+            {/* You may bring as many of the crew's as you brought of your own, so the cap moves with
+                the party rather than sitting at a fixed number. */}
+            {dashboard.alliance && dashboard.alliance.offensiveThugs > 0 && <label>{dashboard.alliance.name}
+              <input
+                type="number"
+                min={0}
+                max={Math.min(dashboard.alliance.offensiveThugs, attackCrew.thugs)}
+                value={Math.min(borrowedThugs, attackCrew.thugs)}
+                onChange={event => setBorrowedThugs(Number(event.target.value))}
+              />
+            </label>}
           </div>
           <small className="attack-note">{commanderNote(freeCommanders.find(x => x.id === commanderId) ?? null)}</small>
-        </div>
+        </div>}
+        {method && !isRaid && <div className="attack-assign">
+          <p className="attack-method-copy">{method.description}</p>
+          {method.key === 'poach' && <div className="attack-inputs">
+            <label>Coke to spend<input
+              type="number"
+              min={1}
+              max={Math.max(1, dashboard.coke)}
+              value={poachCoke}
+              onChange={event => setPoachCoke(Number(event.target.value))}
+            /></label>
+          </div>}
+          <small className="attack-note">{strikeNote(method, profile, dashboard, poachCoke)}</small>
+        </div>}
         <div className="target-actions">
           <button
             className="primary"
             type="button"
-            disabled={busy || !!activeAgainstProfile || !attackReady || !profile.combatStatus.canAttackNow}
+            disabled={busy
+              || (isRaid && !!activeAgainstProfile)
+              || !methodReady
+              || !profile.combatStatus.canAttackNow
+              || (!isRaid && profile.combatStatus.isStrikeProtected)}
             onClick={() => onAttack(profile.playerId)}
           >
-            Attack Target
+            {isRaid ? 'Send the Raid' : method?.label ?? 'Attack'}
           </button>
-          <span>{attackStatusText(
-            profile.combatStatus,
-            activeAgainstProfile,
-            activeOutgoingMissions[0],
-            attackReady)}</span>
+          <span>{method?.blockedReason
+            ?? (!isRaid && profile.combatStatus.isStrikeProtected
+              ? `${profile.name} was just hit and is watching the street.`
+              : method && !isRaid
+                ? strikeStatusText(method, dashboard, profile.combatStatus)
+                : attackStatusText(
+                  profile.combatStatus,
+                  activeAgainstProfile,
+                  activeOutgoingMissions[0],
+                  methodReady))}</span>
         </div>
         <div className="target-metrics">
           <AdminMetric label="Net worth" value={money.format(profile.netWorth)} />
@@ -2644,11 +2939,26 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         <div className="target-readiness">
           <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
           <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
+          {/* Coverage says how many are armed; the rack says how hard that is going to hit back. */}
+          <StatusRow label="Their guns" value={rackSummary(profile.weaponRack)} />
+          <StatusRow
+            label="Firepower"
+            value={`${profile.combatReadiness.firepower} pistols`}
+            warn={profile.combatReadiness.firepower > profile.combatReadiness.armedThugs * 1.5}
+          />
           <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
           <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
           <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defenses`} />
           {profile.combatStatus.mismatchReason && <StatusRow label="Blocked" value={profile.combatStatus.mismatchReason} warn />}
-          <StatusRow label="Hoe morale" value={`${profile.hoeHappiness.toFixed(0)}%`} warn={profile.hoeHappiness < 50} />
+          {/* What each strike is aimed at. A garage with cars in it and a house with no medicine are
+              the reads that turn the menu into a decision rather than a list. */}
+          <StatusRow label="Rides" value={profile.rides > 0 ? `${number.format(profile.rides)} parked` : 'None'} />
+          <StatusRow label="Medicine" value={profile.medicine > 0 ? `${number.format(profile.medicine)} crate(s)` : 'None'} />
+          <StatusRow
+            label="Hoe morale"
+            value={`${profile.hoeHappiness.toFixed(0)}%${profile.hoeHappiness >= 90 ? ' - paid too well to poach' : ''}`}
+            warn={profile.hoeHappiness < 50}
+          />
           <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
           <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
         </div>
@@ -2659,6 +2969,489 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         </div>
       </div>}
     </div>
+  </div>
+}
+
+/**
+ * The attack menu. Every entry arrives from the server already priced and already carrying the reason
+ * it cannot be used, so this renders the list without knowing a single rule about any of them.
+ */
+function AttackMethodPicker({ methods, selected, turns, onSelect }: {
+  methods: AttackMethod[]
+  selected: AttackMethodKey
+  turns: number
+  onSelect: (method: AttackMethodKey) => void
+}) {
+  return <div className="attack-methods">
+    {methods.map(method => {
+      // Blocked and unaffordable read differently on purpose: one is something to go and buy, the
+      // other is something to go and wait for.
+      const unaffordable = turns < method.turnCost
+      return <button
+        className={method.key === selected ? 'attack-method active' : 'attack-method'}
+        key={method.key}
+        type="button"
+        title={method.blockedReason ?? method.description}
+        onClick={() => onSelect(method.key)}
+      >
+        <strong>{method.label}</strong>
+        <small className={unaffordable ? 'blocked' : undefined}>{method.turnCost} turns</small>
+        {method.blockedReason && <em className="blocked">{method.blockedReason}</em>}
+      </button>
+    })}
+  </div>
+}
+
+/**
+ * What this strike would actually achieve against this target. The server refuses the impossible, but a
+ * refusal after the click is a worse experience than a sentence before it - and for poaching, the honest
+ * answer is often "nothing, they are paid too well", which no error message would ever say.
+ */
+function strikeNote(method: AttackMethod, profile: PlayerProfile, dashboard: Dashboard, poachCoke: number) {
+  switch (method.key) {
+    case 'driveby': {
+      const armed = profile.combatReadiness.armedThugs
+      if (armed === 0) return 'Nobody armed on that street. A clean pass, and the car should come back.'
+      // The guns are the half that decides whether the car comes back, so name them when they are
+      // more than sidearms rather than leaving "better armed" for the player to infer.
+      const heavy = profile.combatReadiness.firepower > armed
+      return heavy
+        ? `${armed} armed thug(s) on that street carrying ${rackSummary(profile.weaponRack).toLowerCase()}. That is what takes the car, not the number of them.`
+        : `${armed} armed thug(s) on that street, carrying sidearms. Hard to catch anyone in the open, but the car should come back.`
+    }
+    case 'jack': {
+      if (profile.rides === 0) return 'Nothing parked there to take.'
+      // Both halves of the guard, because both stop you and they stop you differently: bodies are eyes
+      // on the door, guns are what happens once you are seen.
+      const armed = profile.combatReadiness.armedThugs
+      const heavy = profile.combatReadiness.firepower > armed
+      const guns = heavy ? rackSummary(profile.weaponRack).toLowerCase() : 'sidearms'
+      return `${profile.rides} parked behind ${armed} armed thug(s) carrying ${guns}. Room for ${Math.max(0, dashboard.hideout.maxRides - dashboard.rides)} more in your garage.`
+    }
+    case 'infest': {
+      const covered = profile.medicine * 3
+      return covered >= profile.hoes && profile.hoes > 0
+        ? `Their ${profile.medicine} crate(s) cover the whole house. Nothing would be lost.`
+        : `${profile.hoes} hoes, ${profile.medicine} crate(s) of medicine. Whatever the medicine cannot reach is gone.`
+    }
+    case 'poach':
+      return profile.hoeHappiness >= 90
+        ? 'Their house is paid too well. Nobody is going anywhere at any price.'
+        : `Their morale is ${profile.hoeHappiness.toFixed(0)}%, and yours is ${dashboard.cokePurityPercent}% pure. ${poachCoke > dashboard.coke ? 'You do not hold that much coke.' : 'The coke goes out whether or not anyone comes back with you.'}`
+    default:
+      return method.description
+  }
+}
+
+/**
+ * The shrine. The gods name a thing and a number; meeting it is answered.
+ *
+ * Fetched on its own rather than folded into the dashboard because it is a weekly errand, not a live
+ * figure: nothing on this panel changes between page loads except when the player acts on it.
+ */
+function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) {
+  const [board, setBoard] = useState<PrayerBoard | null>(null)
+  const [offered, setOffered] = useState(0)
+
+  const load = async () => {
+    try {
+      const next = await api.prayer()
+      setBoard(next)
+      // Default to exactly what was asked. Anything the player types over that is generosity, which is
+      // the only decision the shrine actually offers them.
+      setOffered(next.quantity)
+    } catch {
+      // The shrine is flavour. A player who cannot reach it should still get the rest of the page.
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+  if (!board) return null
+
+  const enough = board.held >= board.quantity
+  const generous = offered >= board.generousQuantity
+  return <section className="panel shrine-panel">
+    <div className="panel-title"><h2>The Pimp Gods</h2><span>Once a week</span></div>
+    <p>
+      They want <strong>{number.format(board.quantity)} {board.label}</strong> this week. You hold{' '}
+      {number.format(board.held)}. What comes back is never money: they deal in what the law has on you,
+      how the house feels, and whether your pimps still believe in you.
+    </p>
+    <div className="action-row wrap">
+      <label>Offer<input
+        type="number"
+        min={board.quantity}
+        value={offered}
+        onChange={event => setOffered(Number(event.target.value))}
+      /></label>
+      <button
+        className="primary"
+        disabled={busy || !board.canPray || !enough || offered < board.quantity || offered > board.held}
+        onClick={() => void act(async () => {
+          const result = await api.pray(offered)
+          await load()
+          return result
+        })}
+      >
+        Make the offering
+      </button>
+      <span className="shrine-note">
+        {board.blockedReason
+          ?? (generous
+            ? `Twice what they asked. Generosity buys what meeting the ask does not.`
+            : `${number.format(board.generousQuantity)} would count as generous.`)}
+      </span>
+    </div>
+  </section>
+}
+
+/**
+ * Who leads at what today. Half the categories are for things done to a player rather than by them,
+ * which is the source game's own reading and the half that makes the board worth reading.
+ */
+function TitleBoardPanel({ currentPlayerId }: { currentPlayerId: string }) {
+  const [titles, setTitles] = useState<PlayerTitle[]>([])
+
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      try {
+        const next = await api.titles()
+        if (live) setTitles(next)
+      } catch {
+        // A board nobody has earned anything on is not worth an error message.
+      }
+    })()
+    return () => { live = false }
+  }, [])
+
+  return <section className="panel">
+    <div className="panel-title"><h2>Today's Names</h2><span>Last 24 hours</span></div>
+    {titles.length === 0 && <p className="coming">Nobody has done enough today to be called anything.</p>}
+    <div className="title-board">
+      {titles.map(title => <div className={title.playerId === currentPlayerId ? 'title-row you' : 'title-row'} key={title.key}>
+        <strong>{title.title}</strong>
+        <b>{title.playerName}</b>
+        <small>{title.detail}</small>
+      </div>)}
+    </div>
+  </section>
+}
+
+/**
+ * Who you run with.
+ *
+ * The whole of what a crew buys is at the top of the page, because it is the only reason to be on it:
+ * the people listed here cannot rob you and you cannot rob them. Everything else - the treasury, the
+ * rate, the board - is bookkeeping around that one fact.
+ */
+function AlliancePage(ctx: PageContext) {
+  const { busy, act } = ctx
+  const [board, setBoard] = useState<AllianceBoard | null>(null)
+  const [name, setName] = useState('')
+  const [motto, setMotto] = useState('')
+
+  const load = async () => {
+    try {
+      setBoard(await api.alliances())
+    } catch {
+      // The page is readable without the board; an error banner over an empty list says nothing.
+    }
+  }
+  useEffect(() => { void load() }, [])
+
+  const run = (fn: () => Promise<ActionResult>) => void act(async () => {
+    const result = await fn()
+    await load()
+    return result
+  })
+
+  if (!board) return <div className="page-grid"><section className="panel"><p className="coming">Reading the board.</p></section></div>
+
+  const yours = board.yours
+  return <div className="page-grid two-column">
+    {yours
+      ? <section className="panel wide-panel">
+        <div className="panel-title"><h2>{yours.name}</h2><span>#{yours.rank} / {yours.members} of {yours.maxMembers}</span></div>
+        {yours.motto && <p className="alliance-motto">{yours.motto}</p>}
+        <p>
+          Nobody on this list can attack you and you cannot attack them, by any method. That is what the{' '}
+          {yours.duesPercent}% off every shift is buying.
+        </p>
+        <div className="war-readiness">
+          <AdminMetric label="Crew worth" value={money.format(yours.netWorth)} />
+          <AdminMetric label="Treasury" value={money.format(board.treasury)} />
+          <AdminMetric label="Dues" value={`${yours.duesPercent}%`} />
+          <AdminMetric label="Pool" value={`${yours.offensiveThugs} off / ${yours.defensiveThugs} def`} />
+          <AdminMetric label="You are" value={board.yourRank} />
+        </div>
+
+        <div className="alliance-roster">
+          {board.members.map(member => <AllianceMemberRow
+            key={member.playerId}
+            member={member}
+            board={board}
+            busy={busy}
+            onAct={run}
+          />)}
+        </div>
+
+        <AllianceRequestsPanel board={board} busy={busy} onAct={run} />
+
+        <AlliancePoolPanel board={board} crew={yours} busy={busy} onAct={run} />
+
+        {board.yourRank === 'Boss' && <AllianceSettingsPanel crew={yours} board={board} maxDues={board.maxDuesPercent} busy={busy} onSave={run} />}
+
+        <div className="action-row wrap">
+          <button className="secondary" disabled={busy} onClick={() => run(() => api.leaveAlliance())}>
+            {yours.youFounded && yours.members > 1 ? 'Leave (throw everybody out first)' : 'Leave the crew'}
+          </button>
+        </div>
+      </section>
+      : <section className="panel wide-panel">
+        <div className="panel-title"><h2>Start a Crew</h2><span>{money.format(board.foundingCost)}</span></div>
+        <p>
+          A crew is people who have agreed not to rob each other. Members cannot attack you by any method
+          and you cannot attack them, and every shift any of you works pays a share into a shared pot.
+        </p>
+        <div className="action-row wrap">
+          <label>Name<input value={name} maxLength={32} onChange={event => setName(event.target.value)} /></label>
+          <label>Motto<input value={motto} maxLength={140} onChange={event => setMotto(event.target.value)} /></label>
+          <button
+            className="primary"
+            disabled={busy || name.trim().length < 3}
+            onClick={() => run(() => api.foundAlliance(name.trim(), motto.trim()))}
+          >Found it</button>
+        </div>
+      </section>}
+
+    <section className="panel">
+      <div className="panel-title"><h2>The Board</h2><span>{board.board.length} crews</span></div>
+      {board.board.length === 0 && <p className="coming">Nobody is running with anybody yet.</p>}
+      <div className="alliance-board">
+        {board.board.map(crew => <div className={crew.yours ? 'alliance-row you' : 'alliance-row'} key={crew.id}>
+          <span>#{crew.rank}</span>
+          <div>
+            <strong>{crew.name}</strong>
+            <small>{crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues</small>
+          </div>
+          <b>{money.format(crew.netWorth)}</b>
+          {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
+              does not want is how a player learns a rule by being refused. */}
+          {!yours && crew.members >= crew.maxMembers && <em>Full</em>}
+          {!yours && crew.members < crew.maxMembers && crew.door === 'Open' && <button
+            className="secondary compact"
+            disabled={busy}
+            onClick={() => run(() => api.joinAlliance(crew.id))}
+          >Join</button>}
+          {!yours && crew.members < crew.maxMembers && crew.door === 'Application' && <button
+            className="secondary compact"
+            disabled={busy}
+            onClick={() => run(() => api.applyToAlliance(crew.id))}
+          >Ask</button>}
+          {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
+        </div>)}
+      </div>
+    </section>
+  </div>
+}
+
+/**
+ * One name on the roster, with whatever this viewer is entitled to do about them.
+ *
+ * The buttons are drawn from the powers the server sent rather than from a guess about rank, so a crew
+ * whose boss moved a line sees the change immediately and the client never has to know what the lines
+ * currently are.
+ */
+function AllianceMemberRow({ member, board, busy, onAct }: {
+  member: AllianceMember
+  board: AllianceBoard
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const canExpel = board.powers.find(x => x.power === 'Expel')?.youHaveIt ?? false
+  const isBoss = board.yourRank === 'Boss'
+  // Promotable ranks stop below the top: handing the crew over is its own move because it is the one
+  // that gives yours away.
+  const promotable = board.ranks.filter(x => x !== 'Boss')
+
+  return <div className={member.isYou ? 'alliance-member you' : 'alliance-member'}>
+    <div>
+      <strong>{member.name}</strong>
+      <small>{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
+    </div>
+    <b>{money.format(member.netWorth)}</b>
+    {!member.isYou && <div className="alliance-member-actions">
+      {isBoss && <select
+        value={member.rank === 'Boss' ? '' : member.rank}
+        disabled={busy || member.rank === 'Boss'}
+        onChange={event => onAct(() => api.setAllianceRank(member.playerId, event.target.value))}
+      >
+        {member.rank === 'Boss' && <option value="">Boss</option>}
+        {promotable.map(rank => <option key={rank} value={rank}>{rank}</option>)}
+      </select>}
+      {isBoss && <button
+        className="secondary compact"
+        disabled={busy}
+        onClick={() => onAct(() => api.handOverAlliance(member.playerId))}
+      >Hand over</button>}
+      {canExpel && member.youOutrankThem && <button
+        className="secondary compact"
+        disabled={busy}
+        onClick={() => onAct(() => api.expelMember(member.playerId))}
+      >Throw out</button>}
+    </div>}
+  </div>
+}
+
+/**
+ * Who is waiting on somebody. Invitations to this player and applications to their crew sit in one
+ * list, because from here they are the same thing: an ask with your name on the answer.
+ */
+function AllianceRequestsPanel({ board, busy, onAct }: {
+  board: AllianceBoard
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const answerable = board.requests.filter(x => x.yoursToAnswer)
+  // Asks the crew has sent and is still waiting to hear about. Nobody is waiting on you for these, but
+  // without them a boss can never see who has been asked or take an ask back.
+  const sent = board.requests.filter(x => !x.yoursToAnswer)
+  if (answerable.length === 0 && sent.length === 0) return null
+
+  return <div className="attack-assign">
+    {sent.length > 0 && <>
+      <strong className="alliance-asks-title">Asked, waiting to hear</strong>
+      {sent.map(ask => <div className="alliance-ask" key={ask.id}>
+        <div>
+          <strong>{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
+          <small>{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
+        </div>
+        {ask.kind === 'Invitation'
+          ? <button className="secondary compact" disabled={busy} onClick={() => onAct(() => api.withdrawAllianceRequest(ask.id))}>Take it back</button>
+          : <em>Waiting on somebody who can open the door</em>}
+        <span />
+      </div>)}
+    </>}
+    {answerable.length > 0 && <strong className="alliance-asks-title">Waiting on you</strong>}
+    {answerable.map(ask => <div className="alliance-ask" key={ask.id}>
+      <div>
+        <strong>{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
+        <small>{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
+      </div>
+      <button className="primary compact" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</button>
+      <button className="secondary compact" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</button>
+    </div>)}
+  </div>
+}
+
+/**
+ * The shared pool: what the crew has bought, and what this member may borrow of it.
+ *
+ * The borrow limit is stated on the panel rather than discovered by being refused, because it is the
+ * rule that makes the pool interesting - you can bring as many as you brought yourself, so the crew
+ * doubles you rather than replacing you.
+ */
+function AlliancePoolPanel({ board, crew, busy, onAct }: {
+  board: AllianceBoard
+  crew: AllianceSummary
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const [buy, setBuy] = useState(1)
+  const [post, setPost] = useState(1)
+  const room = Math.max(0, board.borrowLimit - board.yourDefenders)
+
+  return <div className="attack-assign">
+    <StatusRow label="Pool" value={`${crew.offensiveThugs} offensive / ${crew.defensiveThugs} defensive`} />
+    <StatusRow
+      label="You may borrow"
+      value={board.borrowLimit === 0 ? 'Nothing until you have thugs of your own' : `${board.borrowLimit} (${board.yourDefenders} standing here)`}
+      warn={board.borrowLimit === 0}
+    />
+
+    {crew.youFounded && <div className="attack-inputs">
+      <label>Buy<input type="number" min={1} value={buy} onChange={event => setBuy(Number(event.target.value))} /></label>
+      <button
+        className="secondary compact"
+        disabled={busy || buy < 1 || board.treasury < board.offensiveThugCost * buy}
+        onClick={() => onAct(() => api.buyAllianceThugs('offensive', buy))}
+      >Offensive {money.format(board.offensiveThugCost * buy)}</button>
+      <button
+        className="secondary compact"
+        disabled={busy || buy < 1 || board.treasury < board.defensiveThugCost * buy}
+        onClick={() => onAct(() => api.buyAllianceThugs('defensive', buy))}
+      >Defensive {money.format(board.defensiveThugCost * buy)}</button>
+    </div>}
+
+    <div className="attack-inputs">
+      <label>Defenders<input type="number" min={1} value={post} onChange={event => setPost(Number(event.target.value))} /></label>
+      <button
+        className="secondary compact"
+        disabled={busy || post < 1 || post > room || crew.defensiveThugs < post}
+        onClick={() => onAct(() => api.postDefenders(post))}
+      >Post to your place</button>
+      <button
+        className="secondary compact"
+        disabled={busy || post < 1 || board.yourDefenders < post}
+        onClick={() => onAct(() => api.postDefenders(-post))}
+      >Send back</button>
+    </div>
+    <small className="attack-note">
+      Offensive thugs ride along on a raid and defensive ones stand at your place. Both die like anybody
+      else, and what dies is gone from the pool for good.
+    </small>
+  </div>
+}
+
+/**
+ * The boss's authority: the rate, the door, the sign on it, and where every other line is drawn.
+ *
+ * The thresholds sit here rather than beside the powers they gate because they are one decision - how
+ * much of this crew do I run personally - and a boss changing their mind should not have to make it
+ * five times in five places.
+ */
+function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
+  crew: AllianceSummary
+  board: AllianceBoard
+  maxDues: number
+  busy: boolean
+  onSave: (fn: () => Promise<ActionResult>) => void
+}) {
+  const [dues, setDues] = useState(crew.duesPercent)
+  const [door, setDoor] = useState<AllianceDoorKey>(crew.door)
+
+  return <div className="attack-assign">
+    <strong className="alliance-asks-title">Who may do what</strong>
+    <div className="alliance-powers">
+      {board.powers.map(power => <label className="alliance-power" key={power.power}>
+        <span>{power.label}</span>
+        <select
+          value={power.minRank}
+          disabled={busy}
+          onChange={event => onSave(() => api.updateAlliance({ powers: { [power.power]: event.target.value } }))}
+        >
+          {board.ranks.map(rank => <option key={rank} value={rank}>{rank} and up</option>)}
+        </select>
+      </label>)}
+    </div>
+    <div className="attack-inputs">
+      <label>Dues %<input type="number" min={0} max={maxDues} value={dues} onChange={event => setDues(Number(event.target.value))} /></label>
+      <label>Door
+        <select value={door} disabled={busy} onChange={event => setDoor(event.target.value as AllianceDoorKey)}>
+          {board.doors.map(option => <option key={option.door} value={option.door}>{option.label}</option>)}
+        </select>
+      </label>
+      <button
+        className="secondary compact"
+        disabled={busy || dues < 0 || dues > maxDues}
+        onClick={() => onSave(() => api.updateAlliance({ duesPercent: dues, door }))}
+      >Save</button>
+    </div>
+    <small className="attack-note">
+      Dues come off the gross of every member's shift, beside the hoe cut. The ceiling is {maxDues}%.{' '}
+      {board.doors.find(x => x.door === door)?.detail}
+    </small>
   </div>
 }
 
@@ -2690,9 +3483,14 @@ function CombatHistoryPanel({ entries, currentPlayerId }: { entries: CombatLog[]
         const attacking = entry.attackerId === currentPlayerId
         const pending = entry.outcome === 'Pending'
         return <div className={`${attacking ? 'combat-entry attack' : 'combat-entry defense'}${pending ? ' pending' : ''}`} key={entry.id}>
-          <div><strong>{attacking ? 'Attack' : 'Defense'} / {entry.outcome}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
+          <div><strong>{entry.methodLabel} / {entry.outcome}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
           <p>{entry.summary}</p>
-          <small>{entry.attackerName} vs {entry.defenderName} / {pending && entry.resolvesAtUtc ? `ETA ${timeUntil(entry.resolvesAtUtc)}` : `${entry.attackerPower}-${entry.defenderPower} power`}</small>
+          {/* Power is a raid's story. A strike never rolls one, so quoting 0-0 for one would be noise. */}
+          <small>{entry.attackerName} vs {entry.defenderName} / {pending && entry.resolvesAtUtc
+            ? `ETA ${timeUntil(entry.resolvesAtUtc)}`
+            : entry.method === 'raid'
+              ? `${entry.attackerPower}-${entry.defenderPower} power`
+              : attacking ? 'Your strike' : 'Struck you'}</small>
         </div>
       })}
     </div>
@@ -2993,7 +3791,9 @@ function MiniInventory({ dashboard }: { dashboard: Dashboard }) {
   return <div className="mini-inventory">
     <StatusRow label="Condoms" value={number.format(dashboard.condoms)} />
     <StatusRow label="Beer" value={number.format(dashboard.beer)} />
-    <StatusRow label="Weapons" value={number.format(dashboard.weapons)} warn={dashboard.weapons < dashboard.thugs} />
+    <StatusRow label="Weapons" value={weaponSummary(dashboard)} warn={dashboard.weapons < dashboard.thugs} />
+    <StatusRow label="Medicine" value={number.format(dashboard.medicine)} warn={dashboard.hoes > 0 && dashboard.medicine === 0} />
+    <StatusRow label="Rides" value={number.format(dashboard.rides)} />
     <StatusRow label="Weed" value={number.format(dashboard.weed)} />
     <StatusRow label="Coke" value={number.format(dashboard.coke)} />
   </div>
@@ -3101,6 +3901,18 @@ function attackStatusText(status: { canAttackNow: boolean, eligibility: string, 
   if (activeMission) return `Crew already out, next update in ${timeUntil(nextMissionTime(activeMission))}`
   if (status.canAttackNow) return `${status.attackTurnCost} turns to attack`
   if (status.attackCooldownUntilUtc && status.eligibility === 'Cooldown') return `Cooldown until ${new Date(status.attackCooldownUntilUtc).toLocaleString()}`
+  return status.eligibility
+}
+
+/**
+ * The status line for a strike. Its own function rather than a flag on attackStatusText, which quotes
+ * the raid's turn cost and knows about lanes and missions: a strike has neither, and telling somebody a
+ * six-turn drive-by costs ten turns is worse than saying nothing.
+ */
+function strikeStatusText(method: AttackMethod, dashboard: Dashboard, status: { canAttackNow: boolean, eligibility: string, mismatchReason?: string | null }) {
+  if (status.mismatchReason) return status.mismatchReason
+  if (dashboard.turns < method.turnCost) return `${method.turnCost} turns needed, you have ${dashboard.turns}`
+  if (status.canAttackNow) return `${method.turnCost} turns, settles on the spot`
   return status.eligibility
 }
 

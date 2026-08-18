@@ -149,6 +149,40 @@ internal sealed record BotAttackProfile(
 }
 
 /// <summary>
+/// How willing a personality is to take a cheap shot, and which cheap shot it reaches for first.
+///
+/// A separate appetite from raiding on purpose. A raid is an operation a rival talks itself into over a
+/// win margin; a strike is four turns and a decision about what somebody left uncovered, so the rivals
+/// who use them most are not the same ones who raid most. The Banker will not commit crew to a fight it
+/// might lose, but it will absolutely drive off with an unguarded car.
+///
+/// The preference order is what gives each personality a recognisable signature in the news feed. It is
+/// a preference and not a rule: a rival takes the first thing on its list that is actually possible
+/// against the target in front of it, so a Product Runner with no coke still shoots up a street.
+/// </summary>
+internal sealed record BotStrikeProfile(double StrikeChance, IReadOnlyList<string> Preference)
+{
+    internal static BotStrikeProfile For(BotBrainFocus focus)
+        => focus switch
+        {
+            // Wants violence, and does not much care what it costs the neighbours.
+            BotBrainFocus.MoraleNeglecter => new(0.55, [AttackMethods.DriveBy, AttackMethods.Infest, AttackMethods.Jack, AttackMethods.Poach]),
+            // Buys what it wants, including other people's crew.
+            BotBrainFocus.BigSpender => new(0.40, [AttackMethods.Poach, AttackMethods.Jack, AttackMethods.DriveBy, AttackMethods.Infest]),
+            // Every strike is judged on whether it grows the house.
+            BotBrainFocus.CrewBuilder => new(0.35, [AttackMethods.Poach, AttackMethods.Jack, AttackMethods.Infest, AttackMethods.DriveBy]),
+            BotBrainFocus.BalancedOperator => new(0.30, [AttackMethods.DriveBy, AttackMethods.Jack, AttackMethods.Infest, AttackMethods.Poach]),
+            // Sits on coke, so poaching is the one attack it is always able to pay for.
+            BotBrainFocus.ProductRunner => new(0.28, [AttackMethods.Poach, AttackMethods.Infest, AttackMethods.DriveBy, AttackMethods.Jack]),
+            // Would rather cost a rival money than spend its own.
+            BotBrainFocus.ResourceManager => new(0.22, [AttackMethods.Infest, AttackMethods.Jack, AttackMethods.DriveBy, AttackMethods.Poach]),
+            // A car is an asset with a resale price, which is the only argument it needs.
+            BotBrainFocus.Banker => new(0.20, [AttackMethods.Jack, AttackMethods.Infest, AttackMethods.DriveBy, AttackMethods.Poach]),
+            _ => new(0.30, [AttackMethods.DriveBy, AttackMethods.Jack, AttackMethods.Infest, AttackMethods.Poach])
+        };
+}
+
+/// <summary>
 /// How willing a personality is to send crew out of town. Kept as a lookup for the same reason the
 /// attack profile is: the brain record is already a 57-field positional type, and four more arguments
 /// across seven variants would be far easier to get wrong than a table.

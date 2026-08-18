@@ -226,9 +226,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     {
         var config = _options.Hideout;
         var tier = Level(config.Tiers, hideout?.Tier ?? 1, x => x.Level)
-            ?? new HideoutTierOptions { MaxPimps = int.MaxValue, MaxHoes = int.MaxValue, MaxThugs = int.MaxValue };
+            ?? new HideoutTierOptions { MaxPimps = int.MaxValue, MaxHoes = int.MaxValue, MaxThugs = int.MaxValue, MaxRides = int.MaxValue };
         var storage = Level(config.Storage, hideout?.StorageLevel ?? 1, x => x.Level)
-            ?? new StorageLevelOptions { Condoms = int.MaxValue, Beer = int.MaxValue, Weapons = int.MaxValue, Weed = int.MaxValue, Coke = int.MaxValue };
+            ?? new StorageLevelOptions { Condoms = int.MaxValue, Beer = int.MaxValue, Weapons = int.MaxValue, Weed = int.MaxValue, Coke = int.MaxValue, Medicine = int.MaxValue };
         var safe = Level(config.Safe, hideout?.SafeLevel ?? 1, x => x.Level)
             ?? new SafeLevelOptions { MaxCash = long.MaxValue };
 
@@ -242,6 +242,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             tier.MaxPimps,
             tier.MaxHoes,
             tier.MaxThugs,
+            tier.MaxRides,
             safe.MaxCash,
             storage.Condoms,
             storage.Beer,
@@ -249,7 +250,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             storage.Weed,
             storage.Coke,
             storage.Moonshine,
-            storage.Cut);
+            storage.Cut,
+            storage.Medicine);
     }
 
     /// <summary>
@@ -287,6 +289,13 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     }
 
     /// <summary>
+    /// Spaces left in the garage. Read by the chop shop before a purchase and by a jacking before it
+    /// drives anything away, so a ride can never arrive somewhere with nowhere to put it.
+    /// </summary>
+    public int RideRoom(Player player)
+        => Math.Max(0, CapacityFor(player.Hideout).MaxRides - player.Rides);
+
+    /// <summary>
     /// Settles a finished action against the hideout's limits. Cash over the safe is moved to the
     /// bank; goods over storage are lost. Stock a player already held is never taken away, so
     /// grandfathered amounts survive and drain down naturally through upkeep instead.
@@ -309,13 +318,17 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         var weapons = Spill(player.Weapons, capacity.MaxWeapons, before.Weapons);
         var weed = Spill(player.Weed, capacity.MaxWeed, before.Weed);
         var coke = Spill(player.Coke, capacity.MaxCoke, before.Coke);
+        var medicine = Spill(player.Medicine, capacity.MaxMedicine, before.Medicine);
         player.Condoms -= condoms;
         player.Beer -= beer;
-        player.Weapons -= weapons;
+        // Cheapest guns first. A full rack losing its rifles to an overflowing shelf would make owning
+        // good ones a hazard, which is the opposite of what a gun rack is for.
+        player.RemoveWeapons(weapons);
         player.Weed -= weed;
         player.Coke -= coke;
+        player.Medicine -= medicine;
 
-        return new StorageOverflow(banked, condoms, beer, weapons, weed, coke);
+        return new StorageOverflow(banked, condoms, beer, weapons, weed, coke, medicine);
     }
 
     /// <summary>
@@ -330,9 +343,11 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         player.Thugs = Math.Min(player.Thugs, capacity.MaxThugs);
         player.Condoms = Math.Min(player.Condoms, capacity.MaxCondoms);
         player.Beer = Math.Min(player.Beer, capacity.MaxBeer);
-        player.Weapons = Math.Min(player.Weapons, capacity.MaxWeapons);
+        player.RemoveWeapons(Math.Max(0, player.Weapons - capacity.MaxWeapons));
         player.Weed = Math.Min(player.Weed, capacity.MaxWeed);
         player.Coke = Math.Min(player.Coke, capacity.MaxCoke);
+        player.Medicine = Math.Min(player.Medicine, capacity.MaxMedicine);
+        player.Rides = Math.Min(player.Rides, capacity.MaxRides);
 
         var overSafe = player.Cash - capacity.MaxCash;
         if (overSafe > 0)
@@ -635,6 +650,7 @@ public sealed record HideoutCapacity(
     int MaxPimps,
     int MaxHoes,
     int MaxThugs,
+    int MaxRides,
     long MaxCash,
     int MaxCondoms,
     int MaxBeer,
@@ -642,13 +658,14 @@ public sealed record HideoutCapacity(
     int MaxWeed,
     int MaxCoke,
     int MaxMoonshine,
-    int MaxCut);
+    int MaxCut,
+    int MaxMedicine);
 
 /// <summary>The stock a player held before an action, used as the floor for grandfathered amounts.</summary>
-public sealed record StockLevels(long Cash, int Condoms, int Beer, int Weapons, int Weed, int Coke)
+public sealed record StockLevels(long Cash, int Condoms, int Beer, int Weapons, int Weed, int Coke, int Medicine)
 {
     public static StockLevels From(Player player)
-        => new(player.Cash, player.Condoms, player.Beer, player.Weapons, player.Weed, player.Coke);
+        => new(player.Cash, player.Condoms, player.Beer, player.Weapons, player.Weed, player.Coke, player.Medicine);
 }
 
 public sealed record StorageOverflow(
@@ -657,9 +674,10 @@ public sealed record StorageOverflow(
     int BeerLost,
     int WeaponsLost,
     int WeedLost,
-    int CokeLost)
+    int CokeLost,
+    int MedicineLost)
 {
-    public bool Any => CashBanked > 0 || CondomsLost > 0 || BeerLost > 0 || WeaponsLost > 0 || WeedLost > 0 || CokeLost > 0;
+    public bool Any => CashBanked > 0 || CondomsLost > 0 || BeerLost > 0 || WeaponsLost > 0 || WeedLost > 0 || CokeLost > 0 || MedicineLost > 0;
 
     /// <summary>A sentence to append to an action summary, or empty when nothing overflowed.</summary>
     public string Describe()
@@ -674,6 +692,7 @@ public sealed record StorageOverflow(
         if (WeaponsLost > 0) lost.Add($"{WeaponsLost:N0} weapons");
         if (WeedLost > 0) lost.Add($"{WeedLost:N0} weed");
         if (CokeLost > 0) lost.Add($"{CokeLost:N0} coke");
+        if (MedicineLost > 0) lost.Add($"{MedicineLost:N0} medicine");
         if (lost.Count > 0)
             sentences.Add($"Storage overflowed and you lost {string.Join(", ", lost)}.");
 

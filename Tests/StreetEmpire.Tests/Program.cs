@@ -74,6 +74,7 @@ var tests = new (string Name, Action Test)[]
     ("every town has ground, a price and a name of its own", EveryCityIsRealAndDistinct),
     ("a watchful town notices the same operation sooner", CityRiskReachesTheDailyLoop),
     ("a buyer with a deadline pays over the counter", ContractsAreDemandWithAShape),
+    ("an order goes in as fast as the room allows", AnOrderGoesInAsFastAsTheRoomAllows),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
     ("a mule run settles three ways and never twice", MuleRunsSettleThreeWays),
@@ -2282,22 +2283,90 @@ static void ContractsAreDemandWithAShape()
     var seller = new Player { City = "Las Vegas", Coke = 50, CokePurity = 0.9, Cash = 0 };
 
     // Every refusal is a real one, against the same stock the rest of the game moves.
-    AssertRuleError(() => service.Fill(order, new Player { City = "Las Vegas", Coke = 5 }, Landing()), "and you have 5");
-    AssertRuleError(() => service.Fill(order, new Player { City = "Las Vegas", Coke = 50, CokePurity = 0.3 }, Landing()),
+    AssertRuleError(() => service.Deliver(order, new Player { City = "Las Vegas", Coke = 0 }, Landing()), "no coke");
+    AssertRuleError(() => service.Deliver(order, new Player { City = "Las Vegas", Coke = 50, CokePurity = 0.3 }, Landing()),
         "at least 60% pure");
-    AssertRuleError(() => service.Fill(order, new Player { City = "Detroit", Coke = 50, CokePurity = 0.9 }, Landing()),
+    AssertRuleError(() => service.Deliver(order, new Player { City = "Detroit", Coke = 50, CokePurity = 0.9 }, Landing()),
         "You have to be there");
+    // Asking to hand over more than is held is refused rather than quietly reduced.
+    AssertRuleError(() => service.Deliver(order, new Player { City = "Las Vegas", Coke = 5, CokePurity = 0.9 }, Landing(), 9),
+        "and you have 5");
 
-    var fill = service.Fill(order, seller, Landing());
+    var fill = service.Deliver(order, seller, Landing());
     AssertEqual(6_000L, seller.Cash);
     AssertEqual(30, seller.Coke);
     AssertEqual(1_500L, fill.Premium);
+    AssertTrue(fill.Completed, "handing over the whole order at once still finishes it");
     // Selling a share of a blend leaves the blend alone, exactly as selling flat does.
     AssertEqual(0.9, seller.CokePurity);
 
     // Filled once, and then it is gone rather than a repeatable source of money.
     AssertTrue(!order.IsOpen(Landing()), "a filled order is closed");
-    AssertRuleError(() => service.Fill(order, seller, Landing()), "already gone");
+    AssertRuleError(() => service.Deliver(order, seller, Landing()), "already gone");
+}
+
+// The rooms this order is aimed at cannot hold it. A first storage room holds five weapons and ten of
+// coke against orders that run to sixty, so insisting on one movement made most of the board
+// unfillable for exactly the players it was meant to give something to aim at.
+static void AnOrderGoesInAsFastAsTheRoomAllows()
+{
+    var options = Resolve(new GameOptions());
+    var service = CreateContracts(options);
+
+    Contract Order() => new()
+    {
+        City = "Las Vegas",
+        Buyer = "The Sands Room",
+        Good = "coke",
+        Quantity = 20,
+        PricePerUnit = 300,
+        ListPricePerUnit = 225,
+        ExpiresAtUtc = Landing().AddHours(4)
+    };
+
+    // A room that holds ten works a twenty order in two trips.
+    var order = Order();
+    var small = new Player { Id = Guid.NewGuid(), City = "Las Vegas", Coke = 10, Cash = 0 };
+
+    var first = service.Deliver(order, small, Landing());
+    AssertEqual(10, first.Delivered);
+    AssertTrue(!first.Completed, "half an order is not a finished one");
+    // Paid the town's ordinary rate, and not a penny of the premium yet.
+    AssertEqual(2_250L, small.Cash);
+    AssertEqual(0L, first.Premium);
+    AssertEqual(10, order.Remaining);
+    AssertEqual(0, small.Coke);
+
+    small.Coke = 10;
+    var second = service.Deliver(order, small, Landing());
+    AssertTrue(second.Completed, "the last unit finishes it");
+    AssertEqual(0, order.Remaining);
+    // The premium is never split, so two trips pay exactly what one would have.
+    AssertEqual(1_500L, second.Premium);
+    AssertEqual(6_000L, small.Cash);
+    AssertEqual(Order().Payout, small.Cash);
+
+    // Stopping half way leaves a player exactly where selling flat would have: the premium is what
+    // finishing buys, so instalments are never free money.
+    var abandoned = Order();
+    var quitter = new Player { Id = Guid.NewGuid(), City = "Las Vegas", Coke = 8, Cash = 0 };
+    service.Deliver(abandoned, quitter, Landing());
+    AssertEqual(8 * 225L, quitter.Cash);
+
+    // An order somebody has started is theirs. Without this the player who worked hardest and arrived
+    // last would simply have wasted the goods.
+    var rival = new Player { Id = Guid.NewGuid(), City = "Las Vegas", Coke = 20 };
+    AssertRuleError(() => service.Deliver(abandoned, rival, Landing()), "Somebody else");
+    AssertEqual(20, rival.Coke);
+
+    // And the buyer never takes more than they asked for.
+    var nearly = Order();
+    var seller = new Player { Id = Guid.NewGuid(), City = "Las Vegas", Coke = 60 };
+    service.Deliver(nearly, seller, Landing(), 18);
+    AssertRuleError(() => service.Deliver(nearly, seller, Landing(), 5), "only still want 2");
+    service.Deliver(nearly, seller, Landing());
+    AssertEqual(20, nearly.DeliveredQuantity);
+    AssertEqual(40, seller.Coke);
 }
 
 static ContractService CreateContracts(GameOptions options)
@@ -3743,6 +3812,17 @@ static void DefenceAlertsNameTheStrike()
         seen);
     AssertTrue(treated.HeldTheHouse, "their medicine held");
     AssertTrue(treated.Headline.Contains("medicine"), $"and the alert says so: {treated.Headline}");
+
+    // The successful infest was the one headline in this family nothing covered, and the one that had
+    // gone wrong: it said somebody "put something through your house", which names neither what was
+    // done nor what it was done to. A defender's first line has to stand on its own.
+    var infested = DefenceAlerts.Describe(
+        new CombatLog { Attacker = attacker, Method = AttackMethods.Infest, Outcome = "Victory", DefenderHoesLost = 5, CreatedAtUtc = seen.AddMinutes(1) },
+        seen);
+    AssertTrue(!infested.HeldTheHouse, "the medicine did not hold");
+    AssertTrue(infested.Headline.Contains("poisoned"), $"a poisoning says so plainly: {infested.Headline}");
+    AssertTrue(!infested.Headline.Contains("something"), $"rather than hinting at it: {infested.Headline}");
+    AssertTrue(infested.Detail.Contains("5 hoe(s)"), $"and the house is told what it cost: {infested.Detail}");
 
     // Hoes were missing from the loss list even before the strikes existed, which understated every
     // raid that took any. Two of the four strikes take nothing else.

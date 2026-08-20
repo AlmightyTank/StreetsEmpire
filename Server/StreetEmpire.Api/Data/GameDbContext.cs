@@ -132,6 +132,12 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.FilledById)
                 .OnDelete(DeleteBehavior.SetNull);
+            // A claim outlives its claimant too, and the order simply frees up: SetNull hands a
+            // half-delivered order back to the town rather than leaving it locked to a deleted player.
+            entity.HasOne(x => x.ClaimedBy)
+                .WithMany()
+                .HasForeignKey(x => x.ClaimedById)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Territory>(entity =>

@@ -57,7 +57,7 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
                 AttackMethods.Infest,
                 "Infest their hoes",
                 strikes.Infest.TurnCost,
-                "Put something through their house. Their medicine treats who it can; the rest are lost.",
+                "Poison their house. Their medicine treats who it can; the rest are lost.",
                 null),
             new AttackMethodResponse(
                 AttackMethods.Poach,

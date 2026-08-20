@@ -61,6 +61,14 @@ export type Contract = {
   minimumPurityPercent?: number | null
   minutesRemaining: number
   held: number
+  /** How much is already in, how much is still wanted, and what finishing pays on top. */
+  delivered: number
+  remaining: number
+  completionBonus: number
+  /** How much of the remainder you could hand over right now. */
+  canDeliverNow: number
+  /** True once you have started this one, so nobody else can. */
+  yours: boolean
   blockedReason?: string | null
 }
 export type ContractBoard = { city: string, contracts: Contract[] }
@@ -929,8 +937,12 @@ export const api = {
     request<ActionResult>('/api/game/cut', { method: 'POST', body: JSON.stringify({ turns, product: 'coke' }) }),
   mules: () => request<MuleBoard>('/api/game/mules'),
   contracts: () => request<ContractBoard>('/api/game/contracts'),
-  fillContract: (id: number) =>
-    request<ActionResult>(`/api/game/contracts/${id}/fill`, { method: 'POST' }),
+  /** Hands over part of an order, or as much as will go when no amount is given. */
+  fillContract: (id: number, quantity?: number) =>
+    request<ActionResult>(`/api/game/contracts/${id}/fill`, {
+      method: 'POST',
+      body: JSON.stringify({ quantity: quantity ?? null }),
+    }),
   muleQuote: (city: string, good: string, hoes: number, cash: number) =>
     request<MuleQuote>('/api/game/mules/quote', { method: 'POST', body: JSON.stringify({ city, good, hoes, cash }) }),
   launchMule: (city: string, good: string, hoes: number, cash: number, pimpId: number) =>

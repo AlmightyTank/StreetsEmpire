@@ -657,9 +657,20 @@ public sealed record ContractResponse(
     int? MinimumPurityPercent,
     int MinutesRemaining,
     int Held,
+    /// <summary>How much is already in, how much the buyer still wants, and what finishing pays.</summary>
+    int Delivered,
+    int Remaining,
+    long CompletionBonus,
+    /// <summary>How much of the remainder this player could hand over right now.</summary>
+    int CanDeliverNow,
+    /// <summary>True when the player has started this one, so the board can say so.</summary>
+    bool Yours,
     string? BlockedReason);
 
 public sealed record ContractBoardResponse(string City, IReadOnlyList<ContractResponse> Contracts);
+
+/// <summary>How much of an order to hand over. Null means as much as will go.</summary>
+public sealed record DeliverContractRequest(int? Quantity);
 
 public sealed record HideoutResponse(
     string TierName,

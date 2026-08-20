@@ -1328,9 +1328,34 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 
   /* Room for the bar, so the last row of a page is never sitting underneath it. */
   .app-main { padding: 18px 14px calc(78px + env(safe-area-inset-bottom)); }
-  .command-header { align-items: stretch; flex-direction: column; }
-  .player-plate { min-width: 0; justify-items: start; }
-  .player-plate span { text-align: left; }
+  /*
+    Who you are and what is waiting for you sit to the right of the page title rather than stacked
+    underneath it. Stacking cost three rows of height before any of the game appeared, on the screen
+    with the least height to spare. To fit on one line the plate gives up its border and padding -
+    two right-aligned lines read perfectly well without a box drawn round them - and the title takes
+    the squeeze rather than the right-hand side, because a truncated page name is still legible and a
+    truncated player name is not.
+  */
+  .command-header { align-items: center; flex-direction: row; gap: var(--space-2); }
+  .command-header > div:first-child { min-width: 0; flex: 1 1 auto; }
+  .command-header > div:first-child span,
+  .command-header > div:first-child h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .command-header h1 { font-size: 1.45rem; }
+  .header-right { flex: 0 0 auto; align-items: center; }
+  .player-plate {
+    min-width: 0;
+    justify-items: end;
+    border: 0;
+    background: none;
+    padding: 0;
+  }
+  .player-plate strong, .player-plate span {
+    max-width: 124px;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .page-grid, .overview-grid, .overview-layout, .two-column, .market-page { grid-template-columns: 1fr; }
   /*
     These were a sideways scroller, which put cash and heat - the two numbers every decision in the
@@ -1662,8 +1687,22 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .alert-row small { color: #6f6862; font-size: var(--text-xs); }
 
 @media (max-width: 700px) {
-  .header-right { flex-direction: column; align-items: stretch; }
-  .alert-bell .bell { justify-content: space-between; padding: var(--space-2) var(--space-3); }
+  /* Still a row, only a tighter one - the badge carries the count, so the label can afford less room. */
+  .header-right { flex-direction: row; align-items: center; }
+  .alert-bell .bell { gap: var(--space-1); padding: 0 var(--space-2); font-size: var(--text-sm); }
+}
+
+@media (max-width: 760px) {
+  /*
+    The panel hangs off its button's right edge, which was the screen's right edge back when the bell
+    was a full-width row of its own. Now that the bell sits inboard of the name, the same rule threw
+    the panel 77px off the left of the screen. Handing the positioning job to the header means the
+    panel spans the content width and lines up with everything else on the page, rather than being
+    pinned to a button whose position depends on how long somebody's name happens to be.
+  */
+  .command-header { position: relative; }
+  .alert-bell { position: static; }
+  .alert-panel { top: calc(100% + var(--space-1)); right: 0; left: 0; width: auto; max-height: 60vh; }
 }
 
 /*
@@ -1695,3 +1734,14 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
   900 was loaded. Naming the weight stops it compounding with wherever it happens to be nested.
 */
 b, strong { font-weight: var(--weight-bold); }
+
+/* How much of an order is already in, so progress is visible without reading the numbers. */
+.contract-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+  margin-top: var(--space-1);
+}
+.contract-progress span { display: block; height: 100%; background: var(--gold); }
+.tag.yours { background: var(--gold-deep); color: var(--gold); }

@@ -6,6 +6,23 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 0.2.5 is in progress, and is about the early game.
 
+### An order you had no room to carry
+
+Contracts asked for between fifteen and sixty units and would only take the whole amount in one
+movement. A first storage room holds five weapons, ten of coke and twenty-five of weed - so a new
+player could not fill a single weapons order at any size, and most coke orders stayed impossible until
+the fourth storage upgrade. The board was aimed at players who could not reach it.
+
+Goods go in a bit at a time now, and the buyer keeps a tally. What makes that more than a convenience
+is where the money sits: **a delivery pays the town's ordinary rate the moment it is made, and the
+premium arrives whole when the last unit goes in.** Stopping half way leaves you exactly where selling
+those goods flat would have, so instalments are never free money - the premium is what finishing buys.
+And because it is never split, two trips pay precisely what one trip would have.
+
+The first delivery claims the order. Without that, two people part-fill the same one and whoever worked
+hardest and arrived last has simply wasted the goods. The deadline still frees anything nobody
+finishes, and rivals respect a claim the same way players do.
+
 ### The design was partly fictional
 
 Two things the stylesheet claimed were not happening. It had asked for Inter since the beginning and

@@ -4028,8 +4028,8 @@ function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: 
 
   if (!board || board.contracts.length === 0) return null
 
-  const fill = async (id: number) => {
-    await act(() => api.fillContract(id))
+  const fill = async (id: number, quantity?: number) => {
+    await act(() => api.fillContract(id, quantity))
     await load()
   }
 
@@ -4043,27 +4043,40 @@ function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: 
       {board.contracts.map(c => {
         const hours = Math.floor(c.minutesRemaining / 60)
         const left = hours >= 1 ? `${hours}h left` : `${c.minutesRemaining}m left`
+        const started = c.delivered > 0
+        const finishes = c.canDeliverNow >= c.remaining && c.canDeliverNow > 0
         return <div className={c.blockedReason ? 'room-row' : 'room-row ready'} key={c.id}>
           <div className="room-copy">
-            <strong>{c.buyer}</strong>
+            <strong>{c.buyer}{c.yours && <span className="tag yours">Yours</span>}</strong>
             <span>
               Wants {number.format(c.quantity)} {c.good}
               {c.minimumPurityPercent ? `, at least ${c.minimumPurityPercent}% pure` : ''}
               {' '}at {money.format(c.pricePerUnit)} each, against {money.format(c.listPricePerUnit)} over the counter.
             </span>
             <small>
-              {money.format(c.payout)} the lot, {money.format(c.premiumOverFlat)} more than selling it flat - {left}
+              {/* What a delivery pays now, and what is still waiting on the last of it - the premium
+                  never splits, so it is worth naming separately from the running rate. */}
+              {started
+                ? `${number.format(c.delivered)} in, ${number.format(c.remaining)} to go - ${money.format(c.completionBonus)} lands when it is finished`
+                : `${money.format(c.payout)} the lot, ${money.format(c.completionBonus)} more than selling it flat`}
+              {' - '}{left}
               {c.blockedReason ? ` - ${c.blockedReason}` : ''}
             </small>
+            {started && <div className="contract-progress">
+              <span style={{ width: `${Math.round((c.delivered / c.quantity) * 100)}%` }} />
+            </div>}
           </div>
-          <em>{number.format(c.held)}/{number.format(c.quantity)}</em>
+          <em>{number.format(c.held)} held</em>
           <div className="territory-actions">
             <button
               className="primary compact"
-              disabled={busy || c.blockedReason !== null}
+              disabled={busy || c.blockedReason !== null || c.canDeliverNow <= 0}
               onClick={() => void fill(c.id)}
             >
-              Deliver
+              {/* One button that says what it will actually do, rather than an amount box the player
+                  has to work out for themselves. Handing over everything that fits is the move in
+                  almost every case, because the room is the constraint the order is fighting. */}
+              {finishes ? 'Finish it' : `Run ${number.format(c.canDeliverNow)}`}
             </button>
           </div>
         </div>

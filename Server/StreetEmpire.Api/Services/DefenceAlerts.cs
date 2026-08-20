@@ -30,8 +30,12 @@ public static class DefenceAlerts
                 ? ($"{attacker} drove off with your rides.", false)
                 : ($"Your crew ran {attacker} out of your garage.", true),
             AttackMethods.Infest => log.Outcome == "Victory"
-                ? ($"{attacker} put something through your house.", false)
-                : ($"{attacker} tried to infest your house. Your medicine held.", true),
+                // Named rather than hinted at. "Put something through your house" is what this used to
+                // say, borrowed from the attack menu - but there a sentence about medicine follows it
+                // straight away and makes the euphemism land. Alone at the top of an alert it named
+                // neither what was done nor what it was done to.
+                ? ($"{attacker} poisoned your house.", false)
+                : ($"{attacker} tried to poison your house. Your medicine held.", true),
             AttackMethods.Poach => log.Outcome == "Victory"
                 ? ($"{attacker} bought your hoes away.", false)
                 : ($"{attacker} came for your hoes and nobody went with them.", true),

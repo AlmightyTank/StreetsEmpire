@@ -69,13 +69,23 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
     }
 
     /// <summary>
-    /// Hands the goods over and takes the money.
+    /// Hands over as much of an order as the player can manage, and takes the money for it.
     ///
-    /// Every refusal is a real one: this is the same stock the rest of the game moves, so a contract
-    /// cannot be filled with product the player does not have, or with coke too weak for a buyer who
-    /// asked for strength.
+    /// Deliveries pay the town's ordinary price the moment they are made, and the premium arrives
+    /// whole when the last unit goes in. That is what lets a small room work a big order without the
+    /// instalments becoming free money: stopping half way leaves the player exactly where selling the
+    /// same goods flat would have, so the only thing a part-filled order costs is the chance at the
+    /// premium, and the only way to earn the premium is to finish.
+    ///
+    /// Every refusal is a real one: this is the same stock the rest of the game moves, so an order
+    /// cannot be fed product the player does not have, or coke too weak for a buyer who asked for
+    /// strength.
     /// </summary>
-    public ContractFill Fill(Contract contract, Player player, DateTime nowUtc)
+    /// <param name="quantity">
+    /// How much to hand over, or null for as much as will go. Asking for more than is held is refused
+    /// rather than quietly reduced, because a player who typed a number meant it.
+    /// </param>
+    public ContractFill Deliver(Contract contract, Player player, DateTime nowUtc, int? quantity = null)
     {
         TravelGate.EnsureLanded(player);
 
@@ -83,12 +93,16 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
             throw new GameRuleException("That job is already gone.");
         if (!string.Equals(contract.City, player.City, StringComparison.OrdinalIgnoreCase))
             throw new GameRuleException($"That buyer is in {contract.City}. You have to be there.");
+        if (!contract.CanBeWorkedBy(player.Id))
+            throw new GameRuleException("Somebody else is already filling that one.");
 
+        var label = TradeGoods.Label(contract.Good).ToLowerInvariant();
         var held = TradeGoods.Held(player, contract.Good);
-        if (held < contract.Quantity)
-            throw new GameRuleException(
-                $"They want {contract.Quantity:N0} {TradeGoods.Label(contract.Good).ToLowerInvariant()} and you have {held:N0}.");
+        if (held <= 0)
+            throw new GameRuleException($"You have no {label} to hand over.");
 
+        // Purity is a property of the pile rather than of the units leaving it, so it is checked on
+        // every delivery: a buyer who accepted a strong first instalment has not agreed to a weak one.
         if (contract.MinimumPurityPercent is { } floor)
         {
             var purity = (int)Math.Round(player.CokePurity * 100);
@@ -96,19 +110,39 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
                 throw new GameRuleException($"They want it at least {floor}% pure. Yours is {purity}%.");
         }
 
-        TradeGoods.Add(player, contract.Good, -contract.Quantity);
-        player.Cash += contract.Payout;
-        contract.FilledById = player.Id;
-        contract.FilledBy = player;
-        contract.FilledAtUtc = nowUtc;
+        var wanted = quantity ?? Math.Min(held, contract.Remaining);
+        if (wanted <= 0)
+            throw new GameRuleException("Say how much you are handing over.");
+        if (wanted > held)
+            throw new GameRuleException($"You are handing over {wanted:N0} {label} and you have {held:N0}.");
+        if (wanted > contract.Remaining)
+            throw new GameRuleException($"They only still want {contract.Remaining:N0} {label}.");
 
-        var premium = contract.Payout - contract.FlatValue;
-        return new ContractFill(
-            contract,
-            contract.Payout,
-            premium,
-            $"Filled {contract.Buyer}'s order: {contract.Quantity:N0} {contract.Good} for {contract.Payout:C0}"
-            + (premium > 0 ? $", {premium:C0} more than selling it flat." : "."));
+        TradeGoods.Add(player, contract.Good, -wanted);
+        contract.DeliveredQuantity += wanted;
+        contract.ClaimedById ??= player.Id;
+
+        var paid = wanted * contract.ListPricePerUnit;
+        var completed = contract.Remaining == 0;
+        if (completed)
+        {
+            paid += contract.CompletionBonus;
+            contract.FilledById = player.Id;
+            contract.FilledBy = player;
+            contract.FilledAtUtc = nowUtc;
+        }
+
+        player.Cash += paid;
+
+        var summary = completed
+            ? $"Finished {contract.Buyer}'s order: {contract.Quantity:N0} {contract.Good} for {contract.Payout:C0}"
+              + (contract.CompletionBonus > 0
+                  ? $", {contract.CompletionBonus:C0} more than selling it flat."
+                  : ".")
+            : $"Ran {wanted:N0} {contract.Good} to {contract.Buyer} for {paid:C0}. "
+              + $"{contract.Remaining:N0} to go, and {contract.CompletionBonus:C0} waiting on the last of it.";
+
+        return new ContractFill(contract, paid, completed ? contract.CompletionBonus : 0, wanted, completed, summary);
     }
 
     /// <summary>
@@ -177,5 +211,11 @@ public sealed class ContractService(GameDbContext db, IOptionsSnapshot<GameOptio
     }
 }
 
-/// <summary>What filling an order actually paid, and what it beat.</summary>
-public sealed record ContractFill(Contract Contract, long Paid, long Premium, string Summary);
+/// <summary>What a delivery actually paid, how much went in, and whether that was the last of it.</summary>
+public sealed record ContractFill(
+    Contract Contract,
+    long Paid,
+    long Premium,
+    int Delivered,
+    bool Completed,
+    string Summary);

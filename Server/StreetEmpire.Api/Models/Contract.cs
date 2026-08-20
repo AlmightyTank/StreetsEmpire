@@ -41,14 +41,46 @@ public sealed class Contract
     public DateTime PostedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime ExpiresAtUtc { get; set; }
 
-    /// <summary>Set when somebody fills it. A contract is filled once and then it is gone.</summary>
+    /// <summary>
+    /// How much of the order has been handed over so far.
+    ///
+    /// Orders run to sixty units and a first storage room holds five weapons or ten of coke, so
+    /// insisting on the whole amount in one movement made most of the board unfillable for exactly the
+    /// players it was meant to give something to aim at. Goods go in a bit at a time and the buyer
+    /// keeps a tally.
+    /// </summary>
+    public int DeliveredQuantity { get; set; }
+
+    /// <summary>
+    /// Who is filling it. Set by the first delivery, because an order two people are part-filling is
+    /// one where somebody's goods are going to be wasted - and it would be whoever worked hardest and
+    /// arrived last. A claim is not forever: the deadline frees an order nobody finishes.
+    /// </summary>
+    public Guid? ClaimedById { get; set; }
+    public Player? ClaimedBy { get; set; }
+
+    /// <summary>Set when the last unit goes in. A contract is completed once and then it is gone.</summary>
     public Guid? FilledById { get; set; }
     public Player? FilledBy { get; set; }
     public DateTime? FilledAtUtc { get; set; }
 
     public bool IsOpen(DateTime nowUtc) => FilledAtUtc is null && ExpiresAtUtc > nowUtc;
 
+    /// <summary>How much the buyer is still waiting on.</summary>
+    public int Remaining => Math.Max(0, Quantity - DeliveredQuantity);
+
+    /// <summary>Whether this player may put goods into it - unclaimed, or already theirs.</summary>
+    public bool CanBeWorkedBy(Guid playerId) => ClaimedById is null || ClaimedById == playerId;
+
     /// <summary>What the whole job pays, and what the same goods would fetch sold flat.</summary>
     public long Payout => Quantity * PricePerUnit;
     public long FlatValue => Quantity * ListPricePerUnit;
+
+    /// <summary>
+    /// The part of the payout that is not simply the market price, handed over when the order is
+    /// completed. Deliveries pay the town's ordinary rate as they happen, so a part-filled order is
+    /// worth exactly what selling those goods flat would have been: the premium is what finishing buys,
+    /// and the whole of it survives being delivered in pieces because it is never split.
+    /// </summary>
+    public long CompletionBonus => Payout - FlatValue;
 }

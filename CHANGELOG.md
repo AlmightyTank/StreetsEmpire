@@ -3,11 +3,37 @@
 ## 0.2.5 (in progress)
 
 ### Fixed
+- A defender told they had been infested read "Somebody put something through your house", which names
+  neither what was done nor what it was done to. It is the phrasing the attack menu uses, but there a
+  sentence about medicine and who it can treat follows immediately and makes the euphemism land; alone
+  at the top of an alert it says nothing. It says poisoned now, and so does the menu that lends it the
+  words. It was also the only headline in that family with no test behind it, which is how it got out.
 - The raw action breakdown is admin-only. Every action popped a table of internal keys and unrounded
   figures at every player - "Item Key / condoms", "Unit Price / $10" - which is a debugging aid and
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Changed
+- **Orders can be filled a bit at a time.** They run to sixty units and a first storage room holds five
+  weapons or ten of coke, so insisting on the whole amount in one movement made most of the board
+  unfillable for exactly the players it was meant to give something to aim at - a new player could not
+  take a single weapons order at any size.
+- **Deliveries pay the town's ordinary rate as they happen; the premium arrives whole at the end.** That
+  is what stops instalments becoming free money: stopping half way leaves a player exactly where selling
+  the same goods flat would have, so a part-filled order costs nothing but the chance at the premium,
+  and the only way to earn the premium is to finish. Because it is never split, two trips pay precisely
+  what one would have.
+- **The first delivery claims the order.** Without that, two people part-fill the same one and whoever
+  worked hardest and arrived last simply wastes the goods. A claim is not forever - the deadline frees
+  an order nobody finishes - and rivals respect it the same way players do.
+- Purity is re-checked on every delivery rather than only at the start, because it is a property of the
+  pile rather than of the units leaving it: a buyer who took a strong first instalment has not agreed
+  to a weak second one.
+- Rivals work orders in instalments too, so they go after ones they can start rather than only ones
+  they could finish in a single movement.
+- Asking to hand over more than is held is refused rather than quietly reduced, on the grounds that a
+  player who typed a number meant it. Handing over more than the buyer still wants is refused the same
+  way, and the button offers the amount that will actually go.
+
 - **The interface works on a phone.** The layout already collapsed to one column at 760px, but the
   navigation, the status numbers and every panel added since that breakpoint was last revisited did
   not, so the parts that mattered most were the parts that had drifted furthest.
@@ -17,6 +43,15 @@
   destinations now hold a permanent slot with the rest a tap away behind More, which is also where a
   thumb can actually reach. More carries the name of wherever you are when you are somewhere it holds,
   so the bar never shows a page you cannot find yourself on.
+- **Your name and your alerts sit to the right of the page title** rather than stacked underneath it,
+  where they had been costing three rows of height before any of the game appeared - on the screen with
+  the least height to spare. The header is 52px now. To fit on one line the name plate gives up its
+  border and padding, and the title takes the squeeze rather than the right-hand side: a truncated page
+  name is still legible, a truncated player name is not.
+- Moving the bell inboard broke the alert panel that hangs off it, which had been anchored to the
+  button's right edge back when that edge was the screen's. It is anchored to the header now, so it
+  spans the content width and lines up with the rest of the page rather than depending on how long
+  somebody's name happens to be.
 - **The status strip no longer hides your money.** Seven cards in a horizontal scroller put cash and
   heat - the two numbers every decision in the game is weighed against - past the right edge, behind a
   gesture nothing advertised. They wrap into two columns and all seven are on screen at once.

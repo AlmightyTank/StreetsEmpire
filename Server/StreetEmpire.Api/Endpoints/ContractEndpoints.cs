@@ -32,6 +32,7 @@ internal static class ContractEndpoints
 
         app.MapPost("/api/game/contracts/{id:long}/fill", async (
             long id,
+            DeliverContractRequest? request,
             CurrentPlayerService current,
             GameDbContext db,
             PlayerClock clock,
@@ -50,7 +51,7 @@ internal static class ContractEndpoints
             var before = Snapshot(player);
             try
             {
-                var fill = contracts.Fill(contract, player, now);
+                var fill = contracts.Deliver(contract, player, now, request?.Quantity);
                 AddLog(db, player, before, "CONTRACT", 0, fill.Summary, now);
                 await db.SaveChangesAsync(ct);
 
@@ -58,7 +59,8 @@ internal static class ContractEndpoints
                 {
                     ["buyer"] = contract.Buyer,
                     ["good"] = contract.Good,
-                    ["quantity"] = contract.Quantity,
+                    ["handedOver"] = fill.Delivered,
+                    ["stillWanted"] = contract.Remaining,
                     ["pricePerUnit"] = contract.PricePerUnit,
                     ["paid"] = fill.Paid,
                     ["premiumOverFlat"] = fill.Premium
@@ -77,11 +79,17 @@ internal static class ContractEndpoints
         // button that looks live and then refuses is worse than one that says what is missing.
         var held = TradeGoods.Held(player, contract.Good);
         var purity = (int)Math.Round(player.CokePurity * 100);
-        var blocked = held < contract.Quantity
-            ? $"You have {held:N0} of {contract.Quantity:N0}"
+        var canDeliverNow = Math.Min(held, contract.Remaining);
+        // An order only has to be startable now, not finishable now - that is the whole point of
+        // handing it over in instalments. What blocks it is having nothing to put in, or somebody
+        // else already working it.
+        var blocked = !contract.CanBeWorkedBy(player.Id)
+            ? "Somebody else is filling this one"
             : contract.MinimumPurityPercent is { } floor && purity < floor
                 ? $"Yours is {purity}% pure, they want {floor}%"
-                : null;
+                : held <= 0
+                    ? $"You have no {TradeGoods.Label(contract.Good).ToLowerInvariant()}"
+                    : null;
 
         return new ContractResponse(
             contract.Id,
@@ -95,6 +103,11 @@ internal static class ContractEndpoints
             contract.MinimumPurityPercent,
             Math.Max(0, (int)Math.Ceiling((contract.ExpiresAtUtc - nowUtc).TotalMinutes)),
             held,
+            contract.DeliveredQuantity,
+            contract.Remaining,
+            contract.CompletionBonus,
+            canDeliverNow,
+            contract.ClaimedById == player.Id,
             blocked);
     }
 }

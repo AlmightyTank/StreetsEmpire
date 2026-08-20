@@ -350,7 +350,11 @@ public sealed class BotSimulationService(
         // Best premium first, and only ones they can actually satisfy. Filtered here rather than by
         // catching the refusals, so a rival is not walking through exceptions to find its own stock.
         var fillable = open
-            .Where(x => TradeGoods.Held(bot, x.Good) >= x.Quantity)
+            // A rival works an order in instalments the same way a player does, so it goes after ones
+            // it can start rather than only ones it could finish in a single movement. It still will
+            // not touch an order somebody else has begun.
+            .Where(x => x.CanBeWorkedBy(bot.Id))
+            .Where(x => TradeGoods.Held(bot, x.Good) > 0)
             .Where(x => x.MinimumPurityPercent is not { } floor || purity >= floor)
             .OrderByDescending(x => x.Payout - x.FlatValue)
             .ToList();
@@ -359,7 +363,7 @@ public sealed class BotSimulationService(
         {
             var filled = TryAction(bot, "CONTRACT", 0, nowUtc, () =>
             {
-                var fill = contracts.Fill(contract, bot, nowUtc);
+                var fill = contracts.Deliver(contract, bot, nowUtc);
                 return new ActionResultResponse(fill.Summary, bot.Turns, new Dictionary<string, object?>());
             });
             if (filled > 0) return filled;

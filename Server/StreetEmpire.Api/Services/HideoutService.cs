@@ -222,6 +222,42 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         return level <= 0 ? 0 : Level(levels, level, x => x.Level)?.PassivePerHour ?? 0;
     }
 
+
+    /// <summary>
+    /// Whether the store rather than the building is what is holding a role down.
+    ///
+    /// Worth knowing because the two are fixed by completely different purchases, and a player told
+    /// the wrong one will buy the wrong thing: moving to a bigger house to raise a cap the storage
+    /// room is setting is an expensive way to change nothing.
+    /// </summary>
+    public bool StoreCapsCrew(Hideout? hideout, string role)
+    {
+        var config = _options.Hideout;
+        var tier = Level(config.Tiers, hideout?.Tier ?? 1, x => x.Level);
+        var storage = Level(config.Storage, hideout?.StorageLevel ?? 1, x => x.Level);
+        if (tier is null || storage is null) return false;
+
+        return role switch
+        {
+            "hoes" => Supported(storage.Condoms, _options.Morale.TurnsPerCondom) < tier.MaxHoes,
+            "thugs" => Supported(storage.Beer, _options.Morale.TurnsPerBeer) < tier.MaxThugs,
+            // Nothing supplies a pimp, so the building is the only thing that can be the limit.
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// How large a crew a shelf of supplies covers for one full-length action. The exact inverse of
+    /// the upkeep the action charges, floored rather than rounded, because a crew the store can only
+    /// three-quarters feed is a crew the store cannot feed.
+    /// </summary>
+    private int Supported(int shelf, double turnsPerSupply)
+    {
+        if (turnsPerSupply <= 0) return int.MaxValue;
+        var turns = Math.Max(1, _options.MaxActionTurns);
+        return (int)Math.Floor(shelf * turnsPerSupply / turns);
+    }
+
     public HideoutCapacity CapacityFor(Hideout? hideout)
     {
         var config = _options.Hideout;
@@ -232,6 +268,16 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         var safe = Level(config.Safe, hideout?.SafeLevel ?? 1, x => x.Level)
             ?? new SafeLevelOptions { MaxCash = long.MaxValue };
 
+        // A crew is capped by whichever runs out first: the room the building has for them, or the
+        // supplies the store can put behind them for a full action. Hiring past the store was the
+        // game handing a player fifty hoes and four turns of condoms, then charging them morale for
+        // the shortfall every shift - a punishment for taking the hideout page at its word.
+        //
+        // Pimps are not on this list because nothing supplies a pimp. They eat no condoms and drink
+        // no beer, so the building is the only thing that can run out of room for them.
+        var maxHoes = Math.Min(tier.MaxHoes, Supported(storage.Condoms, _options.Morale.TurnsPerCondom));
+        var maxThugs = Math.Min(tier.MaxThugs, Supported(storage.Beer, _options.Morale.TurnsPerBeer));
+
         return new HideoutCapacity(
             tier.Name,
             hideout?.Tier ?? 1,
@@ -240,8 +286,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             hideout?.WeedLabLevel ?? 0,
             hideout?.CokeLabLevel ?? 0,
             tier.MaxPimps,
-            tier.MaxHoes,
-            tier.MaxThugs,
+            maxHoes,
+            maxThugs,
             tier.MaxRides,
             safe.MaxCash,
             storage.Condoms,

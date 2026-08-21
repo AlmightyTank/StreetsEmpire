@@ -33,7 +33,10 @@ public sealed class GameOptions
     {
         var ceiling = Math.Max(1, EarlyGameNetWorthCeiling);
         var boost = Math.Max(1, EarlyGameTurnBoost);
-        var room = Math.Clamp(1 - EconomyService.NetWorthOf(player, this) / (double)ceiling, 0, 1);
+        // Portable wealth, not net worth: a player who spends their first 200,000 on a building is
+        // not established, they are broke with somewhere to live. Tapering on the hideout would take
+        // the beginner's turn boost away as a fee for buying the upgrade the game just recommended.
+        var room = Math.Clamp(1 - EconomyService.PlunderOf(player, this) / (double)ceiling, 0, 1);
         return Math.Max(TurnsPerTick, (int)Math.Round(TurnsPerTick * (1 + (boost - 1) * room)));
     }
 
@@ -711,6 +714,10 @@ public sealed class HideoutOptions
     {
         // Each tier's crew caps are what the storage level it unlocks is sized against, so a full-length
         // action is always exactly supplyable at the top of a tier and never more than that.
+        //
+        // These are what the building has room for. What the crew can actually be is the smaller of this
+        // and what the storage room supplies - see HideoutService.CapacityFor - so a tier's numbers are a
+        // ceiling to work towards rather than a promise made on the day you move in.
         if (Tiers.Count == 0)
             Tiers =
             [
@@ -720,22 +727,27 @@ public sealed class HideoutOptions
                 new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 1_800_000, UpgradeTurns = 120, BuildMinutes = 360 }
             ];
 
-        // Condoms hold a full 20-turn action at the tier's hoe cap (one per 12 turns each), beer the same
-        // for thugs (one per 10), and weapons cover every thug. Weed and coke stay at 2x and 1x the hoe cap.
+        // Every level holds a full 20-turn action for the crew it supports: condoms at one per 12 turns
+        // each, beer at one per 10, weapons covering every thug, and weed and coke at 2x and 1x the hoes.
+        //
+        // The ladder is the crew ladder now, because the store is what decides how big a crew can be. It
+        // used to open at a room that supplied four turns of a crew the building would happily let you
+        // hire - fifty hoes fed by seventeen condoms - which is a room you have outgrown before you have
+        // understood what it was for. It opens at a working crew of 25 and climbs to the biggest house.
         if (Storage.Count == 0)
             Storage =
             [
-                // Level 1 supplies a fifth of a full-length action at the crew caps: 4 turns of both.
-                new StorageLevelOptions { Level = 1, Condoms = 17, Beer = 10, Weapons = 5, Weed = 25, Coke = 10, Moonshine = 10, Cut = 10, Medicine = 4 },
-                // Level 2 supplies exactly half a full-length action: 10 turns of both.
-                new StorageLevelOptions { Level = 2, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, Medicine = 9, UpgradeCost = 15_000 },
-                // Level 3 holds exactly what a full-length action consumes: 84 condoms for 50 hoes at
-                // 12 turns each, 50 beer for 25 thugs at 10. It drains the room dry each time. Its 17
-                // crates of medicine treat all 50 hoes once, at three to a crate.
-                new StorageLevelOptions { Level = 3, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, Medicine = 17, UpgradeCost = 50_000 },
-                new StorageLevelOptions { Level = 4, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, Medicine = 29, UpgradeCost = 150_000 },
-                new StorageLevelOptions { Level = 5, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, Medicine = 44, UpgradeCost = 400_000 },
-                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, Medicine = 67, UpgradeCost = 1_000_000 }
+                // 25 hoes and 12 thugs, a full action each: the smallest crew worth calling a crew.
+                new StorageLevelOptions { Level = 1, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, Medicine = 9 },
+                // 50 and 25, which is everything a Trap House has room for. The building is the ceiling
+                // from here rather than the room, and moving out is the only way up.
+                new StorageLevelOptions { Level = 2, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, Medicine = 17, UpgradeCost = 15_000 },
+                new StorageLevelOptions { Level = 3, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, Medicine = 29, UpgradeCost = 50_000 },
+                new StorageLevelOptions { Level = 4, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, Medicine = 44, UpgradeCost = 150_000 },
+                new StorageLevelOptions { Level = 5, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, Medicine = 67, UpgradeCost = 400_000 },
+                // Nothing above supplies a bigger crew, because no building holds one. What the last
+                // upgrade buys is room for product, which is the only thing left to want.
+                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 600, Coke = 300, Moonshine = 330, Cut = 300, Medicine = 67, UpgradeCost = 1_000_000 }
             ];
 
         if (Safe.Count == 0)

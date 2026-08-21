@@ -1244,7 +1244,13 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
   }, [building?.completesAtUtc])
 
   return <section className="panel wide-panel">
-    <div className="panel-title"><h2>The Building</h2><span>Crew capacity</span></div>
+    <div className="panel-title">
+      <h2>The Building</h2>
+      {/* The one number that used to be missing. A hideout counted for nothing on the board, so the
+          biggest purchase in the game read as money burned; saying what it is worth is how a player
+          can tell that an upgrade cost them nothing but the cash. */}
+      <span>Worth {money.format(hideout.value)} on the board</span>
+    </div>
     {building
       ? <div className="build-progress">
         <strong>Building the {building.name}</strong>
@@ -1252,10 +1258,16 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
       </div>
       : next
         ? <>
+          {/* The building raises the ceiling; the store decides how much of it you can actually use.
+              Saying a move "raises your crew caps" was the same promise the hideout page used to make
+              and could not keep - a player who buys a Warehouse for the hoes and finds the number has
+              not moved has been sold something by their own game. */}
           <p>
-            Moving up to the <strong>{next.name}</strong> raises your crew caps to {number.format(next.maxPimps)} pimps,{' '}
-            {number.format(next.maxHoes)} hoes, and {number.format(next.maxThugs)} thugs, and unlocks the rooms your
-            current building is too small to hold.
+            Moving up to the <strong>{next.name}</strong> raises the ceiling on your crew to{' '}
+            {number.format(next.maxPimps)} pimps, {number.format(next.maxHoes)} hoes and{' '}
+            {number.format(next.maxThugs)} thugs, and unlocks the rooms your current building is too
+            small to hold. Your crew reaches that ceiling as the store grows into it: a room only ever
+            supplies what it can feed for a full shift, and that is the number the caps show.
           </p>
           <div className="room-row">
             <div className="room-copy">

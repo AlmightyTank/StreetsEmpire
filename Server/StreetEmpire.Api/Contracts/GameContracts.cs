@@ -706,6 +706,8 @@ public sealed record HideoutResponse(
     string HeatLabel,
     string HeatDetail,
     string HeatNote,
+    /// <summary>What the building and its rooms are worth on the board: every pound spent on them.</summary>
+    long Value,
     HideoutRoomUpgradeResponse? StorageUpgrade,
     HideoutRoomUpgradeResponse? SafeUpgrade,
     HideoutRoomUpgradeResponse? WeedLabUpgrade,

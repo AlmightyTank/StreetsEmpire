@@ -6,6 +6,86 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 0.2.5 is in progress, and is about the early game.
 
+### Half the config nobody was testing
+
+The tuning lives in two places. GameOptions carries defaults in code, appsettings.json carries values in
+a file, and the file wins wherever it has something to say - `ApplyDefaultsWhereEmpty` only fills a list
+nobody has filled already. Every test in the suite builds its options from the defaults, so every number
+the server actually boots with had never been read by anything.
+
+It had already gone wrong. The storage ladder was rebuilt in code while appsettings went on shipping the
+old one, which left the running game applying the new rule to the old room sizes: a starting player
+capped at ten hoes instead of twenty-five, and worse off than the fifty they had before any of the work
+started. Nothing failed, because nothing was looking.
+
+The suite now loads the server's own appsettings.json and runs the same invariants over it - every crew
+supplyable, every rung reachable, every value in step with the default it restates, across all ten room
+lists by reflection rather than the one that happened to break. It deliberately reads the file in the
+server project rather than the copy the build leaves beside the test binary: the first version of this
+test read the copy, and passed against a stale file while the source said something else.
+
+The other one worth having is smaller and duller. A test that is written but never added to the manifest
+does not fail - it just never runs, and the only symptom is a total that does not go up by one. That
+happened twice in a single sitting here. A test now reads this suite's own source and will not pass
+while a test body sits unregistered.
+
+### The building that counted for nothing
+
+Everything a player owned was on the books - cash, bank, crew, guns, medicine, cars, product, even the
+beer - except the one thing they spent the most on. A fully built hideout represents about 13.4 million
+pounds and net worth could not see a penny of it, so the largest investment in the game made your
+standing worse the moment you made it. Upgrading was a way down the leaderboard.
+
+**A hideout is now worth every pound that built it.** Valued at cost rather than at some fraction, which
+makes an upgrade neutral: the cash goes, a building of the same worth arrives, and the board does not
+move. Buying rooms is not a way up the leaderboard and it is no longer a way down one. A tier under
+construction counts from the moment it is paid for, or a player would sink for the length of the build
+and float back afterwards.
+
+**Fights are weighed on something else: what could actually be carried off.** The anti-farm rules exist
+to stop the strong robbing the weak, and they answer that by putting the two sides on a scale. A
+hideout is the one thing in the game nobody can take, so counting it there would rule a well-built
+player out of fights they can plainly afford, and pull in heavyweights who would turn up to find
+nothing worth the trip. So there are two sums: what you are worth, and what is on the table. Rivals
+choose their targets on the second one, the same as everybody else.
+
+Two other systems turned out to be quietly asking the same question and needed leaving alone. The
+beginner's turn boost fades out as a player reaches 250,000, and on net worth it would have expired the
+day they bought a 200,000 building - charging a new player their starter help as a fee for taking the
+game's own advice. And the shrine caps its demand at half a shelf, so counting a building would have
+pressed every established hideout against that cap at once, and the gods would have asked the same of a
+millionaire as of a man who had just bought a roof. Both measure what a player can lay hands on.
+
+The sums exist twice over, once in memory and once as an expression the database can rank by, so the
+leaderboard is still a single query. There is a test that translates both to SQL and checks the shape
+of what comes out: the ranking sum has to reach the hideout in the database rather than dragging the
+table into memory, and the raid sum must not touch it at all.
+
+### A crew the store could not feed
+
+The hideout offered room for fifty hoes from the first minute. The storage room behind it held
+seventeen condoms, which is four turns of work for that crew out of a twenty-turn shift. The game was
+inviting players into a shortfall and then charging them morale for it every shift they ran - a
+punishment for taking the hideout page at its word.
+
+**A crew is now capped by whichever runs out first: the room the building has for them, or the supplies
+the store can put behind them for a full shift.** Every crew the game allows is a crew it can feed,
+which is the whole promise, and there is a test that walks every building against every room to keep it.
+
+That makes the storage ladder the crew ladder, so it was rebuilt to be one. It opens at 25 hoes and 12
+thugs - the smallest thing worth calling a crew - and climbs a rung at a time to the biggest house in
+the game. The old opening rung, the one that supplied a fifth of an action, is gone; nobody misses a
+room they had outgrown before they understood what it was for. Nothing above the top building supplies
+a bigger crew, because no building holds one, so the last upgrade buys room for product instead.
+
+Pimps are deliberately exempt. Nothing supplies a pimp - they eat no condoms and drink no beer - so the
+building remains the only thing that can run out of room for one.
+
+Two pieces of writing had to change with it, both versions of the same lie. A refusal used to blame the
+building for a ceiling the storage room was setting, which sends a player off to buy a house that will
+not move the number by one. And moving up a tier used to promise it "raises your crew caps"; it raises
+the ceiling, and the store is what walks you up to it.
+
 ### An order you had no room to carry
 
 Contracts asked for between fifteen and sixty units and would only take the whole amount in one

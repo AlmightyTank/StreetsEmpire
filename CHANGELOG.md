@@ -3,6 +3,11 @@
 ## 0.2.5 (in progress)
 
 ### Fixed
+- **The storage ladder the server actually runs on was still the old one.** The rebuilt ladder went into
+  the code defaults, and appsettings.json goes on winning wherever it carries a value, so the running
+  game had the new rule capping crews at the old room sizes: a starting player was held to ten hoes
+  rather than the twenty-five intended, and worse than the fifty they had before any of this began. The
+  tests were green throughout, because every one of them builds its options from the defaults.
 - A defender told they had been infested read "Somebody put something through your house", which names
   neither what was done nor what it was done to. It is the phrasing the attack menu uses, but there a
   sentence about medicine and who it can treat follows immediately and makes the euphemism land; alone
@@ -13,6 +18,51 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Changed
+- **A hideout counts towards net worth, at every pound it cost.** The building was the one thing a
+  player owned that counted for nothing: cash, crew, guns, product and even the beer were on the books
+  while up to 13.4 million pounds of building was invisible. The largest investment in the game made
+  your standing worse the moment you made it, and a player who put a Penthouse over their head dropped
+  down the board for doing it.
+- Valued at cost, which makes an upgrade neutral: cash becomes a building of the same worth and the
+  board does not move. Buying rooms is not a way up the leaderboard, and it is no longer a way down it.
+- A tier being built counts from the moment it is paid for, rather than after it lands. Otherwise a
+  player drops down the board for the length of the build and climbs back afterwards.
+- **Fights are weighed on what could actually be carried off, which is net worth without the building.**
+  The anti-farm rules exist to stop the strong robbing the weak, and a hideout is the one thing nobody
+  can take. Counting it would rule a well-built player out of fights they can plainly afford and drag
+  in heavyweights who would arrive to find nothing worth the trip. Rivals pick targets the same way.
+- Two other places kept measuring what a player can lay hands on rather than what they are worth, for
+  the same reason in different currencies. The beginner's turn boost tapers off at 250,000, and on net
+  worth it would have expired the day somebody bought a 200,000 building - charging a new player their
+  starter help as a fee for the upgrade the game had just recommended. The shrine caps its demand at
+  half a shelf, so counting a building would have pushed every established hideout against that cap at
+  once and had the gods ask the same of a millionaire and of a man who just bought a roof.
+- The hideout page says what the building is worth on the board, because a number that had always been
+  zero changing quietly is how a player concludes the game is lying to them.
+- Three rooms - the still, the mixing room and the intelligence room - were missed on the first pass at
+  valuing a hideout, so there is now a test that reflects over every price list in the config and
+  insists a maxed hideout is worth every pound the game can charge for one.
+
+- **A crew is capped by whichever runs out first: the room the building has for them, or the supplies
+  the store can put behind them.** A Trap House offered space for fifty hoes while the room behind it
+  held four turns of condoms for them, so the game invited a player into a shortfall and then charged
+  them morale for it every shift. That is a punishment for believing the hideout page.
+- **The storage ladder is the crew ladder now**, because the store is what decides how big a crew can
+  be. It used to open on a room supplying a fifth of an action at the caps above it - a room you had
+  outgrown before you understood what it was for. It opens at a working crew of 25 hoes and 12 thugs
+  and climbs, a rung at a time, to the biggest house in the game.
+- Nothing above the top building supplies a bigger crew, because no building holds one. What the last
+  upgrade buys is room for product, which is the only thing left to want.
+- **Pimps are deliberately not on that list.** Nothing supplies a pimp - they eat no condoms and drink
+  no beer - so the building is the only thing that can run out of room for one.
+- A refusal names whichever cap is actually the limit. Blaming the building for a ceiling the storage
+  room is setting sends a player off to buy a bigger house, which will not move the number by one.
+- Moving up a tier no longer claims to raise your crew. It raises the ceiling; the store is what walks
+  you up to it. A player who buys a Warehouse for the hoes and finds the number unmoved has been sold
+  something by their own game.
+- Existing hideouts keep every level they had and every one of them got roomier, since the ladder
+  shifted up rather than down. No crew anywhere is over its new cap.
+
 - **Orders can be filled a bit at a time.** They run to sixty units and a first storage room holds five
   weapons or ten of coke, so insisting on the whole amount in one movement made most of the board
   unfillable for exactly the players it was meant to give something to aim at - a new player could not
@@ -94,6 +144,18 @@
   loses the return sweep, and the wide desktop panels were running paragraphs to 1,400px.
 
 ### Added
+- **The suite reads the settings the server actually ships.** Half the config lived somewhere no test
+  had ever looked. It now loads appsettings.json from the server project - never the copy the build
+  drops beside the test binary, which is how a stale file convinced this suite the ladder had been
+  updated when it had not - and runs the same invariants against it: every crew supplyable, every rung
+  reachable, and every value in step with the default it is meant to be restating. Compared over all ten
+  room lists by reflection rather than the one that happened to break, because the next drift will be in
+  a different list.
+- **A test that is written but never listed does not fail; it simply does not run**, and the suite
+  reports green while the thing it guards goes uncovered. That happened twice in one sitting, and both
+  times the only symptom was a total that did not go up by one. There is now a test that reads this
+  suite's own source and refuses to pass while a test body sits unregistered.
+
 - Alliances: the crew, ranks and permissions, the treasury, and the shared thug pool it pays for.
 - **Four ranks** - Soldier, Enforcer, Underboss, Boss - rather than the seven or eight a clan system in
   a game with thousands of players carries, for the same reason a crew holds six and not twenty: ranks

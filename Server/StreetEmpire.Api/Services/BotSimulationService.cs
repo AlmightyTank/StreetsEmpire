@@ -608,10 +608,11 @@ public sealed class BotSimulationService(
         if (await missions.LaneReadyAtUtcAsync(bot.Id, nowUtc, ct) is { } readyAt && readyAt > nowUtc)
             return 0;
 
-        var botNetWorth = economy.CalculateNetWorth(bot);
+        var botPlunder = economy.CalculatePlunder(bot);
         var antiFarm = _options.AntiFarm;
-        // Only pull the band the anti-farm ratio actually permits, rather than the whole table.
-        var floor = Math.Max(antiFarm.MinDefenderNetWorth, (long)(botNetWorth / Math.Max(1, antiFarm.MaxNetWorthRatio)));
+        // Only pull the band the anti-farm ratio actually permits, rather than the whole table. Weighed
+        // on what is takeable, matching the gate that will judge the launch.
+        var floor = Math.Max(antiFarm.MinDefenderNetWorth, (long)(botPlunder / Math.Max(1, antiFarm.MaxNetWorthRatio)));
         // Whole rows rather than a projection: net worth spans ten columns, and rebuilding a partial
         // Player to compute it would understate every target and skew both the anti-farm check and
         // the choice of who is worth hitting. Bounded to 25, so the cost is trivial.
@@ -619,8 +620,8 @@ public sealed class BotSimulationService(
             .Where(x => x.Id != bot.Id)
             // Never its own crew. The truce is the whole of what a rival gets for paying dues.
             .Where(x => bot.AllianceId == null || x.AllianceId != bot.AllianceId)
-            .Where(economy.NetWorthAtLeast(floor))
-            .OrderByDescending(economy.NetWorthExpression)
+            .Where(economy.PlunderAtLeast(floor))
+            .OrderByDescending(economy.PlunderExpression)
             .Take(25)
             .ToListAsync(ct);
 
@@ -663,7 +664,7 @@ public sealed class BotSimulationService(
             .Select(g => new { Attacker = g.Key, Hits = g.Count() })
             .ToDictionaryAsync(x => x.Attacker, x => x.Hits, ct);
 
-        var target = BotTargeting.Choose(targets, botNetWorth, attackPower, antiFarm, profile.WinMargin, grudges, grudge.Weight);
+        var target = BotTargeting.Choose(targets, botPlunder, attackPower, antiFarm, profile.WinMargin, grudges, grudge.Weight);
         if (target is null)
             return 0;
 
@@ -711,19 +712,19 @@ public sealed class BotSimulationService(
         if (affordable.Count == 0)
             return 0;
 
-        var botNetWorth = economy.CalculateNetWorth(bot);
+        var botPlunder = economy.CalculatePlunder(bot);
         var antiFarm = _options.AntiFarm;
-        var floor = Math.Max(antiFarm.MinDefenderNetWorth, (long)(botNetWorth / Math.Max(1, antiFarm.MaxNetWorthRatio)));
+        var floor = Math.Max(antiFarm.MinDefenderNetWorth, (long)(botPlunder / Math.Max(1, antiFarm.MaxNetWorthRatio)));
         // Tracked rather than AsNoTracking: a strike writes losses onto whichever of these it lands on,
         // and the run's single SaveChanges is what persists them. No hideout join - every limit a strike
         // reads belongs to the attacker's house, never the target's.
         var candidates = await db.Players
             .Where(x => x.Id != bot.Id)
             .Where(x => bot.AllianceId == null || x.AllianceId != bot.AllianceId)
-            .Where(economy.NetWorthAtLeast(floor))
+            .Where(economy.PlunderAtLeast(floor))
             .Where(x => x.CombatProtectionUntilUtc == null || x.CombatProtectionUntilUtc <= nowUtc)
             .Where(x => x.StrikeProtectionUntilUtc == null || x.StrikeProtectionUntilUtc <= nowUtc)
-            .OrderByDescending(economy.NetWorthExpression)
+            .OrderByDescending(economy.PlunderExpression)
             .Take(15)
             .ToListAsync(ct);
         if (candidates.Count == 0)

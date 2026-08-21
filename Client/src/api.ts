@@ -111,6 +111,8 @@ export type Hideout = {
   heatLabel: string
   heatDetail: string
   heatNote: string
+  /** What the building and its rooms are worth on the board: every pound spent on them. */
+  value: number
   storageUpgrade?: HideoutRoomUpgrade | null
   safeUpgrade?: HideoutRoomUpgrade | null
   weedLabUpgrade?: HideoutRoomUpgrade | null

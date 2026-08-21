@@ -56,7 +56,10 @@ public sealed class PrayerService(IOptionsSnapshot<GameOptions> options, IGameRa
         // share would quote one number on the shrine and enforce a different one the moment the player
         // clicked. Two significant figures means the ask only moves when a player's wealth moves by
         // about a tenth, which is a week's real progress rather than the noise of playing.
-        var netWorth = Band(Math.Max(config.MinimumNetWorthForScale, EconomyService.NetWorthOf(player, _options)));
+        // What the player can lay hands on rather than what they are worth. The demand is capped at
+        // half a shelf, so counting a building would push every established hideout up against that cap
+        // at once and the gods would ask the same of a millionaire and of the man who just bought a roof.
+        var netWorth = Band(Math.Max(config.MinimumNetWorthForScale, EconomyService.PlunderOf(player, _options)));
         var target = (long)Math.Round(netWorth * Math.Clamp(config.DemandShareOfNetWorth, 0.001, 0.5));
 
         if (good == "cash")

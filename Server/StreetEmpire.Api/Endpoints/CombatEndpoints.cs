@@ -45,7 +45,8 @@ internal static class CombatEndpoints
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
-            var viewerNetWorth = economy.CalculateNetWorth(player);
+            // What this viewer could carry off, which is what the target list gates on.
+            var viewerPlunder = economy.CalculatePlunder(player);
             // Read once for the whole page. A title lookup per row would be twenty queries to answer
             // one question about the same twenty-four hours.
             var board = await titles.BoardAsync(now, ct);
@@ -70,7 +71,7 @@ internal static class CombatEndpoints
                 .ToListAsync(ct);
             var ranked = await RankPageAsync(page, db, economy, ct);
             var targets = ranked
-                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt, viewerNetWorth: viewerNetWorth, titles: board))
+                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt, viewerPlunder: viewerPlunder, titles: board))
                 .ToList();
 
             return Results.Ok(targets);
@@ -103,7 +104,7 @@ internal static class CombatEndpoints
             var subjectNetWorth = economy.CalculateNetWorth(subject);
             var subjectRank = await db.Players.AsNoTracking()
                 .CountAsync(economy.RanksAbove(subjectNetWorth, subject.CreatedAtUtc), ct) + 1;
-            var target = new RankedPlayer(subject, subjectNetWorth, subjectRank);
+            var target = new RankedPlayer(subject, subjectNetWorth, economy.CalculatePlunder(subject), subjectRank);
 
             var activity = await db.ActionLogs.AsNoTracking()
                 .Where(x => x.PlayerId == playerId && x.Action != "ADMIN" && x.Action != "STORE")

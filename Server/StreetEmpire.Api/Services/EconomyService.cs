@@ -14,9 +14,23 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// instead of the API loading every player to rank them. Kept in step with
     /// <see cref="CalculateNetWorth"/> by a rule test that compares the two.
     /// </summary>
-    public Expression<Func<Player, long>> NetWorthExpression { get; } = BuildNetWorthExpression(options.Value);
+    /// <summary>
+    /// Everything a player is worth, hideout included. This is the number the board ranks by.
+    /// </summary>
+    public Expression<Func<Player, long>> NetWorthExpression { get; } = BuildNetWorthExpression(options.Value, withHideout: true);
 
-    private static Expression<Func<Player, long>> BuildNetWorthExpression(GameOptions options)
+    /// <summary>
+    /// Everything a player is worth that somebody could actually carry off.
+    ///
+    /// The anti-farm rules exist to stop the strong robbing the weak, and they answer that by weighing
+    /// the two sides against each other. A hideout is the one thing in the game nobody can take, so
+    /// counting it there would decide fights on the strength of a building: a well-built player would
+    /// be locked out of attacking anyone near their own size, and left open to heavyweights who would
+    /// turn up to find nothing worth the trip.
+    /// </summary>
+    public Expression<Func<Player, long>> PlunderExpression { get; } = BuildNetWorthExpression(options.Value, withHideout: false);
+
+    private static Expression<Func<Player, long>> BuildNetWorthExpression(GameOptions options, bool withHideout)
     {
         // Pulled out as locals so the expression tree closes over four plain numbers rather than over a
         // list it would have to walk in the database. A rack is worth what the shop charges for the guns
@@ -26,7 +40,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var smg = PriceOf(options, WeaponTiers.Smg);
         var rifle = PriceOf(options, WeaponTiers.Rifle);
 
-        return player => player.Cash
+        Expression<Func<Player, long>> portable = player => player.Cash
                      + player.BankCash
                      + (long)player.Pimps * options.PimpNetWorth
                      + (long)player.Hoes * options.HoeNetWorth
@@ -44,6 +58,19 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                      // database's own power(), so ranking still happens there rather than in memory.
                      + (long)(player.Coke * options.CokeNetWorth
                               * Math.Pow(player.CokePurity, options.CokePurityPricePower));
+
+        if (!withHideout) return portable;
+
+        // A player with no hideout row is worth no building, and the null check has to be in the tree
+        // rather than around it: this runs in the database, where the join may find nothing.
+        var self = portable.Parameters[0];
+        var hideout = Expression.Property(self, nameof(Player.Hideout));
+        var value = Expression.Condition(
+            Expression.Equal(hideout, Expression.Constant(null, typeof(Models.Hideout))),
+            Expression.Constant(0L),
+            HideoutValue.Build(hideout, options));
+
+        return Expression.Lambda<Func<Player, long>>(Expression.Add(portable.Body, value), self);
     }
 
     /// <summary>A tier's shop price, or the legacy single-weapon price if the table has no such gun.</summary>
@@ -78,6 +105,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         var player = NetWorthExpression.Parameters[0];
         var body = Expression.GreaterThanOrEqual(NetWorthExpression.Body, Expression.Constant(threshold));
+        return Expression.Lambda<Func<Player, bool>>(body, player);
+    }
+
+    /// <summary>The same filter over what could be taken, for the places choosing who to fight.</summary>
+    public Expression<Func<Player, bool>> PlunderAtLeast(long threshold)
+    {
+        var player = PlunderExpression.Parameters[0];
+        var body = Expression.GreaterThanOrEqual(PlunderExpression.Body, Expression.Constant(threshold));
         return Expression.Lambda<Func<Player, bool>>(body, player);
     }
 
@@ -167,12 +202,21 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public long CalculateNetWorth(Player player) => NetWorthOf(player, _options);
 
+    /// <summary>What of this player's worth could actually be carried off. See PlunderExpression.</summary>
+    public long CalculatePlunder(Player player) => PlunderOf(player, _options);
+
     /// <summary>
     /// Net worth without needing the service, for the places that measure how established a player is
     /// rather than rank them. Delegated to rather than copied, so there are still only two forms of
     /// this sum - this one and the expression tree - and the test that compares them still guards it.
     /// </summary>
     public static long NetWorthOf(Player player, GameOptions options)
+        => PlunderOf(player, options) + HideoutValue.Of(player.Hideout, options);
+
+    /// <summary>
+    /// The portable half of the sum: everything a raid could take. Net worth is this plus the building.
+    /// </summary>
+    public static long PlunderOf(Player player, GameOptions options)
         => player.Cash
            + player.BankCash
            + (long)player.Pimps * options.PimpNetWorth
@@ -1058,9 +1102,16 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 "hoes" => capacity.MaxHoes,
                 _ => capacity.MaxThugs
             };
+            // Name whichever of the two is actually the limit. Blaming the building for a ceiling the
+            // storage room is setting sends a player off to buy a bigger house, which will not move
+            // the number by one.
+            var store = hideout.StoreCapsCrew(player.Hideout, normalizedRole);
+            var holder = store ? "storage room" : $"{capacity.TierName}";
+            var verb = store ? "supplies" : "holds";
             throw new GameRuleException(room == 0
-                ? $"Your {capacity.TierName} holds {cap:N0} {normalizedRole} and is full."
-                : $"Your {capacity.TierName} only has room for {room:N0} more {CrewLabel(normalizedRole, room)}.");
+                ? $"Your {holder} {verb} {cap:N0} {normalizedRole} and is full."
+                  + (store ? " Deepen the store to run more." : string.Empty)
+                : $"Your {holder} only has room for {room:N0} more {CrewLabel(normalizedRole, room)}.");
         }
 
         var totalCost = (long)unitCost * quantity;

@@ -15,7 +15,12 @@ internal sealed record PlayerSnapshot(
     int Coke,
     double HoeMorale,
     double ThugMorale);
-internal sealed record RankedPlayer(Player Player, long NetWorth, int Rank);
+/// <summary>
+/// A player, what they are worth, and where that puts them. Plunder is carried alongside because
+/// the board shows net worth while the anti-farm gate weighs what could actually be taken, and a
+/// row that knew only one of the two would have to guess at the other.
+/// </summary>
+internal sealed record RankedPlayer(Player Player, long NetWorth, long Plunder, int Rank);
 internal sealed record BotTemplate(
     string Username,
     string Name,

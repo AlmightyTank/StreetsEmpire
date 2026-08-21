@@ -69,9 +69,12 @@ public sealed class CombatMissionService(
         {
             // Anti-farm gate: a heavyweight cannot pick on a newcomer, and the very new cannot be
             // touched. Skipped for ground, which is contested rather than robbed.
+            // Weighed on what a raid could carry off rather than on net worth, because a hideout is
+            // not loot. Counting it would let a well-built player be ruled out of fights they can
+            // plainly afford, and drag in heavyweights who would find nothing worth the trip.
             var mismatch = AntiFarm.RejectReason(
-                economy.CalculateNetWorth(attacker),
-                economy.CalculateNetWorth(defender),
+                economy.CalculatePlunder(attacker),
+                economy.CalculatePlunder(defender),
                 _options.AntiFarm);
             if (mismatch is not null)
                 throw new GameRuleException(mismatch);

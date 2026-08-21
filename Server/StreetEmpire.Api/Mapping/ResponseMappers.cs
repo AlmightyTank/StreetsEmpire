@@ -82,12 +82,14 @@ internal static class ResponseMappers
         return Math.Max(0, (int)Math.Round(share * 100, MidpointRounding.AwayFromZero));
     }
 
-    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerNetWorth = 0, IReadOnlyList<PlayerTitleResponse>? titles = null)
+    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerPlunder = 0, IReadOnlyList<PlayerTitleResponse>? titles = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
             ? null
-            : AntiFarm.RejectReason(viewerNetWorth, ranked.NetWorth, options.AntiFarm);
+            // What a raid could carry off on both sides. The row still shows net worth; it is only
+            // the question of who may fight whom that a building has no business answering.
+            : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
         return new PlayerTargetResponse(
             player.Id,
             player.Name,
@@ -116,13 +118,13 @@ internal static class ResponseMappers
         int recentAttacksMade,
         int recentDefenses,
         DateTime? viewerLaneReadyAtUtc,
-        long viewerNetWorth = 0,
+        long viewerPlunder = 0,
         IReadOnlyList<PlayerTitleResponse>? titles = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
             ? null
-            : AntiFarm.RejectReason(viewerNetWorth, ranked.NetWorth, options.AntiFarm);
+            : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
         return new PlayerProfileResponse(
             player.Id,
             player.Name,
@@ -251,6 +253,8 @@ internal static class ResponseMappers
                 Math.Max(0, (int)Math.Ceiling((due - nowUtc).TotalSeconds)))
             : null;
 
+        var buildingValue = HideoutValue.Of(player.Hideout, options);
+
         return new HideoutResponse(
             capacity.TierName,
             capacity.Tier,
@@ -284,6 +288,7 @@ internal static class ResponseMappers
             HeatLabel(heat, options),
             HeatDetail(heat, options),
             HeatNote(heat, options, player.City),
+            buildingValue,
             ToRoomUpgrade(hideouts, player.Hideout, "storage"),
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
             ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),

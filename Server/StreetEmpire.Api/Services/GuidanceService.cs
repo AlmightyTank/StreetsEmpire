@@ -127,7 +127,8 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         var exposedHoes = Math.Max(0, player.Hoes - curable);
         if (player.Hoes > 0
             && exposedHoes > player.Hoes / 2
-            && economy.CalculateNetWorth(player) >= _options.AntiFarm.MinDefenderNetWorth)
+            // The same figure the anti-farm floor is expressed in: what a raid could take.
+            && economy.CalculatePlunder(player) >= _options.AntiFarm.MinDefenderNetWorth)
         {
             var perCrate = Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate);
             var crates = Math.Min(

@@ -18,13 +18,13 @@ public static class BotTargeting
     /// them ever becomes a story: the world reads as weather rather than as people.
     /// </param>
     /// <param name="grudgeWeight">
-    /// How much a grudge is worth against a fatter target, as a share of net worth added per hit
+    /// How much a grudge is worth against a fatter target, as a share of the haul added per hit
     /// taken. Personality decides it, so a hard charger chases the man who robbed him while a banker
     /// goes on taking the best deal available.
     /// </param>
     public static BotTarget? Choose(
         IReadOnlyList<BotTarget> candidates,
-        long attackerNetWorth,
+        long attackerPlunder,
         int attackerPower,
         AntiFarmOptions antiFarm,
         double winMargin,
@@ -41,7 +41,7 @@ public static class BotTargeting
             // incoming cap exists to prevent.
             if (candidate.IncomingAttacks >= Math.Max(1, antiFarm.MaxIncomingAttacks))
                 continue;
-            if (AntiFarm.RejectReason(attackerNetWorth, candidate.NetWorth, antiFarm) is not null)
+            if (AntiFarm.RejectReason(attackerPlunder, candidate.Plunder, antiFarm) is not null)
                 continue;
             // Only pick fights it should win. Defence power already folds in weapons and morale.
             if (attackerPower < candidate.DefensePower * Math.Max(1, winMargin))
@@ -51,7 +51,7 @@ public static class BotTargeting
             // A grudge does not make a rival reckless: everything above still applies, so it only ever
             // decides between fights it was already willing to take.
             var hits = grudges is not null && grudges.TryGetValue(candidate.PlayerId, out var taken) ? taken : 0;
-            var appeal = candidate.NetWorth + (long)(candidate.NetWorth * Math.Max(0, grudgeWeight) * hits);
+            var appeal = candidate.Plunder + (long)(candidate.Plunder * Math.Max(0, grudgeWeight) * hits);
             if (best is null || appeal > bestAppeal)
             {
                 best = candidate;
@@ -64,4 +64,5 @@ public static class BotTargeting
 }
 
 /// <summary>A candidate defender, flattened so targeting never touches the database.</summary>
-public sealed record BotTarget(Guid PlayerId, string Name, long NetWorth, int DefensePower, bool IsProtected, int IncomingAttacks);
+/// <summary>A possible victim, weighed by what is actually on the table rather than what they are worth.</summary>
+public sealed record BotTarget(Guid PlayerId, string Name, long Plunder, int DefensePower, bool IsProtected, int IncomingAttacks);

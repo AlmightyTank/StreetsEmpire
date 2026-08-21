@@ -181,9 +181,10 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
             throw new GameRuleException($"{defender.Name} has just been hit and is watching the street. Try again in {minutes} minute(s).");
         }
 
+        // What could be carried off, not what the pair are worth: see CombatMissionService.
         var mismatch = AntiFarm.RejectReason(
-            EconomyService.NetWorthOf(attacker, _options),
-            EconomyService.NetWorthOf(defender, _options),
+            EconomyService.PlunderOf(attacker, _options),
+            EconomyService.PlunderOf(defender, _options),
             _options.AntiFarm);
         if (mismatch is not null)
             throw new GameRuleException(mismatch);

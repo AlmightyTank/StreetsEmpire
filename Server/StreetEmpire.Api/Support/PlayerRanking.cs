@@ -47,6 +47,7 @@ internal static class PlayerRanking
             .Select((x, index) => new RankedPlayer(
                 x,
                 standings[index].NetWorth,
+                economy.CalculatePlunder(x),
                 EconomyService.RankOf(standings[index], contenders)))
             .ToList();
     }

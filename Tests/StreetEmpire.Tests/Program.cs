@@ -1,3 +1,7 @@
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Configuration;
+using StreetEmpire.Api.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
@@ -9,6 +13,9 @@ var tests = new (string Name, Action Test)[]
 {
     ("net worth includes all liquid and inventory value", NetWorthIncludesAllValue),
     ("net worth expression agrees with the net worth calculation", NetWorthExpressionAgreesWithCalculation),
+    ("a hideout is worth every pound that built it", AHideoutIsWorthWhatItCost),
+    ("both worth expressions survive the trip to sql", WorthExpressionsTranslateToSql),
+    ("building is free on the board and invisible to a raid", BuildingMovesNeitherRankNorTheOddsOfAFight),
     ("ranking breaks net worth ties by oldest player", RankingBreaksTiesByOldestPlayer),
     ("ranks-above predicate agrees with in-memory ranking", RanksAbovePredicateAgreesWithInMemoryRanking),
     ("turn refresh catches up without exceeding cap", TurnRefreshCatchesUp),
@@ -54,6 +61,9 @@ var tests = new (string Name, Action Test)[]
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
     ("hideout tier gates the rooms it is too small to hold", HideoutTierGatesDeeperRooms),
     ("storage levels hold a full action at the crew caps they unlock", StorageLevelsMatchTheCrewCapsTheyUnlock),
+    ("a crew is capped by the store as well as the building", CrewIsCappedByWhicheverRunsOutFirst),
+    ("the settings the server actually ships obey the same rules", ShippedSettingsObeyTheSameRules),
+    ("every test written is a test that runs", EveryTestWrittenIsATestThatRuns),
     ("every hideout upgrade in the shipped tables can be paid for", EveryHideoutUpgradeIsReachable),
     ("labs produce while away, bounded by storage and the offline ceiling", LabsProduceWhileAway),
     ("labs start their clock when built rather than backdating", LabsStartTheirClockWhenBuilt),
@@ -209,7 +219,174 @@ static void NetWorthExpressionAgreesWithCalculation()
     var compiled = service.NetWorthExpression.Compile();
     foreach (var player in players)
         AssertEqual(service.CalculateNetWorth(player), compiled(player));
+
+    // Every one of those has no hideout, so the building half of the sum was riding along untested.
+    // Both halves have to agree, at every shape of house, or the board ranks by one number while the
+    // player is shown another.
+    var housed = new[]
+    {
+        new Player { Cash = 1_000, Hideout = new Hideout() },
+        new Player { Cash = 1_000, Hideout = new Hideout { Tier = 2, StorageLevel = 3, SafeLevel = 2 } },
+        new Player { Cash = 1_000, Hideout = new Hideout { Tier = 1, UpgradingToTier = 2 } },
+        new Player
+        {
+            Cash = 9_999,
+            Hoes = 12,
+            Hideout = new Hideout
+            {
+                Tier = 4, StorageLevel = 6, SafeLevel = 5, WeedLabLevel = 3, CokeLabLevel = 2,
+                WorkshopLevel = 2, StillLevel = 1, MixLevel = 1, IntelligenceLevel = 2, LookoutLevel = 2
+            }
+        }
+    };
+
+    var plunder = service.PlunderExpression.Compile();
+    foreach (var player in housed)
+    {
+        AssertEqual(service.CalculateNetWorth(player), compiled(player));
+        AssertEqual(service.CalculatePlunder(player), plunder(player));
+        AssertTrue(service.CalculateNetWorth(player) >= service.CalculatePlunder(player),
+            "a building can only ever add");
+    }
 }
+
+// The building was the one thing a player owned that counted for nothing, so the single largest
+// investment in the game made your standing worse the moment you made it.
+// Every other test here compiles the expression and runs it in memory, which proves the arithmetic and
+// nothing about the half that matters: these two sums exist as expression trees so the database can
+// rank by them. A tree that will not translate does not fail quietly - it throws on the leaderboard,
+// for every player, the first time anybody looks at it. Translating without connecting is enough to
+// catch that, and keeps this project free of a live database.
+static void WorthExpressionsTranslateToSql()
+{
+    var options = new DbContextOptionsBuilder<GameDbContext>()
+        .UseNpgsql("Host=localhost;Database=translation_only;Username=none")
+        .Options;
+    using var db = new GameDbContext(options);
+    var economy = CreateEconomy();
+
+    // Ordering by it is what the leaderboard does; filtering by it is what target-finding does.
+    var ranked = db.Players.OrderByDescending(economy.NetWorthExpression).ToQueryString();
+    var filtered = db.Players.Where(economy.NetWorthAtLeast(25_000)).ToQueryString();
+    var plunder = db.Players.OrderByDescending(economy.PlunderExpression).ToQueryString();
+    var plunderFiltered = db.Players.Where(economy.PlunderAtLeast(25_000)).ToQueryString();
+
+    AssertTrue(ranked.Length > 0 && filtered.Length > 0, "the ranking sums translate");
+    AssertTrue(plunder.Length > 0 && plunderFiltered.Length > 0, "the raid sums translate");
+
+    // The building half has to reach the database as a join onto the hideout, not as something quietly
+    // evaluated on the client - which would rank the whole table in memory.
+    AssertTrue(ranked.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
+        "net worth ranks on the hideout in the database");
+
+    // And the raid sum must not touch it at all, or every target query pays for a join it never reads.
+    AssertTrue(!plunder.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
+        "what a raid can take owes nothing to the building");
+}
+
+static void AHideoutIsWorthWhatItCost()
+{
+    var options = Resolve(null);
+    var config = options.Hideout;
+
+    // A hideout nobody has spent anything on is worth nothing, so a new player is not handed a number.
+    AssertEqual(0L, HideoutValue.Of(new Hideout(), options));
+    AssertEqual(0L, HideoutValue.Of(null, options));
+
+    // Worth exactly the upgrades bought, at cost.
+    var moved = new Hideout { Tier = 2, StorageLevel = 3, SafeLevel = 1 };
+    var expected = config.Tiers.Where(x => x.Level <= 2).Sum(x => x.UpgradeCost)
+                 + config.Storage.Where(x => x.Level <= 3).Sum(x => x.UpgradeCost);
+    AssertEqual(expected, HideoutValue.Of(moved, options));
+
+    // A tier being built is a tier already paid for, so it counts from the moment the money goes.
+    // Otherwise a player drops down the board for the length of the build and climbs back afterwards.
+    var building = new Hideout { Tier = 1, UpgradingToTier = 2 };
+    AssertEqual(config.Tiers.Single(x => x.Level == 2).UpgradeCost, HideoutValue.Of(building, options));
+
+    // Every room in the price list is counted. Reflected over rather than listed, because the rooms
+    // are enumerated by hand in half a dozen switches and three of them were missed on the first pass
+    // here - a room added later would be missed again, and the only sign would be a quietly cheap
+    // hideout. Maxing everything has to come to every pound the config can charge.
+    var maxed = new Hideout
+    {
+        Tier = config.Tiers.Max(x => x.Level),
+        StorageLevel = config.Storage.Max(x => x.Level),
+        SafeLevel = config.Safe.Max(x => x.Level),
+        WeedLabLevel = config.WeedLab.Max(x => x.Level),
+        CokeLabLevel = config.CokeLab.Max(x => x.Level),
+        WorkshopLevel = config.Workshop.Max(x => x.Level),
+        StillLevel = config.Still.Max(x => x.Level),
+        MixLevel = config.Mix.Max(x => x.Level),
+        IntelligenceLevel = config.Intelligence.Max(x => x.Level),
+        LookoutLevel = config.Lookout.Max(x => x.Level)
+    };
+
+    var everyPound = 0L;
+    var roomLists = 0;
+    foreach (var property in typeof(HideoutOptions).GetProperties())
+    {
+        if (property.GetValue(config) is not System.Collections.IEnumerable rows || rows is string) continue;
+        var counted = false;
+        foreach (var row in rows)
+        {
+            var cost = row.GetType().GetProperty("UpgradeCost");
+            if (cost is null) break;
+            everyPound += Convert.ToInt64(cost.GetValue(row));
+            counted = true;
+        }
+        if (counted) roomLists++;
+    }
+
+    AssertTrue(roomLists >= 10, $"every room list should be found, saw {roomLists}");
+    AssertEqual(everyPound, HideoutValue.Of(maxed, options));
+}
+
+// Two promises at once: buying a room does not move you on the board, and it does not change who you
+// are allowed to fight.
+static void BuildingMovesNeitherRankNorTheOddsOfAFight()
+{
+    var options = Resolve(null);
+    var economy = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
+    var tier2 = options.Hideout.Tiers.Single(x => x.Level == 2);
+
+    var player = new Player
+    {
+        Cash = tier2.UpgradeCost + 50_000,
+        Turns = tier2.UpgradeTurns + 5,
+        Hoes = 4,
+        Hideout = new Hideout { StorageLevel = 2 }
+    };
+
+    var worthBefore = economy.CalculateNetWorth(player);
+    var plunderBefore = economy.CalculatePlunder(player);
+    var buildingBefore = HideoutValue.Of(player.Hideout, options);
+
+    hideouts.Upgrade(player, "tier", DateTime.UtcNow);
+
+    // The cash is gone and the building is worth what it cost, so the two cancel exactly. Upgrading is
+    // not a way up the board, and it is no longer a way down it either.
+    AssertEqual(worthBefore, economy.CalculateNetWorth(player));
+    AssertEqual(buildingBefore + tier2.UpgradeCost, HideoutValue.Of(player.Hideout, options));
+
+    // A raid cannot carry off a building, so what a fight weighs went down by exactly the cash spent.
+    // Anything else would let a player change who may attack them by buying rooms.
+    AssertEqual(plunderBefore - tier2.UpgradeCost, economy.CalculatePlunder(player));
+    AssertTrue(economy.CalculatePlunder(player) < economy.CalculateNetWorth(player),
+        "the building counts for the board and not for the fight");
+
+    // And the gate itself reads the takeable figure, so a mansion cannot make a pauper untouchable.
+    var mansion = new Player { Cash = 30_000, Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 } };
+    var neighbour = new Player { Cash = 30_000, Hideout = new Hideout() };
+    AssertEqual(EconomyService.PlunderOf(mansion, options), EconomyService.PlunderOf(neighbour, options));
+    AssertTrue(EconomyService.NetWorthOf(mansion, options) > EconomyService.NetWorthOf(neighbour, options),
+        "the board still knows which of the two built something");
+    AssertEqual(
+        AntiFarm.RejectReason(EconomyService.PlunderOf(neighbour, options), EconomyService.PlunderOf(mansion, options), options.AntiFarm),
+        AntiFarm.RejectReason(EconomyService.PlunderOf(neighbour, options), EconomyService.PlunderOf(neighbour, options), options.AntiFarm));
+}
+
 
 static void RankingBreaksTiesByOldestPlayer()
 {
@@ -574,11 +751,13 @@ static void StreetAutoBuyToppsUpWithinLimits()
     AssertEqual(8, Value<int>(brokeBreakdown, "condomShortage"));
     AssertEqual(10, Value<int>(brokeBreakdown, "turnsSpent"));
 
-    // Storage is the other ceiling: a level 1 room caps the top-up at what fits.
+    // Storage is the other ceiling: a level 1 room caps the top-up at what fits. Fifty hoes on a level
+    // 1 room is a state the crew caps now stop anybody reaching by hiring, but the clamp still has to
+    // hold for a player who had the crew before the caps were tied to the store.
     var cramped = new Player { Turns = 20, Cash = 10_000, Hoes = 50, Thugs = 5, Hideout = new Hideout { StorageLevel = 1 } };
     var crampedBreakdown = RequiredBreakdown(service.Scout(cramped, 20, autoBuySupplies: true));
 
-    AssertEqual(17, Value<int>(crampedBreakdown, "autoBoughtCondoms"));
+    AssertEqual(42, Value<int>(crampedBreakdown, "autoBoughtCondoms"));
 
     // Left off, nothing is bought at all.
     var manual = new Player { Turns = 20, Cash = 10_000, Hoes = 10, Thugs = 5, Hideout = new Hideout { StorageLevel = 3 } };
@@ -663,18 +842,18 @@ static void CrewReportNamesTheStorageLevelNeeded()
 {
     var service = CreateEconomy();
 
-    // A level 3 room holds 84 condoms, which carries 50 hoes through a 20 turn shift and no more.
-    var supplied = new Player { Pimps = 6, Hoes = 50, Thugs = 25, Hideout = new Hideout { StorageLevel = 3 } };
+    // A level 2 room holds 84 condoms, which carries 50 hoes through a 20 turn shift and no more.
+    var supplied = new Player { Pimps = 6, Hoes = 50, Thugs = 25, Hideout = new Hideout { StorageLevel = 2 } };
     var fine = service.GetCrewReport(supplied);
     AssertEqual(50, fine.HoesStorageCanSupply);
     AssertEqual(25, fine.ThugsStorageCanSupply);
     AssertTrue(fine.StorageLevelToSupplyCrew is null, "a room that already covers the crew needs no upgrade named");
 
     // One hoe past it and the room is the constraint, not the stock on the shelf.
-    var stretched = new Player { Pimps = 6, Hoes = 59, Thugs = 25, Condoms = 84, Hideout = new Hideout { StorageLevel = 3 } };
+    var stretched = new Player { Pimps = 6, Hoes = 59, Thugs = 25, Condoms = 84, Hideout = new Hideout { StorageLevel = 2 } };
     var warned = service.GetCrewReport(stretched);
     AssertEqual(50, warned.HoesStorageCanSupply);
-    AssertEqual(4, warned.StorageLevelToSupplyCrew ?? 0);
+    AssertEqual(3, warned.StorageLevelToSupplyCrew ?? 0);
 
     // Nothing in the table carries a crew past the top room, and that has to be said rather than
     // pointing at a level that does not exist.
@@ -821,7 +1000,8 @@ static void HideoutCapsCrewHiring()
         Thugs = 1,
         HoeHappiness = 100,
         ThugHappiness = 100,
-        Hideout = new Hideout()
+        // A level 2 room supplies a full Trap House, so the building is the cap being tested here.
+        Hideout = new Hideout { StorageLevel = 2 }
     };
 
     // Trap House holds 50 hoes, so only two more fit.
@@ -830,6 +1010,19 @@ static void HideoutCapsCrewHiring()
 
     AssertRuleError(() => service.HireCrew(player, "hoes", 1), "hiring past the hideout cap");
     AssertEqual(50, player.Hoes);
+
+    // On the starting room the store is the cap instead, and the refusal has to say so rather than
+    // blaming the building. The two are fixed by completely different purchases, and a player sent to
+    // buy a bigger house for a room-sized problem has been sent to waste their money.
+    var starting = new Player
+    {
+        Cash = 1_000_000,
+        Hoes = 25,
+        HoeHappiness = 100,
+        Hideout = new Hideout { StorageLevel = 1 }
+    };
+    AssertRuleError(() => service.HireCrew(starting, "hoes", 1), "storage room");
+    AssertEqual(25, starting.Hoes);
 }
 
 static void HideoutBlocksOverflowingStoreBuys()
@@ -1028,7 +1221,8 @@ static void HideoutTierBuildChargesUpFrontAndLandsOnTime()
         Cash = 30_000,
         BankCash = tier2.UpgradeCost - 25_000,
         Turns = tier2.UpgradeTurns + 3,
-        Hideout = new Hideout()
+        // A level 2 room supplies a full Trap House, so the tier is the only cap in play here.
+        Hideout = new Hideout { StorageLevel = 2 }
     };
 
     AssertEqual(tier2.UpgradeCost + 5_000, player.Cash + player.BankCash);
@@ -1050,25 +1244,35 @@ static void HideoutTierBuildChargesUpFrontAndLandsOnTime()
     AssertTrue(hideouts.CompleteBuild(player.Hideout, start.AddMinutes(tier2.BuildMinutes)), "a due build lands");
     AssertEqual(2, player.Hideout.Tier);
     AssertTrue(player.Hideout.UpgradingToTier is null, "the pending tier is cleared once it lands");
+
+    // The new building does not hand over a bigger crew on its own, because the level 2 room behind it
+    // still only supplies fifty. Moving somewhere with more space does not put more food in the
+    // cupboard, and the cap is honest about which of the two you have run out of.
+    AssertEqual(50, hideouts.CapacityFor(player.Hideout).MaxHoes);
+
+    // Deepening the store is what actually collects the tier's room, and now there is a building big
+    // enough to hold the deeper room.
+    player.Hideout.StorageLevel = 3;
     AssertEqual(tier2.MaxHoes, hideouts.CapacityFor(player.Hideout).MaxHoes);
+    AssertEqual(tier2.MaxThugs, hideouts.CapacityFor(player.Hideout).MaxThugs);
 }
 
 static void HideoutTierGatesDeeperRooms()
 {
     var hideouts = CreateHideouts();
-    var player = new Player { Cash = 5_000_000, Hideout = new Hideout { StorageLevel = 3 } };
+    var player = new Player { Cash = 5_000_000, Hideout = new Hideout { StorageLevel = 2 } };
 
     var locked = hideouts.NextUpgrade(player.Hideout, "storage");
-    AssertEqual(4, locked!.Level);
-    AssertTrue(locked.TierLocked, "a level 4 storage room needs a bigger building");
+    AssertEqual(3, locked!.Level);
+    AssertTrue(locked.TierLocked, "a level 3 storage room needs a bigger building");
     AssertRuleError(() => hideouts.Upgrade(player, "storage", DateTime.UtcNow), "upgrading a room past the tier");
-    AssertEqual(3, player.Hideout!.StorageLevel);
+    AssertEqual(2, player.Hideout!.StorageLevel);
     AssertEqual(5_000_000L, player.Cash);
 
     player.Hideout.Tier = 2;
-    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.TierLocked, "the second tier holds a level 4 room");
+    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.TierLocked, "the second tier holds a level 3 room");
     hideouts.Upgrade(player, "storage", DateTime.UtcNow);
-    AssertEqual(4, player.Hideout.StorageLevel);
+    AssertEqual(3, player.Hideout.StorageLevel);
 }
 
 /// <summary>
@@ -1076,6 +1280,199 @@ static void HideoutTierGatesDeeperRooms()
 /// full-length street action consumes at that tier's crew caps. Without this the tables drift apart
 /// silently and a maxed player finds they cannot supply the crew their building allows.
 /// </summary>
+// The building used to promise a crew the store could not begin to feed: a Trap House offered room for
+// fifty hoes while the room behind it held four turns of condoms for them. Every shift then charged the
+// player morale for a shortfall the game itself had invited, which is a punishment for believing the
+// hideout page.
+// Everything else here builds its options from the code defaults, which is exactly half the config.
+// The lists in appsettings.json win whenever they are present - ApplyDefaultsWhereEmpty only fills a
+// list nobody has filled already - so every tuning value the server actually runs on was untested, and
+// a change to the defaults could look green here while the game went on using the old numbers.
+//
+// It had. The storage ladder was rebuilt in code and appsettings went on shipping the old one, so the
+// running game had the new rule capping crew at the old room sizes: a starting player was held to ten
+// hoes rather than the twenty-five intended, which is worse than the fifty they had before anybody
+// touched it. Tests cannot only read the half of the config that is convenient.
+// A test that is written but never listed in the manifest above does not fail - it simply is not run,
+// and the suite reports all green while the thing it was written to guard goes uncovered. That has
+// happened twice: once to a test of instalment deliveries, once to a headline nobody had ever asserted
+// on, and both times the only symptom was a total that did not go up by one.
+//
+// Reads this file rather than reflecting over the assembly, because top-level statements compile the
+// manifest into a method body where reflection cannot see it.
+static void EveryTestWrittenIsATestThatRuns()
+{
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var path = Path.Combine(root!.FullName, "Tests", "StreetEmpire.Tests", "Program.cs");
+    AssertTrue(File.Exists(path), $"this suite should be able to read itself at {path}");
+    var source = File.ReadAllText(path);
+
+    var manifest = Regex.Match(source, @"var tests = new \(string Name, Action Test\)\[\]\s*\{(.*?)\n\};", RegexOptions.Singleline);
+    AssertTrue(manifest.Success, "the manifest should be findable");
+
+    var registered = Regex.Matches(manifest.Groups[1].Value, @",\s*(\w+)\s*\)")
+        .Select(x => x.Groups[1].Value)
+        .ToList();
+
+    // Nothing listed twice: a duplicate is a test counted twice and a name somebody meant to change.
+    var duplicated = registered.GroupBy(x => x).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+    AssertTrue(duplicated.Count == 0, $"listed more than once: {string.Join(", ", duplicated)}");
+
+    var listed = registered.ToHashSet();
+    var orphans = Regex.Matches(source, @"^static void (\w+)\(\)", RegexOptions.Multiline)
+        .Select(x => x.Groups[1].Value)
+        .Where(name => !listed.Contains(name))
+        // A body nothing lists but something calls is a helper, not a test nobody runs.
+        .Where(name => Regex.Matches(source, $@"\b{name}\b").Count <= 1)
+        .ToList();
+
+    AssertTrue(orphans.Count == 0, $"written but never run: {string.Join(", ", orphans)}");
+    AssertEqual(registered.Count, listed.Count);
+}
+
+static void ShippedSettingsObeyTheSameRules()
+{
+    // Read the file in the server project, never the copy sitting beside this test binary. The build
+    // drops one there, and a test that reads it passes against whatever was last compiled - which is
+    // precisely how a stale copy convinced this suite the ladder had been updated when it had not.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var path = Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json");
+    AssertTrue(File.Exists(path), $"the server's own appsettings.json should be readable at {path}");
+
+    var shipped = new ConfigurationBuilder().AddJsonFile(path).Build();
+    var options = new GameOptions();
+    shipped.GetSection("Game").Bind(options);
+    options.ApplyWeaponDefaultsWhereEmpty();
+    options.StreetAction.ApplyDistrictDefaultsWhereEmpty();
+    options.Alliances.ApplyDefaultsWhereEmpty();
+    options.Hideout.ApplyDefaultsWhereEmpty();
+    options.Territory.ApplyDefaultsWhereEmpty();
+    options.CityMarkets.ApplyDefaultsWhereEmpty(options.Territory.Cities());
+
+    // The file is meant to be carrying real values, not to have quietly emptied out.
+    AssertTrue(options.Hideout.Storage.Count > 0, "the shipped settings carry a storage ladder");
+    AssertTrue(options.Hideout.Tiers.Count > 0, "the shipped settings carry building tiers");
+
+    var hideouts = new HideoutService(Snapshot(options));
+    var morale = options.Morale;
+
+    // The promise: every crew the game allows is a crew it can supply for a full shift. Checked here
+    // against the numbers the server will actually boot with.
+    foreach (var tier in options.Hideout.Tiers)
+    foreach (var storage in options.Hideout.Storage.Where(x => x.MinTier <= tier.Level))
+    {
+        var capacity = hideouts.CapacityFor(new Hideout { Tier = tier.Level, StorageLevel = storage.Level });
+        var condomsNeeded = (int)Math.Ceiling(capacity.MaxHoes * options.MaxActionTurns / morale.TurnsPerCondom);
+        var beerNeeded = (int)Math.Ceiling(capacity.MaxThugs * options.MaxActionTurns / morale.TurnsPerBeer);
+        AssertTrue(condomsNeeded <= storage.Condoms,
+            $"shipped: tier {tier.Level} store {storage.Level} allows {capacity.MaxHoes} hoes needing {condomsNeeded} condoms, room holds {storage.Condoms}");
+        AssertTrue(beerNeeded <= storage.Beer,
+            $"shipped: tier {tier.Level} store {storage.Level} allows {capacity.MaxThugs} thugs needing {beerNeeded} beer, room holds {storage.Beer}");
+    }
+
+    // A starting player gets a crew worth running rather than a room that supplies a fifth of a shift.
+    var starting = hideouts.CapacityFor(new Hideout { Tier = 1, StorageLevel = 1 });
+    AssertTrue(starting.MaxHoes >= 25, $"a starting house supports a real crew, saw {starting.MaxHoes} hoes");
+
+    // Every rung has to be reachable: a room gated behind a building nobody can be standing in is a
+    // dead end, and a level whose cost nobody can pay is the same thing with extra steps.
+    var topTier = options.Hideout.Tiers.Max(x => x.Level);
+    foreach (var storage in options.Hideout.Storage)
+        AssertTrue(storage.MinTier <= topTier,
+            $"shipped: storage {storage.Level} needs tier {storage.MinTier} and the game stops at {topTier}");
+
+    // And the two halves of the config should not have drifted apart at all. Where the code carries a
+    // default and the file carries a value, they are two statements of the same intent, and whichever
+    // of them is wrong the players are getting the file. Compared over every room by reflection rather
+    // than over the one that happened to break, because the next drift will be in a different list.
+    var defaults = Resolve(null);
+    var lists = 0;
+    foreach (var property in typeof(HideoutOptions).GetProperties())
+    {
+        if (property.GetValue(defaults.Hideout) is not System.Collections.IList fromCode) continue;
+        if (property.GetValue(options.Hideout) is not System.Collections.IList fromFile) continue;
+        if (fromCode.Count == 0) continue;
+
+        AssertEqual(fromCode.Count, fromFile.Count);
+        for (var i = 0; i < fromCode.Count; i++)
+        {
+            var code = fromCode[i]!;
+            var file = fromFile[i]!;
+            foreach (var field in code.GetType().GetProperties())
+            {
+                var expected = field.GetValue(code);
+                var actual = field.GetValue(file);
+                AssertTrue(Equals(expected, actual),
+                    $"{property.Name}[{i}].{field.Name}: code says {expected}, appsettings ships {actual}");
+            }
+        }
+        lists++;
+    }
+
+    AssertTrue(lists >= 10, $"every hideout list should be compared, saw {lists}");
+}
+
+static void CrewIsCappedByWhicheverRunsOutFirst()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var morale = options.Morale;
+    var tier1 = options.Hideout.Tiers.Single(x => x.Level == 1);
+
+    int Supported(int shelf, double per) => (int)Math.Floor(shelf * per / options.MaxActionTurns);
+
+    // The store is the binding constraint while it is the smaller of the two, and it is what the
+    // player is actually told.
+    var starting = hideouts.CapacityFor(new Hideout { Tier = 1, StorageLevel = 1 });
+    var store1 = options.Hideout.Storage.Single(x => x.Level == 1);
+    AssertEqual(Supported(store1.Condoms, morale.TurnsPerCondom), starting.MaxHoes);
+    AssertEqual(Supported(store1.Beer, morale.TurnsPerBeer), starting.MaxThugs);
+    AssertEqual(25, starting.MaxHoes);
+    AssertTrue(starting.MaxHoes < tier1.MaxHoes, "a starting store cannot fill a starting house");
+
+    // Deepening the store raises the crew, which is the whole point of the coupling.
+    var deeper = hideouts.CapacityFor(new Hideout { Tier = 1, StorageLevel = 2 });
+    AssertTrue(deeper.MaxHoes > starting.MaxHoes, "a bigger room is a bigger crew");
+    AssertEqual(tier1.MaxHoes, deeper.MaxHoes);
+    AssertEqual(tier1.MaxThugs, deeper.MaxThugs);
+
+    // And the building takes over as the ceiling the moment the store passes it, so no amount of
+    // shelving fits more people into a Trap House than it has room for.
+    foreach (var storage in options.Hideout.Storage)
+    {
+        var capacity = hideouts.CapacityFor(new Hideout { Tier = 1, StorageLevel = storage.Level });
+        AssertTrue(capacity.MaxHoes <= tier1.MaxHoes, $"store {storage.Level} cannot outgrow the building");
+        AssertTrue(capacity.MaxThugs <= tier1.MaxThugs, $"store {storage.Level} cannot outgrow the building on thugs");
+    }
+
+    // Every crew the game allows is a crew it can supply for a full action, at every combination of
+    // building and room. This is the promise the whole change exists to keep.
+    foreach (var tier in options.Hideout.Tiers)
+    foreach (var storage in options.Hideout.Storage.Where(x => x.MinTier <= tier.Level))
+    {
+        var capacity = hideouts.CapacityFor(new Hideout { Tier = tier.Level, StorageLevel = storage.Level });
+        var condomsNeeded = (int)Math.Ceiling(capacity.MaxHoes * options.MaxActionTurns / morale.TurnsPerCondom);
+        var beerNeeded = (int)Math.Ceiling(capacity.MaxThugs * options.MaxActionTurns / morale.TurnsPerBeer);
+        AssertTrue(condomsNeeded <= storage.Condoms,
+            $"tier {tier.Level} store {storage.Level}: {capacity.MaxHoes} hoes need {condomsNeeded} condoms, room holds {storage.Condoms}");
+        AssertTrue(beerNeeded <= storage.Beer,
+            $"tier {tier.Level} store {storage.Level}: {capacity.MaxThugs} thugs need {beerNeeded} beer, room holds {storage.Beer}");
+    }
+
+    // Pimps are the exception, and deliberately: nothing supplies a pimp, so only the building can run
+    // out of room for one.
+    foreach (var storage in options.Hideout.Storage)
+        AssertEqual(tier1.MaxPimps, hideouts.CapacityFor(new Hideout { Tier = 1, StorageLevel = storage.Level }).MaxPimps);
+}
+
 static void StorageLevelsMatchTheCrewCapsTheyUnlock()
 {
     var options = Resolve(null);
@@ -1150,10 +1547,10 @@ static void LabsProduceWhileAway()
     options.Hideout.MaxOfflineProductionHours = 12;
     var hideouts = CreateHideouts(options);
     var start = new DateTime(2026, 8, 13, 0, 0, 0, DateTimeKind.Utc);
-    // Level 1 weed lab makes 2 an hour; storage level 3 holds 100 weed.
+    // Level 1 weed lab makes 2 an hour; storage level 2 holds 100 weed.
     var player = new Player
     {
-        Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 1, LabsCollectedAtUtc = start }
+        Hideout = new Hideout { StorageLevel = 2, WeedLabLevel = 1, LabsCollectedAtUtc = start }
     };
 
     // Part of an hour pays nothing and leaves the clock alone, so the remainder is not thrown away.
@@ -1311,7 +1708,7 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     AssertTrue(!options.WeaponTier(WeaponTiers.Rifle)!.CanForge, "rifles are bought, never made");
 
     var service = CreateEconomy(options);
-    var maker = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
+    var maker = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 1 } };
     var made = service.Forge(maker, 5);
     AssertEqual(5, Value<int>(RequiredBreakdown(made), "weaponsMade"));
     AssertEqual(5, maker.Weapons);
@@ -1331,7 +1728,7 @@ static void WorkshopMakesWeaponsUnderStorePrice()
 
     // Bounded by the room up front rather than made and spilled, so nobody pays for nothing.
     // Twenty-four guns already on a shelf that holds twenty-five, whatever kind they are.
-    var cramped = new Player { Turns = 20, Cash = 100_000, Pistols = 24, Hideout = new Hideout { StorageLevel = 3, WorkshopLevel = 1 } };
+    var cramped = new Player { Turns = 20, Cash = 100_000, Pistols = 24, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 1 } };
     var partial = service.Forge(cramped, 10);
     AssertEqual(1, Value<int>(RequiredBreakdown(partial), "weaponsMade"));
     AssertEqual(25, cramped.Weapons);
@@ -1431,11 +1828,14 @@ static void ShortShiftsAreASupplyAnswer()
     var options = Resolve(new GameOptions());
     var economy = CreateEconomy(options);
 
-    // Eleven hoes need nineteen condoms for a full shift, and a level one room holds seventeen. There
-    // is nothing to buy: the room is the limit. But it does cover a shorter shift.
-    var stretched = new Player { Hoes = 11, Thugs = 1, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    // Twenty-six hoes need forty-four condoms for a full shift, and a level one room holds forty-two.
+    // There is nothing to buy: the room is the limit. But it does cover a shorter shift.
+    //
+    // Hiring can no longer put a player here, because the caps see to that. A crew that predates the
+    // caps still can be, and the report has to answer them honestly.
+    var stretched = new Player { Hoes = 26, Thugs = 1, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
     var report = economy.GetCrewReport(stretched);
-    AssertEqual(10, report.HoesStorageCanSupply);
+    AssertEqual(25, report.HoesStorageCanSupply);
     AssertEqual(2, report.StorageLevelToSupplyCrew);
     AssertTrue(report.SuppliedStreetActionTurns > 0 && report.SuppliedStreetActionTurns < options.MaxActionTurns,
         $"a shorter shift is supplied ({report.SuppliedStreetActionTurns} turns)");

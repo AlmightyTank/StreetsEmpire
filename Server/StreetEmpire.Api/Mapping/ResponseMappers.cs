@@ -119,13 +119,15 @@ internal static class ResponseMappers
         int recentDefenses,
         DateTime? viewerLaneReadyAtUtc,
         long viewerPlunder = 0,
-        IReadOnlyList<PlayerTitleResponse>? titles = null)
+        IReadOnlyList<PlayerTitleResponse>? titles = null,
+        IReadOnlyDictionary<string, string>? strikeBlockers = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
             ? null
             : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
         return new PlayerProfileResponse(
+            strikeBlockers ?? new Dictionary<string, string>(),
             player.Id,
             player.Name,
             player.City,
@@ -275,6 +277,7 @@ internal static class ResponseMappers
             capacity.MaxMoonshine,
             capacity.MaxCut,
             capacity.MaxMedicine,
+            capacity.MaxPoison,
             hideouts.ProductionYieldBonusPercent(player.Hideout, "weed"),
             hideouts.ProductionYieldBonusPercent(player.Hideout, "coke"),
             hideouts.PassivePerHour(player.Hideout, "weed"),
@@ -291,8 +294,8 @@ internal static class ResponseMappers
             buildingValue,
             ToRoomUpgrade(hideouts, player.Hideout, "storage"),
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
-            ToRoomUpgrade(hideouts, player.Hideout, "weedlab"),
-            ToRoomUpgrade(hideouts, player.Hideout, "cokelab"),
+            ToRoomUpgrade(hideouts, player.Hideout, "weedlab", options, player.City),
+            ToRoomUpgrade(hideouts, player.Hideout, "cokelab", options, player.City),
             ToRoomUpgrade(hideouts, player.Hideout, "intelligence"),
             ToRoomUpgrade(hideouts, player.Hideout, "lookout"),
             nextTier is null
@@ -321,7 +324,7 @@ internal static class ResponseMappers
         // What the workshop is currently turning out: the best gun its level has unlocked. That decides
         // both the price it is meant to beat and the cost it is quoted at, so an upgrade shows up here as
         // a different product rather than as the same one slightly cheaper.
-        var workshopLevel = hideouts.StationFor(player.Hideout, "workshop");
+        var workshopLevel = hideouts.WorkshopFor(player.Hideout);
         // An unbuilt shop advertises what building one would actually get you, which is the first
         // level's reach rather than the cheapest gun in the game. The panel's whole job is to say what
         // the money buys, and "makes pistols" undersells a shop that turns out shotguns on day one.
@@ -332,36 +335,57 @@ internal static class ResponseMappers
             .FirstOrDefault();
         var forgeGood = forging?.Key ?? WeaponTiers.Pistol;
 
-        (string Key, string Name, string Good, long Compare, string CompareLabel, long UnitCost)[] shapes =
-        [
-            ("workshop", "Workshop", forgeGood, forging?.Price ?? options.WeaponPrice, $"store {WeaponTiers.Label(forgeGood).ToLowerInvariant()}", forging?.ForgeCost ?? 0),
-            ("still", "Still", "moonshine", options.BeerPrice, "store beer", workshopLevelCost(hideouts, player, "still")),
-            ("mix", "Mix House", "cut", Math.Max(1, cokePrice / 4), "what it stretches", workshopLevelCost(hideouts, player, "mix"))
-        ];
+        // One bench, and everything it can currently turn out. The still and the mix house used to be
+        // rooms of their own; they are recipes now, and a recipe the shop cannot reach yet is still
+        // listed so the player can see what the next level buys rather than discovering it afterwards.
+        var level = player.Hideout?.WorkshopLevel ?? 0;
+        var throughput = workshopLevel?.Throughput ?? 0;
+        var upgrade = ToRoomUpgrade(hideouts, player.Hideout, "workshop");
 
-        return shapes.Select(shape =>
+        var rows = new List<HideoutStationResponse>
         {
-            var level = hideouts.StationFor(player.Hideout, shape.Key);
-            return new HideoutStationResponse(
-                shape.Key,
-                shape.Name,
-                shape.Good,
-                shape.Key switch
-                {
-                    "still" => player.Hideout?.StillLevel ?? 0,
-                    "mix" => player.Hideout?.MixLevel ?? 0,
-                    _ => player.Hideout?.WorkshopLevel ?? 0
-                },
-                level?.WeaponsPerTurn ?? 0,
-                shape.UnitCost,
-                shape.Compare,
-                shape.CompareLabel,
-                HeatPerUnit(options, shape.Good),
-                ToRoomUpgrade(hideouts, player.Hideout, shape.Key));
-        }).ToList();
+            new(
+                "workshop",
+                "Workshop",
+                forgeGood,
+                level,
+                throughput,
+                forging?.ForgeCost ?? 0,
+                forging?.Price ?? options.WeaponPrice,
+                $"store {WeaponTiers.Label(forgeGood).ToLowerInvariant()}",
+                HeatPerUnit(options, forgeGood),
+                upgrade)
+        };
 
-        static long workshopLevelCost(HideoutService hideouts, Player player, string station)
-            => hideouts.StationFor(player.Hideout, station)?.CostPerWeapon ?? 0;
+        foreach (var recipe in options.Makeables.Where(x => x.CanMake).OrderBy(x => x.MinWorkshopLevel))
+        {
+            // What the thing is measured against: moonshine stands in for beer, cut for a share of the
+            // coke it stretches. The same comparisons the separate rooms used to draw.
+            var (compare, compareLabel) = recipe.Key switch
+            {
+                "moonshine" => ((long)options.BeerPrice, "store beer"),
+                "cut" => (Math.Max(1, cokePrice / 4), "what it stretches"),
+                "condoms" => ((long)options.CondomPrice, "store condoms"),
+                "medicine" => ((long)options.MedicinePrice, "store medicine"),
+                _ => ((long)options.PoisonPrice, "store poison")
+            };
+
+            rows.Add(new HideoutStationResponse(
+                recipe.Key,
+                TradeGoods.Label(recipe.Key),
+                recipe.Key,
+                // A recipe has no level of its own any more. What it reports is the shop that makes it,
+                // or nothing when the shop cannot reach it yet.
+                level >= recipe.MinWorkshopLevel ? level : 0,
+                level >= recipe.MinWorkshopLevel ? recipe.PerTurn * Math.Max(1, throughput) : 0,
+                recipe.MaterialCost,
+                compare,
+                compareLabel,
+                HeatPerUnit(options, recipe.Key),
+                upgrade));
+        }
+
+        return rows;
     }
 
     /// <summary>
@@ -427,10 +451,60 @@ internal static class ResponseMappers
         _ => 0
     };
 
-    private static HideoutRoomUpgradeResponse? ToRoomUpgrade(HideoutService hideouts, Hideout? hideout, string room)
+    private static HideoutRoomUpgradeResponse? ToRoomUpgrade(
+        HideoutService hideouts,
+        Hideout? hideout,
+        string room,
+        GameOptions? options = null,
+        string? city = null)
         => hideouts.NextUpgrade(hideout, room) is { } next
-            ? new HideoutRoomUpgradeResponse(next.Level, next.Cost, next.RequiredTier, hideouts.TierName(next.RequiredTier), next.TierLocked)
+            ? new HideoutRoomUpgradeResponse(
+                next.Level,
+                next.Cost,
+                next.RequiredTier,
+                hideouts.TierName(next.RequiredTier),
+                next.TierLocked,
+                PaybackDays(options, city, room, hideout, next.Level, next.Cost))
             : null;
+
+    /// <summary>
+    /// How long the room's own output takes to cover what the upgrade costs, in days.
+    ///
+    /// Only the labs produce anything on their own, so only the labs can answer. The later levels are
+    /// deliberately a bad return - a sink for money with nowhere else to go - and this is what stops
+    /// that from being a secret: the number gets worse as you climb, and a player can see it getting
+    /// worse before they spend rather than afterwards.
+    /// </summary>
+    private static int? PaybackDays(
+        GameOptions? options,
+        string? city,
+        string room,
+        Hideout? hideout,
+        int nextLevel,
+        long cost)
+    {
+        if (options is null || cost <= 0) return null;
+
+        var (levels, good) = room switch
+        {
+            "weedlab" => (options.Hideout.WeedLab, "weed"),
+            "cokelab" => (options.Hideout.CokeLab, "coke"),
+            _ => (null, string.Empty)
+        };
+        if (levels is null) return null;
+
+        var now = levels.SingleOrDefault(x => x.Level == (room == "weedlab" ? hideout?.WeedLabLevel ?? 0 : hideout?.CokeLabLevel ?? 0));
+        var then = levels.SingleOrDefault(x => x.Level == nextLevel);
+        if (then is null) return null;
+
+        // What the upgrade adds rather than what the room makes: the level below was already paid for.
+        var gained = then.PassivePerHour - (now?.PassivePerHour ?? 0);
+        if (gained <= 0) return null;
+
+        var price = TradeGoods.ReferencePrice(options, good, city ?? string.Empty);
+        var perDay = (long)gained * 24 * price;
+        return perDay <= 0 ? null : (int)Math.Ceiling(cost / (double)perDay);
+    }
 
     internal static PimpResponse ToPimpResponse(Pimp pimp, IReadOnlyCollection<long> commandingPimpIds)
         => new(

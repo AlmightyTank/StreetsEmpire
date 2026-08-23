@@ -22,6 +22,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -137,6 +138,24 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasOne(x => x.ClaimedBy)
                 .WithMany()
                 .HasForeignKey(x => x.ClaimedById)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ChatMessage>(entity =>
+        {
+            // Every read is "the newest lines in one room", and the room is the channel plus its scope.
+            entity.HasIndex(x => new { x.Channel, x.City, x.Id });
+            entity.HasIndex(x => new { x.Channel, x.AllianceId, x.Id });
+            // The rate limit asks "has this person spoken lately", which is this.
+            entity.HasIndex(x => new { x.AuthorId, x.CreatedAtUtc });
+            entity.Property(x => x.City).HasMaxLength(64);
+            entity.Property(x => x.AuthorName).HasMaxLength(32);
+            entity.Property(x => x.Body).HasMaxLength(400);
+            // A line outlives the person who said it: the name is already kept beside it, so losing the
+            // author should blank the link rather than delete what they said.
+            entity.HasOne(x => x.Author)
+                .WithMany()
+                .HasForeignKey(x => x.AuthorId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 

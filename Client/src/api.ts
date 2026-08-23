@@ -73,6 +73,36 @@ export type Contract = {
 }
 export type ContractBoard = { city: string, contracts: Contract[] }
 
+export type ChatChannelKey = 'Global' | 'City' | 'Alliance'
+
+/** One line in a room, as it is shown. */
+export type ChatMessage = {
+  id: number
+  author: string
+  /** Your own lines are marked so the eye can find them without reading the names. */
+  yours: boolean
+  body: string
+  sentAtUtc: string
+}
+
+/** A room you can open, and whether you can say anything in it. */
+export type ChatChannel = {
+  channel: ChatChannelKey
+  label: string
+  detail: string
+  canPost: boolean
+  blockedReason?: string | null
+}
+
+export type ChatBoard = {
+  channel: ChatChannelKey
+  /** What this room is for you: the town you are in, or your crew's name. */
+  scope: string
+  channels: ChatChannel[]
+  messages: ChatMessage[]
+  maxLength: number
+}
+
 export type NextMove = { label: string, why: string, page: string, cost: number, urgent: boolean }
 export type Objective = { label: string, why: string, page: string, done: boolean }
 export type Guidance = {
@@ -102,6 +132,7 @@ export type Hideout = {
   maxMoonshine: number
   maxCut: number
   maxMedicine: number
+  maxPoison: number
   weedLabYieldBonusPercent: number
   cokeLabYieldBonusPercent: number
   weedLabPassivePerHour: number
@@ -147,6 +178,8 @@ export type HideoutRoomUpgrade = {
   requiredTier: number
   requiredTierName: string
   tierLocked: boolean
+  /** Days of this room's own output before the upgrade pays for itself. Null when it makes nothing. */
+  paybackDays: number | null
 }
 
 export type HideoutTierUpgrade = {
@@ -167,7 +200,8 @@ export type HideoutBuild = {
   secondsRemaining: number
 }
 
-export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'still' | 'mix' | 'intelligence' | 'lookout'
+/** The rooms you can buy. The still and the mix house were folded into the workshop. */
+export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'intelligence' | 'lookout'
 
 export type Pimp = {
   id: number
@@ -217,6 +251,8 @@ export type Dashboard = {
   /** And which guns they are, which is what decides a fight. */
   weaponRack: WeaponTier[]
   medicine: number
+  /** Doses on the shelf. What it costs you to infest somebody else's house. */
+  poison: number
   rides: number
   weed: number
   coke: number
@@ -268,6 +304,13 @@ export type WeaponTier = {
 }
 
 export type WeaponTierKey = 'pistols' | 'shotguns' | 'smgs' | 'rifles'
+
+/**
+ * The cheapest gun, and the one the street's quick-buy stocks. Named rather than written out
+ * wherever it is needed: the supplies panel used to ask the counter for a key called 'weapons',
+ * which stopped existing the day guns split into tiers, and nothing said so.
+ */
+export const cheapestWeapon: WeaponTierKey = 'pistols'
 
 /** The shrine: what the gods want this week, and whether they will hear you. */
 export type PrayerBoard = {
@@ -505,6 +548,8 @@ export type PlayerTarget = {
 }
 
 export type PlayerProfile = PlayerTarget & {
+  /** Why each strike cannot be thrown at this person, keyed by method. Absent when it can. */
+  strikeBlockers: Record<string, string | undefined>
   cash: number
   bankCash: number
   /** What they are armed with, not merely how many. A house of rifles is a different fight. */
@@ -939,6 +984,10 @@ export const api = {
     request<ActionResult>('/api/game/cut', { method: 'POST', body: JSON.stringify({ turns, product: 'coke' }) }),
   mules: () => request<MuleBoard>('/api/game/mules'),
   contracts: () => request<ContractBoard>('/api/game/contracts'),
+  chat: (channel: ChatChannelKey) =>
+    request<ChatBoard>(`/api/game/chat?channel=${encodeURIComponent(channel)}`),
+  say: (channel: ChatChannelKey, body: string) =>
+    request<ChatMessage>('/api/game/chat', { method: 'POST', body: JSON.stringify({ channel, body }) }),
   /** Hands over part of an order, or as much as will go when no amount is given. */
   fillContract: (id: number, quantity?: number) =>
     request<ActionResult>(`/api/game/contracts/${id}/fill`, {

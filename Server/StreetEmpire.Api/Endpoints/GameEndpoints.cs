@@ -162,6 +162,7 @@ internal static class GameEndpoints
                 player.Weapons,
                 ToWeaponRack(player, opts),
                 player.Medicine,
+                player.Poison,
                 player.Rides,
                 player.Weed,
                 player.Coke,

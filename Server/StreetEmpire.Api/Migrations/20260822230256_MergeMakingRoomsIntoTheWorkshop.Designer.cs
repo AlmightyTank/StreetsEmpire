@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260822230256_MergeMakingRoomsIntoTheWorkshop")]
+    partial class MergeMakingRoomsIntoTheWorkshop
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -166,51 +169,6 @@ namespace StreetEmpire.Api.Migrations
                     b.HasIndex("PlayerId", "Kind");
 
                     b.ToTable("AllianceRequests");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long?>("AllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid?>("AuthorId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AuthorName")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<int>("Channel")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("City")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuthorId", "CreatedAtUtc");
-
-                    b.HasIndex("Channel", "AllianceId", "Id");
-
-                    b.HasIndex("Channel", "City", "Id");
-
-                    b.ToTable("ChatMessages");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.CombatLog", b =>
@@ -1307,16 +1265,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Alliance");
 
                     b.Navigation("Player");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Player", "Author")
-                        .WithMany()
-                        .HasForeignKey("AuthorId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Author");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.CombatLog", b =>

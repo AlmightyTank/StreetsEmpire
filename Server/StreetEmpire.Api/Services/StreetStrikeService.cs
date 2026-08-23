@@ -189,39 +189,59 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
         if (mismatch is not null)
             throw new GameRuleException(mismatch);
 
-        switch (method)
+        if (WhyNot(method, attacker, defender, request.Coke) is { } refusal)
+            throw new GameRuleException(refusal);
+    }
+
+    /// <summary>
+    /// Why this strike cannot be thrown at this person, or null when it can.
+    ///
+    /// Returns the reason rather than throwing it so the same sentence can be shown before the click as
+    /// is thrown after it. The menu of methods is built from the attacker alone - it never sees who is
+    /// being looked at - so the target's half of the rule had nowhere to be said, and a player could sit
+    /// reading "nothing parked there to take" under a live button offering to take it.
+    ///
+    /// One function for both, because a rule written twice is a rule that will disagree with itself.
+    /// </summary>
+    public string? WhyNot(string method, Player attacker, Player defender, int coke = 0)
+    {
+        switch (AttackMethods.Normalize(method))
         {
             case AttackMethods.DriveBy:
                 if (attacker.Rides < 1)
-                    throw new GameRuleException("A drive-by needs a ride. The chop shop sells them.");
+                    return "A drive-by needs a ride. The chop shop sells them.";
                 break;
 
             case AttackMethods.Jack:
                 if (attacker.Thugs < 1)
-                    throw new GameRuleException("You need a thug to drive it away.");
+                    return "You need a thug to drive it away.";
                 if (defender.Rides < 1)
-                    throw new GameRuleException($"{defender.Name} does not own a ride.");
+                    return $"{defender.Name} does not own a ride.";
                 if (hideout.RideRoom(attacker) < 1)
-                    throw new GameRuleException("Your garage is full. A bigger hideout parks more.");
+                    return "Your garage is full. A bigger hideout parks more.";
                 break;
 
             case AttackMethods.Infest:
                 if (defender.Hoes < 1)
-                    throw new GameRuleException($"{defender.Name} has no hoes to infest.");
+                    return $"{defender.Name} has no hoes to infest.";
+                if (attacker.Poison < 1)
+                    return "You have no poison. The counter sells it, and a mix house makes it cheaper.";
                 break;
 
             case AttackMethods.Poach:
                 var perHoe = Math.Max(1, _options.Strikes.Poach.CokePerHoe);
                 if (defender.Hoes < 1)
-                    throw new GameRuleException($"{defender.Name} has no hoes to poach.");
-                if (request.Coke < perHoe)
-                    throw new GameRuleException($"Tempting one hoe away takes {perHoe:N0} coke at full purity.");
-                if (attacker.Coke < request.Coke)
-                    throw new GameRuleException($"You only hold {attacker.Coke:N0} coke.");
+                    return $"{defender.Name} has no hoes to poach.";
+                if (coke < perHoe)
+                    return $"Tempting one hoe away takes {perHoe:N0} coke at full purity.";
+                if (attacker.Coke < coke)
+                    return $"You only hold {attacker.Coke:N0} coke.";
                 if (hideout.CrewRoom(attacker, "hoes") < 1)
-                    throw new GameRuleException("Your hideout has no room for more hoes.");
+                    return "Your hideout has no room for more hoes.";
                 break;
         }
+
+        return null;
     }
 
     /// <summary>
@@ -369,6 +389,16 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
             100);
         var exposed = Math.Min(defender.Hoes, Math.Max(1, (int)Math.Round(defender.Hoes * share / 100.0)));
 
+        // You reach as far as you brought poison for. This is the defender's own problem handed back to
+        // them in reverse: covering a big house costs real money, and turning up short against one only
+        // buys you the hoes your doses could reach.
+        var perDose = Math.Max(1, config.HoesHitPerDose);
+        exposed = Math.Min(exposed, attacker.Poison * perDose);
+
+        // A part-used dose is a used dose, exactly as a part-used crate of medicine is.
+        var dosesUsed = (int)Math.Ceiling(exposed / (double)perDose);
+        attacker.Poison -= dosesUsed;
+
         var cured = Math.Min(exposed, defender.Medicine * perCrate);
         // A part-used crate is a used crate, so this rounds up. Treating three hoes out of a crate of
         // three and keeping the crate would make one crate cover a house forever.
@@ -394,6 +424,7 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
                 ["hoesExposed"] = exposed,
                 ["hoesCured"] = cured,
                 ["medicineUsed"] = cratesUsed,
+                ["poisonUsed"] = dosesUsed,
                 ["sharePercent"] = Math.Round(share, 1)
             });
     }

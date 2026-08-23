@@ -37,6 +37,9 @@ var tests = new (string Name, Action Test)[]
     ("pimp walks out when loyalty bottoms out", PimpWalksOutWhenLoyaltyBottomsOut),
     ("hideout caps crew hiring at the tier limit", HideoutCapsCrewHiring),
     ("hideout blocks store buys that would overflow storage", HideoutBlocksOverflowingStoreBuys),
+    ("everything on the counter can actually be bought", EverythingOnTheCounterCanBeBought),
+    ("everything you can hold is worth something", EverythingYouCanHoldIsWorthSomething),
+    ("the bench never makes an attack cheaper than its answer", DefenceIsNeverDearerThanAttack),
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -84,6 +87,7 @@ var tests = new (string Name, Action Test)[]
     ("every town has ground, a price and a name of its own", EveryCityIsRealAndDistinct),
     ("a watchful town notices the same operation sooner", CityRiskReachesTheDailyLoop),
     ("a buyer with a deadline pays over the counter", ContractsAreDemandWithAShape),
+    ("a room only ever fails towards the loudest one", ChatFailsTowardsTheOpenRoom),
     ("an order goes in as fast as the room allows", AnOrderGoesInAsFastAsTheRoomAllows),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
@@ -119,10 +123,12 @@ var tests = new (string Name, Action Test)[]
     ("a boss draws the lines every other rank runs under", BossDrawsTheLines),
     ("the door is one setting with three states", TheDoorIsOneSettingWithThreeStates),
     ("medicine is the answer to an infestation", MedicineAnswersAnInfestation),
+    ("poison is what an infestation costs to throw", PoisonIsWhatAnInfestationCosts),
     ("a well-paid house cannot be poached at any price", PayoutAnswersPoaching),
     ("the two shields keep their own clocks", StrikeAndRaidShieldsAreSeparate),
     ("the chop shop sells rides and buys them back for less", ChopShopBuysBackUnderTheSticker),
     ("defence alerts name the strike that hit you", DefenceAlertsNameTheStrike),
+    ("a strike says no before the click, not after it", AStrikeRefusesBeforeTheClick),
     ("a pistol fights exactly as the one weapon used to", PistolsReproduceTheOldWeapon),
     ("any gun covers a thug, but only the good ones fight", CoverageAndFirepowerComeApart),
     ("a crew carries the best guns and drops the worst", CrewsCarryTheBestAndDropTheWorst),
@@ -235,7 +241,7 @@ static void NetWorthExpressionAgreesWithCalculation()
             Hideout = new Hideout
             {
                 Tier = 4, StorageLevel = 6, SafeLevel = 5, WeedLabLevel = 3, CokeLabLevel = 2,
-                WorkshopLevel = 2, StillLevel = 1, MixLevel = 1, IntelligenceLevel = 2, LookoutLevel = 2
+                WorkshopLevel = 2, IntelligenceLevel = 2, LookoutLevel = 2
             }
         }
     };
@@ -316,8 +322,6 @@ static void AHideoutIsWorthWhatItCost()
         WeedLabLevel = config.WeedLab.Max(x => x.Level),
         CokeLabLevel = config.CokeLab.Max(x => x.Level),
         WorkshopLevel = config.Workshop.Max(x => x.Level),
-        StillLevel = config.Still.Max(x => x.Level),
-        MixLevel = config.Mix.Max(x => x.Level),
         IntelligenceLevel = config.Intelligence.Max(x => x.Level),
         LookoutLevel = config.Lookout.Max(x => x.Level)
     };
@@ -338,7 +342,9 @@ static void AHideoutIsWorthWhatItCost()
         if (counted) roomLists++;
     }
 
-    AssertTrue(roomLists >= 10, $"every room list should be found, saw {roomLists}");
+    // Eight since the still and the mix house were folded into the workshop. The number is here to
+    // catch reflection finding nothing at all, not to pin the room count.
+    AssertTrue(roomLists >= 8, $"every room list should be found, saw {roomLists}");
     AssertEqual(everyPound, HideoutValue.Of(maxed, options));
 }
 
@@ -1025,6 +1031,118 @@ static void HideoutCapsCrewHiring()
     AssertEqual(25, starting.Hoes);
 }
 
+// The counter and the shelf are two lists that have to agree, and nothing was making them. Poison went
+// on sale with no case in the capacity switch behind it, so buying any fell through to a developer note
+// - "Store item is not implemented" - and the good was unobtainable by the only route that sold it.
+//
+// Walks the shop rather than naming its stock, so the next thing added to it is covered the day it is
+// added rather than the day somebody tries to buy one.
+// Moonshine and cut were held, shelved, taxed in heat and paid for in turns, and counted for nothing
+// on the board - so brewing a full still lowered your standing by whatever the materials cost. The same
+// trap the hideout was in, in a different currency, and nothing was watching for it.
+//
+// Walks the goods the game knows about rather than naming them, so the next one added is covered the
+// day it is added rather than whenever somebody notices their net worth going the wrong way.
+// Poison was put on the bench without the medicine that answers it, so for a while the game sold the
+// attack at a third of the counter price and left the defence at full. Whoever built the deeper shop
+// got to poison houses cheaply while the houses could only buy their way out.
+//
+// The rule this pins is small and worth keeping: for any pair where one thing exists to beat another,
+// the bench must not reach the attacking end first, nor make it the better bargain.
+static void DefenceIsNeverDearerThanAttack()
+{
+    var options = Resolve(new GameOptions());
+
+    var poison = options.Makeables.Single(x => x.Key == "poison");
+    var medicine = options.Makeables.Single(x => x.Key == "medicine");
+
+    // Reachable no later than the thing it answers.
+    AssertTrue(medicine.MinWorkshopLevel <= poison.MinWorkshopLevel,
+        $"medicine at level {medicine.MinWorkshopLevel} must not come after poison at {poison.MinWorkshopLevel}");
+
+    // And no worse a saving against the counter, or buying the cure is the mug's game.
+    var poisonSaving = 1 - poison.MaterialCost / (double)options.PoisonPrice;
+    var medicineSaving = 1 - medicine.MaterialCost / (double)options.MedicinePrice;
+    AssertTrue(medicineSaving >= poisonSaving - 0.05,
+        $"medicine saves {medicineSaving:P0} against poison's {poisonSaving:P0}");
+
+    // Every recipe undercuts what it stands in for, or there is no reason for the bench to exist.
+    foreach (var recipe in options.Makeables.Where(x => x.CanMake))
+    {
+        var counter = TradeGoods.ReferencePrice(options, recipe.Key, "Detroit");
+        AssertTrue(counter > 0, $"{recipe.Key} should have a price to be judged against");
+        AssertTrue(recipe.MaterialCost < counter,
+            $"making {recipe.Key} costs {recipe.MaterialCost} against a counter price of {counter}");
+    }
+
+    // A recipe unlocked later should not be a worse deal than one unlocked earlier for the same job:
+    // the pair that feed crew upkeep are both first-level, because upkeep is what an early player is
+    // actually spending on.
+    var condoms = options.Makeables.Single(x => x.Key == "condoms");
+    var moonshine = options.Makeables.Single(x => x.Key == "moonshine");
+    AssertEqual(moonshine.MinWorkshopLevel, condoms.MinWorkshopLevel);
+}
+
+static void EverythingYouCanHoldIsWorthSomething()
+{
+    var options = Resolve(new GameOptions());
+    var service = CreateEconomy(options);
+
+    // Every key TradeGoods will store against a player, which is the definition of a thing you can hold.
+    var goods = new[] { "condoms", "beer", "medicine", "poison", "weed", "coke", "moonshine", "cut" };
+
+    foreach (var good in goods)
+    {
+        var empty = new Player();
+        var holding = new Player { CokePurity = 1 };
+        TradeGoods.Add(holding, good, 10);
+
+        AssertEqual(10, TradeGoods.Held(holding, good));
+        var gain = service.CalculateNetWorth(holding) - service.CalculateNetWorth(empty);
+        AssertTrue(gain > 0, $"holding 10 {good} should be worth something, moved net worth by {gain}");
+    }
+
+    // Guns are held through the rack rather than a plain counter, and are worth what the shop charges.
+    foreach (var tier in WeaponTiers.All)
+    {
+        var armed = new Player();
+        TradeGoods.Add(armed, tier, 5);
+        AssertTrue(service.CalculateNetWorth(armed) > 0, $"a rack of {tier} should be worth something");
+    }
+
+    // And the two forms of the sum still agree with each other once all of it is in play.
+    var stocked = new Player
+    {
+        Cash = 1_000, Weed = 12, Coke = 8, CokePurity = 0.9, Moonshine = 20, Cut = 30,
+        Medicine = 3, Poison = 4, Condoms = 40, Beer = 25, Rides = 1, Pistols = 6,
+        Hideout = new Hideout { Tier = 2, StorageLevel = 3 }
+    };
+    AssertEqual(service.CalculateNetWorth(stocked), service.NetWorthExpression.Compile()(stocked));
+    AssertEqual(service.CalculatePlunder(stocked), service.PlunderExpression.Compile()(stocked));
+}
+
+static void EverythingOnTheCounterCanBeBought()
+{
+    var options = Resolve(new GameOptions());
+    var service = CreateEconomy(options);
+
+    foreach (var item in service.GetStore())
+    {
+        var buyer = new Player
+        {
+            Cash = 100_000_000,
+            Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 }
+        };
+
+        // One of each. A price the player can plainly afford and a room with space, so anything that
+        // refuses here is refusing on the shape of the code rather than on the state of the player.
+        var bought = service.BuyStoreItem(buyer, item.Key, 1);
+        AssertTrue(bought is not null, $"{item.Key} should be buyable");
+        AssertTrue(TradeGoods.Held(buyer, item.Key) > 0 || item.Key == "rides",
+            $"buying {item.Key} should leave the player holding one");
+    }
+}
+
 static void HideoutBlocksOverflowingStoreBuys()
 {
     var service = CreateEconomy(StorageCapOptions(condoms: 10));
@@ -1417,7 +1535,7 @@ static void ShippedSettingsObeyTheSameRules()
         lists++;
     }
 
-    AssertTrue(lists >= 10, $"every hideout list should be compared, saw {lists}");
+    AssertTrue(lists >= 8, $"every hideout list should be compared, saw {lists}");
 }
 
 static void CrewIsCappedByWhicheverRunsOutFirst()
@@ -1738,20 +1856,29 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     AssertRuleError(() => service.Forge(new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout() }, 5),
         "forging without a workshop");
 
-    // A still and a mix house need the second tier, and the gate holds when making as well as when
-    // building: a station built before the gate existed would otherwise keep running under it.
+    // One bench now. What used to be a still and a mix house are recipes on it, and how far up the
+    // list a shop reaches is the level rather than a separate room somebody had to remember to build.
     var hideouts = CreateHideouts(options);
-    AssertEqual(2, hideouts.StationRequiredTier("still") ?? 0);
-    AssertEqual(2, hideouts.StationRequiredTier("mix") ?? 0);
-    AssertTrue(hideouts.StationRequiredTier("workshop") is null, "the workshop is open from the start");
+    AssertTrue(hideouts.WorkshopRequiredTier() is null, "the workshop is open from the start");
 
-    var trapHouse = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 1, StorageLevel = 3, StillLevel = 1, MixLevel = 1 } };
-    AssertRuleError(() => service.Make(trapHouse, "still", 5), "brewing in a Trap House");
-    AssertRuleError(() => service.Make(trapHouse, "mix", 5), "mixing in a Trap House");
+    var moonshine = options.Makeables.Single(x => x.Key == "moonshine");
+    var cut = options.Makeables.Single(x => x.Key == "cut");
+    var poison = options.Makeables.Single(x => x.Key == "poison");
+    AssertTrue(moonshine.MinWorkshopLevel < cut.MinWorkshopLevel, "moonshine comes before cut");
+    AssertTrue(cut.MinWorkshopLevel < poison.MinWorkshopLevel, "cut comes before poison");
 
-    var warehouse = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 2, StorageLevel = 3, StillLevel = 1, MixLevel = 1 } };
-    AssertEqual(20, Value<int>(RequiredBreakdown(service.Make(warehouse, "still", 5)), "unitsMade"));
-    AssertEqual(15, Value<int>(RequiredBreakdown(service.Make(warehouse, "mix", 5)), "unitsMade"));
+    // A shop that cannot reach a recipe says so by name rather than making the wrong thing.
+    var firstBench = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 2, StorageLevel = 4, WorkshopLevel = 1 } };
+    AssertEqual(20, Value<int>(RequiredBreakdown(service.Make(firstBench, 5, "moonshine")), "unitsMade"));
+    AssertRuleError(() => service.Make(firstBench, 5, "cut"), "workshop makes cut");
+    AssertRuleError(() => service.Make(firstBench, 5, "poison"), "workshop makes poison");
+
+    // And a deeper one reaches further and works faster, which is the whole of what a level buys.
+    var deeper = new Player { Turns = 20, Cash = 500_000, Hideout = new Hideout { Tier = 3, StorageLevel = 5, WorkshopLevel = 3 } };
+    var brewed = Value<int>(RequiredBreakdown(service.Make(deeper, 5, "moonshine")), "unitsMade");
+    AssertTrue(brewed > 20, $"a level 3 bench out-brews a level 1 one, made {brewed}");
+    AssertTrue(Value<int>(RequiredBreakdown(service.Make(deeper, 5, "cut")), "unitsMade") > 0, "and reaches cut");
+    AssertTrue(Value<int>(RequiredBreakdown(service.Make(deeper, 5, "poison")), "unitsMade") > 0, "and poison");
 }
 
 /// <summary>
@@ -2006,6 +2133,30 @@ static void GuidancePointsAtTheGame()
     var finished = guidance.Objectives(veteran, ["STREET", "BANK", "PRODUCTION", "SALE"]);
     AssertTrue(finished.All(x => x.Done),
         $"nothing left to tell a grown empire: {string.Join(", ", finished.Where(x => !x.Done).Select(x => x.Label))}");
+
+    // Every rung sends the player to a tab, and nothing checked that the tab it names is one the client
+    // has, let alone that the thing it is asking for lives there. "Run a production shift" pointed at
+    // the street for as long as the ladder had existed, and there is no production on the street at
+    // all - so a new player following the game's own instructions arrived somewhere with nothing to do.
+    //
+    // The page names have to match the client's own keys, which are duplicated here on purpose: they
+    // cross a wire, and the only way a rename gets caught is if both ends are written down.
+    var pages = new[] { "overview", "street", "crew", "hideout", "territory", "market", "mules", "recon", "alliance" };
+    var ladder = guidance.Objectives(Rookie(options), []);
+    AssertTrue(ladder.Count > 0, "the ladder should have rungs");
+
+    foreach (var rung in ladder)
+    {
+        AssertTrue(pages.Contains(rung.Page), $"\"{rung.Label}\" points at \"{rung.Page}\", which is not a page");
+        AssertTrue(!string.IsNullOrWhiteSpace(rung.Why), $"\"{rung.Label}\" should say why it is worth doing");
+    }
+
+    // The lab and the shift that uses it belong on one page: the step before this one builds the lab in
+    // the hideout, and sending the player elsewhere to use it is a tab change bought for nothing.
+    var production = ladder.FirstOrDefault(x => x.Label.Contains("production"));
+    AssertTrue(production is not null, "the ladder should still teach production");
+    AssertEqual("hideout", production!.Page);
+
 }
 
 static Player Rookie(GameOptions options) => new()
@@ -2087,14 +2238,15 @@ static void CuttingStretchesWhatYouAlreadyHold()
     var economy = CreateEconomy(options);
     var perTurn = options.Hideout.CutPerTurnPerMixLevel;
 
-    // A mix house is required, and so is something at both ends of the mix.
-    var roomless = Stocked(mix: 0, coke: 50, cut: 50);
-    AssertRuleError(() => economy.CutCoke(roomless, 5), "You need a mix house to step on it.");
-    AssertRuleError(() => economy.CutCoke(Stocked(mix: 1, coke: 50, cut: 0), 5), "no cut to work with");
-    AssertRuleError(() => economy.CutCoke(Stocked(mix: 1, coke: 0, cut: 50), 5), "no coke to step on");
+    // A bench deep enough to make cut is required - the same level the recipe itself asks for - and so
+    // is something at both ends of the mix.
+    var roomless = Stocked(workshop: 0, coke: 50, cut: 50);
+    AssertRuleError(() => economy.CutCoke(roomless, 5), "workshop");
+    AssertRuleError(() => economy.CutCoke(Stocked(workshop: 2, coke: 50, cut: 0), 5), "no cut to work with");
+    AssertRuleError(() => economy.CutCoke(Stocked(workshop: 2, coke: 0, cut: 50), 5), "no coke to step on");
 
     // One cut makes one coke. The cut is spent, the pile grows by the same.
-    var player = Stocked(mix: 1, coke: 60, cut: 40);
+    var player = Stocked(workshop: 2, coke: 60, cut: 40);
     var result = economy.CutCoke(player, 4);
     AssertEqual(100, player.Coke);
     AssertEqual(0, player.Cut);
@@ -2104,22 +2256,22 @@ static void CuttingStretchesWhatYouAlreadyHold()
 
     // Only the turns the batch actually needed. Asking for ten on a two-turn batch should not cost
     // eight turns of standing about.
-    var quick = Stocked(mix: 1, coke: 100, cut: perTurn);
+    var quick = Stocked(workshop: 2, coke: 100, cut: perTurn);
     var turnsBefore = quick.Turns;
     economy.CutCoke(quick, 10);
     AssertEqual(turnsBefore - 1, quick.Turns);
 
-    // A better mix house works faster, which is the room's second reason to exist.
-    var basic = Stocked(mix: 1, coke: 100, cut: 500);
-    var better = Stocked(mix: 2, coke: 100, cut: 500);
+    // A deeper bench works faster, which is the room's second reason to exist.
+    var basic = Stocked(workshop: 2, coke: 100, cut: 500);
+    var better = Stocked(workshop: 3, coke: 100, cut: 500);
     economy.CutCoke(basic, 1);
     economy.CutCoke(better, 1);
-    AssertEqual(perTurn, 500 - basic.Cut);
-    AssertEqual(perTurn * 2, 500 - better.Cut);
+    AssertEqual(perTurn * 2, 500 - basic.Cut);
+    AssertEqual(perTurn * 3, 500 - better.Cut);
 
     // Never past the walls. Cutting into a full store would destroy cut already paid for, so the
     // batch stops at the room instead of spilling.
-    var cramped = Stocked(mix: 1, coke: 60, cut: 200, storage: 1);
+    var cramped = Stocked(workshop: 2, coke: 60, cut: 200, storage: 1);
     var capacity = CreateHideouts(options).CapacityFor(cramped.Hideout).MaxCoke;
     cramped.Coke = capacity - 3;
     economy.CutCoke(cramped, 20);
@@ -2128,17 +2280,17 @@ static void CuttingStretchesWhatYouAlreadyHold()
 
     AssertRuleError(() => economy.CutCoke(Full(options), 5), "no space for more coke");
 
-    static Player Stocked(int mix, int coke, int cut, int storage = 6) => new()
+    static Player Stocked(int workshop, int coke, int cut, int storage = 6) => new()
     {
         Turns = 100,
         Coke = coke,
         Cut = cut,
-        Hideout = new Hideout { Tier = 2, StorageLevel = storage, MixLevel = mix }
+        Hideout = new Hideout { Tier = 2, StorageLevel = storage, WorkshopLevel = workshop }
     };
 
     Player Full(GameOptions opts)
     {
-        var player = Stocked(mix: 1, coke: 0, cut: 50, storage: 1);
+        var player = Stocked(workshop: 2, coke: 0, cut: 50, storage: 1);
         player.Coke = CreateHideouts(opts).CapacityFor(player.Hideout).MaxCoke;
         return player;
     }
@@ -2644,6 +2796,47 @@ static void BotAttackProfilesScaleWithPersonality()
 /// price list rather than a market, and it made producing a routine. An order has a shape - an
 /// amount, a deadline, sometimes a condition - and every refusal has to be a real one.
 /// </summary>
+// The one rule in chat that cannot be got wrong quietly.
+//
+// Everywhere else in this game an unknown value fails to the most restrictive option - a door that
+// cannot be read is shut, because handing somebody a crew by accident is worse than refusing one. A
+// channel is the other way round, and deliberately: a line that lands somewhere more public than it
+// was meant to is a mistake the person who typed it can see and answer for, while one that quietly
+// goes to a crew it was not meant for cannot be taken back by anybody.
+//
+// So the failure is Global, and every private room has to be asked for by name.
+static void ChatFailsTowardsTheOpenRoom()
+{
+    // Nonsense, blank and missing all land in the open.
+    AssertEqual(ChatChannel.Global, ChatChannels.Parse(null));
+    AssertEqual(ChatChannel.Global, ChatChannels.Parse(""));
+    AssertEqual(ChatChannel.Global, ChatChannels.Parse("   "));
+    AssertEqual(ChatChannel.Global, ChatChannels.Parse("crew"));
+    AssertEqual(ChatChannel.Global, ChatChannels.Parse("alliance-ish"));
+
+    // The private rooms answer only to their own names, in any case.
+    AssertEqual(ChatChannel.Alliance, ChatChannels.Parse("Alliance"));
+    AssertEqual(ChatChannel.Alliance, ChatChannels.Parse("alliance"));
+    AssertEqual(ChatChannel.City, ChatChannels.Parse("city"));
+
+    // Three rooms, each named and described once.
+    AssertEqual(3, ChatChannels.All.Length);
+    AssertEqual(3, ChatChannels.All.Select(ChatChannels.Label).Distinct().Count());
+    AssertEqual(3, ChatChannels.All.Select(ChatChannels.Describe).Distinct().Count());
+
+    // And the scope is stored on the line rather than read off the author later, which is what keeps a
+    // Detroit message a Detroit message after its author has moved to Miami.
+    var said = new ChatMessage
+    {
+        Channel = ChatChannel.City,
+        City = "Detroit",
+        AuthorName = "Somebody",
+        Body = "meet me at the docks"
+    };
+    AssertEqual("Detroit", said.City);
+    AssertTrue(said.AllianceId is null, "a city line belongs to no crew");
+}
+
 static void ContractsAreDemandWithAShape()
 {
     var options = Resolve(new GameOptions());
@@ -4024,6 +4217,56 @@ static StrikeDefence Guard(int thugs, string tier)
 
 // The only attack in the game answered by a purchase rather than by crew or morale. Medicine sits on a
 // shelf doing nothing, costing money, until the day it is the only thing between a rival and the house.
+// Infesting was the only strike that took nothing to throw. A drive-by risks the car, a jacking needs
+// a thug and somewhere to park what it takes, a poach spends coke a head - and poisoning somebody's
+// house was free, which made it the obvious opening move against anybody at any time.
+//
+// Poison is the defender's own problem handed back in reverse. A crate of medicine treats three hoes;
+// a dose of poison reaches three. Covering a big house costs real money at either end.
+static void PoisonIsWhatAnInfestationCosts()
+{
+    var options = Resolve(new GameOptions());
+    var now = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+    var strikes = CreateStrikes(options, new AlwaysRandom());
+    var perDose = options.Strikes.Infest.HoesHitPerDose;
+
+    // Turning up with one dose reaches what one dose reaches, whatever the roll wanted.
+    var stingy = Attacker(options);
+    stingy.Poison = 1;
+    var big = Defender(options);
+    big.Hoes = 60;
+    big.Medicine = 0;
+
+    var thin = strikes.Resolve(stingy, big, Strike(big, AttackMethods.Infest), StrikeDefence.Everyone(big), now);
+    AssertTrue(thin.Log.DefenderHoesLost <= perDose, $"one dose cannot reach more than {perDose}, hit {thin.Log.DefenderHoesLost}");
+    AssertEqual(0, stingy.Poison);
+
+    // Carrying enough, the roll is what limits it rather than the shelf.
+    var stocked = Attacker(options);
+    stocked.Poison = 40;
+    var house = Defender(options);
+    house.Hoes = 60;
+    house.Medicine = 0;
+
+    var full = strikes.Resolve(stocked, house, Strike(house, AttackMethods.Infest), StrikeDefence.Everyone(house), now);
+    AssertTrue(full.Log.DefenderHoesLost > thin.Log.DefenderHoesLost, "more poison reaches further");
+    AssertTrue(stocked.Poison < 40, "and it is spent doing it");
+
+    // A part-used dose is a used dose, exactly as a part-used crate of medicine is. Anything else lets
+    // one dose cover a house forever by never quite finishing.
+    var used = 40 - stocked.Poison;
+    AssertEqual((int)Math.Ceiling(full.Log.DefenderHoesLost / (double)perDose), used);
+
+    // The shelf holds it like anything else, and it is worth what it cost on the books.
+    var hideouts = CreateHideouts(options);
+    var capacity = hideouts.CapacityFor(new Hideout { StorageLevel = 1 });
+    AssertTrue(capacity.MaxPoison > 0, "a starting room holds some");
+    AssertEqual(capacity.MaxMedicine, capacity.MaxPoison);
+
+    var holder = new Player { Poison = 4 };
+    AssertEqual(4L * options.PoisonNetWorth, EconomyService.NetWorthOf(holder, options));
+}
+
 static void MedicineAnswersAnInfestation()
 {
     var options = Resolve(new GameOptions());
@@ -4031,8 +4274,13 @@ static void MedicineAnswersAnInfestation()
     var strikes = CreateStrikes(options, new AlwaysRandom());
     var perCrate = options.Strikes.Infest.HoesCuredPerCrate;
 
+    // Poisoning a house costs poison, so an attacker in this test has to be carrying enough to reach
+    // the whole of a forty-hoe house. Stocked deliberately rather than in the shared helper, so the
+    // other tests keep measuring an attacker who is carrying nothing unusual.
+    Player Poisoner() { var who = Attacker(options); who.Poison = 40; return who; }
+
     // No medicine: whoever is exposed is gone.
-    var attacker = Attacker(options);
+    var attacker = Poisoner();
     var bare = Defender(options);
     bare.Hoes = 40;
     bare.Medicine = 0;
@@ -4049,7 +4297,7 @@ static void MedicineAnswersAnInfestation()
     stocked.Hoes = 40;
     stocked.Medicine = (int)Math.Ceiling(40.0 / perCrate);
     var moraleBefore = stocked.HoeHappiness;
-    var held = strikes.Resolve(Attacker(options), stocked, Strike(stocked, AttackMethods.Infest), StrikeDefence.Everyone(stocked), now);
+    var held = strikes.Resolve(Poisoner(), stocked, Strike(stocked, AttackMethods.Infest), StrikeDefence.Everyone(stocked), now);
     AssertEqual("Defeat", held.Outcome);
     AssertEqual(40, stocked.Hoes);
     AssertTrue(stocked.Medicine < (int)Math.Ceiling(40.0 / perCrate), "crates are used up treating them");
@@ -4059,14 +4307,14 @@ static void MedicineAnswersAnInfestation()
     var thin = Defender(options);
     thin.Hoes = 40;
     thin.Medicine = 1;
-    strikes.Resolve(Attacker(options), thin, Strike(thin, AttackMethods.Infest), StrikeDefence.Everyone(thin), now);
+    strikes.Resolve(Poisoner(), thin, Strike(thin, AttackMethods.Infest), StrikeDefence.Everyone(thin), now);
     AssertEqual(0, thin.Medicine);
 
     // And a house with no hoes is not a target at all.
     var empty = Defender(options);
     empty.Hoes = 0;
     AssertRuleError(
-        () => strikes.Resolve(Attacker(options), empty, Strike(empty, AttackMethods.Infest), StrikeDefence.Everyone(empty), now),
+        () => strikes.Resolve(Poisoner(), empty, Strike(empty, AttackMethods.Infest), StrikeDefence.Everyone(empty), now),
         "infesting a house with no hoes");
 }
 
@@ -4192,6 +4440,70 @@ static void ChopShopBuysBackUnderTheSticker()
 // A CombatLog records the outcome from the attacker's point of view. "Broke through your defence" is
 // true of a raid and absurd of a drive-by, and a defender told only that they lost has no idea whether
 // to buy medicine, move the cars, or pay the house better.
+// The menu of strikes is built from the attacker alone - their thugs, their garage, their coke - and
+// has never seen who is being looked at. So the target's half of every rule had nowhere to be said, and
+// a player could sit reading "nothing parked there to take" underneath a live button offering to take
+// it, learning the rule only by spending the click and being refused.
+//
+// The same function answers both now, which is the point: the sentence under a dead button has to be
+// the sentence the launch would have thrown, or they will drift and one of them will be a lie.
+static void AStrikeRefusesBeforeTheClick()
+{
+    var options = Resolve(new GameOptions());
+    var strikes = CreateStrikes(options);
+
+    // Turns are checked before any of this, so give them enough that the ride is what refuses.
+    var attacker = new Player { Name = "You", City = "Detroit", Turns = 40, Thugs = 4, Pistols = 4, Coke = 500, CokePurity = 1, Poison = 10, Hideout = new Hideout() };
+
+    // Nothing parked: the jacking is refused, and it is refused by name.
+    // Rich enough to be worth attacking at all: the anti-farm floor is checked before any of this,
+    // and a pauper is refused for being a pauper long before the garage is looked at.
+    var empty = new Player { Name = "Skint", City = "Detroit", Cash = 200_000, Rides = 0, Hoes = 3 };
+    var why = strikes.WhyNot(AttackMethods.Jack, attacker, empty);
+    AssertTrue(why is not null, "a jacking against an empty garage is refused");
+    AssertTrue(why!.Contains("does not own a ride"), $"and says why: {why}");
+
+    // One parked and it is on.
+    var owner = new Player { Name = "Parked", City = "Detroit", Cash = 200_000, Rides = 1, Hoes = 3 };
+    AssertTrue(strikes.WhyNot(AttackMethods.Jack, attacker, owner) is null, "one ride is enough to be worth taking");
+
+    // The other two strikes that need something on the far end are gated the same way, because the gap
+    // was never about rides - it was about the menu not knowing who it was pointed at.
+    var noHoes = new Player { Name = "Alone", City = "Detroit", Cash = 200_000, Rides = 2, Hoes = 0 };
+    AssertTrue(strikes.WhyNot(AttackMethods.Infest, attacker, noHoes) is not null, "nothing to infest");
+    AssertTrue(strikes.WhyNot(AttackMethods.Poach, attacker, noHoes, options.Strikes.Poach.CokePerHoe) is not null, "nobody to poach");
+    AssertTrue(strikes.WhyNot(AttackMethods.Infest, attacker, owner) is null, "a house with hoes can be infested");
+
+    // And an attacker with no poison is refused, which is the whole of the new cost: infesting was the
+    // one strike that took nothing to throw.
+    var empty_handed = new Player { Name = "Broke", City = "Detroit", Turns = 40, Thugs = 4, Poison = 0, Hideout = new Hideout() };
+    var noDose = strikes.WhyNot(AttackMethods.Infest, empty_handed, owner);
+    AssertTrue(noDose is not null && noDose.Contains("no poison"), $"no poison, no infestation: {noDose}");
+
+    // Your own half still answers: a full garage stops a jacking whatever they have parked.
+    var stuffed = new Player { Name = "You", City = "Detroit", Turns = 40, Thugs = 4, Rides = 99, Hideout = new Hideout() };
+    var full = strikes.WhyNot(AttackMethods.Jack, stuffed, owner);
+    AssertTrue(full is not null && full.Contains("garage"), $"a full garage is still a reason: {full}");
+
+    // And the two answers agree. Asking before the click has to give the sentence the launch throws,
+    // or the button and the refusal are two different rules wearing the same words.
+    var thrown = string.Empty;
+    try
+    {
+        strikes.Resolve(
+            attacker,
+            empty,
+            new CombatAttackRequest(empty.Id, Method: AttackMethods.Jack),
+            StrikeDefence.Everyone(empty),
+            Landing());
+    }
+    catch (GameRuleException error)
+    {
+        thrown = error.Message;
+    }
+    AssertEqual(why, thrown);
+}
+
 static void DefenceAlertsNameTheStrike()
 {
     var attacker = new Player { Name = "Brass Knox" };

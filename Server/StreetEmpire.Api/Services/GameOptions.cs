@@ -74,6 +74,13 @@ public sealed class GameOptions
     /// attack menu and should be reachable in a first tier that can already afford a lab.
     /// </summary>
     public int MedicinePrice { get; set; } = 250;
+
+    /// <summary>
+    /// What a dose costs over the counter. Dearer than the medicine that answers it, because the
+    /// house being poisoned only has to cover its own hoes while the attacker is choosing to spend
+    /// this, and a cheap attack on somebody else's crew is one nobody has to think about.
+    /// </summary>
+    public int PoisonPrice { get; set; } = 400;
     public int RidePrice { get; set; } = 25_000;
 
     /// <summary>
@@ -105,12 +112,25 @@ public sealed class GameOptions
     public int CokeNetWorth { get; set; } = 120;
 
     /// <summary>
+    /// Moonshine and cut were the two things a player could hold that counted for nothing. Both take a
+    /// shelf, both cost money and turns to make, both draw heat - and brewing a full still dropped your
+    /// standing by whatever the materials cost, which is the same trap the hideout used to be in.
+    ///
+    /// Not invented: the game already says what they are worth when it prices a contract. Moonshine
+    /// stands in for beer and is priced as beer; cut is priced at a quarter of coke, so its worth is a
+    /// quarter of coke's. Changing either of those should change these.
+    /// </summary>
+    public int MoonshineNetWorth { get; set; } = 15;
+    public int CutNetWorth { get; set; } = 30;
+
+    /// <summary>
     /// A ride counts at what the chop shop would actually pay for it, not at what it cost. Net worth is
     /// what you could liquidate, and valuing a fleet at the sticker price would make buying rides a way
     /// to climb the board for free.
     /// </summary>
     public int RideNetWorth { get; set; } = 15_000;
     public int MedicineNetWorth { get; set; } = 250;
+    public int PoisonNetWorth { get; set; } = 300;
 
     /// <summary>
     /// The gun rack. Empty here on purpose, like the hideout tables: the configuration binder appends to
@@ -118,6 +138,12 @@ public sealed class GameOptions
     /// them with appsettings and let a stale row win the lookup.
     /// </summary>
     public List<WeaponTierOptions> Weapons { get; set; } = [];
+
+    /// <summary>
+    /// Everything else the workshop can turn out. Guns live in Weapons because they carry a price and a
+    /// firepower as well as a recipe; these carry only the recipe.
+    /// </summary>
+    public List<MakeableOptions> Makeables { get; set; } = [];
 
     /// <summary>Firepower by tier, in units of one pistol, for the rack to measure itself against.</summary>
     public IReadOnlyDictionary<string, double> WeaponFirepower()
@@ -137,6 +163,28 @@ public sealed class GameOptions
 
     public void ApplyWeaponDefaultsWhereEmpty()
     {
+        // The recipes for everything the workshop turns out that is not a gun. Rates are what the old
+        // rooms managed at their opening level, so a first workshop makes moonshine as fast as a first
+        // still did, and the poison the mix house used to handle now needs a deeper room to reach.
+        if (Makeables.Count == 0)
+            Makeables =
+            [
+                // Condoms by the case rather than over the counter. Not manufactured - nobody is
+                // making these in a back room - but bought wholesale, which is the same saving in the
+                // player's hands and the same shape on the bench. Beer already had this in moonshine;
+                // the hoes' half of upkeep is the larger cost and had nothing.
+                new MakeableOptions { Key = "condoms", PerTurn = 6, MaterialCost = 4, MinWorkshopLevel = 1 },
+                new MakeableOptions { Key = "moonshine", PerTurn = 4, MaterialCost = 6, MinWorkshopLevel = 1 },
+                new MakeableOptions { Key = "cut", PerTurn = 3, MaterialCost = 20, MinWorkshopLevel = 2 },
+                // Medicine before poison, deliberately. They are the two ends of one mechanic and the
+                // bench reached the attacking end first, which quietly made it cheaper to poison a
+                // house than to protect your own - a player could buy the attack at a third of the
+                // price while the answer to it stayed full price at the counter. Defence comes first
+                // now: you can look after your own house a level before you can go after anybody's.
+                new MakeableOptions { Key = "medicine", PerTurn = 2, MaterialCost = 90, MinWorkshopLevel = 2 },
+                new MakeableOptions { Key = "poison", PerTurn = 1, MaterialCost = 140, MinWorkshopLevel = 3 }
+            ];
+
         if (Weapons.Count > 0)
             return;
 
@@ -172,6 +220,7 @@ public sealed class GameOptions
     public PimpOptions Pimps { get; set; } = new();
     public AntiFarmOptions AntiFarm { get; set; } = new();
     public WorldNewsOptions WorldNews { get; set; } = new();
+    public ChatOptions Chat { get; set; } = new();
     public TerritoryOptions Territory { get; set; } = new();
     public MarketOptions Market { get; set; } = new();
     public CityMarketOptions CityMarkets { get; set; } = new();
@@ -358,6 +407,13 @@ public sealed class InfestOptions
     /// covering a big house costs a lot of money that does nothing until somebody attacks.
     /// </summary>
     public int HoesCuredPerCrate { get; set; } = 3;
+
+    /// <summary>
+    /// Hoes one dose reaches, mirroring the crate that treats them. The attacker's problem is now
+    /// the defender's in reverse: covering a big house costs real money, and turning up short means
+    /// only as many hoes as you brought poison for.
+    /// </summary>
+    public int HoesHitPerDose { get; set; } = 3;
 
     /// <summary>Morale hit when it lands, and the smaller one for a house whose medicine held.</summary>
     public double HoeMoraleHit { get; set; } = 8;
@@ -648,8 +704,6 @@ public sealed class HideoutOptions
     public List<LabLevelOptions> WeedLab { get; set; } = [];
     public List<LabLevelOptions> CokeLab { get; set; } = [];
     public List<WorkshopLevelOptions> Workshop { get; set; } = [];
-    public List<WorkshopLevelOptions> Still { get; set; } = [];
-    public List<WorkshopLevelOptions> Mix { get; set; } = [];
     public List<IntelligenceLevelOptions> Intelligence { get; set; } = [];
     public List<LookoutLevelOptions> Lookout { get; set; } = [];
 
@@ -678,6 +732,7 @@ public sealed class HideoutOptions
     /// place.
     /// </summary>
     public int CutPerTurnPerMixLevel { get; set; } = 10;
+
 
     /// <summary>
     /// Working the streets draws attention of its own, whether or not anything is held.
@@ -722,9 +777,9 @@ public sealed class HideoutOptions
             Tiers =
             [
                 new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25, MaxRides = 2 },
-                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 200_000, UpgradeTurns = 40, BuildMinutes = 30 },
-                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 600_000, UpgradeTurns = 80, BuildMinutes = 120 },
-                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 1_800_000, UpgradeTurns = 120, BuildMinutes = 360 }
+                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 300_000, UpgradeTurns = 40, BuildMinutes = 30 },
+                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 1_500_000, UpgradeTurns = 80, BuildMinutes = 120 },
+                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 7_200_000, UpgradeTurns = 120, BuildMinutes = 360 }
             ];
 
         // Every level holds a full 20-turn action for the crew it supports: condoms at one per 12 turns
@@ -738,26 +793,26 @@ public sealed class HideoutOptions
             Storage =
             [
                 // 25 hoes and 12 thugs, a full action each: the smallest crew worth calling a crew.
-                new StorageLevelOptions { Level = 1, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, Medicine = 9 },
+                new StorageLevelOptions { Level = 1, Condoms = 42, Beer = 25, Weapons = 12, Weed = 50, Coke = 25, Moonshine = 25, Cut = 25, Medicine = 9, Poison = 9 },
                 // 50 and 25, which is everything a Trap House has room for. The building is the ceiling
                 // from here rather than the room, and moving out is the only way up.
-                new StorageLevelOptions { Level = 2, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, Medicine = 17, UpgradeCost = 15_000 },
-                new StorageLevelOptions { Level = 3, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, Medicine = 29, UpgradeCost = 50_000 },
-                new StorageLevelOptions { Level = 4, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, Medicine = 44, UpgradeCost = 150_000 },
-                new StorageLevelOptions { Level = 5, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, Medicine = 67, UpgradeCost = 400_000 },
+                new StorageLevelOptions { Level = 2, Condoms = 84, Beer = 50, Weapons = 25, Weed = 100, Coke = 50, Moonshine = 50, Cut = 50, Medicine = 17, Poison = 17, UpgradeCost = 22_000 },
+                new StorageLevelOptions { Level = 3, MinTier = 2, Condoms = 142, Beer = 90, Weapons = 45, Weed = 170, Coke = 85, Moonshine = 90, Cut = 85, Medicine = 29, Poison = 29, UpgradeCost = 125_000 },
+                new StorageLevelOptions { Level = 4, MinTier = 3, Condoms = 217, Beer = 140, Weapons = 70, Weed = 260, Coke = 130, Moonshine = 140, Cut = 130, Medicine = 44, Poison = 44, UpgradeCost = 600_000 },
+                new StorageLevelOptions { Level = 5, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 400, Coke = 200, Moonshine = 220, Cut = 200, Medicine = 67, Poison = 67, UpgradeCost = 2_200_000 },
                 // Nothing above supplies a bigger crew, because no building holds one. What the last
                 // upgrade buys is room for product, which is the only thing left to want.
-                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 600, Coke = 300, Moonshine = 330, Cut = 300, Medicine = 67, UpgradeCost = 1_000_000 }
+                new StorageLevelOptions { Level = 6, MinTier = 4, Condoms = 334, Beer = 220, Weapons = 110, Weed = 600, Coke = 300, Moonshine = 330, Cut = 300, Medicine = 67, Poison = 67, UpgradeCost = 7_000_000 }
             ];
 
         if (Safe.Count == 0)
             Safe =
             [
                 new SafeLevelOptions { Level = 1, MaxCash = 50_000 },
-                new SafeLevelOptions { Level = 2, MaxCash = 100_000, UpgradeCost = 40_000 },
-                new SafeLevelOptions { Level = 3, MinTier = 2, MaxCash = 350_000, UpgradeCost = 120_000 },
-                new SafeLevelOptions { Level = 4, MinTier = 3, MaxCash = 1_000_000, UpgradeCost = 300_000 },
-                new SafeLevelOptions { Level = 5, MinTier = 4, MaxCash = 3_000_000, UpgradeCost = 900_000 }
+                new SafeLevelOptions { Level = 2, MaxCash = 100_000, UpgradeCost = 60_000 },
+                new SafeLevelOptions { Level = 3, MinTier = 2, MaxCash = 350_000, UpgradeCost = 300_000 },
+                new SafeLevelOptions { Level = 4, MinTier = 3, MaxCash = 1_000_000, UpgradeCost = 1_200_000 },
+                new SafeLevelOptions { Level = 5, MinTier = 4, MaxCash = 3_000_000, UpgradeCost = 4_950_000 }
             ];
 
         // PassivePerHour is deliberately below what the same lab yields through production turns: about
@@ -767,74 +822,61 @@ public sealed class HideoutOptions
             WeedLab =
             [
                 new LabLevelOptions { Level = 1, YieldBonusPercent = 25, PassivePerHour = 2, UpgradeCost = 10_000 },
-                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, PassivePerHour = 4, UpgradeCost = 30_000 },
-                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, PassivePerHour = 7, UpgradeCost = 75_000 },
-                new LabLevelOptions { Level = 4, MinTier = 3, YieldBonusPercent = 170, PassivePerHour = 11, UpgradeCost = 250_000 },
-                new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 16, UpgradeCost = 700_000 }
+                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, PassivePerHour = 4, UpgradeCost = 45_000 },
+                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, PassivePerHour = 7, UpgradeCost = 210_000 },
+                new LabLevelOptions { Level = 4, MinTier = 3, YieldBonusPercent = 170, PassivePerHour = 11, UpgradeCost = 1_000_000 },
+                new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 16, UpgradeCost = 3_850_000 }
             ];
 
         // Throughput and nothing else. What a gun costs to make belongs to the gun, not to the room, so
         // a level buys guns per turn and which guns are unlocked - the prices live on the tier table,
         // each set under what the shop charges, because a maker who cannot undercut the shop has nothing
         // to sell and the whole point of the workshop is to give the market a good with real demand.
+        // One making room instead of three. The workshop, the still and the mix house were the same
+        // room wearing different signs - turns and materials in, one good out - and two of them
+        // dead-ended at the second building with two levels each, maxed in an afternoon and never
+        // thought about again. The room now buys throughput and reach, and what a thing costs to make
+        // belongs to the thing, which is what the guns had been saying all along.
+        //
+        // Priced to absorb what all three used to cost together, so nobody who had built them is out
+        // of pocket and nobody who had not gets a discount.
         if (Workshop.Count == 0)
             Workshop =
             [
-                new WorkshopLevelOptions { Level = 1, WeaponsPerTurn = 1, UpgradeCost = 60_000 },
-                new WorkshopLevelOptions { Level = 2, WeaponsPerTurn = 2, UpgradeCost = 180_000 },
-                new WorkshopLevelOptions { Level = 3, MinTier = 3, WeaponsPerTurn = 3, UpgradeCost = 500_000 }
+                new WorkshopLevelOptions { Level = 1, Throughput = 1, UpgradeCost = 40_000 },
+                new WorkshopLevelOptions { Level = 2, Throughput = 2, UpgradeCost = 165_000 },
+                new WorkshopLevelOptions { Level = 3, MinTier = 2, Throughput = 3, UpgradeCost = 750_000 },
+                new WorkshopLevelOptions { Level = 4, MinTier = 3, Throughput = 4, UpgradeCost = 2_200_000 }
             ];
 
-        // Moonshine undercuts the shop's beer, which is the only reason to run the risk of holding it.
-        // Both of these need the second tier: a Trap House is not somewhere you hide a still, and
-        // gating them there keeps the first tier about learning the game rather than running a lab.
-        if (Still.Count == 0)
-            Still =
-            [
-                new WorkshopLevelOptions { Level = 1, MinTier = 2, WeaponsPerTurn = 4, CostPerWeapon = 6, UpgradeCost = 25_000 },
-                new WorkshopLevelOptions { Level = 2, MinTier = 2, WeaponsPerTurn = 7, CostPerWeapon = 5, UpgradeCost = 80_000 }
-            ];
 
         // The lookout fills the one hole in the first tier's ladder. Everything else a Trap House can
-        // buy lands between ten and seventy-five thousand, and then there is nothing until a hundred
-        // and fifty: a session and a half of earning with nothing to want. It is also the only new
-        // verb in the tier after the workshop, and the only answer to heat besides selling down.
+        // buy is more of something it already has; this is the only answer it has to heat.
         if (Lookout.Count == 0)
             Lookout =
             [
                 new LookoutLevelOptions { Level = 1, MinTier = 1, BustChanceReductionPercent = 25, UpgradeCost = 100_000 },
-                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, UpgradeCost = 260_000 },
-                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, UpgradeCost = 700_000 }
+                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, UpgradeCost = 390_000 },
+                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, UpgradeCost = 1_750_000 }
             ];
 
-        // The intelligence centre buys capacity, not output: how many runs can be out at once, and how
-        // much of the route's risk is already known before anybody leaves. Gated at the Warehouse for
-        // the same reason the still is, and the first level is deliberately expensive relative to what
-        // one run earns, so mule running is something an empire grows into rather than opens with.
         if (Intelligence.Count == 0)
             Intelligence =
             [
                 new IntelligenceLevelOptions { Level = 1, MinTier = 2, ConcurrentRuns = 1, RiskReductionPercent = 10, UpgradeCost = 120_000 },
-                new IntelligenceLevelOptions { Level = 2, MinTier = 2, ConcurrentRuns = 2, RiskReductionPercent = 20, UpgradeCost = 320_000 },
-                new IntelligenceLevelOptions { Level = 3, MinTier = 3, ConcurrentRuns = 3, RiskReductionPercent = 30, UpgradeCost = 750_000 },
-                new IntelligenceLevelOptions { Level = 4, MinTier = 4, ConcurrentRuns = 5, RiskReductionPercent = 40, UpgradeCost = 1_600_000 }
-            ];
-
-        if (Mix.Count == 0)
-            Mix =
-            [
-                new WorkshopLevelOptions { Level = 1, MinTier = 2, WeaponsPerTurn = 3, CostPerWeapon = 20, UpgradeCost = 40_000 },
-                new WorkshopLevelOptions { Level = 2, MinTier = 2, WeaponsPerTurn = 5, CostPerWeapon = 18, UpgradeCost = 120_000 }
+                new IntelligenceLevelOptions { Level = 2, MinTier = 2, ConcurrentRuns = 2, RiskReductionPercent = 20, UpgradeCost = 480_000 },
+                new IntelligenceLevelOptions { Level = 3, MinTier = 3, ConcurrentRuns = 3, RiskReductionPercent = 30, UpgradeCost = 1_875_000 },
+                new IntelligenceLevelOptions { Level = 4, MinTier = 4, ConcurrentRuns = 5, RiskReductionPercent = 40, UpgradeCost = 6_400_000 }
             ];
 
         if (CokeLab.Count == 0)
             CokeLab =
             [
                 new LabLevelOptions { Level = 1, YieldBonusPercent = 25, PassivePerHour = 1, UpgradeCost = 25_000 },
-                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, PassivePerHour = 2, UpgradeCost = 60_000 },
-                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, PassivePerHour = 3, UpgradeCost = 150_000 },
-                new LabLevelOptions { Level = 4, MinTier = 3, YieldBonusPercent = 170, PassivePerHour = 5, UpgradeCost = 450_000 },
-                new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 7, UpgradeCost = 1_200_000 }
+                new LabLevelOptions { Level = 2, YieldBonusPercent = 60, PassivePerHour = 2, UpgradeCost = 90_000 },
+                new LabLevelOptions { Level = 3, YieldBonusPercent = 110, PassivePerHour = 3, UpgradeCost = 375_000 },
+                new LabLevelOptions { Level = 4, MinTier = 3, YieldBonusPercent = 170, PassivePerHour = 5, UpgradeCost = 1_800_000 },
+                new LabLevelOptions { Level = 5, MinTier = 4, YieldBonusPercent = 240, PassivePerHour = 7, UpgradeCost = 6_600_000 }
             ];
     }
 }
@@ -1211,6 +1253,12 @@ public sealed class StorageLevelOptions
     /// </summary>
     public int Medicine { get; set; }
 
+    /// <summary>
+    /// Doses of poison. Sized like the medicine beside it, so a room that can treat its own house once
+    /// can also mount one attack on a house its own size.
+    /// </summary>
+    public int Poison { get; set; }
+
     public long UpgradeCost { get; set; }
 }
 
@@ -1222,27 +1270,63 @@ public sealed class SafeLevelOptions
     public long UpgradeCost { get; set; }
 }
 
+/// <summary>
+/// A level of the workshop: how much of anything a turn produces, and how far up the list it reaches.
+/// One room now rather than three - see MakeableOptions.
+/// </summary>
 public sealed class WorkshopLevelOptions
 {
     public int Level { get; set; }
     public int MinTier { get; set; } = 1;
 
-    /// <summary>Units a turn of work turns out.</summary>
-    public int WeaponsPerTurn { get; set; }
+    /// <summary>
+    /// How many turns' worth of output one turn produces. A good says what it makes per turn in a room
+    /// that can make it at all; this is how much faster a deeper room does the same work.
+    /// </summary>
+    public int Throughput { get; set; } = 1;
+
+    public long UpgradeCost { get; set; }
 
     /// <summary>
-    /// Materials per unit, below the shop price or there is nothing to sell. Read by the still and the
-    /// mix house, which each make one thing. The workshop makes four, so its costs live on the weapon
-    /// tiers instead: a level is throughput and which guns are unlocked, not a single price.
+    /// Kept because the shipped settings still carry it and the binder would otherwise drop the value
+    /// on the floor. Nothing reads it: what a unit costs belongs to the thing being made.
     /// </summary>
     public long CostPerWeapon { get; set; }
-    public long UpgradeCost { get; set; }
+
+    /// <summary>Retired with the still and the mix house. See Throughput.</summary>
+    public int WeaponsPerTurn { get; set; }
 }
 
 /// <summary>
 /// One gun. Price is the shop's; firepower is what carrying it is worth in a fight, in units of one
 /// pistol; the forge fields are what making it takes, and are absent for a gun nobody makes.
 /// </summary>
+/// <summary>
+/// Something the workshop can turn out that is not a gun.
+///
+/// Guns have carried their own forging cost and the workshop level that unlocks them since the tiers
+/// were added, and every other made good was described instead by a room of its own - a still that made
+/// moonshine, a mix house that made cut. Three rooms with one shape between them, two of which dead-
+/// ended at the second building and were never thought about again.
+///
+/// So the good carries the recipe and the workshop is simply the room it happens in, which is what the
+/// guns were already saying.
+/// </summary>
+public sealed class MakeableOptions
+{
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>Units one turn produces at the first workshop that can make it, before the room scales it.</summary>
+    public int PerTurn { get; set; } = 1;
+
+    /// <summary>Materials for one unit. Zero means it cannot be made at all, only bought.</summary>
+    public long MaterialCost { get; set; }
+
+    public int MinWorkshopLevel { get; set; } = 1;
+
+    public bool CanMake => MaterialCost > 0 && MinWorkshopLevel > 0;
+}
+
 public sealed class WeaponTierOptions
 {
     public string Key { get; set; } = WeaponTiers.Pistol;
@@ -1770,4 +1854,32 @@ public sealed class ProductProductionOptions
     public int CostPerTurn { get; set; }
     public int UnitsMin { get; set; }
     public int UnitsMax { get; set; }
+}
+
+/// <summary>
+/// Talking. The limits here are the only thing standing between a chat panel and somebody who has
+/// worked out they can type faster than everybody else can read.
+/// </summary>
+public sealed class ChatOptions
+{
+    /// <summary>Lines kept in a room's history. Enough to catch up on, few enough to load in one go.</summary>
+    public int HistoryDepth { get; set; } = 60;
+
+    /// <summary>
+    /// Characters in one message. Long enough to say something, short enough that nobody can push the
+    /// rest of the room off the screen with a single paste.
+    /// </summary>
+    public int MaxLength { get; set; } = 280;
+
+    /// <summary>
+    /// The quiet moment between one message and the next from the same person. Not a punishment - it
+    /// is the difference between a conversation and a wall.
+    /// </summary>
+    public int SecondsBetweenMessages { get; set; } = 3;
+
+    /// <summary>
+    /// How long a line survives. Chat is the one table that grows with talking rather than playing, so
+    /// it is the one that needs sweeping; nobody scrolls back a fortnight.
+    /// </summary>
+    public int RetentionDays { get; set; } = 14;
 }

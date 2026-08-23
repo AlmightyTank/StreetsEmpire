@@ -405,13 +405,13 @@ public sealed class CombatMissionService(
         if (request.Thugs < 1)
             throw new GameRuleException("Each attack needs at least one thug.");
         if (request.Weapons < 0 || request.Weapons > request.Thugs)
-            throw new GameRuleException("Weapons sent must be between zero and the number of thugs sent.");
+            throw new GameRuleException("You cannot send more guns than hands to carry them.");
         if (committed.AvailablePimps < CommandingPimps)
             throw new GameRuleException("You need a free pimp to command the attack.");
         if (request.Thugs > committed.AvailableThugs)
-            throw new GameRuleException("You do not have that many available thugs.");
+            throw new GameRuleException($"You have {committed.AvailableThugs:N0} thugs standing free.");
         if (request.Weapons > committed.AvailableWeapons)
-            throw new GameRuleException("You do not have that many available weapons.");
+            throw new GameRuleException($"You have {committed.AvailableWeapons:N0} guns off the rack.");
         // House protection shields a player from being robbed. Ground is contested rather than robbed,
         // so it neither blocks a raid for territory nor is granted by one: the ground carries its own
         // settling period instead.

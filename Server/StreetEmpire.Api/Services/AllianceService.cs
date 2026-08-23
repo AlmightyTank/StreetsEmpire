@@ -36,7 +36,7 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
 
         var trimmed = (name ?? string.Empty).Trim();
         if (trimmed.Length is < 3 or > 32)
-            throw new GameRuleException("A crew needs a name between 3 and 32 characters.");
+            throw new GameRuleException("A crew name runs from 3 to 32 characters.");
         if (await db.Alliances.AnyAsync(x => x.Name.ToLower() == trimmed.ToLower(), cancellationToken))
             throw new GameRuleException($"There is already a crew called {trimmed}.");
         if (founder.Cash + founder.BankCash < config.FoundingCost)

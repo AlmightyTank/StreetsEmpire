@@ -191,8 +191,15 @@ internal static class MarketEndpoints
             var before = Snapshot(player);
             try
             {
-                var station = request.Station?.Trim().ToLowerInvariant() ?? "workshop";
-                var result = economy.Make(player, station, request.Turns, request.Weapon);
+                // The station used to say which room; there is one room now, so what arrives is what to
+                // make. Either name is accepted: an old client asking for "still" wants moonshine.
+                var asked = request.Weapon ?? request.Station?.Trim().ToLowerInvariant() switch
+                {
+                    "still" => "moonshine",
+                    "mix" => "cut",
+                    _ => null
+                };
+                var result = economy.Make(player, request.Turns, asked);
                 AddLog(db, player, before, "WORKSHOP", request.Turns, result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

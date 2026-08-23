@@ -3,6 +3,65 @@
 ## 0.2.5 (in progress)
 
 ### Fixed
+- **Pistols are on the street's quick-buy, where a row for guns had silently gone missing.** The supplies
+  panel asked the counter for a key called "weapons", which stopped existing the day guns split into
+  tiers, and the filter that guards against a missing key dropped the row without a word. It has been
+  two rows ever since. The row buys pistols now - the cheapest thing that covers a thug - and the panel
+  says so in the console rather than quietly shrinking if a key ever goes missing again.
+- **Moonshine and cut counted for nothing.** Both take a shelf, cost money and turns to make, and draw
+  heat, and neither moved your standing by a penny - so brewing a still-full of moonshine put you down
+  the board by whatever the materials cost. The same trap the hideout was in, in a different currency.
+  They are priced off what the game already says they are worth when it prices a contract: moonshine
+  stands in for beer, and cut is a quarter of coke.
+- A test now walks every good a player can hold and insists that holding some of it is worth something,
+  so the next good added is covered the day it is added rather than whenever somebody notices their net
+  worth going the wrong way.
+
+- **The client copy went through line by line too**, all 355 strings of it. Most of it was already in
+  the game's voice; seventeen were not. The offenders were accountancy and systems register in the
+  places that explain the game to a newcomer - "Your hoes generate gross income", "Your hideout sets
+  every hard limit you operate under", "Turn cash-on-hand into inventory", "Over capacity" - which is
+  exactly the copy a new player reads first and the last place the game should sound like a ledger.
+- The game was also speaking two dialects on the same screen: the server said defence and Intelligence
+  Centre while the client said Defense, defenses, Command center and stabilize. It is one dialect now.
+- Two lab descriptions said "Raises weed production turns", which describes an implementation rather
+  than a thing that happens, and the tier button said "Not enough turns" where it could say how many.
+
+- **Poison could not actually be bought.** It went on sale with no case behind it in either of the two
+  switches a purchase passes through: the first refused with "Store item is not implemented", a
+  developer's note shown to a player, and once that was fixed the second quietly filed the doses on the
+  weapon rack, because its default arm assumed anything it did not recognise was a gun. Both are fixed,
+  the default now refuses rather than guessing, and a test walks the whole shop buying one of each so
+  the counter and the shelf cannot disagree again.
+- **The refusals sound like the game now.** Twenty-seven of the hundred and seventy-five things the game
+  says when it turns a player down were written in form-validation register - "Quantity must be between
+  1 and 10,000", "You do not have enough coke" - while the rest of the game was saying things like
+  "Nothing parked there to take" and "Pick on someone your own size". The rule ones became imperatives
+  and the shortage ones now name the number the player actually has, which the game already did when it
+  refused a poach: "You only hold 12 coke."
+
+- The walkthrough put its card above or below whatever it was pointing at, measured against a guess of
+  200px for its own height. A tall target left no room for either, so the step explaining the opening
+  ladder - nine rungs, and the tallest thing on the page - pushed its own card off the top of the
+  screen. The card measures itself now and goes beside the highlight wherever there is a column free,
+  which is the placement that works for every shape of target. Where nothing fits at all it sits at the
+  foot of the screen rather than the head, so the panel's own heading stays readable.
+- **A strike says no before the click rather than after it.** The menu of methods is built from the
+  attacker alone - your thugs, your garage, your coke - and never sees who you are looking at, so the
+  target's half of every rule had nowhere to be said. A player could sit reading "nothing parked there
+  to take" underneath a live button offering to take it, and learn the rule only by spending the click.
+  Jacking an empty garage, infesting a house with no hoes and poaching one with nobody in it are all
+  answered up front now, in the same sentence the launch would have thrown - one function answers both,
+  because a rule written twice is a rule that will disagree with itself.
+- A player's profile weighed the viewer's net worth against the target's plunder, so the anti-farm gate
+  gave a different answer on a profile than it did on the target list beside it. Both read what can be
+  taken now. Introduced when the two sums were split apart, by a positional argument that went on
+  compiling once the parameter beneath it had changed meaning.
+- **"Run a production shift" sent you to the street, where there is no production.** It had pointed
+  there for as long as the ladder had existed, so a new player following the game's own instructions
+  arrived at a page with nothing on it to do. It points at the hideout now, where the lab the previous
+  rung just told them to build actually is - which also makes the two one page instead of two, and
+  takes the opening ladder from six tab changes down to five.
 - **The storage ladder the server actually runs on was still the old one.** The rebuilt ladder went into
   the code defaults, and appsettings.json goes on winning wherever it carries a value, so the running
   game had the new rule capping crews at the old room sizes: a starting player was held to ten hoes
@@ -18,6 +77,33 @@
   reads like one. Players keep the summary sentence, which is written for them.
 
 ### Changed
+- **The game takes weeks now.** A player spending every turn finished everything in fourteen days; the
+  same player now takes thirty-six, and one who logs in once a day takes fifty. Simulated rather than
+  guessed at - the model reinvests the way a real player does, because a steady-state sum says a hundred
+  days while compounding says fourteen, and only one of those is what happens.
+- The curve is graduated rather than multiplied flat. The first rungs barely move - a second storage
+  room goes from 15,000 to 22,000 - and the last ones carry the weight, up to seven times. Slow to
+  finish rather than slow to start, so a first session still buys something.
+- Crew hire costs are untouched. Raising them moved the finish line by a day and a half while making the
+  early game meaner, which is all cost and no effect.
+- Closing that curve opened a hole the ladder test caught immediately: past a certain point a Trap House
+  had nothing to save for between 210,000 and the Warehouse. A lab level moved to fill it.
+
+- **Ten rooms became eight.** The workshop, the still and the mix house were the same room wearing three
+  signs - turns and materials in, one good out - and two of them dead-ended at the second building with
+  two levels each, maxed in an afternoon and never thought about again. There is one bench now: guns,
+  moonshine, cut and poison all come off it, the level buys how fast it works and how far up the list
+  it reaches, and what a thing costs to make belongs to the thing rather than the room. Which is what
+  the guns had been saying since they were given a forge cost of their own.
+- Nobody loses what they built. The migration folds a still and a mix house into the workshop before it
+  drops them, taking the best of the three, so a player who had bought two small rooms and no workshop
+  comes out the other side with a bench.
+- **A lab upgrade says what it actually returns.** The later levels buy about half the output per pound
+  that the level before them did - payback slides from five days to forty-six - which is a fine thing
+  for them to be and a bad thing to be quiet about. They are a sink for money with nowhere else to go,
+  so the room now says how many days it takes to pay for itself, and says outright when it is a trophy
+  rather than an investment.
+
 - **A hideout counts towards net worth, at every pound it cost.** The building was the one thing a
   player owned that counted for nothing: cash, crew, guns, product and even the beer were on the books
   while up to 13.4 million pounds of building was invisible. The largest investment in the game made
@@ -144,6 +230,56 @@
   loses the return sweep, and the wide desktop panels were running paragraphs to 1,400px.
 
 ### Added
+- **Chat, in three rooms**: the whole board, the town you are standing in, and your crew. Each is a
+  different room rather than the same room with a filter on it, and a message belongs to exactly one of
+  them for good - a thing said to your own crew was said on the understanding that it stayed there.
+- The scope is written onto the line rather than read off its author afterwards, so a Detroit message
+  stays a Detroit message once its author has moved to Miami, and a crew message stays with that crew
+  once its author has walked out. Reading the author's current state would quietly rewrite history
+  every time somebody travelled.
+- **An unknown channel falls to Global**, which is the opposite of how every other unknown value in the
+  game is treated and is deliberate. A door that cannot be read is shut, because handing somebody a
+  crew by accident is the worse mistake. A line is the other way round: one that lands somewhere more
+  public than intended can be seen and answered for, while one that quietly reaches a crew it was not
+  meant for cannot be taken back. Every private room has to be asked for by name, and a test holds it.
+- Bans and suspensions need no work here: they are enforced at the door, so an account that cannot hold
+  a session cannot say anything either.
+- Three seconds between messages, read off the table rather than held in memory, so it survives a
+  restart and cannot be sidestepped with a second tab. Lines are swept after a fortnight, from the read
+  path, because a table nobody is reading does not need tidying.
+- Polled every eight seconds and only while the tab is in front. A socket is the right answer for a chat
+  that has to feel instant; this one sits beside a game whose turns arrive every ten minutes.
+
+- **Two new things on the bench, both closing gaps rather than adding systems.**
+- **Medicine**, and it arrives a level before the poison it answers. Poison went onto the bench without
+  it, which quietly made attacking cheaper than defending: a player with the deeper shop could buy an
+  infestation at a third of the counter price while the house it landed on paid full price for the
+  cure. Defence comes first now - you can look after your own place a level before you can go after
+  anybody else's - and a test holds that line for any pair where one thing exists to beat another.
+- **Condoms by the case.** Beer had moonshine undercutting it since the still existed; the hoes' half of
+  upkeep is the larger recurring cost in the game and had nothing. Not manufactured - nobody is making
+  these in a back room - but bought wholesale, which is the same saving in the player's hands.
+- Rides stay off the bench deliberately. A car you can build whenever you want one is a car nobody
+  minds losing, and the jacking strike is only worth throwing because it takes something that stings.
+- Poison had no reference price, so the workshop had been quoting it against a counter price of zero.
+
+- **Infesting a house costs poison, which you have to buy or make.** It was the only strike that took
+  nothing to throw: a drive-by risks the car, a jacking needs a thug and somewhere to park what it
+  takes, a poach spends coke a head, and poisoning somebody's crew was free - which made it the obvious
+  opening move against anybody, at any time, for no reason.
+- **A dose reaches three hoes, exactly as a crate of medicine treats three.** The defender's own problem
+  handed back in reverse: covering a big house costs real money at either end, and turning up short only
+  buys you the hoes your doses could reach. A part-used dose is a used dose, or one would cover a house
+  forever by never quite finishing.
+- Bought at the counter beside the medicine that answers it, or made cheaper in the mix house, which is
+  the chemicals room and was already turning out cut. It takes a shelf like anything else, counts
+  towards net worth at what it cost, and is not loot - a raid cannot carry off medicine either.
+
+- **A walkthrough that shows you the game rather than describing it.** Six steps, one thing lit at a
+  time with everything else dimmed, and a sentence saying what it is and what it is for. It drives the
+  pages itself, because half of what a newcomer has to learn is which tab a thing lives on and being
+  taken there is the lesson. It offers itself once and then stays out of the way; "Show me around" sits
+  with the opening ladder for anybody who skipped it or has come back after a month.
 - **The suite reads the settings the server actually ships.** Half the config lived somewhere no test
   had ever looked. It now loads appsettings.json from the server project - never the copy the build
   drops beside the test binary, which is how a stale file convinced this suite the ladder had been

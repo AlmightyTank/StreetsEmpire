@@ -302,7 +302,7 @@ public sealed class BotSimulationService(
         // Then sell what it is sitting on and cannot use. Priced under the shop, or nobody would buy.
         // The guns a full crew is not carrying, which are always the cheapest ones on the rack.
         var spare = Math.Max(0, bot.Weapons - bot.Thugs - 5);
-        if (spare >= 5 && hideouts.StationFor(bot.Hideout, "workshop") is not null)
+        if (spare >= 5 && hideouts.WorkshopFor(bot.Hideout) is not null)
         {
             var before = Snapshot(bot);
             try
@@ -964,12 +964,12 @@ public sealed class BotSimulationService(
     /// <summary>Steps on the coke, when there is cut, coke and somewhere to put the result.</summary>
     private int TryCutCoke(Player bot, DateTime actionTimeUtc)
     {
-        if (bot.Cut <= 0 || bot.Coke <= 0 || (bot.Hideout?.MixLevel ?? 0) <= 0)
+        if (bot.Cut <= 0 || bot.Coke <= 0 || (bot.Hideout?.WorkshopLevel ?? 0) <= 0)
             return 0;
         if (hideouts.CapacityFor(bot.Hideout).MaxCoke - bot.Coke <= 0)
             return 0;
 
-        var perTurn = Math.Max(1, _options.Hideout.CutPerTurnPerMixLevel) * (bot.Hideout?.MixLevel ?? 1);
+        var perTurn = Math.Max(1, _options.Hideout.CutPerTurnPerMixLevel) * (bot.Hideout?.WorkshopLevel ?? 1);
         var turns = Math.Clamp((int)Math.Ceiling(bot.Cut / (double)perTurn), 1, _options.MaxActionTurns);
         return TryAction(bot, "CUT", turns, actionTimeUtc, () => economy.CutCoke(bot, turns));
     }

@@ -15,7 +15,7 @@
   --gold-deep: #6b5630;       /* the border a gold thing sits inside */
   --ink: #f4eee5;             /* body text */
   --ink-dim: #938b82;         /* labels and captions */
-  --ink-faint: #827b74;       /* detail nobody reads twice */
+  --ink-faint: #837c75;       /* detail nobody reads twice. 4.54:1 on --surface: AA, barely */
   --ink-soft: #8e877f;
   --line: #303532;            /* the default border */
   --line-soft: #2c302e;       /* a divider inside something already bordered */
@@ -147,6 +147,20 @@ input:focus, select:focus { border-color: #1f8d86; box-shadow: 0 0 0 2px rgba(31
 .primary { background: linear-gradient(180deg, #e1b05e, #a98245); color: #130f0a; border: 0; }
 .secondary { background: #111415; color: #d7cec3; border: 1px solid #3f4543; }
 .compact { min-height: 34px; padding: var(--space-2) var(--space-2); }
+
+/*
+  The two buttons the whole game is played through had no hover state between them, while ten smaller
+  controls did. Pressing things is the entire interface here, so the principal control answering to the
+  pointer is not decoration.
+
+  Behind a hover query so a touch screen does not paint the state on and leave it there: a phone
+  reports a tap as a hover and never takes it back, which is how a stuck highlight follows you around.
+*/
+@media (hover: hover) {
+  .primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .secondary:hover:not(:disabled) { border-color: #566060; background: #171b1c; color: var(--ink); }
+}
+.primary:active:not(:disabled), .secondary:active:not(:disabled) { transform: translateY(1px); }
 
 .panel {
   background: linear-gradient(180deg, rgba(24, 25, 24, .96), rgba(15, 17, 18, .96));
@@ -1745,3 +1759,163 @@ b, strong { font-weight: var(--weight-bold); }
 }
 .contract-progress span { display: block; height: 100%; background: var(--gold); }
 .tag.yours { background: var(--gold-deep); color: var(--gold); }
+
+/*
+  The walkthrough. One thing lit, everything else dimmed.
+
+  The dimming is a single enormous shadow cast outward from the lit rectangle rather than four panels
+  arranged around it: one element to keep in step with a moving target instead of four, and the corners
+  come out right for free.
+*/
+.tour { position: fixed; z-index: 100; inset: 0; pointer-events: none; }
+.tour-dim { position: fixed; inset: 0; background: rgba(4, 5, 6, .72); }
+.tour-spotlight {
+  position: fixed;
+  border-radius: var(--radius-lg);
+  /* The hole. Nothing is painted inside it, so the page shows through untouched. */
+  box-shadow: 0 0 0 9999px rgba(4, 5, 6, .72);
+  border: 1px solid var(--gold);
+  transition: top .22s ease, left .22s ease, width .22s ease, height .22s ease;
+}
+.tour-box {
+  position: fixed;
+  width: min(330px, calc(100vw - 24px));
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--gold-deep);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #1b1710, var(--surface));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  pointer-events: auto;
+}
+.tour-count {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+}
+.tour-box strong { color: var(--gold); font-size: var(--text-lg); }
+.tour-box p { color: var(--ink-dim); font-size: var(--text-sm); line-height: var(--leading-body); margin: 0; }
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.tour-move { display: flex; gap: var(--space-2); }
+
+.ladder-head { display: flex; align-items: center; gap: var(--space-2); }
+
+@media (max-width: 760px) {
+  /*
+    On a phone the box is pinned above the tab bar rather than chased around the target: there is not
+    enough screen to place a 330px card beside anything, and a card that moves every step is harder to
+    read than one that stays where you last looked.
+  */
+  .tour-box {
+    top: auto !important;
+    right: var(--space-3);
+    bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+    left: var(--space-3) !important;
+    width: auto;
+    transform: none !important;
+  }
+}
+
+/*
+  Focus.
+
+  Forty-one rules styled buttons and not one of them said what a focused button looks like, so the
+  whole game deferred to whatever ring the browser draws by default - undesigned, and on the gold
+  primary button drawn against a colour nobody checked it against. A game played almost entirely by
+  pressing buttons should be able to say where the keyboard is.
+
+  :focus-visible rather than :focus, so a mouse click does not leave a ring behind it. Two rings, dark
+  under light, so the indicator survives whichever surface it lands on - a single gold ring vanishes
+  against the gold primary, and a single dark one vanishes against the page.
+*/
+:where(button, a, select, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(4, 5, 6, .85);
+  border-radius: var(--radius);
+}
+
+/* Inputs already replace the ring with their own border and glow, so they only need the offset one. */
+input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+/*
+  Nothing here animates for somebody who has asked the system for less of it. The walkthrough's
+  spotlight slides between targets and the page scrolls itself to meet it, which is exactly the kind
+  of movement that setting exists to turn off.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* What an upgrade returns. A slow one is not an error, so it is dimmed rather than warned about. */
+.payback { color: var(--ink-dim); }
+.payback.slow { color: var(--gold-bright); }
+
+/*
+  Talk. The log is the only part of the page that scrolls on its own, so it is the only part that gets
+  a fixed height: a chat that grows the page pushes everything else off the bottom as the room fills.
+*/
+.chat-panel { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
+.chat-tabs { display: flex; gap: var(--space-1); }
+.chat-tabs button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-deep);
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  padding: var(--space-1) var(--space-3);
+}
+.chat-tabs button.active { border-color: var(--gold-deep); background: #1b1710; color: var(--gold); }
+
+.chat-log {
+  height: 260px;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-deep);
+  padding: var(--space-2);
+}
+.chat-line {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-sm);
+}
+.chat-line strong { color: var(--gold-bright); white-space: nowrap; }
+.chat-line span { color: var(--ink); overflow-wrap: anywhere; }
+.chat-line small { color: var(--ink-faint); font-size: var(--text-xs); white-space: nowrap; }
+/* Your own lines, so the eye can find them without reading every name. */
+.chat-line.yours strong { color: var(--ink); }
+
+.chat-say { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); }
+.chat-count { color: var(--ink-faint); font-size: var(--text-xs); text-align: right; }
+.chat-count.over { color: #d4756a; }
+
+@media (max-width: 760px) {
+  /* Shorter, because the log competes with the tab bar and the rest of the page for a phone screen. */
+  .chat-log { height: 200px; }
+  .chat-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .chat-line strong { grid-column: 1 / -1; }
+}

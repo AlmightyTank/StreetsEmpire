@@ -191,8 +191,12 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 "market", actionsTaken.Contains("BANK")),
             Step("Build the weed lab", "The cheapest thing you can own that earns while you are away.",
                 "hideout", (hideout?.WeedLabLevel ?? 0) > 0),
+            // The hideout, where the lab the step before it just built actually is. This said "street"
+            // for as long as the ladder has existed, and the street has no production on it at all - so
+            // a new player following the game's own instructions arrived at a page with nothing to do.
+            // Pointing it at the hideout also means the lab and the shift that uses it are one page.
             Step("Run a production shift", "Turns and materials into product, at better odds than the street.",
-                "street", actionsTaken.Contains("PRODUCTION")),
+                "hideout", actionsTaken.Contains("PRODUCTION")),
             Step("Sell what you made", "Product is only worth something once somebody buys it.",
                 "market", actionsTaken.Contains("SALE")),
             Step("Arm every thug", "An unarmed thug is a morale leak and a lost fight.",

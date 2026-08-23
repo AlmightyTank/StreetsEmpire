@@ -42,8 +42,6 @@ public static class HideoutValue
              + CumulativeCost(config.WeedLab, hideout.WeedLabLevel, x => x.Level, x => x.UpgradeCost)
              + CumulativeCost(config.CokeLab, hideout.CokeLabLevel, x => x.Level, x => x.UpgradeCost)
              + CumulativeCost(config.Workshop, hideout.WorkshopLevel, x => x.Level, x => x.UpgradeCost)
-             + CumulativeCost(config.Still, hideout.StillLevel, x => x.Level, x => x.UpgradeCost)
-             + CumulativeCost(config.Mix, hideout.MixLevel, x => x.Level, x => x.UpgradeCost)
              + CumulativeCost(config.Intelligence, hideout.IntelligenceLevel, x => x.Level, x => x.UpgradeCost)
              + CumulativeCost(config.Lookout, hideout.LookoutLevel, x => x.Level, x => x.UpgradeCost);
     }
@@ -72,8 +70,6 @@ public static class HideoutValue
             Ladder(Expression.Property(hideout, nameof(Hideout.WeedLabLevel)), config.WeedLab.Select(x => (x.Level, x.UpgradeCost))),
             Ladder(Expression.Property(hideout, nameof(Hideout.CokeLabLevel)), config.CokeLab.Select(x => (x.Level, x.UpgradeCost))),
             Ladder(Expression.Property(hideout, nameof(Hideout.WorkshopLevel)), config.Workshop.Select(x => (x.Level, x.UpgradeCost))),
-            Ladder(Expression.Property(hideout, nameof(Hideout.StillLevel)), config.Still.Select(x => (x.Level, x.UpgradeCost))),
-            Ladder(Expression.Property(hideout, nameof(Hideout.MixLevel)), config.Mix.Select(x => (x.Level, x.UpgradeCost))),
             Ladder(Expression.Property(hideout, nameof(Hideout.IntelligenceLevel)), config.Intelligence.Select(x => (x.Level, x.UpgradeCost))),
             Ladder(Expression.Property(hideout, nameof(Hideout.LookoutLevel)), config.Lookout.Select(x => (x.Level, x.UpgradeCost))));
     }

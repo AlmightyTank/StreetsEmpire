@@ -86,6 +86,7 @@ internal static class CombatEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            StreetStrikeService strikes,
             TitleService titles,
             CancellationToken ct) =>
         {
@@ -126,7 +127,31 @@ internal static class CombatEndpoints
             var recentDefenses = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.DefenderId == playerId && x.CreatedAtUtc >= combatSince, ct);
 
-            return Results.Ok(ToProfileResponse(target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt, economy.CalculateNetWorth(viewer), await titles.BoardAsync(now, ct)));
+            // Asked of the same function the launch will ask, so the sentence under a dead button is
+            // the sentence the server would have thrown had it been pressed.
+            var blockers = new Dictionary<string, string>();
+            if (viewer is not null)
+            {
+                foreach (var method in AttackMethods.All.Where(AttackMethods.IsStrike))
+                {
+                    // Poach is asked about at its cheapest, since the amount is chosen after this: the
+                    // question here is whether the strike is possible at all, not whether one slider is.
+                    var coke = method == AttackMethods.Poach ? gameOptions.Value.Strikes.Poach.CokePerHoe : 0;
+                    if (strikes.WhyNot(method, viewer, target.Player, coke) is { } why)
+                        blockers[method] = why;
+                }
+            }
+
+            return Results.Ok(ToProfileResponse(
+                target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt,
+                // Plunder, not net worth: this is the anti-farm gate, and it weighs what can be taken.
+                // It said CalculateNetWorth here, so a profile judged the viewer on a sum that included
+                // their buildings while the target list beside it judged them on one that did not - the
+                // same rule giving two answers depending on which screen you were looking at.
+                // Nobody signed in has nothing to weigh, and the gate reads zero as "no opinion".
+                viewer is null ? 0 : economy.CalculatePlunder(viewer),
+                await titles.BoardAsync(now, ct),
+                blockers));
         }).RequireAuthorization();
 
 

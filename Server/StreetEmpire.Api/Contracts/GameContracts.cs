@@ -360,6 +360,8 @@ public sealed record DashboardResponse(
     /// <summary>And which guns they are, since that is what decides a fight.</summary>
     IReadOnlyList<WeaponTierResponse> WeaponRack,
     int Medicine,
+    /// <summary>Doses on the shelf. What it costs you to infest somebody else's house.</summary>
+    int Poison,
     int Rides,
     int Weed,
     int Coke,
@@ -508,6 +510,12 @@ public sealed record PlayerTargetResponse(
     CombatStatusResponse CombatStatus);
 
 public sealed record PlayerProfileResponse(
+    /// <summary>
+    /// Why each strike cannot be thrown at this person, keyed by method, or absent when it can. Worked
+    /// out here rather than guessed at by the page, because the menu of methods is built from the
+    /// attacker alone and never sees who is being looked at.
+    /// </summary>
+    IReadOnlyDictionary<string, string> StrikeBlockers,
     Guid PlayerId,
     string Name,
     string City,
@@ -669,6 +677,26 @@ public sealed record ContractResponse(
 
 public sealed record ContractBoardResponse(string City, IReadOnlyList<ContractResponse> Contracts);
 
+/// <summary>One line in a room, as it is shown.</summary>
+public sealed record ChatMessageResponse(
+    long Id,
+    string Author,
+    bool Yours,
+    string Body,
+    DateTime SentAtUtc);
+
+/// <summary>A room the player can open, and whether they can say anything in it.</summary>
+public sealed record ChatChannelResponse(string Channel, string Label, string Detail, bool CanPost, string? BlockedReason);
+
+public sealed record ChatBoardResponse(
+    string Channel,
+    string Scope,
+    IReadOnlyList<ChatChannelResponse> Channels,
+    IReadOnlyList<ChatMessageResponse> Messages,
+    int MaxLength);
+
+public sealed record PostChatRequest(string? Channel, string? Body);
+
 /// <summary>How much of an order to hand over. Null means as much as will go.</summary>
 public sealed record DeliverContractRequest(int? Quantity);
 
@@ -693,6 +721,7 @@ public sealed record HideoutResponse(
     int MaxMoonshine,
     int MaxCut,
     int MaxMedicine,
+    int MaxPoison,
     int WeedLabYieldBonusPercent,
     int CokeLabYieldBonusPercent,
     int WeedLabPassivePerHour,
@@ -740,7 +769,17 @@ public sealed record HideoutRoomUpgradeResponse(
     long Cost,
     int RequiredTier,
     string RequiredTierName,
-    bool TierLocked);
+    bool TierLocked,
+    /// <summary>
+    /// Days of this room's own output at the town's price before the upgrade has paid for itself, or
+    /// null for a room that produces nothing to measure.
+    ///
+    /// Late levels are deliberately a poor return - they exist to absorb money from players who have
+    /// run out of things to buy. That is a fine thing for them to be and a bad thing to be quiet
+    /// about: a room priced like an investment and sold like one should say what it actually returns,
+    /// so somebody buying a trophy knows that is what they are buying.
+    /// </summary>
+    int? PaybackDays);
 
 public sealed record HideoutTierUpgradeResponse(
     int Level,

@@ -91,6 +91,14 @@ public sealed class Player
     public int Medicine { get; set; }
 
     /// <summary>
+    /// Doses for infesting somebody else's house. The other half of the medicine pairing: one is what
+    /// you keep in case it happens to you, the other is what it costs to do it to somebody. Infesting
+    /// was the only strike that took nothing to throw - a drive-by risks the car, a jacking needs a
+    /// thug and a space to park, a poach spends coke, and poisoning a house was free.
+    /// </summary>
+    public int Poison { get; set; }
+
+    /// <summary>
     /// Low-riders. A ride is what a drive-by is fired from and what a jacking takes, so it is the one
     /// asset that is both a tool and a target: parking a fleet outside a thin guard is an invitation.
     /// </summary>

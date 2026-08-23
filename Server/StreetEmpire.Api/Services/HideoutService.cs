@@ -40,7 +40,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         // A still counts as a reason to run the clock even though it makes nothing passively: the
         // hours it reports are what the contraband risk is rolled over, and a brewer with no lab would
         // otherwise never be at risk at all.
-        if (hideout is null || (hideout.WeedLabLevel <= 0 && hideout.CokeLabLevel <= 0 && hideout.StillLevel <= 0))
+        if (hideout is null || (hideout.WeedLabLevel <= 0 && hideout.CokeLabLevel <= 0 && hideout.WorkshopLevel <= 0))
             return LabYield.None;
 
         // A lab built just now starts its clock now, so building one never pays out for the hours
@@ -149,18 +149,11 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// A making station's level, or null when none is built. One lookup for all three because they are
     /// the same shape: turns and materials in, one good out.
     /// </summary>
-    public WorkshopLevelOptions? StationFor(Hideout? hideout, string station)
+    public WorkshopLevelOptions? WorkshopFor(Hideout? hideout)
     {
-        var (levels, level) = station switch
-        {
-            "still" => (_options.Hideout.Still, hideout?.StillLevel ?? 0),
-            "mix" => (_options.Hideout.Mix, hideout?.MixLevel ?? 0),
-            _ => (_options.Hideout.Workshop, hideout?.WorkshopLevel ?? 0)
-        };
-        return level <= 0 ? null : Level(levels, level, x => x.Level);
+        var level = hideout?.WorkshopLevel ?? 0;
+        return level <= 0 ? null : Level(_options.Hideout.Workshop, level, x => x.Level);
     }
-
-    public WorkshopLevelOptions? WorkshopFor(Hideout? hideout) => StationFor(hideout, "workshop");
 
     /// <summary>
     /// The share of an hour's raid chance a lookout takes off. Capped below one on purpose: a room
@@ -203,15 +196,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// building: buying is not the only way to end up with one, since a station built before a gate
     /// existed would otherwise keep running under it forever.
     /// </summary>
-    public int? StationRequiredTier(string station)
+    public int? WorkshopRequiredTier()
     {
-        var levels = station switch
-        {
-            "still" => _options.Hideout.Still,
-            "mix" => _options.Hideout.Mix,
-            _ => _options.Hideout.Workshop
-        };
-        var first = levels.OrderBy(x => x.Level).FirstOrDefault();
+        var first = _options.Hideout.Workshop.OrderBy(x => x.Level).FirstOrDefault();
         return first is null || first.MinTier <= 1 ? null : first.MinTier;
     }
 
@@ -297,7 +284,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             storage.Coke,
             storage.Moonshine,
             storage.Cut,
-            storage.Medicine);
+            storage.Medicine,
+            storage.Poison);
     }
 
     /// <summary>
@@ -365,6 +353,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         var weed = Spill(player.Weed, capacity.MaxWeed, before.Weed);
         var coke = Spill(player.Coke, capacity.MaxCoke, before.Coke);
         var medicine = Spill(player.Medicine, capacity.MaxMedicine, before.Medicine);
+        var poison = Spill(player.Poison, capacity.MaxPoison, before.Poison);
         player.Condoms -= condoms;
         player.Beer -= beer;
         // Cheapest guns first. A full rack losing its rifles to an overflowing shelf would make owning
@@ -373,6 +362,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         player.Weed -= weed;
         player.Coke -= coke;
         player.Medicine -= medicine;
+        player.Poison -= poison;
 
         return new StorageOverflow(banked, condoms, beer, weapons, weed, coke, medicine);
     }
@@ -393,6 +383,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         player.Weed = Math.Min(player.Weed, capacity.MaxWeed);
         player.Coke = Math.Min(player.Coke, capacity.MaxCoke);
         player.Medicine = Math.Min(player.Medicine, capacity.MaxMedicine);
+        player.Poison = Math.Min(player.Poison, capacity.MaxPoison);
         player.Rides = Math.Min(player.Rides, capacity.MaxRides);
 
         var overSafe = player.Cash - capacity.MaxCash;
@@ -422,10 +413,6 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 level => BuildLab(hideout, nowUtc, () => hideout.CokeLabLevel = level), "coke lab"),
             "workshop" => ApplyUpgrade(player, hideout, config.Workshop, hideout.WorkshopLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.WorkshopLevel = level, "workshop"),
-            "still" => ApplyUpgrade(player, hideout, config.Still, hideout.StillLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
-                level => hideout.StillLevel = level, "still"),
-            "mix" => ApplyUpgrade(player, hideout, config.Mix, hideout.MixLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
-                level => hideout.MixLevel = level, "mix house"),
             "intelligence" => ApplyUpgrade(player, hideout, config.Intelligence, hideout.IntelligenceLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.IntelligenceLevel = level, "intelligence centre"),
             "lookout" => ApplyUpgrade(player, hideout, config.Lookout, hideout.LookoutLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
@@ -489,8 +476,6 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             "weedlab" => Next(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "cokelab" => Next(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "workshop" => Next(config.Workshop, hideout?.WorkshopLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
-            "still" => Next(config.Still, hideout?.StillLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
-            "mix" => Next(config.Mix, hideout?.MixLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "intelligence" => Next(config.Intelligence, hideout?.IntelligenceLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "lookout" => Next(config.Lookout, hideout?.LookoutLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             _ => null
@@ -705,13 +690,14 @@ public sealed record HideoutCapacity(
     int MaxCoke,
     int MaxMoonshine,
     int MaxCut,
-    int MaxMedicine);
+    int MaxMedicine,
+    int MaxPoison);
 
 /// <summary>The stock a player held before an action, used as the floor for grandfathered amounts.</summary>
-public sealed record StockLevels(long Cash, int Condoms, int Beer, int Weapons, int Weed, int Coke, int Medicine)
+public sealed record StockLevels(long Cash, int Condoms, int Beer, int Weapons, int Weed, int Coke, int Medicine, int Poison)
 {
     public static StockLevels From(Player player)
-        => new(player.Cash, player.Condoms, player.Beer, player.Weapons, player.Weed, player.Coke, player.Medicine);
+        => new(player.Cash, player.Condoms, player.Beer, player.Weapons, player.Weed, player.Coke, player.Medicine, player.Poison);
 }
 
 public sealed record StorageOverflow(

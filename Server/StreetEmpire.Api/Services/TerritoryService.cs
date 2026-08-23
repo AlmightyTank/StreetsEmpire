@@ -139,7 +139,7 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         if (territory.HolderId != player.Id)
             throw new GameRuleException("You do not hold that ground.");
         if (thugs < 0)
-            throw new GameRuleException("A garrison cannot be negative.");
+            throw new GameRuleException("You cannot post fewer than nobody.");
 
         if (thugs < config.MinimumGarrison)
         {

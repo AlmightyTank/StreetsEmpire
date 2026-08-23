@@ -29,6 +29,7 @@ public static class TradeGoods
         "condoms" => "Condoms",
         "beer" => "Beer",
         "medicine" => "Medicine",
+        "poison" => "Poison",
         "weed" => "Weed",
         "coke" => "Coke",
         "moonshine" => "Moonshine",
@@ -41,6 +42,7 @@ public static class TradeGoods
         "condoms" => player.Condoms,
         "beer" => player.Beer,
         "medicine" => player.Medicine,
+        "poison" => player.Poison,
         "weed" => player.Weed,
         "coke" => player.Coke,
         "moonshine" => player.Moonshine,
@@ -76,6 +78,7 @@ public static class TradeGoods
             case "condoms": player.Condoms += amount; break;
             case "beer": player.Beer += amount; break;
             case "medicine": player.Medicine += amount; break;
+            case "poison": player.Poison += amount; break;
             case "weed": player.Weed += amount; break;
             case "coke": player.Coke += amount; break;
             case "moonshine": player.Moonshine += amount; break;
@@ -88,6 +91,7 @@ public static class TradeGoods
         "condoms" => capacity.MaxCondoms,
         "beer" => capacity.MaxBeer,
         "medicine" => capacity.MaxMedicine,
+        "poison" => capacity.MaxPoison,
         "weed" => capacity.MaxWeed,
         "coke" => capacity.MaxCoke,
         "moonshine" => capacity.MaxMoonshine,
@@ -119,6 +123,7 @@ public static class TradeGoods
         "condoms" => options.CondomPrice,
         "beer" => options.BeerPrice,
         "medicine" => options.MedicinePrice,
+        "poison" => options.PoisonPrice,
         "weed" => options.CityMarkets.ProductPrice(city, "weed", options.WeedSellPrice),
         "coke" => options.CityMarkets.ProductPrice(city, "coke", options.CokeSellPrice),
         // Moonshine is judged against the shop beer it replaces, and that price is the same everywhere,

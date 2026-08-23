@@ -48,6 +48,7 @@ builder.Services.AddScoped<MarketService>();
 builder.Services.AddScoped<MuleService>();
 builder.Services.AddScoped<GuidanceService>();
 builder.Services.AddScoped<ContractService>();
+builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
@@ -215,6 +216,7 @@ app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();
 app.MapMuleEndpoints();
 app.MapContractEndpoints();
+app.MapChatEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();
 

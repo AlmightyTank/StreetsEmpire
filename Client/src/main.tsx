@@ -1,8 +1,8 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { adminApi, api, configApi, opsApi } from './api'
-import type { ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import { adminApi, api, cheapestWeapon, configApi, opsApi } from './api'
+import type { ChatBoard, ChatChannelKey, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 /*
   The stylesheet has asked for Inter since the beginning and nothing ever loaded it, so every player
   has been reading the fallback - Segoe UI on Windows, SF on a Mac - and the weights above 700 were
@@ -43,7 +43,7 @@ const adjustPresets: { label: string, resource: string, delta: number }[] = [
 const primaryPages: AppPage[] = ['overview', 'street', 'crew', 'market']
 
 const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
-  overview: { label: 'Overview', short: 'OV', kicker: 'Command center' },
+  overview: { label: 'Overview', short: 'OV', kicker: 'Command centre' },
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
   crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
   hideout: { label: 'Hideout', short: 'HO', kicker: 'Capacity and upgrades' },
@@ -52,7 +52,7 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   mules: { label: 'Mules', short: 'MU', kicker: 'Runs out of town' },
   recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
   alliance: { label: 'Alliance', short: 'AL', kicker: 'Who you run with' },
-  admin: { label: 'Admin', short: 'AD', kicker: 'Control center' },
+  admin: { label: 'Admin', short: 'AD', kicker: 'Control centre' },
 }
 
 /**
@@ -126,7 +126,331 @@ function MobileNav({ pages, active, onPick, onLogout }: {
   </>
 }
 
+/**
+ * The walkthrough.
+ *
+ * A new player arrives at nine pages of numbers with no idea which of them is the one that matters
+ * today. The opening ladder tells them what to do next, but not what any of it is or where it lives,
+ * and reading a panel does not tell you why you would ever open it.
+ *
+ * So: one thing lit at a time, everything else dimmed, and a sentence saying what it is and what it is
+ * for. The tour drives the pages itself, because half of what a newcomer needs to learn is which tab a
+ * thing lives on - being taken there is the lesson.
+ */
+const tourSeenKey = 'street-empire.walkthrough.seen'
+
+const tourSteps: { page: AppPage, target: string, title: string, body: string }[] = [
+  {
+    page: 'overview',
+    target: 'status',
+    title: 'Your numbers',
+    body: 'Cash, turns, crew and heat. Turns are the real currency - almost everything worth doing spends '
+      + 'them, and they come back slowly on their own. Heat is how much attention you have drawn; let it '
+      + 'climb and the busts start.',
+  },
+  {
+    page: 'overview',
+    target: 'ladder',
+    title: 'What to do next',
+    body: 'The opening ladder, in order. Each rung says why it is worth doing, and clicking one takes you '
+      + 'to the page where it happens. If you ever lose the thread, come back here.',
+  },
+  {
+    page: 'street',
+    target: 'street-action',
+    title: 'Working the streets',
+    body: 'Where turns become money. Your hoes earn, your thugs guard them, and you pick up new crew while '
+      + 'you are out. It costs supplies - condoms and beer - so a shift you cannot supply pays less and '
+      + 'sours the crew.',
+  },
+  {
+    page: 'hideout',
+    target: 'rooms',
+    title: 'The hideout is the engine',
+    body: 'Every room does one job: the store decides how big a crew you can feed, the labs make product '
+      + 'while you are away, the safe keeps cash out of a raider\'s hands. Nothing you buy here is lost - '
+      + 'a building counts towards your standing at every pound it cost.',
+  },
+  {
+    page: 'market',
+    target: 'market-trade',
+    title: 'Buying and selling',
+    body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
+      + 'cash: money on hand is stolen in a raid and money in the bank is not, which is the cheapest '
+      + 'insurance in the game.',
+  },
+  {
+    page: 'recon',
+    target: 'targets',
+    title: 'Other people',
+    body: 'You can look up any player and take what they have, and they can do the same to you. You are only '
+      + 'matched against people worth robbing and able to fight back, so nobody can farm a newcomer - and '
+      + 'your buildings are never part of what is on the table.',
+  },
+]
+
+function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
+  active: boolean
+  stepIndex: number
+  onPage: (page: AppPage) => void
+  onStep: (index: number) => void
+  onClose: () => void
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  // The card measures itself. The first version guessed 200px of height and placed the card against
+  // that guess, which put it off the top of the screen the moment a target was tall - the opening
+  // ladder is nine rungs, so the step explaining it was the step you could not read.
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const [boxSize, setBoxSize] = useState({ width: 330, height: 190 })
+  const step = tourSteps[stepIndex]
+
+  useEffect(() => {
+    if (!boxRef.current) return
+    const measured = boxRef.current.getBoundingClientRect()
+    if (measured.height < 1) return
+    setBoxSize(previous =>
+      Math.abs(previous.height - measured.height) < 2 && Math.abs(previous.width - measured.width) < 2
+        ? previous
+        : { width: measured.width, height: measured.height })
+  }, [stepIndex, rect])
+
+  // Drive the page first: a target on another tab does not exist to be measured yet.
+  useEffect(() => {
+    if (!active || !step) return
+    onPage(step.page)
+  }, [active, stepIndex])
+
+  // Measure after the page has had a frame to render, and keep measuring while things move.
+  useEffect(() => {
+    if (!active || !step) return
+
+    let frame = 0
+    const measure = () => {
+      const node = document.querySelector(`[data-tour="${step.target}"]`)
+      if (!node) { setRect(null); return }
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      setRect(node.getBoundingClientRect())
+    }
+
+    // Two frames, then a settle: the page swap, then the scroll.
+    frame = requestAnimationFrame(() => requestAnimationFrame(measure))
+    const settle = setTimeout(measure, 380)
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(settle)
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [active, stepIndex])
+
+  useEffect(() => {
+    if (!active) return
+    const keys = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key === 'ArrowRight') onStep(Math.min(tourSteps.length - 1, stepIndex + 1))
+      if (event.key === 'ArrowLeft') onStep(Math.max(0, stepIndex - 1))
+    }
+    window.addEventListener('keydown', keys)
+    return () => window.removeEventListener('keydown', keys)
+  }, [active, stepIndex])
+
+  if (!active || !step) return null
+
+  const last = stepIndex === tourSteps.length - 1
+  const pad = 8
+  const gap = pad + 10
+  const edge = 12
+  const view = { w: window.innerWidth, h: window.innerHeight }
+
+  // Beside the highlight wherever it fits, which is the placement that works for every shape of
+  // target: a panel can be tall enough to leave no room above or below it and still have a whole
+  // empty column next to it. Above and below are the fallbacks, and every one of them is clamped
+  // into the viewport afterwards, so no arithmetic here can put the card somewhere unreadable.
+  const boxStyle: React.CSSProperties = (() => {
+    if (!rect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
+
+    const fitsRight = view.w - rect.right - gap - edge >= boxSize.width
+    const fitsLeft = rect.left - gap - edge >= boxSize.width
+    const fitsBelow = view.h - rect.bottom - gap - edge >= boxSize.height
+
+    const left = fitsRight ? rect.right + gap
+      : fitsLeft ? rect.left - gap - boxSize.width
+      : rect.left
+    const top = fitsRight || fitsLeft
+      // Beside: centred on the target, so the eye travels sideways rather than hunting.
+      ? rect.top + rect.height / 2 - boxSize.height / 2
+      : fitsBelow ? rect.bottom + gap
+      // Nowhere left to stand - the target is bigger than the screen. Sit at the foot of it rather
+      // than the head, so the panel's own heading stays readable underneath the dimming and the
+      // player can still tell what is being pointed at.
+      : view.h - boxSize.height - edge
+
+    return {
+      left: Math.round(Math.min(Math.max(edge, left), Math.max(edge, view.w - boxSize.width - edge))),
+      top: Math.round(Math.min(Math.max(edge, top), Math.max(edge, view.h - boxSize.height - edge))),
+    }
+  })()
+
+  return <div className="tour" role="dialog" aria-label={step.title}>
+    {/* The dimming is one enormous shadow cast outward from the hole, so there is exactly one element
+        to keep in step with the target rather than four panels around it. */}
+    {rect && <div
+      className="tour-spotlight"
+      style={{
+        top: rect.top - pad,
+        left: rect.left - pad,
+        width: rect.width + pad * 2,
+        height: rect.height + pad * 2,
+      }}
+    />}
+    {!rect && <div className="tour-dim" />}
+
+    <div className="tour-box" ref={boxRef} style={boxStyle}>
+      <span className="tour-count">Step {stepIndex + 1} of {tourSteps.length}</span>
+      <strong>{step.title}</strong>
+      <p>{step.body}</p>
+      <div className="tour-actions">
+        <button className="secondary compact" type="button" onClick={onClose}>
+          {last ? 'Done' : 'Skip'}
+        </button>
+        <div className="tour-move">
+          {stepIndex > 0 && <button
+            className="secondary compact"
+            type="button"
+            onClick={() => onStep(stepIndex - 1)}
+          >Back</button>}
+          <button
+            className="primary compact"
+            type="button"
+            onClick={() => (last ? onClose() : onStep(stepIndex + 1))}
+          >{last ? 'Finish' : 'Next'}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+/**
+ * Talking.
+ *
+ * Three rooms behind three tabs: the whole board, the town you are standing in, and your crew. The
+ * room follows you rather than being chosen once - travel and the city tab is a different town, leave
+ * a crew and the crew tab closes - because that is what those words mean.
+ *
+ * Polled rather than pushed. A socket would be the right answer for a chat that has to feel instant,
+ * and this one does not: it sits beside a game whose turns arrive every ten minutes, and a few seconds
+ * of lag on a line costs nothing against a connection that has to be held open, reconnected, and
+ * reasoned about every time the tab sleeps.
+ */
+function ChatPanel({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) {
+  const [channel, setChannel] = useState<ChatChannelKey>('Global')
+  const [board, setBoard] = useState<ChatBoard | null>(null)
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
+  const log = useRef<HTMLDivElement | null>(null)
+  const pinned = useRef(true)
+
+  const load = async (which: ChatChannelKey) => {
+    try { setBoard(await api.chat(which)); setError('') }
+    catch (e) { setError((e as Error).message) }
+  }
+
+  useEffect(() => { void load(channel) }, [channel, dashboard.city, dashboard.alliance?.id])
+
+  // Only while the panel is open and the tab is in front: a chat nobody is looking at should not be
+  // asking the server how it is every few seconds.
+  useEffect(() => {
+    const tick = setInterval(() => {
+      if (document.visibilityState === 'visible') void load(channel)
+    }, 8000)
+    return () => clearInterval(tick)
+  }, [channel])
+
+  // Follow the bottom, unless the reader has scrolled up to read something - in which case leave them
+  // where they are rather than yanking them back every time somebody speaks.
+  useEffect(() => {
+    const node = log.current
+    if (node && pinned.current) node.scrollTop = node.scrollHeight
+  }, [board])
+
+  const onScroll = () => {
+    const node = log.current
+    if (node) pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 40
+  }
+
+  const current = board?.channels.find(x => x.channel === channel)
+  const max = board?.maxLength ?? 280
+  const over = draft.length > max
+
+  const say = async () => {
+    const body = draft.trim()
+    if (!body || sending) return
+    setSending(true)
+    try {
+      await api.say(channel, body)
+      setDraft('')
+      pinned.current = true
+      await load(channel)
+      setError('')
+    } catch (e) { setError((e as Error).message) }
+    finally { setSending(false) }
+  }
+
+  return <section className="panel chat-panel">
+    <div className="panel-title">
+      <h2>Talk</h2>
+      <span>{board?.scope ?? ''}</span>
+    </div>
+
+    <div className="chat-tabs">
+      {(board?.channels ?? []).map(tab => <button
+        className={tab.channel === channel ? 'active' : ''}
+        key={tab.channel}
+        type="button"
+        title={tab.blockedReason ?? tab.detail}
+        onClick={() => setChannel(tab.channel)}
+      >{tab.label}</button>)}
+    </div>
+
+    <div className="chat-log" ref={log} onScroll={onScroll}>
+      {!board && <p className="hint">Listening.</p>}
+      {board && board.messages.length === 0 && <p className="hint">
+        {current?.blockedReason ?? 'Nobody has said anything here yet.'}
+      </p>}
+      {board?.messages.map(line => <div className={line.yours ? 'chat-line yours' : 'chat-line'} key={line.id}>
+        <strong>{line.author}</strong>
+        <span>{line.body}</span>
+        <small>{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+      </div>)}
+    </div>
+
+    {error && <div className="error banner"><span>{error}</span></div>}
+
+    <form className="chat-say" onSubmit={event => { event.preventDefault(); void say() }}>
+      <input
+        aria-label={`Say something in ${current?.label ?? 'chat'}`}
+        disabled={busy || sending || !(current?.canPost ?? false)}
+        maxLength={max + 40}
+        placeholder={current?.canPost === false ? current.blockedReason ?? 'You cannot speak here.' : 'Say something'}
+        value={draft}
+        onChange={event => setDraft(event.target.value)}
+      />
+      <button className="primary" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
+    </form>
+    {/* Only once it matters. A counter sitting at 0/280 from the moment the page loads is furniture. */}
+    {draft.length > max * 0.75 && <small className={over ? 'chat-count over' : 'chat-count'}>
+      {draft.length} / {max}
+    </small>}
+  </section>
+}
+
 function App() {
+  // Shown once unasked, then only when somebody wants it. A walkthrough that reappears is a nag.
+  const [tourStep, setTourStep] = useState<number | null>(null)
+  const tourOffered = useRef(false)
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null)
   const [leaders, setLeaders] = useState<LeaderboardEntry[]>([])
@@ -393,6 +717,7 @@ function App() {
     weaponCoverage,
     managementCapacity,
     setActivePage,
+    openTour: () => setTourStep(0),
     setTargetQuery,
     setStreetTurns,
     setAutoBuySupplies,
@@ -418,8 +743,22 @@ function App() {
     setBotAutomation: (enabled, timing) => void act(() => api.adminSetBotAutomation(enabled, timing)),
   }
 
+  // Waits for real data: a tour of empty panels teaches nothing, and the first dashboard is also the
+  // first moment the targets exist to be pointed at.
+  if (!tourOffered.current && dashboard && localStorage.getItem(tourSeenKey) === null) {
+    tourOffered.current = true
+    queueMicrotask(() => setTourStep(0))
+  }
+
   return <main className="game-shell">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
+    <Walkthrough
+      active={tourStep !== null}
+      stepIndex={tourStep ?? 0}
+      onPage={setActivePage}
+      onStep={setTourStep}
+      onClose={() => { setTourStep(null); localStorage.setItem(tourSeenKey, '1') }}
+    />
     <MobileNav
       pages={visiblePages}
       active={activePage}
@@ -486,6 +825,8 @@ function App() {
 }
 
 type PageContext = {
+  /** Opens the walkthrough at its first step. A shell control, like setActivePage beside it. */
+  openTour: () => void
   dashboard: Dashboard
   adminOverview: AdminOverview | null
   leaders: LeaderboardEntry[]
@@ -579,7 +920,7 @@ function OverviewPage(ctx: PageContext) {
       </section>
 
       <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
-      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} />
+      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} onTour={ctx.openTour} />
 
       <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
     </div>
@@ -603,8 +944,8 @@ function OverviewPage(ctx: PageContext) {
         <StatusRow label="Armed thugs" value={`${Math.min(dashboard.weapons, dashboard.thugs)}/${dashboard.thugs}`} warn={dashboard.weapons < dashboard.thugs} />
         <StatusRow label="Weapon coverage" value={`${weaponCoverage.toFixed(0)}%`} warn={weaponCoverage < 75} />
         <StatusRow label="Combat status" value={dashboard.combatStatus.eligibility} warn={dashboard.combatStatus.isProtected} />
-        <StatusRow label="20-turn condoms" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
-        <StatusRow label="20-turn beer" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
+        <StatusRow label="Condoms for a full shift" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
+        <StatusRow label="Beer for a full shift" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
       </section>
 
       {/* Directly under readiness, because the last two readiness rows are counts of these same piles. */}
@@ -618,6 +959,8 @@ function OverviewPage(ctx: PageContext) {
       </section>
     </div>
 
+    <ChatPanel dashboard={dashboard} busy={busy} />
+
     <WorldNewsPanel news={worldNews} currentPlayer={dashboard.name} />
   </div>
 }
@@ -627,9 +970,9 @@ function StreetPage(ctx: PageContext) {
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
   const restock = restockEstimate(dashboard, streetTurns)
   return <div className="page-grid two-column">
-    <section className="panel wide-panel">
+    <section className="panel wide-panel" data-tour="street-action">
       <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
-      <p>Your hoes generate gross income. Their cut is paid before your cash is deposited on hand. Street work can also recruit crew and turn up small amounts of inventory.</p>
+      <p>Your hoes earn, and their cut comes off the top before anything reaches your pocket. A shift also turns up new crew and whatever is lying about.</p>
       {pendingOutgoingAttack && <div className="mission-lock">
         <strong>Crew is out</strong>
         <span>Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
@@ -762,7 +1105,7 @@ function HideoutPage(ctx: PageContext) {
   return <div className="page-grid two-column">
     <section className="panel wide-panel">
       <div className="panel-title"><h2>{hideout.tierName}</h2><span>Tier {hideout.tier}</span></div>
-      <p>Your hideout sets every hard limit you operate under. Crew beyond its capacity walks away, goods beyond your storage room spill, and cash beyond your safe is swept into the bank.</p>
+      <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
       <div className="capacity-grid">
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
         <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
@@ -777,12 +1120,13 @@ function HideoutPage(ctx: PageContext) {
         <CapacityBar label="Moonshine" used={dashboard.moonshine} cap={hideout.maxMoonshine} />
         <CapacityBar label="Cut" used={dashboard.cut} cap={hideout.maxCut} />
         <CapacityBar label="Medicine" used={dashboard.medicine} cap={hideout.maxMedicine} />
+        <CapacityBar label="Poison" used={dashboard.poison} cap={hideout.maxPoison} />
       </div>
     </section>
 
     <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
 
-    <section className="panel wide-panel">
+    <section className="panel wide-panel" data-tour="rooms">
       <div className="panel-title"><h2>Rooms</h2><span>Paid from the bank first</span></div>
       <div className="room-list">
         <RoomRow
@@ -807,7 +1151,7 @@ function HideoutPage(ctx: PageContext) {
           name="Weed Lab"
           level={hideout.weedLabLevel}
           detail={hideout.weedLabLevel === 0
-            ? 'Not built. Raises weed production turns and makes weed on its own.'
+            ? 'Not built. Grows weed on its own while you are out, and stretches a shift further when you are in.'
             : `+${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own`}
           upgrade={hideout.weedLabUpgrade}
           funds={dashboard.cash + dashboard.bankCash}
@@ -818,7 +1162,7 @@ function HideoutPage(ctx: PageContext) {
           name="Coke Lab"
           level={hideout.cokeLabLevel}
           detail={hideout.cokeLabLevel === 0
-            ? 'Not built. Raises coke production turns and makes coke on its own.'
+            ? 'Not built. Cooks coke on its own while you are out, and stretches a shift further when you are in.'
             : `+${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own`}
           upgrade={hideout.cokeLabUpgrade}
           funds={dashboard.cash + dashboard.bankCash}
@@ -1059,7 +1403,7 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
       <strong>{format(used)} / {format(cap)}</strong>
     </div>
     <div className="capacity-track"><div className="capacity-fill" style={{ width: `${Math.max(2, percent)}%` }} /></div>
-    {over && <small>Over capacity. You keep this, but cannot take on more until it drains.</small>}
+    {over && <small>More than the room holds. Nothing is lost, but nothing more comes in until it goes down.</small>}
   </div>
 }
 
@@ -1153,7 +1497,10 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
  */
 function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
   const hideout = dashboard.hideout
-  const mix = hideout.stations?.find(s => s.key === 'mix')
+  // Cut comes off the workshop bench now rather than a mix house of its own, so what gates this is how
+  // deep the bench is. The server reports the recipe as a row of its own with a level of zero until the
+  // shop can reach it, which is exactly the condition to hide the panel on.
+  const mix = hideout.stations?.find(s => s.key === 'cut')
   const [turns, setTurns] = useState(5)
   if (!mix || mix.level === 0) return null
 
@@ -1283,7 +1630,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
               disabled={busy || !canAffordTier || dashboard.turns < next.turns}
               onClick={() => void act(() => api.upgradeHideout('tier'))}
             >
-              {!canAffordTier ? 'Not enough money' : dashboard.turns < next.turns ? 'Not enough turns' : 'Start building'}
+              {!canAffordTier ? 'You cannot cover it' : dashboard.turns < next.turns ? `${next.turns} turns and you have ${dashboard.turns}` : 'Start building'}
             </button>
           </div>
         </>
@@ -1308,6 +1655,14 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
       <strong>{name}</strong>
       <span>{detail}</span>
       {locked && <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better.</small>}
+      {/* What the upgrade actually returns. The later levels are meant to be a poor deal - somewhere
+          for money to go once there is nothing left to buy - and saying so is the difference between
+          a trophy and a room that quietly took a fortune while looking like an investment. */}
+      {!locked && upgrade?.paybackDays != null && <small className={upgrade.paybackDays > 30 ? 'payback slow' : 'payback'}>
+        {upgrade.paybackDays > 30
+          ? `Pays for itself in ${upgrade.paybackDays} days. A trophy more than an investment.`
+          : `Pays for itself in ${upgrade.paybackDays} days.`}
+      </small>}
     </div>
     <em>{level === 0 ? 'Not built' : `Level ${level}`}</em>
     <button className="primary" disabled={busy || !upgrade || locked || funds < upgrade.cost} onClick={onUpgrade}>
@@ -1371,7 +1726,7 @@ function TerritoryPage(ctx: PageContext) {
           {effects.moraleRecoveryPercent > 0 && <span>+{effects.moraleRecoveryPercent}% morale recovery</span>}
           {effects.lootPercent > 0 && <span>+{effects.lootPercent}% haul</span>}
         </div>
-        : <p className="hint">You hold nothing yet, so none of your work is being amplified.</p>}
+        : <p className="hint">You hold no ground yet, so nothing out there is working for you.</p>}
       {error && <div className="error banner"><span>{error}</span></div>}
     </section>
 
@@ -1454,7 +1809,7 @@ function TradingPanel(ctx: PageContext) {
   </section>
 
   return <>
-    <section className="panel wide-panel">
+    <section className="panel wide-panel" data-tour="market-trade">
       <div className="panel-title">
         <h2>Market</h2>
         <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
@@ -1536,6 +1891,7 @@ function MarketPage(ctx: PageContext) {
           note={tier.firepower <= 1 ? "Covers a thug" : `${tier.firepower}x a pistol`}
         />)}
         <InventoryCard name="Medicine" count={dashboard.medicine} note="Treats an infestation" />
+        <InventoryCard name="Poison" count={dashboard.poison} note="Throws one" />
         <InventoryCard name="Rides" count={dashboard.rides} note={`${dashboard.rides}/${dashboard.hideout.maxRides} garage`} />
         <InventoryCard name="Weed" count={dashboard.weed} note={`${money.format(dashboard.weedSellPrice)} ${dashboard.currentMarket.weed.toLowerCase()}`} />
         {/* Quotes what this pile actually fetches, not the list price, since cut coke is not coke. */}
@@ -1589,7 +1945,7 @@ function MarketPage(ctx: PageContext) {
     <section className="panel market-production">
       <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
       <div className="production-command">
-        <p>Turn cash-on-hand into inventory, then sell product at this city's street prices.</p>
+        <p>Cash on hand buys stock, and the town pays its own price for it.</p>
         <label>Turns<input type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
       </div>
       <div className="product-grid">
@@ -2463,7 +2819,7 @@ function alertClass(alert: Alert) {
 }
 
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
-  return <section className="status-strip">
+  return <section className="status-strip" data-tour="status">
     <Stat label="Cash" value={money.format(dashboard.cash)} />
     <Stat label="Bank" value={money.format(dashboard.bankCash)} />
     <Stat label="Net Worth" value={money.format(dashboard.netWorth)} />
@@ -2507,7 +2863,7 @@ function restockEstimate(dashboard: Dashboard, turns: number) {
 
 function restockLabel(restock: { condoms: number, beer: number, cost: number }, cash: number) {
   if (restock.condoms === 0 && restock.beer === 0)
-    return 'Nothing to top up for this action.'
+    return 'Nothing to buy. The crew is already carrying what this needs.'
   const parts: string[] = []
   if (restock.condoms > 0) parts.push(`${number.format(restock.condoms)} condoms`)
   if (restock.beer > 0) parts.push(`${number.format(restock.beer)} beer`)
@@ -2532,9 +2888,21 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
   const supplies = [
     { key: 'condoms', owned: dashboard.condoms, cap: hideout.maxCondoms, needed: upkeep.condoms, basis: `to work ${turnLabel}` },
     { key: 'beer', owned: dashboard.beer, cap: hideout.maxBeer, needed: upkeep.beer, basis: `to work ${turnLabel}` },
-    // Weapons are permanent coverage, so their requirement is the crew size rather than the turns.
-    { key: 'weapons', owned: dashboard.weapons, cap: hideout.maxWeapons, needed: dashboard.thugs, basis: 'to arm every thug' },
+    // Guns are permanent cover rather than something a shift burns through, so the number to reach is
+    // the crew rather than the turns. Pistols specifically, because the counter stopped selling a thing
+    // called "weapons" the day guns split into tiers: this row asked for a key that no longer existed
+    // and the filter below quietly dropped it, so the panel has been two rows ever since.
+    //
+    // What is held is the whole rack, not the pistols on it - any gun covers a thug, and the shelf is
+    // shared - but the pistol is what you buy to close the gap, being the cheapest thing that counts.
+    { key: cheapestWeapon, owned: dashboard.weapons, cap: hideout.maxWeapons, needed: dashboard.thugs, basis: 'to arm every thug' },
   ].filter(supply => catalog.has(supply.key))
+  // A row whose key the counter does not stock is a bug, not an empty state. Named here so the next
+  // one is a message in the console rather than a row nobody notices is gone.
+  if (supplies.length < 3 && import.meta.env.DEV)
+    console.warn('Supplies panel dropped a row: the store has no', [
+      'condoms', 'beer', cheapestWeapon,
+    ].filter(key => !catalog.has(key)).join(', '))
   if (supplies.length === 0) return null
 
   return <div className="supply-panel">
@@ -2608,16 +2976,25 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (p
  * Hidden once it is finished rather than kept forever: a checklist a veteran still has to scroll past
  * is clutter, and the whole point of it is to stop being needed.
  */
-function OpeningLadderPanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (page: AppPage) => void }) {
+function OpeningLadderPanel({ dashboard, onPage, onTour }: {
+  dashboard: Dashboard
+  onPage: (page: AppPage) => void
+  onTour: () => void
+}) {
   const guidance = dashboard.guidance
   if (!guidance || guidance.objectivesDone >= guidance.objectivesTotal) return null
   // The next unfinished rung, plus what has been done, so progress is visible without listing it all.
   const next = guidance.objectives.find(o => !o.done)
 
-  return <section className="panel">
+  return <section className="panel" data-tour="ladder">
     <div className="panel-title">
       <h2>Getting Started</h2>
-      <span>{guidance.objectivesDone} of {guidance.objectivesTotal}</span>
+      <div className="ladder-head">
+        <span>{guidance.objectivesDone} of {guidance.objectivesTotal}</span>
+        {/* The walkthrough shows itself once. Anybody who skipped it, or who has come back after a
+            month away, needs a door back in that is not clearing their browser storage. */}
+        <button className="secondary compact" type="button" onClick={onTour}>Show me around</button>
+      </div>
     </div>
     <div className="ladder">
       {guidance.objectives.map(step => <button
@@ -2647,7 +3024,7 @@ function PimpRosterPanel({ dashboard }: { dashboard: Dashboard }) {
       {crew.map(pimp => <div className={pimp.isCommanding ? 'pimp-row out' : 'pimp-row'} key={pimp.id}>
         <div className="pimp-copy">
           <strong>{pimp.name} <b className={pimp.specialty === 'Enforcer' ? 'tag enforcer' : 'tag hustler'}>{pimp.specialty} +{pimp.bonusPercent}%</b></strong>
-          <span>{pimp.specialty === 'Enforcer' ? 'Sharpens attacks they lead and the house while home' : 'Lifts street income while home'}</span>
+          <span>{pimp.specialty === 'Enforcer' ? 'Sharpens any attack they lead, and the house whenever they are in it' : 'Lifts street income while home'}</span>
           <span>{pimp.missionsLed === 0 ? 'No missions led yet' : `${number.format(pimp.missionsLed)} mission${pimp.missionsLed === 1 ? '' : 's'} led / ${number.format(pimp.victories)} won`}</span>
         </div>
         <em>{pimp.isCommanding ? 'Out commanding' : 'At the house'}</em>
@@ -2769,7 +3146,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
     <div className="hideout-layout">
       <div className="hideout-copy">
         <strong>Current hideout</strong>
-        <p>Your crew comes back here after street work and fights. Low morale heals slowly over time, or you can spend turns and supplies to stabilize them faster.</p>
+        <p>Your crew comes back here after street work and fights. Low morale heals slowly over time, or you can spend turns and supplies to steady them faster.</p>
       </div>
       <div className="hideout-actions">
         <button className="secondary" disabled={!canRest} onClick={() => void act(() => api.recoverMorale('rest'))}>
@@ -2823,6 +3200,9 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     && attackCrew.weapons <= crew.availableWeapons
     && crew.activeAttackMissions < crew.maxActiveAttackMissions
   const method = dashboard.attackMethods.find(x => x.key === attackMethod) ?? dashboard.attackMethods[0]
+  // Worked out by the server against this exact pairing, so it is the same sentence the launch would
+  // have thrown rather than a second opinion the page arrived at on its own.
+  const strikeBlocker = method && profile ? profile.strikeBlockers?.[method.key] : undefined
   const isRaid = method?.key === 'raid'
   // A strike is gated by the method's own requirements, which the server has already worked out, plus
   // the turns it costs. A raid is gated by crew, which only it commits.
@@ -2833,7 +3213,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
     && (method.key !== 'poach' || (poachCoke > 0 && poachCoke <= dashboard.coke))
   return <div className="panel target-panel">
-    <div className="panel-title"><h2>Combat Targets</h2><span>Scout + launch</span></div>
+    <div className="panel-title" data-tour="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
     <form className="target-search" onSubmit={onSearch}>
       <label>Search<input value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
       <button className="secondary compact" disabled={busy}>Search</button>
@@ -2922,6 +3302,10 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
             disabled={busy
               || (isRaid && !!activeAgainstProfile)
               || !methodReady
+              // Their half of the rule. The method menu is built from your own crew and garage and has
+              // never seen who you are looking at, so a strike with nothing to take on the other end
+              // sat under a live button and was only refused once you had pressed it.
+              || !!strikeBlocker
               || !profile.combatStatus.canAttackNow
               || (!isRaid && profile.combatStatus.isStrikeProtected)}
             onClick={() => onAttack(profile.playerId)}
@@ -2929,6 +3313,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
             {isRaid ? 'Send the Raid' : method?.label ?? 'Attack'}
           </button>
           <span>{method?.blockedReason
+            ?? strikeBlocker
             ?? (!isRaid && profile.combatStatus.isStrikeProtected
               ? `${profile.name} was just hit and is watching the street.`
               : method && !isRaid
@@ -2944,7 +3329,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <AdminMetric label="Cash" value={money.format(profile.cash)} />
           <AdminMetric label="Bank" value={money.format(profile.bankCash)} />
           <AdminMetric label="Attack" value={number.format(profile.combatReadiness.attackPower)} />
-          <AdminMetric label="Defense" value={number.format(profile.combatReadiness.defensePower)} />
+          <AdminMetric label="Defence" value={number.format(profile.combatReadiness.defensePower)} />
           <AdminMetric label="Risk" value={profile.combatReadiness.riskBand} />
           <AdminMetric label="Combat" value={profile.combatStatus.eligibility} />
         </div>
@@ -2960,7 +3345,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           />
           <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
           <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
-          <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defenses`} />
+          <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defences`} />
           {profile.combatStatus.mismatchReason && <StatusRow label="Blocked" value={profile.combatStatus.mismatchReason} warn />}
           {/* What each strike is aimed at. A garage with cars in it and a house with no medicine are
               the reads that turn the menu into a decision rather than a list. */}
@@ -3042,9 +3427,14 @@ function strikeNote(method: AttackMethod, profile: PlayerProfile, dashboard: Das
     }
     case 'infest': {
       const covered = profile.medicine * 3
-      return covered >= profile.hoes && profile.hoes > 0
-        ? `Their ${profile.medicine} crate(s) cover the whole house. Nothing would be lost.`
-        : `${profile.hoes} hoes, ${profile.medicine} crate(s) of medicine. Whatever the medicine cannot reach is gone.`
+      // Your own doses are half the arithmetic now: you reach as far as you brought poison for, so a
+      // note that only described their medicine would be describing half the fight.
+      const reach = dashboard.poison * 3
+      if (dashboard.poison === 0) return 'You have no poison. The counter sells it, and a mix house makes it cheaper.'
+      if (covered >= profile.hoes && profile.hoes > 0)
+        return `Their ${profile.medicine} crate(s) cover the whole house. Nothing would be lost.`
+      return `${profile.hoes} hoes behind ${profile.medicine} crate(s) of medicine. `
+        + `Your ${dashboard.poison} dose(s) reach ${reach} of them, and whatever the medicine cannot treat is gone.`
     }
     case 'poach':
       return profile.hoeHappiness >= 90

@@ -6,6 +6,64 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 0.2.5 is in progress, and is about the early game.
 
+### The free attack
+
+Four of the five ways to hit somebody cost you something to try. A drive-by risks the car. A jacking
+needs a thug to drive and a space to park what he takes. A poach spends coke by the head, and the coke
+goes out whether or not anybody comes back with you. Infesting a house cost turns and nothing else, so
+there was never a reason not to do it, to anybody, at any time.
+
+It costs poison now, and poison has to be bought or made. A dose reaches three hoes, which is exactly
+what a crate of medicine treats - the defender's problem handed back to the attacker in reverse.
+Covering a big house is expensive at both ends, and turning up short against one only buys you as many
+hoes as your doses could reach. A part-used dose is a used dose, the same rounding medicine already
+had, because otherwise one dose covers a house forever by never quite running out.
+
+The counter sells it, next to the medicine that answers it, and the mix house makes it cheaper - that
+room is the chemicals bench and was already turning out cut, so it needed a product rather than a
+building. It occupies a shelf like everything else, counts towards net worth at what it cost, and is
+not loot: a raid cannot carry off medicine, so it cannot carry off this either.
+
+### A button that offered what it could not do
+
+The menu of strikes is built from the attacker: your thugs, your garage, your coke. It has never been
+shown who you are pointed at, so every rule with a far end - jacking a garage with nothing in it,
+infesting a house with no hoes, poaching one with nobody to take - had nowhere to be said. The note
+under the menu knew, and said "nothing parked there to take"; the button above it stayed live, and the
+only way to learn the rule was to spend the click and be refused.
+
+The refusal now comes from one function that answers both questions: the sentence shown under a dead
+button is the sentence the launch would have thrown if it had been pressed. That mattered more than
+tidiness - the two had already been written twice, once as a note and once as a throw, and a rule
+written twice is a rule that will eventually disagree with itself. There is a test that asserts the
+pre-flight answer and the thrown refusal are the same string.
+
+Looking at it turned up a second fault, this one self-inflicted. Splitting net worth from plunder left
+the profile endpoint passing net worth into a parameter that had been renamed to plunder - the argument
+was positional, so it went on compiling while quietly meaning something else. A profile judged you on a
+sum including your buildings while the target list beside it judged you on one that did not, and the
+same rule gave two answers depending on which screen you were looking at.
+
+### Being shown the game instead of being told about it
+
+A new player arrives at nine tabs of numbers with no way of telling which one matters today. The
+opening ladder says what to do next, but not what any of it is, and reading a panel does not tell you
+why you would ever open it.
+
+So there is a walkthrough: six steps, one thing lit at a time with everything else dimmed, and a
+sentence saying what the lit thing is and what it is for. It changes pages itself as it goes, because
+half of what a newcomer has to learn is which tab a thing lives on, and being taken there is the lesson.
+It offers itself once on the first real dashboard and then stays out of the way - a tour that reappears
+is a nag - with a "Show me around" button beside the ladder for anyone who skipped it or has come back
+after a long time away.
+
+Looking at the tabs properly also turned up a fault that had been there since the ladder was written.
+"Run a production shift" pointed at the street, and there is no production on the street: a player
+following the game's own instructions arrived somewhere with nothing to do. It points at the hideout
+now, where the lab the previous rung had them build actually sits, which puts the two on one page and
+takes the opening ladder from six tab changes to five. The test covering guidance passed before and
+after the fix, because nothing had ever checked where a rung sends you; it does now.
+
 ### Half the config nobody was testing
 
 The tuning lives in two places. GameOptions carries defaults in code, appsettings.json carries values in

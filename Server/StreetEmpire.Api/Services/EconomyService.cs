@@ -52,8 +52,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                      + (long)player.Smgs * smg
                      + (long)player.Rifles * rifle
                      + (long)player.Medicine * options.MedicineNetWorth
+                     + (long)player.Poison * options.PoisonNetWorth
                      + (long)player.Rides * options.RideNetWorth
                      + (long)player.Weed * options.WeedNetWorth
+                     + (long)player.Moonshine * options.MoonshineNetWorth
+                     + (long)player.Cut * options.CutNetWorth
                      // Coke is worth what it is, not what it weighs. Math.Pow translates to the
                      // database's own power(), so ranking still happens there rather than in memory.
                      + (long)(player.Coke * options.CokeNetWorth
@@ -173,7 +176,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         {
             new("condoms", "Condoms", "Crew Supplies", _options.CondomPrice, "Consumed while your hoes work the streets."),
             new("beer", "Beer", "Crew Supplies", _options.BeerPrice, "Consumed by thugs during street operations."),
-            new("medicine", "Medicine", "Crew Supplies", _options.MedicinePrice, $"Treats {Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate)} hoes when a rival infests your house. Does nothing until then.")
+            new("medicine", "Medicine", "Crew Supplies", _options.MedicinePrice, $"Treats {Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate)} hoes when a rival infests your house. Does nothing until then."),
+            new("poison", "Poison", "Crew Supplies", _options.PoisonPrice, $"One dose reaches {Math.Max(1, _options.Strikes.Infest.HoesHitPerDose)} of somebody else's hoes. The other end of medicine, and the only way to infest a house.")
         };
 
         // The gun counter, cheapest first. Every row says the same two things because they are the two
@@ -226,8 +230,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
            + (long)player.Beer * options.BeerPrice
            + options.WeaponValue(player.Armoury)
            + (long)player.Medicine * options.MedicineNetWorth
+           + (long)player.Poison * options.PoisonNetWorth
            + (long)player.Rides * options.RideNetWorth
            + (long)player.Weed * options.WeedNetWorth
+           + (long)player.Moonshine * options.MoonshineNetWorth
+           + (long)player.Cut * options.CutNetWorth
            + (long)(player.Coke * options.CokeNetWorth * options.PurityMultiplier(player.CokePurity));
 
     public CrewReportResponse GetCrewReport(Player player)
@@ -590,10 +597,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         TravelGate.EnsureLanded(player);
         ValidateTurns(player, turns, _options.MaxActionTurns, "Cutting coke");
 
-        var mixLevel = player.Hideout?.MixLevel ?? 0;
-        if (mixLevel <= 0)
-            throw new GameRuleException("You need a mix house to step on it.");
-        if (hideout.StationRequiredTier("mix") is { } needed && (player.Hideout?.Tier ?? 1) < needed)
+        // Stepping on coke needs a bench that can make the cut it is stepped on with, which is the
+        // same level the recipe asks for rather than a second number that could drift away from it.
+        var needsLevel = _options.Makeables.FirstOrDefault(x => x.Key == "cut")?.MinWorkshopLevel ?? 1;
+        var mixLevel = player.Hideout?.WorkshopLevel ?? 0;
+        if (mixLevel < needsLevel)
+            throw new GameRuleException($"Stepping on coke needs a level {needsLevel} workshop.");
+        if (hideout.WorkshopRequiredTier() is { } needed && (player.Hideout?.Tier ?? 1) < needed)
             throw new GameRuleException($"Stepping on it needs the {hideout.TierName(needed)} or better.");
         if (player.Cut <= 0)
             throw new GameRuleException("You have no cut to work with.");
@@ -654,62 +664,82 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// sell to the game at a fixed price: they are a supply everyone burns, which is what makes them
     /// worth putting on the board.
     /// </summary>
-    public ActionResultResponse Forge(Player player, int turns, string? weapon = null) => Make(player, "workshop", turns, weapon);
+    public ActionResultResponse Forge(Player player, int turns, string? weapon = null) => Make(player, turns, weapon);
 
     /// <summary>
-    /// Turns and materials into one good. The workshop, the still and the mix house are the same shape,
-    /// so they share a path rather than three near-copies that can drift apart on the storage rule.
+    /// Turns and materials into one good.
+    ///
+    /// One room now. The workshop, the still and the mix house were the same shape wearing three signs,
+    /// and what a unit costs to make belongs to the thing being made rather than to the room it happens
+    /// in - which is what the guns had been saying since they were given a forge cost of their own.
     /// </summary>
-    /// <param name="weapon">
-    /// Which gun the workshop is turning out. Ignored by the still and the mix house, which each make
-    /// exactly one thing; null at the workshop means the best gun that shop is able to make.
+    /// <param name="good">
+    /// What to turn out. Null means the best gun the shop can reach, which is what asking a workshop
+    /// for nothing in particular has always meant.
     /// </param>
-    public ActionResultResponse Make(Player player, string station, int turns, string? weapon = null)
+    public ActionResultResponse Make(Player player, int turns, string? good = null)
     {
         TravelGate.EnsureLanded(player);
         if (turns < 1 || turns > _options.MaxActionTurns)
             throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
         if (player.Turns < turns)
-            throw new GameRuleException("You do not have that many turns.");
+            throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
 
-        var refusal = station switch
+        var workshop = hideout.WorkshopFor(player.Hideout)
+            ?? throw new GameRuleException("You need a workshop before you can make anything.");
+
+        // A recipe first, since anything that is not one is a gun, and the guns carry their own.
+        var recipe = _options.Makeables.FirstOrDefault(x =>
+            string.Equals(x.Key, good, StringComparison.OrdinalIgnoreCase));
+
+        string key;
+        string label;
+        long unitCost;
+        int perTurn;
+
+        if (recipe is not null)
         {
-            "still" => "You need a still before you can brew moonshine.",
-            "mix" => "You need a mix house before you can make cut.",
-            _ => "You need a workshop before you can make weapons."
-        };
-        var workshop = hideout.StationFor(player.Hideout, station) ?? throw new GameRuleException(refusal);
+            if (!recipe.CanMake)
+                throw new GameRuleException($"Nobody makes {TradeGoods.Label(recipe.Key).ToLowerInvariant()}. You buy it.");
+            if (workshop.Level < recipe.MinWorkshopLevel)
+                throw new GameRuleException(
+                    $"A level {recipe.MinWorkshopLevel} workshop makes {TradeGoods.Label(recipe.Key).ToLowerInvariant()}. Yours is level {workshop.Level}.");
 
-        // The still and the mix house have one product and one price. The workshop has four, so what it
-        // costs to make one is a property of the gun rather than of the room: a level buys throughput
-        // and which guns are unlocked, not a discount on a single thing.
-        var (good, label, unitCost) = station switch
+            key = recipe.Key;
+            label = TradeGoods.Label(recipe.Key).ToLowerInvariant();
+            unitCost = recipe.MaterialCost;
+            perTurn = Math.Max(1, recipe.PerTurn);
+        }
+        else
         {
-            "still" => ("moonshine", "moonshine", workshop.CostPerWeapon),
-            "mix" => ("cut", "cut", workshop.CostPerWeapon),
-            _ => ForgeTarget(workshop, weapon)
-        };
+            (key, label, unitCost) = ForgeTarget(workshop, good);
+            // Guns are the slow end of the bench: one a turn before the room speeds it up.
+            perTurn = 1;
+        }
 
-        if (hideout.StationRequiredTier(station) is { } needed && (player.Hideout?.Tier ?? 1) < needed)
+        if (hideout.WorkshopRequiredTier() is { } needed && (player.Hideout?.Tier ?? 1) < needed)
             throw new GameRuleException($"Making {label} needs the {hideout.TierName(needed)} or better.");
 
         var capacity = hideout.CapacityFor(player.Hideout);
-        var room = TradeGoods.Room(player, capacity, good);
+        var room = TradeGoods.Room(player, capacity, key);
         if (room == 0)
             throw new GameRuleException($"Your storage has no room for more {label}.");
 
+        // What the room does is make the same bench go faster, whatever is on it.
+        var rate = Math.Max(1, perTurn * Math.Max(1, workshop.Throughput));
+
         // Bounded by the room up front rather than made and spilled, so nobody pays for materials that
         // turn into nothing.
-        var wanted = workshop.WeaponsPerTurn * turns;
+        var wanted = rate * turns;
         var made = Math.Min(wanted, room);
-        var turnsUsed = (int)Math.Ceiling((double)made / Math.Max(1, workshop.WeaponsPerTurn));
+        var turnsUsed = (int)Math.Ceiling((double)made / rate);
         var cost = unitCost * made;
         if (player.Cash < cost)
             throw new GameRuleException($"Materials for {made:N0} {label} cost {cost:C0}.");
 
         player.Turns -= turnsUsed;
         player.Cash -= cost;
-        TradeGoods.Add(player, good, made);
+        TradeGoods.Add(player, key, made);
 
         var summary = $"Turned out {made:N0} {label} over {turnsUsed} turn{Plural(turnsUsed)} for {cost:C0} in materials.";
         if (made < wanted)
@@ -717,13 +747,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
         {
-            ["good"] = good,
+            ["good"] = key,
             ["weaponsMade"] = made,
             ["unitsMade"] = made,
             ["turnsSpent"] = turnsUsed,
             ["costPerWeapon"] = unitCost,
             ["totalCost"] = cost,
-            ["storePrice"] = TradeGoods.ReferencePrice(_options, good, player.City)
+            ["storePrice"] = TradeGoods.ReferencePrice(_options, key, player.City)
         });
     }
 
@@ -769,7 +799,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         TravelGate.EnsureLanded(player);
         if (quantity is < 1 or > 100_000)
-            throw new GameRuleException("Quantity must be between 1 and 100,000.");
+            throw new GameRuleException("Move between 1 and 100,000 at a time.");
 
         var key = NormalizeProduct(product);
         var stockBefore = StockLevels.From(player);
@@ -782,12 +812,12 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             : listPrice;
         if (key == "weed")
         {
-            if (player.Weed < quantity) throw new GameRuleException("You do not have enough weed.");
+            if (player.Weed < quantity) throw new GameRuleException($"You only hold {player.Weed:N0} weed.");
             player.Weed -= quantity;
         }
         else
         {
-            if (player.Coke < quantity) throw new GameRuleException("You do not have enough coke.");
+            if (player.Coke < quantity) throw new GameRuleException($"You only hold {player.Coke:N0} coke.");
             // Selling a share of a mixture leaves the mixture as it was.
             player.Coke -= quantity;
         }
@@ -933,14 +963,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         {
             "weed" => _options.CityMarkets.ProductPrice(city, "weed", _options.WeedSellPrice),
             "coke" => _options.CityMarkets.ProductPrice(city, "coke", _options.CokeSellPrice),
-            _ => throw new GameRuleException("Product must be 'weed' or 'coke'.")
+            _ => throw new GameRuleException("Weed or coke.")
         };
 
     public ActionResultResponse BuyStoreItem(Player player, string? itemKey, int quantity)
     {
         TravelGate.EnsureLanded(player);
         if (quantity is < 1 or > 10_000)
-            throw new GameRuleException("Quantity must be between 1 and 10,000.");
+            throw new GameRuleException("Move between 1 and 10,000 at a time.");
 
         var item = GetStore().SingleOrDefault(x => string.Equals(x.Key, itemKey?.Trim(), StringComparison.OrdinalIgnoreCase));
         if (item is null)
@@ -948,7 +978,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         var total = (long)item.Price * quantity;
         if (player.Cash < total)
-            throw new GameRuleException("You do not have enough cash on hand.");
+            throw new GameRuleException($"That comes to {total:C0} and you are carrying {player.Cash:C0}.");
 
         // Purchases are refused rather than clamped: losing goods you paid for is worse than a refusal.
         var capacity = hideout.CapacityFor(player.Hideout);
@@ -960,11 +990,12 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             "condoms" => (player.Condoms, capacity.MaxCondoms, "storage room"),
             "beer" => (player.Beer, capacity.MaxBeer, "storage room"),
             "medicine" => (player.Medicine, capacity.MaxMedicine, "storage room"),
+            "poison" => (player.Poison, capacity.MaxPoison, "storage room"),
             "rides" => (player.Rides, capacity.MaxRides, "garage"),
             // Guns share one shelf whatever kind they are, so what is already on it is the whole
             // rack. Counting only the tier being bought would let a player fill the room four times.
             _ when WeaponTiers.IsWeapon(item.Key) => (player.Weapons, capacity.MaxWeapons, "storage room"),
-            _ => throw new GameRuleException("Store item is not implemented.")
+            _ => throw new GameRuleException($"The counter does not stock {item.Name.ToLowerInvariant()}.")
         };
         var room = Math.Max(0, cap - held);
         if (quantity > room)
@@ -978,9 +1009,15 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             case "condoms": player.Condoms += quantity; break;
             case "beer": player.Beer += quantity; break;
             case "medicine": player.Medicine += quantity; break;
+            case "poison": player.Poison += quantity; break;
             case "rides": player.Rides += quantity; break;
             default:
-                // Every remaining store key is a gun, and the rack knows which shelf it goes on.
+                // Every remaining store key should be a gun. Checked rather than assumed: this arm
+                // used to take anything it did not recognise and put it on the weapon rack, so a new
+                // good added to the shop and forgotten here was bought, paid for, and quietly filed
+                // as a gun. A refusal is a bug report; a silent wrong shelf is a mystery.
+                if (!WeaponTiers.IsWeapon(item.Key))
+                    throw new GameRuleException($"The counter cannot hand over {item.Name.ToLowerInvariant()}.");
                 player.AddWeapons(item.Key, quantity);
                 break;
         }
@@ -1009,7 +1046,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         TravelGate.EnsureLanded(player);
         if (quantity is < 1 or > 10_000)
-            throw new GameRuleException("Quantity must be between 1 and 10,000.");
+            throw new GameRuleException("Move between 1 and 10,000 at a time.");
         if (player.Rides < quantity)
             throw new GameRuleException(player.Rides == 0
                 ? "You do not own a ride."
@@ -1041,7 +1078,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         TravelGate.EnsureLanded(player);
         ValidateMoneyAmount(amount);
-        if (player.Cash < amount) throw new GameRuleException("You do not have that much cash on hand.");
+        if (player.Cash < amount) throw new GameRuleException($"You are carrying {player.Cash:C0}.");
         player.Cash -= amount;
         player.BankCash += amount;
         return new ActionResultResponse(
@@ -1054,7 +1091,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         TravelGate.EnsureLanded(player);
         ValidateMoneyAmount(amount);
-        if (player.BankCash < amount) throw new GameRuleException("You do not have that much money in the bank.");
+        if (player.BankCash < amount) throw new GameRuleException($"The bank is holding {player.BankCash:C0}.");
 
         // Refused rather than clamped, since clamping would bounce the cash straight back to the bank.
         var safeCap = hideout.CapacityFor(player.Hideout).MaxCash;
@@ -1084,13 +1121,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             "pimps" => crew.HirePimpCost,
             "hoes" => crew.HireHoeCost,
             "thugs" => crew.HireThugCost,
-            _ => throw new GameRuleException("Crew role must be 'pimps', 'hoes', or 'thugs'.")
+            _ => throw new GameRuleException("Pimps, hoes or thugs.")
         };
 
         if (normalizedRole == "hoes" && player.HoeHappiness < crew.MinHoeMoraleToHire)
-            throw new GameRuleException($"Hoe morale must be at least {crew.MinHoeMoraleToHire:N0}% before you can hire more hoes.");
+            throw new GameRuleException($"The house is at {player.HoeHappiness:N0}% and nobody new signs on under {crew.MinHoeMoraleToHire:N0}%.");
         if (normalizedRole == "thugs" && player.ThugHappiness < crew.MinThugMoraleToHire)
-            throw new GameRuleException($"Thug morale must be at least {crew.MinThugMoraleToHire:N0}% before you can hire more thugs.");
+            throw new GameRuleException($"Your thugs are at {player.ThugHappiness:N0}% and nobody new signs on under {crew.MinThugMoraleToHire:N0}%.");
 
         var room = hideout.CrewRoom(player, normalizedRole);
         if (quantity > room)
@@ -1163,13 +1200,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 break;
             case "hoes":
                 if (player.Hoes < quantity)
-                    throw new GameRuleException("You do not have that many hoes.");
+                    throw new GameRuleException($"You have {player.Hoes:N0} hoes on the books.");
                 player.Hoes -= quantity;
                 player.HoeHappiness = ClampHappiness(player.HoeHappiness - FirePenalty(quantity, crew.FireHoeMoralePenalty, crew));
                 break;
             case "thugs":
                 if (player.Thugs < quantity)
-                    throw new GameRuleException("You do not have that many thugs.");
+                    throw new GameRuleException($"You have {player.Thugs:N0} thugs on the books.");
                 player.Thugs -= quantity;
                 player.ThugHappiness = ClampHappiness(player.ThugHappiness - FirePenalty(quantity, crew.FireThugMoralePenalty, crew));
                 break;
@@ -1195,7 +1232,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse UpdateCrewSettings(Player player, int hoeCutPercent)
     {
         if (hoeCutPercent is < 10 or > 80)
-            throw new GameRuleException("Hoe cut must be between 10% and 80%.");
+            throw new GameRuleException("The house cut runs from 10% to 80%.");
         player.HoeCutPercent = hoeCutPercent;
         return new ActionResultResponse(
             $"Set the hoe payout to {hoeCutPercent}% of street gross.",
@@ -1261,7 +1298,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 MoraleBreakdown(key, morale.HqPartyTurnCost, cashCost, beerCost, weedCost, hoeBefore, thugBefore, player));
         }
 
-        throw new GameRuleException("Morale recovery strategy must be 'rest' or 'party'.");
+        throw new GameRuleException("Rest them or throw them a party.");
     }
 
     /// <summary>
@@ -1306,28 +1343,28 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         {
             "weed" => _options.Production.Weed,
             "coke" => _options.Production.Coke,
-            _ => throw new GameRuleException("Product must be 'weed' or 'coke'.")
+            _ => throw new GameRuleException("Weed or coke.")
         };
 
     private static void ValidateTurns(Player player, int turns, int max, string action)
     {
         if (turns is < 1 || turns > max)
-            throw new GameRuleException($"{action} must use between 1 and {max} turns.");
+            throw new GameRuleException($"{action} runs from 1 to {max} turns.");
         if (player.Turns < turns)
-            throw new GameRuleException("You do not have enough turns.");
+            throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
     }
 
     private static void ValidateMoneyAmount(long amount)
     {
         if (amount is < 1 or > 1_000_000_000_000)
-            throw new GameRuleException("Amount must be between $1 and $1,000,000,000,000.");
+            throw new GameRuleException("Move between $1 and $1,000,000,000,000.");
     }
 
     private static string NormalizeProduct(string? product)
     {
         var key = product?.Trim().ToLowerInvariant();
         if (key is "weed" or "coke") return key;
-        throw new GameRuleException("Product must be 'weed' or 'coke'.");
+        throw new GameRuleException("Weed or coke.");
     }
 
     private static string NormalizeCrewRole(string? role)
@@ -1338,14 +1375,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             "pimp" or "pimps" => "pimps",
             "hoe" or "hoes" => "hoes",
             "thug" or "thugs" => "thugs",
-            _ => throw new GameRuleException("Crew role must be 'pimps', 'hoes', or 'thugs'.")
+            _ => throw new GameRuleException("Pimps, hoes or thugs.")
         };
     }
 
     private static void ValidateCrewQuantity(int quantity, CrewOptions crew)
     {
         if (quantity < 1 || quantity > crew.MaxCrewTransactionQuantity)
-            throw new GameRuleException($"Quantity must be between 1 and {crew.MaxCrewTransactionQuantity:N0}.");
+            throw new GameRuleException($"Take on between 1 and {crew.MaxCrewTransactionQuantity:N0} at a time.");
     }
 
     private static double FirePenalty(int quantity, double penaltyPerCrew, CrewOptions crew)

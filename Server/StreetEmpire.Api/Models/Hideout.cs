@@ -28,16 +28,14 @@ public sealed class Hideout
     public int CokeLabLevel { get; set; }
 
     /// <summary>
-    /// Turns cash and turns into weapons. The one thing a player can make that everybody needs and
-    /// nobody else can undercut, which is what gives the market something worth trading.
+    /// The bench. Guns, moonshine, cut and poison all come off it, and the level buys how fast it works
+    /// and how far up the list it reaches.
+    ///
+    /// There were three of these - a workshop, a still and a mix house - which were the same room with
+    /// different signs on the door, and two of them dead-ended at the second building with two levels
+    /// each. What a thing costs to make belongs to the thing now, so the room is just the room.
     /// </summary>
     public int WorkshopLevel { get; set; }
-
-    /// <summary>Brews moonshine. Illegal to hold, so running one is a standing risk.</summary>
-    public int StillLevel { get; set; }
-
-    /// <summary>Mixes cut, which stretches coke rather than being worth anything itself.</summary>
-    public int MixLevel { get; set; }
 
     /// <summary>
     /// Eyes on the street. The only answer a first-tier player has to heat besides selling everything

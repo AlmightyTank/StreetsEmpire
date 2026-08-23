@@ -1868,25 +1868,107 @@ input:focus-visible, textarea:focus-visible {
 .payback.slow { color: var(--gold-bright); }
 
 /*
-  Talk. The log is the only part of the page that scrolls on its own, so it is the only part that gets
-  a fixed height: a chat that grows the page pushes everything else off the bottom as the room fills.
+  Talk.
+
+  A window in the corner rather than a panel on a page: it began on the overview, which meant a
+  conversation ended the moment you went to work the streets. Fixed, so it survives every page change,
+  and layered under the walkthrough and the alert panel because a chat should never be the thing
+  standing between somebody and the game.
 */
-.chat-panel { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
+.chat-dock {
+  position: fixed;
+  z-index: 35;
+  right: var(--space-4);
+  bottom: 0;
+  width: min(340px, calc(100vw - var(--space-4) * 2));
+  display: grid;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(180deg, #191a19, var(--surface));
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, .5);
+  padding: var(--space-2);
+}
+/* Collapsed, it is its own header and nothing else. */
+.chat-dock:not(.open) { gap: 0; padding-bottom: var(--space-1); }
+
+.chat-dock-head { display: flex; align-items: center; gap: var(--space-2); }
+.chat-dock-title {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  padding: var(--space-1);
+}
+.chat-dock-title strong { color: var(--gold); font-size: var(--text-base); }
+.chat-dock-title span {
+  min-width: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-unread {
+  min-width: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d4574a, #a33a30);
+  color: #fff;
+  font-size: var(--text-xs);
+  text-align: center;
+  padding: 1px var(--space-1);
+}
+.chat-dock-controls { display: flex; gap: var(--space-1); }
+.chat-dock-controls button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-deep);
+  color: var(--ink-dim);
+  font-size: var(--text-base);
+  line-height: 1;
+}
+.chat-dock-controls button:hover { color: var(--ink); border-color: #4a524f; }
+
+/* Reopens what the × closed. Small, out of the way, and the only thing left on screen. */
+.chat-launcher {
+  position: fixed;
+  z-index: 35;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  min-height: 38px;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1b1710, var(--surface));
+  color: var(--gold);
+  font-weight: var(--weight-bold);
+  padding: var(--space-2) var(--space-4);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+}
+
 .chat-tabs { display: flex; gap: var(--space-1); }
 .chat-tabs button {
-  min-height: 34px;
+  min-height: 30px;
+  flex: 1;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-deep);
   color: var(--ink-dim);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-1);
 }
 .chat-tabs button.active { border-color: var(--gold-deep); background: #1b1710; color: var(--gold); }
 
 .chat-log {
-  height: 260px;
+  height: 240px;
   overflow-y: auto;
   display: grid;
   align-content: start;
@@ -1906,7 +1988,6 @@ input:focus-visible, textarea:focus-visible {
 .chat-line strong { color: var(--gold-bright); white-space: nowrap; }
 .chat-line span { color: var(--ink); overflow-wrap: anywhere; }
 .chat-line small { color: var(--ink-faint); font-size: var(--text-xs); white-space: nowrap; }
-/* Your own lines, so the eye can find them without reading every name. */
 .chat-line.yours strong { color: var(--ink); }
 
 .chat-say { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); }
@@ -1914,8 +1995,34 @@ input:focus-visible, textarea:focus-visible {
 .chat-count.over { color: #d4756a; }
 
 @media (max-width: 760px) {
-  /* Shorter, because the log competes with the tab bar and the rest of the page for a phone screen. */
-  .chat-log { height: 200px; }
+  /*
+    The tab bar owns the bottom of a phone, so the dock sits on top of it rather than under it, and
+    spans the width because there is no room beside anything at 375px.
+  */
+  .chat-dock {
+    right: 0;
+    left: 0;
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    width: auto;
+    border-left: 0;
+    border-right: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .chat-launcher { bottom: calc(84px + env(safe-area-inset-bottom)); right: var(--space-3); }
+  .chat-log { height: 44vh; }
   .chat-line { grid-template-columns: minmax(0, 1fr) auto; }
   .chat-line strong { grid-column: 1 / -1; }
+}
+
+/*
+  The dock's minimise and close are sized in both directions, so the blanket 44px minimum made them
+  tall and left them 28px wide: the right height, the wrong shape, and a target that measures as fixed
+  while still being a sliver. This sits after the rule it overrides because they have the same
+  specificity and source order is all that separates them.
+*/
+@media (pointer: coarse) {
+  .chat-dock-controls button { width: var(--tap); height: var(--tap); }
+  /* The channel tabs set their own 30px and lose to nothing but source order, same as the pair above. */
+  .chat-tabs button { min-height: var(--tap); }
+  .chat-launcher { min-height: var(--tap); }
 }

@@ -230,6 +230,19 @@
   loses the return sweep, and the wide desktop panels were running paragraphs to 1,400px.
 
 ### Added
+- **Chat is a window in the corner rather than a panel on a page.** It started on the overview, which
+  meant a conversation ended the moment you went to work the streets - the one screen you are least
+  likely to be sitting on when somebody says something to you. It docks now: a bar bottom-right that
+  expands, collapses to its own header, closes to a small launcher, and remembers which of those it was
+  across page changes and reloads.
+- Minimised it still listens, at a slower interval, and carries a count of what other people have said
+  since you last looked. Your own lines coming back are not news, so they do not count. Closed it asks
+  the server nothing at all.
+- The room is a tab inside the window rather than the window itself, which is the shape a direct
+  message will want: another tab rather than another panel.
+- On a phone it spans the width and sits above the tab bar rather than under it, because there is no
+  room beside anything at 375px.
+
 - **Chat, in three rooms**: the whole board, the town you are standing in, and your crew. Each is a
   different room rather than the same room with a filter on it, and a message belongs to exactly one of
   them for good - a thing said to your own crew was said on the understanding that it stayed there.

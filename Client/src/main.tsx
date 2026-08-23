@@ -344,37 +344,77 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
  * of lag on a line costs nothing against a connection that has to be held open, reconnected, and
  * reasoned about every time the tab sleeps.
  */
-function ChatPanel({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) {
+const chatDockKey = 'street-empire.chat.state'
+
+type ChatDockState = 'open' | 'minimised' | 'closed'
+
+/**
+ * Talking, in a window that follows you.
+ *
+ * It began as a panel on the overview page, which meant a conversation ended the moment you went to
+ * work the streets - the one screen you are least likely to be sitting on when somebody says something
+ * to you. A chat is not a thing you visit; it is a thing that is open while you do something else.
+ *
+ * So it docks: a bar in the corner that expands, collapses to its own header, and remembers which of
+ * those it was across page changes and reloads. The same shape a direct message will want, which is
+ * why the room is a tab inside the window rather than the window itself.
+ */
+function ChatDock({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) {
+  const [state, setState] = useState<ChatDockState>(() => {
+    const saved = localStorage.getItem(chatDockKey)
+    return saved === 'open' || saved === 'minimised' || saved === 'closed' ? saved : 'minimised'
+  })
   const [channel, setChannel] = useState<ChatChannelKey>('Global')
   const [board, setBoard] = useState<ChatBoard | null>(null)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
+  const [unread, setUnread] = useState(0)
   const log = useRef<HTMLDivElement | null>(null)
   const pinned = useRef(true)
+  const seen = useRef<number>(0)
 
-  const load = async (which: ChatChannelKey) => {
-    try { setBoard(await api.chat(which)); setError('') }
-    catch (e) { setError((e as Error).message) }
+  const move = (next: ChatDockState) => {
+    setState(next)
+    localStorage.setItem(chatDockKey, next)
   }
 
-  useEffect(() => { void load(channel) }, [channel, dashboard.city, dashboard.alliance?.id])
+  const load = async (which: ChatChannelKey, open: boolean) => {
+    try {
+      const next = await api.chat(which)
+      setBoard(next)
+      setError('')
+      const newest = next.messages.length > 0 ? next.messages[next.messages.length - 1].id : 0
+      if (open) {
+        seen.current = newest
+        setUnread(0)
+      } else {
+        // Only other people's lines count as unread. Your own arriving back is not news.
+        setUnread(next.messages.filter(m => m.id > seen.current && !m.yours).length)
+      }
+    } catch (e) { setError((e as Error).message) }
+  }
 
-  // Only while the panel is open and the tab is in front: a chat nobody is looking at should not be
-  // asking the server how it is every few seconds.
   useEffect(() => {
-    const tick = setInterval(() => {
-      if (document.visibilityState === 'visible') void load(channel)
-    }, 8000)
-    return () => clearInterval(tick)
-  }, [channel])
+    if (state === 'closed') return
+    void load(channel, state === 'open')
+  }, [channel, state, dashboard.city, dashboard.alliance?.id])
 
-  // Follow the bottom, unless the reader has scrolled up to read something - in which case leave them
-  // where they are rather than yanking them back every time somebody speaks.
+  // Open, it keeps up with the room. Minimised, it only asks often enough to notice somebody talking.
+  // Closed, it does not ask at all - a window nobody has open should cost nothing.
+  useEffect(() => {
+    if (state === 'closed') return
+    const every = state === 'open' ? 8000 : 25000
+    const tick = setInterval(() => {
+      if (document.visibilityState === 'visible') void load(channel, state === 'open')
+    }, every)
+    return () => clearInterval(tick)
+  }, [channel, state])
+
   useEffect(() => {
     const node = log.current
     if (node && pinned.current) node.scrollTop = node.scrollHeight
-  }, [board])
+  }, [board, state])
 
   const onScroll = () => {
     const node = log.current
@@ -393,57 +433,76 @@ function ChatPanel({ dashboard, busy }: { dashboard: Dashboard, busy: boolean })
       await api.say(channel, body)
       setDraft('')
       pinned.current = true
-      await load(channel)
-      setError('')
+      await load(channel, true)
     } catch (e) { setError((e as Error).message) }
     finally { setSending(false) }
   }
 
-  return <section className="panel chat-panel">
-    <div className="panel-title">
-      <h2>Talk</h2>
-      <span>{board?.scope ?? ''}</span>
-    </div>
+  if (state === 'closed') {
+    return <button className="chat-launcher" type="button" onClick={() => move('open')} aria-label="Open chat">
+      Talk
+    </button>
+  }
 
-    <div className="chat-tabs">
-      {(board?.channels ?? []).map(tab => <button
-        className={tab.channel === channel ? 'active' : ''}
-        key={tab.channel}
-        type="button"
-        title={tab.blockedReason ?? tab.detail}
-        onClick={() => setChannel(tab.channel)}
-      >{tab.label}</button>)}
-    </div>
+  const open = state === 'open'
 
-    <div className="chat-log" ref={log} onScroll={onScroll}>
-      {!board && <p className="hint">Listening.</p>}
-      {board && board.messages.length === 0 && <p className="hint">
-        {current?.blockedReason ?? 'Nobody has said anything here yet.'}
-      </p>}
-      {board?.messages.map(line => <div className={line.yours ? 'chat-line yours' : 'chat-line'} key={line.id}>
-        <strong>{line.author}</strong>
-        <span>{line.body}</span>
-        <small>{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
-      </div>)}
-    </div>
+  return <section className={open ? 'chat-dock open' : 'chat-dock'} aria-label="Chat">
+    <header className="chat-dock-head">
+      {/* The whole bar toggles, because a collapsed window whose only target is a small glyph is a
+          window people give up on. The buttons still work for anybody aiming at them. */}
+      <button className="chat-dock-title" type="button" onClick={() => move(open ? 'minimised' : 'open')}>
+        <strong>Talk</strong>
+        <span>{board?.scope ?? ''}</span>
+        {!open && unread > 0 && <b className="chat-unread">{unread > 99 ? '99+' : unread}</b>}
+      </button>
+      <div className="chat-dock-controls">
+        <button type="button" title={open ? 'Minimise' : 'Maximise'} onClick={() => move(open ? 'minimised' : 'open')}>
+          {open ? '\u2013' : '\u25b2'}
+        </button>
+        <button type="button" title="Close" onClick={() => move('closed')}>{'\u00d7'}</button>
+      </div>
+    </header>
 
-    {error && <div className="error banner"><span>{error}</span></div>}
+    {open && <>
+      <div className="chat-tabs">
+        {(board?.channels ?? []).map(tab => <button
+          className={tab.channel === channel ? 'active' : ''}
+          key={tab.channel}
+          type="button"
+          title={tab.blockedReason ?? tab.detail}
+          onClick={() => setChannel(tab.channel)}
+        >{tab.label}</button>)}
+      </div>
 
-    <form className="chat-say" onSubmit={event => { event.preventDefault(); void say() }}>
-      <input
-        aria-label={`Say something in ${current?.label ?? 'chat'}`}
-        disabled={busy || sending || !(current?.canPost ?? false)}
-        maxLength={max + 40}
-        placeholder={current?.canPost === false ? current.blockedReason ?? 'You cannot speak here.' : 'Say something'}
-        value={draft}
-        onChange={event => setDraft(event.target.value)}
-      />
-      <button className="primary" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
-    </form>
-    {/* Only once it matters. A counter sitting at 0/280 from the moment the page loads is furniture. */}
-    {draft.length > max * 0.75 && <small className={over ? 'chat-count over' : 'chat-count'}>
-      {draft.length} / {max}
-    </small>}
+      <div className="chat-log" ref={log} onScroll={onScroll}>
+        {!board && <p className="hint">Listening.</p>}
+        {board && board.messages.length === 0 && <p className="hint">
+          {current?.blockedReason ?? 'Nobody has said anything here yet.'}
+        </p>}
+        {board?.messages.map(line => <div className={line.yours ? 'chat-line yours' : 'chat-line'} key={line.id}>
+          <strong>{line.author}</strong>
+          <span>{line.body}</span>
+          <small>{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+        </div>)}
+      </div>
+
+      {error && <div className="error banner"><span>{error}</span></div>}
+
+      <form className="chat-say" onSubmit={event => { event.preventDefault(); void say() }}>
+        <input
+          aria-label={`Say something in ${current?.label ?? 'chat'}`}
+          disabled={busy || sending || !(current?.canPost ?? false)}
+          maxLength={max + 40}
+          placeholder={current?.canPost === false ? current.blockedReason ?? 'You cannot speak here.' : 'Say something'}
+          value={draft}
+          onChange={event => setDraft(event.target.value)}
+        />
+        <button className="primary compact" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
+      </form>
+      {draft.length > max * 0.75 && <small className={over ? 'chat-count over' : 'chat-count'}>
+        {draft.length} / {max}
+      </small>}
+    </>}
   </section>
 }
 
@@ -752,6 +811,7 @@ function App() {
 
   return <main className="game-shell">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
+    <ChatDock dashboard={dashboard} busy={busy} />
     <Walkthrough
       active={tourStep !== null}
       stepIndex={tourStep ?? 0}
@@ -958,8 +1018,6 @@ function OverviewPage(ctx: PageContext) {
         <StandingsPanel dashboard={dashboard} leaders={leaders} cityLeaders={ctx.cityLeaders} limit={8} />
       </section>
     </div>
-
-    <ChatPanel dashboard={dashboard} busy={busy} />
 
     <WorldNewsPanel news={worldNews} currentPlayer={dashboard.name} />
   </div>

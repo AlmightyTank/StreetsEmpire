@@ -1,0 +1,93 @@
+// =============================================================================
+// Design tokens
+// =============================================================================
+// The palette, type scale and spacing rhythm that the hand-written stylesheet
+// used to declare as CSS custom properties on :root. They live here as Sass
+// variables because Bootstrap's configuration is Sass: a token has to be
+// readable at compile time to be fed into $spacers, $font-sizes and the utility
+// API, and a CSS custom property is not.
+//
+// Bootstrap re-exports most of these as CSS variables anyway (--bs-primary,
+// --bs-border-color and so on), so the runtime still has names to work with.
+
+// -- Colour ------------------------------------------------------------------
+// Named for the job each does rather than the colour it is, so a later change
+// of mind is one edit here instead of a search across the components.
+$gold:          #f0c875;  // the accent: money, your own name, anything the eye should land on
+$gold-bright:   #e4b76b;
+$gold-deep:     #6b5630;  // the border a gold thing sits inside
+$gold-lit:      #e1b05e;  // the top of the primary button's gradient
+$gold-shade:    #a98245;  // the bottom of it
+
+$ink:           #f4eee5;  // body text
+$ink-dim:       #938b82;  // labels and captions
+$ink-faint:     #837c75;  // detail nobody reads twice. 4.54:1 on $surface: AA, barely
+$ink-soft:      #8e877f;
+
+$line:          #303532;  // the default border
+$line-soft:     #2c302e;  // a divider inside something already bordered
+
+$surface:       #101314;  // a card
+$surface-deep:  #0d1011;  // the well a card sits in
+$void:          #090a0b;  // the page behind everything
+
+// Status colours. These carry meaning in the game rather than decoration: heat
+// is a temperature, a supply runs short, an attack is blocked.
+$teal:          #1f8d86;  // focus rings and the "selected target" border
+$teal-soft:     #9bbdb6;  // supporting copy inside a teal-bordered thing
+$mint:          #35b6ab;
+$good:          #58c39a;
+$good-soft:     #6fbf8a;
+$bad:           #d9695d;
+$bad-soft:      #d4756a;
+$warn:          #e0913f;
+$notice:        #d8bb63;
+
+// -- Type --------------------------------------------------------------------
+// Seven steps at a ratio near 1.125. The point of a scale is that adjacent
+// steps are distinguishable; anything closer reads as one muddled size rather
+// than as hierarchy.
+$text-xs:    .7rem;    // tags, the smallest print in a row
+$text-sm:    .78rem;   // captions, detail lines, secondary figures
+$text-base:  .86rem;   // body copy and most controls
+$text-md:    1rem;     // a figure worth noticing
+$text-lg:    1.1rem;   // panel headings, stat values
+$text-xl:    1.75rem;
+$text-2xl:   clamp(1.6rem, 4vw, 2.8rem);
+$text-hero:  clamp(2rem, 5vw, 4rem);
+
+// Three weights, not six. Regular carries text, bold carries a label, heavy is
+// for a number that is the point of the panel it sits in.
+$weight-normal: 400;
+$weight-bold:   700;
+$weight-heavy:  800;
+
+// One tracking value for uppercase labels.
+$track-caps: .07em;
+
+$leading-tight: 1.15;
+$leading-snug:  1.35;
+$leading-body:  1.55;
+
+// -- Space -------------------------------------------------------------------
+// A 4px rhythm. Off-grid spacing is not wrong so much as arbitrary: it means no
+// two panels agree on what "a small gap" is, and the eye reads that
+// disagreement as untidiness it cannot name.
+//
+// Written in rem rather than the px the old sheet used. Two reasons: Bootstrap
+// derives some of its own measurements by adding a padding to a font size, and
+// px plus rem is not a sum Sass will do; and spacing that scales with the
+// reader's chosen text size is the better behaviour anyway. At the default root
+// size these are the same 2/4/8/12/16/20/24 pixels they always were.
+$space-hair: .125rem;  //  2px
+$space-1:    .25rem;   //  4px
+$space-2:    .5rem;    //  8px
+$space-3:    .75rem;   // 12px
+$space-4:    1rem;     // 16px
+$space-5:    1.25rem;  // 20px
+$space-6:    1.5rem;   // 24px
+
+// A phone is held, not sat in front of, so the tap target minimum is a real
+// constraint rather than a nicety: 44px is the smallest thing a thumb hits
+// reliably, and the game asks for a lot of taps.
+$tap: 44px;

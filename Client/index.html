@@ -1,5 +1,10 @@
 <!doctype html>
-<html lang="en">
+<!--
+  The game is dark and only dark. Saying so on the root element rather than leaving it to
+  prefers-color-scheme means Bootstrap resolves its dark palette for everyone, including a player
+  whose system is set to light.
+-->
+<html lang="en" data-bs-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <!--

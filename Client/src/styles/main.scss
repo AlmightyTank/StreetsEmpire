@@ -1,0 +1,77 @@
+// =============================================================================
+// Street Empire — stylesheet entry
+// =============================================================================
+// Bootstrap is imported piece by piece rather than as one bootstrap.scss,
+// because customising it means getting inside its import stack: the variable
+// overrides have to land after its functions and before its variables, and the
+// utility additions after its utilities map is built but before that map is
+// rendered into classes. Importing the bundled file leaves no such window.
+//
+// The order below is Bootstrap's own, with four of our files threaded through
+// it. Do not reorder them.
+
+// 1. Our design tokens, so the theme can be written in terms of them.
+@import "tokens";
+
+// 2. Bootstrap's helpers. The theme calls none of them directly, but Bootstrap's
+//    own variables do, and they must exist before that file is read.
+@import "bootstrap/scss/functions";
+
+// 3. Our overrides. Every variable here wins because Bootstrap declares its own
+//    with !default.
+@import "theme";
+
+// 4. Bootstrap's configuration, now resolved against the overrides.
+@import "bootstrap/scss/variables";
+@import "bootstrap/scss/variables-dark";
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/mixins";
+@import "bootstrap/scss/utilities";
+
+// 5. Our utility additions, merged while $utilities is still editable.
+@import "utilities";
+
+// 6. Bootstrap itself, the complete stack. Nothing is trimmed: the JS bundle
+//    imported by main.tsx registers every plugin, and a plugin whose stylesheet
+//    was left out is a trap for whoever reaches for it next.
+@import "bootstrap/scss/root";
+@import "bootstrap/scss/reboot";
+@import "bootstrap/scss/type";
+@import "bootstrap/scss/images";
+@import "bootstrap/scss/containers";
+@import "bootstrap/scss/grid";
+@import "bootstrap/scss/tables";
+@import "bootstrap/scss/forms";
+@import "bootstrap/scss/buttons";
+@import "bootstrap/scss/transitions";
+@import "bootstrap/scss/dropdown";
+@import "bootstrap/scss/button-group";
+@import "bootstrap/scss/nav";
+@import "bootstrap/scss/navbar";
+@import "bootstrap/scss/card";
+@import "bootstrap/scss/carousel";
+@import "bootstrap/scss/accordion";
+@import "bootstrap/scss/breadcrumb";
+@import "bootstrap/scss/pagination";
+@import "bootstrap/scss/badge";
+@import "bootstrap/scss/alert";
+@import "bootstrap/scss/progress";
+@import "bootstrap/scss/list-group";
+@import "bootstrap/scss/close";
+@import "bootstrap/scss/toasts";
+@import "bootstrap/scss/modal";
+@import "bootstrap/scss/tooltip";
+@import "bootstrap/scss/popover";
+@import "bootstrap/scss/spinners";
+@import "bootstrap/scss/offcanvas";
+@import "bootstrap/scss/placeholders";
+@import "bootstrap/scss/helpers";
+
+// 7. The generated utilities. These come last of Bootstrap's own output so a
+//    utility can override a component, which is the whole point of one.
+@import "bootstrap/scss/utilities/api";
+
+// 8. What Bootstrap has no component for: the things this game has and a
+//    framework could not. Each is built from the same variables and mixins
+//    Bootstrap used above, so they answer to the theme rather than sit beside it.
+@import "components";

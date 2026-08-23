@@ -1,0 +1,1449 @@
+// =============================================================================
+// What Bootstrap has no component for
+// =============================================================================
+// Everything here is either a thing this game has and a framework could not
+// (a walkthrough spotlight, a chat dock, a bottom tab bar), or a detail of the
+// original design that a Bootstrap variable cannot carry (a gradient on a
+// button, a tap target that only widens for a thumb).
+//
+// All of it is written in terms of Bootstrap's own variables and mixins, so it
+// answers to the theme rather than sitting beside it.
+
+// -----------------------------------------------------------------------------
+// Foundations
+// -----------------------------------------------------------------------------
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  // Two layers: a cold light falling from the top left, over a warm-to-cold
+  // vertical wash. The page is a street at night before anything is drawn on it.
+  background-image:
+    linear-gradient(135deg, rgba(29, 42, 44, .5) 0%, rgba(9, 10, 11, 0) 36%),
+    linear-gradient(180deg, #15100f 0%, #{$void} 48%, #{$surface-deep} 100%);
+  background-attachment: fixed;
+}
+
+// The browser's own stylesheet gives b and strong "bolder", which is relative
+// rather than absolute: a <b> inside a parent already at 700 computes to 900.
+// That was invisible while the fallback system font had nothing above bold to
+// give, and became a real jump the moment a variable Inter with a true 900 was
+// loaded. Naming the weight stops it compounding with wherever it is nested.
+b, strong { font-weight: $weight-bold; }
+
+// Every figure in the game changes while you watch it — cash after a shift,
+// thugs after a raid, heat on every action — and proportional digits are
+// different widths, so a number re-flowed its own row each time it ticked.
+// Tabular figures are all one width: the column stops shuffling, and two
+// numbers in a list line up on their digits the way a ledger does. Applied by
+// name in the markup, because tabular digits in running prose look like a
+// spreadsheet got loose.
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+// Body copy gets its measure capped. A line of text stops being comfortable
+// somewhere past about 75 characters because the eye loses the return sweep,
+// and the wide panels on a desktop were happily running paragraphs to 1,400px.
+.measure { max-width: 68ch; }
+
+// Focus.
+//
+// A game played almost entirely by pressing buttons should be able to say where
+// the keyboard is. :focus-visible rather than :focus, so a mouse click does not
+// leave a ring behind it. Two rings, dark under light, so the indicator survives
+// whichever surface it lands on — a single gold ring vanishes against the gold
+// primary button, and a single dark one vanishes against the page.
+//
+// This replaces Bootstrap's own focus ring on buttons and links, which is a
+// box-shadow in $primary and therefore has the same problem.
+:where(button, a, select, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid $gold;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(4, 5, 6, .85);
+  border-radius: $border-radius;
+}
+
+// Inputs already replace the ring with their own border and glow, so they only
+// need the offset one.
+input:focus-visible, textarea:focus-visible {
+  outline: 2px solid $gold;
+  outline-offset: 1px;
+}
+
+// Nothing here animates for somebody who has asked the system for less of it.
+// The walkthrough's spotlight slides between targets and the page scrolls itself
+// to meet it, which is exactly the kind of movement that setting exists to
+// turn off.
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Controls
+// -----------------------------------------------------------------------------
+
+// The two buttons the whole game is played through. Bootstrap builds .btn on
+// CSS variables, so the gold one is retuned by setting them rather than by
+// overriding the rules they feed.
+.btn { white-space: nowrap; }
+
+.btn-primary {
+  --#{$prefix}btn-bg: transparent;
+  --#{$prefix}btn-border-color: transparent;
+  --#{$prefix}btn-hover-bg: transparent;
+  --#{$prefix}btn-hover-border-color: transparent;
+  --#{$prefix}btn-active-bg: transparent;
+  --#{$prefix}btn-active-border-color: transparent;
+  --#{$prefix}btn-disabled-bg: transparent;
+  --#{$prefix}btn-disabled-border-color: transparent;
+  // The gradient is the button. It goes on background-image so the CSS variable
+  // above can keep background-color out of the way.
+  background-image: linear-gradient(180deg, $gold-lit, $gold-shade);
+  min-height: 38px;
+}
+
+.btn-secondary {
+  --#{$prefix}btn-bg: #{$surface};
+  --#{$prefix}btn-border-color: #3f4543;
+  --#{$prefix}btn-color: #d7cec3;
+  --#{$prefix}btn-hover-bg: #171b1c;
+  --#{$prefix}btn-hover-border-color: #566060;
+  --#{$prefix}btn-hover-color: #{$ink};
+  --#{$prefix}btn-active-bg: #171b1c;
+  --#{$prefix}btn-active-border-color: #566060;
+  --#{$prefix}btn-active-color: #{$ink};
+  --#{$prefix}btn-disabled-bg: #{$surface};
+  --#{$prefix}btn-disabled-border-color: #3f4543;
+  --#{$prefix}btn-disabled-color: #d7cec3;
+  min-height: 38px;
+}
+
+// A hover state behind a hover query, so a touch screen does not paint it on
+// and leave it there: a phone reports a tap as a hover and never takes it back,
+// which is how a stuck highlight follows you around.
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled) { transform: translateY(1px); }
+
+// .btn-sm is the old .compact: it exists to save vertical room in dense rows.
+.btn-sm { min-height: 34px; }
+
+// A quiet button that is only its label — the trim suggestions, the chat's
+// back link. Bootstrap's .btn-link underlines and colours as a link; this is
+// the same idea in the game's palette.
+.btn-link {
+  --#{$prefix}btn-color: #d9ae62;
+  --#{$prefix}btn-hover-color: #{$gold};
+  --#{$prefix}btn-font-size: #{$text-sm};
+  --#{$prefix}btn-padding-x: 0;
+  --#{$prefix}btn-padding-y: 0;
+  --#{$prefix}btn-font-weight: #{$weight-normal};
+  min-height: 0;
+  text-underline-offset: 2px;
+}
+
+// A thumb is not a mouse pointer: it lands in a circle roughly 44px across, and
+// the game asks for a great many taps. This widens every control that a fine
+// pointer could afford to keep small, and only where the pointer is actually
+// coarse, so the desktop density is untouched.
+@media (pointer: coarse) {
+  .btn,
+  .form-control,
+  .form-select,
+  button:not(.btn-link):not(.btn-close) {
+    min-height: $tap;
+  }
+  // Including .btn-sm, whose whole purpose is to be shorter. That trade is worth
+  // making for a mouse and not for a thumb: a row that fits one more entry on
+  // screen is no help if the button in it takes two attempts to hit.
+  .btn-sm { min-height: $tap; }
+}
+
+// A label above its control, which is how every form in this game is built.
+// Bootstrap's .form-label is a block with a margin; this is the stacked pair.
+.field {
+  display: grid;
+  gap: $space-2;
+  min-width: 0;
+}
+
+// -----------------------------------------------------------------------------
+// Panels
+// -----------------------------------------------------------------------------
+
+// The heading row of a panel: a title on the left, a quiet figure or control on
+// the right, sharing a baseline.
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: $space-3;
+  margin-bottom: $space-4;
+}
+
+// The uppercase micro-label that captions almost everything: a stat, a metric,
+// the right-hand side of a panel title. One rule rather than the thirty-odd
+// repetitions of the same four declarations that the old sheet carried.
+//
+// A panel title's own caption is included by selector rather than by class,
+// because it is the same label every time and asking fifty-four call sites to
+// remember to say so is how one of them ends up not saying it.
+.eyebrow,
+.panel-title > span {
+  color: #9b9288;
+  font-size: $text-xs;
+  text-transform: uppercase;
+  letter-spacing: $track-caps;
+}
+
+// -----------------------------------------------------------------------------
+// The shell
+// -----------------------------------------------------------------------------
+
+// A rail beside the game on a desktop, nothing at all on a phone. Written
+// mobile-first, which inverts the original max-width queries: the single column
+// is the base case and the rail is what wider screens add.
+//
+// The breakpoints move slightly in the process — the old 760px and 1180px become
+// Bootstrap's md (768px) and xl (1200px) — because one set of breakpoints the
+// whole interface agrees on is worth more than twenty pixels.
+.game-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+
+  @include media-breakpoint-up(md) {
+    grid-template-columns: 86px minmax(0, 1fr);
+  }
+  @include media-breakpoint-up(xl) {
+    grid-template-columns: 178px minmax(0, 1fr);
+  }
+}
+
+.app-nav {
+  height: 100vh;
+  grid-template-rows: auto 1fr auto;
+  padding: $space-4 10px;
+
+  @include media-breakpoint-up(xl) {
+    padding: $space-4 $space-2;
+  }
+}
+
+.nav-brand {
+  border-color: #2e3331 !important;
+
+  span {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+// A page in the rail: a two-letter badge and the name of the page.
+.nav-page {
+  --#{$prefix}btn-color: #bdb4aa;
+  --#{$prefix}btn-bg: transparent;
+  --#{$prefix}btn-border-color: transparent;
+  --#{$prefix}btn-hover-color: #f4eadc;
+  --#{$prefix}btn-hover-bg: #171b1b;
+  --#{$prefix}btn-hover-border-color: #37413d;
+  --#{$prefix}btn-active-color: #f4eadc;
+  --#{$prefix}btn-active-bg: #171b1b;
+  --#{$prefix}btn-active-border-color: #37413d;
+  --#{$prefix}btn-font-weight: #{$weight-normal};
+  --#{$prefix}btn-border-radius: #{$border-radius-sm};
+  grid-template-columns: 31px minmax(0, 1fr);
+
+  > span {
+    width: 29px;
+    height: 29px;
+    border-color: #39413f !important;
+  }
+
+  &.active {
+    color: #f4eadc;
+    background: #171b1b;
+    border-color: #37413d;
+
+    > span {
+      color: #16110a;
+      background: $gold-lit;
+      border-color: $gold-lit !important;
+    }
+  }
+}
+
+// Between md and xl the rail is 86px wide, which fits the badge and not the word.
+@include media-breakpoint-down(xl) {
+  .nav-brand strong,
+  .nav-brand small,
+  .nav-page strong { display: none; }
+  .nav-page { grid-template-columns: 1fr; justify-items: center; }
+}
+
+// Leaving is not a destructive act, so it is not a red button — only a red-ish
+// outline saying which control it is.
+.btn-logout {
+  --#{$prefix}btn-color: #e0b6b1;
+  --#{$prefix}btn-bg: transparent;
+  --#{$prefix}btn-border-color: #4b3433;
+  --#{$prefix}btn-hover-color: #{$ink};
+  --#{$prefix}btn-hover-bg: #1b1414;
+  --#{$prefix}btn-hover-border-color: #6b4746;
+  --#{$prefix}btn-font-weight: #{$weight-normal};
+  --#{$prefix}btn-border-radius: #{$border-radius-sm};
+}
+
+.app-main {
+  width: min(100%, 1540px);
+  // Room for the tab bar on a phone, so the last row of a page is never sitting
+  // underneath it.
+  padding: 18px 14px calc(78px + env(safe-area-inset-bottom));
+
+  @include media-breakpoint-up(md) {
+    padding: $space-6 clamp(1rem, 3vw, 34px) 3.25rem;
+  }
+}
+
+// Who you are and what is waiting for you sit to the right of the page title
+// rather than stacked underneath it. Stacking cost three rows of height before
+// any of the game appeared, on the screen with the least height to spare.
+.command-header {
+  // The alert panel hangs off this rather than off the bell, so on a phone it
+  // spans the content width instead of being pinned to a button whose position
+  // depends on how long somebody's name happens to be.
+  position: relative;
+
+  h1 { font-size: 1.45rem; }
+
+  @include media-breakpoint-up(md) {
+    position: static;
+    h1 { font-size: $text-2xl; }
+  }
+}
+
+// On a phone the plate gives up its border and padding — two right-aligned lines
+// read perfectly well without a box drawn round them — and the title takes the
+// squeeze, because a truncated page name is still legible and a truncated player
+// name is not.
+.player-plate {
+  min-width: 0;
+  border: 0 !important;
+  background: none !important;
+  padding: 0 !important;
+
+  strong, span {
+    max-width: 124px;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @include media-breakpoint-up(md) {
+    min-width: 220px;
+    border: $border-width solid $line !important;
+    background: rgba(13, 16, 17, .8) !important;
+    padding: $space-3 !important;
+
+    strong, span { max-width: none; }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Mobile navigation
+// -----------------------------------------------------------------------------
+
+// The side rail is gone on a phone rather than folded down into a sideways
+// scroller of two-letter codes. This bar replaces it.
+.tab-bar {
+  z-index: 40;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: rgba(13, 16, 17, .96);
+  backdrop-filter: blur(8px);
+  // Clears the home indicator on a notched phone, and costs nothing on one without.
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+
+  .btn {
+    --#{$prefix}btn-bg: transparent;
+    --#{$prefix}btn-border-color: transparent;
+    --#{$prefix}btn-hover-bg: transparent;
+    --#{$prefix}btn-hover-border-color: transparent;
+    --#{$prefix}btn-active-bg: transparent;
+    --#{$prefix}btn-active-border-color: transparent;
+    --#{$prefix}btn-border-radius: #{$border-radius};
+    --#{$prefix}btn-font-size: #{$text-sm};
+    letter-spacing: .01em;
+  }
+  .btn.bg-gold {
+    --#{$prefix}btn-bg: transparent;
+    color: #16110a !important;
+  }
+}
+
+.nav-sheet-backdrop {
+  z-index: 50;
+  background: rgba(5, 6, 7, .6);
+}
+
+.nav-sheet {
+  border-color: $line !important;
+  padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+}
+
+.nav-sheet-grip {
+  width: 38px;
+  height: 4px;
+}
+
+// -----------------------------------------------------------------------------
+// The dismiss button on a message
+// -----------------------------------------------------------------------------
+
+.dismiss {
+  width: 28px;
+  height: 28px;
+  border: $border-width solid rgba(#ffffff, .18);
+  border-radius: $border-radius-sm;
+  background: rgba(#000000, .18);
+  color: currentColor;
+  min-height: 0;
+
+  &:hover {
+    background: rgba(#ffffff, .08);
+    border-color: rgba(#ffffff, .32);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// The numbers along the top
+// -----------------------------------------------------------------------------
+
+// Seven figures. On a phone these were a sideways scroller, which put cash and
+// heat — the two numbers every decision in the game is made against — off the
+// right-hand edge behind a gesture nothing advertised. Two columns that wrap
+// show all seven at once, and the page scrolls the way a page is expected to.
+.status-strip {
+  // The columns are set here rather than with a gtc-* utility because a utility
+  // carries !important and would win against the wider layout below it.
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  @include media-breakpoint-up(md) {
+    grid-template-columns: repeat(7, minmax(138px, 1fr));
+    overflow-x: auto;
+    scrollbar-gutter: stable;
+
+    &::-webkit-scrollbar { height: 8px; }
+    &::-webkit-scrollbar-track { background: #0d0f10; }
+    &::-webkit-scrollbar-thumb { background: #3b4644; border-radius: 999px; }
+  }
+}
+
+// Heat reads as a temperature, so the card warms with the band rather than only
+// naming it.
+.stat {
+  min-width: 0;
+
+  small { color: $mint; }
+
+  &.heat-noticed strong, &.heat-noticed small { color: $notice; }
+  &.heat-watched strong, &.heat-watched small { color: $warn; }
+  &.heat-hunted  strong, &.heat-hunted  small { color: $bad; }
+  &.heat-hunted { border-color: #5c3733 !important; }
+
+  @include media-breakpoint-up(md) { min-width: 138px; }
+}
+
+// -----------------------------------------------------------------------------
+// Panels and lists
+// -----------------------------------------------------------------------------
+
+// Body copy inside a panel gets its measure capped. A line of text stops being
+// comfortable somewhere past about 75 characters, and the wide panels on a
+// desktop were happily running paragraphs to 1,400px.
+.card p { max-width: 68ch; }
+
+// Bootstrap routes every component shadow through a mixin that $enable-shadows
+// switches off wholesale, and this build wants exactly one shadow — the panel's —
+// without the inset glow that flag would also put inside every input. So the card
+// takes its shadow directly from the variable the mixin would have read.
+.card { box-shadow: var(--#{$prefix}card-box-shadow); }
+
+.hero-panel {
+  min-height: 250px;
+  border-color: #4a3b25;
+  // Two layers: the gold wash from the utility, over the panel's own gradient.
+  background-image:
+    linear-gradient(120deg, rgba(218, 171, 91, .18), rgba(26, 40, 42, .18)),
+    linear-gradient(180deg, rgba(28, 27, 24, .98), rgba(15, 17, 18, .98)) !important;
+}
+
+// The chosen half of the standings toggle.
+.scope-on {
+  --#{$prefix}btn-color: #{$gold};
+  --#{$prefix}btn-bg: #131110;
+  --#{$prefix}btn-border-color: #{$gold-shade};
+  --#{$prefix}btn-hover-color: #{$gold};
+  --#{$prefix}btn-hover-bg: #1d1a15;
+  --#{$prefix}btn-hover-border-color: #{$gold-shade};
+  --#{$prefix}btn-font-weight: #{$weight-bold};
+  background-image: linear-gradient(180deg, #1d1a15, #131110);
+}
+
+.leaderboard {
+  max-height: 520px;
+  padding-right: 3px;
+}
+
+.leader {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+
+  &:first-child { border-top: 0 !important; }
+
+  @include media-breakpoint-down(md) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+// An entry in one of the three feeds — activity, world news, combat. All three
+// are a heading line, a sentence, and a timestamp, separated by a hairline.
+.feed-item {
+  &:first-child { border-top: 0 !important; padding-top: 0 !important; }
+
+  // Your own name in the world feed, so it can be found without reading.
+  &.mine {
+    background: #142524;
+    margin-inline: -8px;
+    padding-inline: 8px;
+  }
+}
+
+.world-news { max-height: 680px; padding-right: 3px; }
+
+// The status rows stack inside a panel, and the first needs no rule above it.
+.status-row:first-of-type { border-top: 0 !important; }
+
+// Namespaced rather than bare modifiers: "leader" alone collided with the
+// leaderboard row class, whose 44px first column squeezed a headline title down
+// to three characters.
+.headline-leader   { border-left: 3px solid #d9a441 !important; }
+.headline-robbery  { border-left: 3px solid #b4534a !important; }
+.headline-score    { border-left: 3px solid #4f8f6a !important; }
+.headline-arrival  { border-left: 3px solid #5b7c9c !important; }
+.headline-ground   { border-left: 3px solid #8f7fc0 !important; }
+.headline:not([class*="headline-"]) { border-left: 3px solid #4a5350 !important; }
+
+.news-tag {
+  &.combat  { color: $bad-soft; }
+  &.build   { color: #e8c07a; }
+  &.arrival { color: #7fa8cc; }
+  &.crew    { color: #8fbf9e; }
+  &.money   { color: #c9bd8f; }
+}
+
+// The one warning that is not an error: a crew too big for the room that feeds
+// it. Warning only, never blocking, since a crew built for fighting does not
+// have to be supplyable for street work.
+.supply-warning {
+  border-color: #4a3226 !important;
+  background: #16100e;
+}
+
+// A supply the crew is short of. The border comes from a utility; the warm fill
+// behind it is the part that says "this one" at a glance across three cards.
+.supply-row.short { background: #1b1712; }
+
+// -----------------------------------------------------------------------------
+// Rows with a shape of their own
+// -----------------------------------------------------------------------------
+// Each of these is a grid whose track list means something specific — a fixed
+// gutter for a rank, a column sized to the widest button, a figure pinned right.
+// A utility could name the common cases and does, above; these are the ones that
+// are genuinely one-off, and a class is the honest way to say so.
+
+.crew-manage-row {
+  grid-template-columns: minmax(0, 1fr) 105px auto auto;
+  &:first-child { border-top: 0 !important; padding-top: 0 !important; }
+
+  @include media-breakpoint-down(md) { grid-template-columns: 1fr 92px 1fr 1fr; }
+  @include media-breakpoint-down(sm) { grid-template-columns: 1fr; }
+}
+
+.sell-row {
+  grid-template-columns: minmax(0, 1fr) 110px auto;
+  @include media-breakpoint-down(md) { grid-template-columns: 1fr 100px auto; }
+  @include media-breakpoint-down(sm) { grid-template-columns: 1fr; }
+}
+
+.pimp-row {
+  grid-template-columns: minmax(0, 1fr) auto 88px;
+  @include media-breakpoint-down(md) { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
+.pimp-gone { min-width: 150px; }
+
+// The opening ladder. Done rungs recede; the next one is the only one that
+// explains itself.
+.ladder-row {
+  grid-template-columns: 20px 1fr;
+  color: #aea59a;
+
+  &:hover { background: #14171799; }
+  &.done { opacity: .45; }
+  &.done strong { text-decoration: line-through; }
+}
+
+// A specialty badge on a pimp, and the two states of a player's standing in the
+// admin table. Small, capitalised, and always attached to a name.
+.tag {
+  font-size: $text-xs;
+  font-weight: $weight-heavy;
+  text-transform: uppercase;
+  letter-spacing: $track-caps;
+  border-radius: 999px;
+  padding: $space-hair $space-2;
+  margin-left: 6px;
+  white-space: nowrap;
+
+  &.enforcer { color: $gold;    background: #241d11; border: $border-width solid $gold-deep; }
+  &.hustler  { color: #7bbf6a; background: #131f16; border: $border-width solid #35603a; }
+  &.banned   { color: #ffd4d4; background: #3d1c1c; border: $border-width solid #773636; }
+  &.ok       { color: #d6f1d9; background: #173126; border: $border-width solid #396a54; }
+  &.yours    { background: $gold-deep; color: $gold; }
+}
+
+// A tile in a picker: a district to work, a way to attack. Five of them rather
+// than a dropdown, because each carries its own copy and that copy is the whole
+// reason the choice exists.
+.tile {
+  cursor: pointer;
+  &:hover { border-color: #4a5450; }
+  &.active { background: #14181a; }
+}
+
+// A button that is a label with its price underneath, rather than a word.
+.btn-stacked {
+  display: grid;
+  gap: $space-1;
+  justify-items: start;
+  align-content: center;
+  text-align: left;
+  white-space: normal;
+  min-height: 76px;
+
+  span {
+    color: inherit;
+    opacity: .78;
+    font-size: $text-sm;
+    font-weight: $weight-bold;
+  }
+}
+
+.hideout-panel { border-color: #4a3b25 !important; }
+
+// A player in the target list. Rank, name, what they are worth — with the town
+// and the titles wrapping onto a second line under the name rather than being
+// squeezed into a column of their own.
+.target-row {
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  color: #d8d0c7;
+
+  &.active { background: #132322; }
+  small { grid-column: 2 / 3; }
+  b { grid-column: 3 / 4; }
+
+  @include media-breakpoint-down(sm) {
+    grid-template-columns: 36px minmax(0, 1fr);
+    em, b { grid-column: 2 / 3; }
+  }
+}
+
+// The launch strip: the button, and the sentence saying why it is or is not
+// going to work.
+.target-actions {
+  border-color: #33413d !important;
+  background: #0d1111;
+}
+
+// The shrine and the day's names. Both are read rather than worked, so they are
+// quiet panels.
+.shrine-panel p { color: $teal-soft; }
+
+.title-row {
+  grid-template-columns: minmax(0, 130px) minmax(0, 1fr);
+  @include media-breakpoint-down(md) { grid-template-columns: minmax(0, 1fr); }
+}
+
+// -----------------------------------------------------------------------------
+// The room row
+// -----------------------------------------------------------------------------
+// A thing you can own or build, what it does, and the control that changes it.
+// Five screens use it — the rooms, the production stations, the tier ladder, a
+// mule run, an order on the board — so it is a component rather than the same
+// nine utilities written out five times. The left stripe is a utility, because
+// what it means differs at each of those five: contraband, late, ready.
+
+.room-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: $space-3;
+  align-items: center;
+  border: $border-width solid #28302f;
+  background: $surface-deep;
+  border-radius: $border-radius-sm;
+  padding: $space-2 $space-3;
+
+  em {
+    font-style: normal;
+    color: $ink-soft;
+    font-size: $text-sm;
+    text-transform: uppercase;
+    letter-spacing: $track-caps;
+  }
+
+  .btn { min-width: 148px; }
+
+  @include media-breakpoint-down(md) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    > .btn { grid-column: 1 / -1; }
+  }
+}
+
+.room-copy {
+  display: grid;
+  gap: $space-hair;
+
+  strong { color: $ink; }
+  span { color: $ink-dim; font-size: $text-sm; }
+  small { color: #c08a4a; font-size: $text-xs; }
+}
+
+// -----------------------------------------------------------------------------
+// A capacity meter
+// -----------------------------------------------------------------------------
+// Bootstrap's progress bar carries the geometry and the semantics; what it has
+// no opinion about is that a room filling up is a warning and a room overflowing
+// is a problem, so the fill warms through gold to red as it does.
+
+.capacity {
+  border-color: #28302f !important;
+
+  .progress { height: 6px; }
+  .progress-bar { background: linear-gradient(90deg, #{$gold-shade}, #{$gold-lit}); }
+
+  &.near {
+    border-color: $gold-deep !important;
+    .progress-bar { background: linear-gradient(90deg, #b8853c, #{$gold}); }
+  }
+
+  &.over {
+    border-color: #8b6532 !important;
+    background: #1b1712 !important;
+    .progress-bar { background: linear-gradient(90deg, #8b4a32, #d97a52); }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// The way in
+// -----------------------------------------------------------------------------
+
+.auth-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.auth-card { width: min(430px, 100%); }
+
+.brand-mark {
+  width: 54px;
+  height: 54px;
+  background: #151515;
+  border-color: #a98245 !important;
+}
+
+// -----------------------------------------------------------------------------
+// The walkthrough
+// -----------------------------------------------------------------------------
+// One thing lit, everything else dimmed. The dimming is a single enormous shadow
+// cast outward from the lit rectangle rather than four panels arranged around it:
+// one element to keep in step with a moving target instead of four, and the
+// corners come out right for free.
+
+.tour {
+  z-index: 100;
+  pointer-events: none;
+}
+
+.tour-dim { background: rgba(4, 5, 6, .72); }
+
+.tour-spotlight {
+  position: fixed;
+  border-radius: $border-radius-lg;
+  // The hole. Nothing is painted inside it, so the page shows through untouched.
+  box-shadow: 0 0 0 9999px rgba(4, 5, 6, .72);
+  border: $border-width solid $gold;
+  transition: top .22s ease, left .22s ease, width .22s ease, height .22s ease;
+}
+
+.tour-box {
+  position: fixed;
+  width: min(330px, calc(100vw - 24px));
+  box-shadow: 0 24px 60px rgba(#000000, .6);
+  padding: $space-3 $space-4 $space-4;
+  pointer-events: auto;
+
+  // On a phone the box is pinned above the tab bar rather than chased around the
+  // target: there is not enough screen to place a 330px card beside anything, and
+  // a card that moves every step is harder to read than one that stays put.
+  @include media-breakpoint-down(md) {
+    top: auto !important;
+    right: $space-3;
+    bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+    left: $space-3 !important;
+    width: auto;
+    transform: none !important;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Talk
+// -----------------------------------------------------------------------------
+// A window in the corner rather than a panel on a page: it began on the overview,
+// which meant a conversation ended the moment you went to work the streets.
+// Fixed, so it survives every page change, and layered under the walkthrough and
+// the alert panel because a chat should never be the thing standing between
+// somebody and the game.
+
+.chat-dock {
+  z-index: 35;
+  right: $space-4;
+  bottom: 0;
+  width: min(340px, calc(100vw - #{$space-4} * 2));
+  box-shadow: 0 -8px 40px rgba(#000000, .5);
+
+  // Collapsed, it is its own header and nothing else.
+  &:not(.open) { padding-bottom: $space-1; }
+
+  @include media-breakpoint-down(md) {
+    right: 0;
+    left: 0;
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    width: auto;
+    border-left: 0;
+    border-right: 0;
+  }
+}
+
+// A conversation window, stacked leftwards from the dock. One fits on a phone:
+// the conversation takes the screen and the dock waits behind it.
+.chat-window {
+  right: auto;
+
+  @include media-breakpoint-down(md) {
+    right: 0 !important;
+    left: 0;
+    z-index: 36;
+  }
+}
+
+.chat-dock-controls .btn {
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+
+  // Sized in both directions, so the blanket tap-target minimum would otherwise
+  // make these tall and leave them 28px wide: the right height, the wrong shape,
+  // and a target that measures as fixed while still being a sliver.
+  @media (pointer: coarse) {
+    width: $tap;
+    height: $tap;
+  }
+}
+
+.chat-log {
+  height: 240px;
+  @include media-breakpoint-down(md) { height: 44vh; }
+}
+
+.chat-line {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+
+  @include media-breakpoint-down(md) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    strong { grid-column: 1 / -1; }
+  }
+}
+
+// A conversation in the list: who, what they last said, and when.
+.chat-thread {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 $space-2;
+
+  &:hover { border-color: $line !important; }
+  span { grid-column: 1 / 2; }
+  small { grid-row: 1 / 2; grid-column: 2 / 3; }
+}
+
+// Reopens what the close button closed. Small, out of the way, and the only
+// thing left on screen.
+.chat-launcher {
+  z-index: 35;
+  right: $space-4;
+  bottom: $space-4;
+  box-shadow: 0 8px 24px rgba(#000000, .45);
+
+  @include media-breakpoint-down(md) {
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    right: $space-3;
+  }
+}
+
+.chat-tabs .btn { min-height: 30px; }
+
+// An item on the street store's shelf: what it is, what it does, and the buy
+// controls pinned to the bottom so three cards side by side line their buttons
+// up regardless of how long the description runs.
+.store-row {
+  min-height: 218px;
+  @include media-breakpoint-down(md) { min-height: 0; }
+}
+
+// -----------------------------------------------------------------------------
+// The travel board
+// -----------------------------------------------------------------------------
+// A town, two prices, and what the trip costs. Four columns that have to line up
+// down the list for the prices to be comparable at a glance, which is the whole
+// job of the panel — so the track list is fixed rather than fractional.
+
+.city-market {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.1fr) 84px 84px 92px;
+  gap: $space-2;
+  align-items: center;
+  border-color: #28302f;
+
+  &.head {
+    border-color: transparent !important;
+    background: transparent !important;
+    padding: 0 $space-3 $space-hair !important;
+
+    span { text-align: right; }
+    span:first-child { text-align: left; }
+  }
+
+  &.current { background: #171410; }
+
+  // The two prices stay side by side and keep their headings; only the trip
+  // drops to a line of its own.
+  @include media-breakpoint-down(md) {
+    grid-template-columns: minmax(0, 1fr) 72px 72px;
+    row-gap: $space-2;
+
+    &.head span:last-child { display: none; }
+    .city-market-go {
+      grid-column: 1 / -1;
+      justify-items: stretch;
+
+      small, .eyebrow { text-align: center; }
+    }
+  }
+}
+
+.city-market-go .btn { width: 100%; }
+
+.travel-note { margin: -4px 0 12px; }
+
+// -----------------------------------------------------------------------------
+// A row of controls
+// -----------------------------------------------------------------------------
+// A handful of labelled fields and the button that acts on them. Seventeen
+// screens use it, which is what makes it a component: the alternative is the
+// same six utilities written out seventeen times, and a label width nobody can
+// change in one place.
+
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  align-items: end;
+
+  > label {
+    width: 132px;
+    font-size: $text-sm;
+  }
+
+  // The field that should take whatever room is left — a name, a reason, a
+  // sentence — rather than sitting at the same width as a number.
+  > label.grow {
+    width: auto;
+    flex: 1 1 240px;
+  }
+
+  // A thumb has no room for four fields side by side.
+  @include media-breakpoint-down(md) {
+    flex-direction: column;
+    align-items: stretch;
+
+    > label, > label.grow { width: 100%; }
+  }
+}
+
+// A labelled group of them, under a rule, with a caption underneath.
+.control-block {
+  display: grid;
+  gap: $space-1;
+  border-top: $border-width solid #262b2a;
+  padding-top: 10px;
+
+  > strong {
+    color: #bcb1a5;
+    font-size: $text-sm;
+    text-transform: uppercase;
+    letter-spacing: $track-caps;
+  }
+  > small { color: $ink-faint; font-size: $text-xs; }
+}
+
+.inventory-card { min-height: 84px; }
+
+// -----------------------------------------------------------------------------
+// Tables
+// -----------------------------------------------------------------------------
+// Bootstrap's table carries the borders, the hover and the spacing. What it does
+// not know is that every column here is a figure or a short label, none of which
+// should ever wrap: the panel scrolls sideways instead, which .table-responsive
+// already provides.
+
+.game-table {
+  font-size: $text-sm;
+
+  th {
+    color: $ink-soft;
+    font-size: $text-xs;
+    text-transform: uppercase;
+    letter-spacing: $track-caps;
+    white-space: nowrap;
+  }
+  td { color: #bbb4ac; white-space: nowrap; }
+
+  // A rival that has not moved lately, and one that is switched off.
+  tr.stale td { color: #7f7770; }
+  tr.paused td { color: #6f6862; font-style: italic; }
+}
+
+.admin-table-actions { display: flex; gap: $space-1; }
+
+// -----------------------------------------------------------------------------
+// The catch-up dialog
+// -----------------------------------------------------------------------------
+// Shown once on arrival and only when something actually happened.
+
+.catch-up-item {
+  border-color: $line-soft;
+  border-left-width: 3px;
+  border-left-color: #4a5350;
+
+  &.good    { border-left-color: #4f8f6a; }
+  &.bad     { border-left-color: #b4534a; }
+  &.neutral { border-left-color: #7f7a6a; }
+}
+
+// The modal, like the card, needs its shadow named rather than routed through
+// the mixin $enable-shadows switches off.
+.modal-content { box-shadow: var(--#{$prefix}modal-box-shadow); }
+
+// -----------------------------------------------------------------------------
+// Defence alerts
+// -----------------------------------------------------------------------------
+
+.alert-bell .bell {
+  background: rgba(13, 16, 17, .8);
+  border-color: $line;
+  color: #bdb4aa;
+
+  &:hover { border-color: #4a524f; color: #f4eadc; }
+
+  @include media-breakpoint-down(md) {
+    gap: $space-1;
+    padding: 0 $space-2;
+    font-size: $text-sm;
+  }
+}
+
+.alert-panel {
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(380px, 82vw);
+  max-height: 420px;
+  border-color: #3a4240 !important;
+  box-shadow: 0 20px 50px rgba(#000000, .5);
+
+  // The panel hangs off its button's right edge, which was the screen's right
+  // edge back when the bell was a full-width row of its own. Handing the
+  // positioning to the header means it spans the content width and lines up with
+  // everything else, rather than being pinned to a button whose position depends
+  // on how long somebody's name happens to be.
+  @include media-breakpoint-down(md) {
+    right: 0;
+    left: 0;
+    width: auto;
+    max-height: 60vh;
+  }
+}
+
+.alert-row {
+  border-color: #262b2a !important;
+  background: #0b0d0e;
+
+  span { color: #aea59a; }
+  &.fresh { background: #14181a; }
+}
+
+@include media-breakpoint-down(md) {
+  .alert-bell { position: static !important; }
+}
+
+// A rule of the game, stated as a pill. Read once and then ignored, which is
+// exactly what a pill is for.
+.rule-chip {
+  border: $border-width solid $line;
+  background: $surface-deep;
+  border-radius: 999px;
+  color: $ink-soft;
+  padding: $space-1 $space-2;
+  font-size: $text-sm;
+}
+
+// A piece of ground: whose it is, said by the stripe before the sentence.
+.territory-card {
+  border-left-color: #4a5350;
+
+  &.mine  { border-left-color: #4f8f6a; background: #0e1411; }
+  &.taken { border-left-color: #b4534a; }
+  &.open  { border-left-color: #d9a441; }
+}
+
+// The controls on a territory card sit at 78px, which fits a garrison size and
+// nothing else — except the pimp select, which carries a name.
+.territory-actions > label { width: 78px; font-size: $text-xs; }
+.territory-actions > label.territory-pimp { width: 100%; }
+
+// How much of an order is already in, so progress is visible without reading
+// the numbers. Thinner than a real progress bar because it is a hint, not a
+// readout.
+.contract-progress {
+  height: 4px;
+  background: $line;
+
+  .progress-bar { background: $gold; }
+}
+
+// Panels that would otherwise change height as their contents load, which makes
+// the column beside them jump. A floor, not a fixed height.
+.market-bank { min-height: 172px; }
+.market-production { min-height: 280px; }
+.travel-panel { min-height: 240px; }
+
+// -----------------------------------------------------------------------------
+// The crew
+// -----------------------------------------------------------------------------
+// A roster and a board, both read down a column of names. The two share a shell
+// and differ only in what sits before the name: nothing on the roster, a rank on
+// the board.
+
+.alliance-member,
+.alliance-row,
+.alliance-ask {
+  display: grid;
+  align-items: center;
+  gap: $space-2;
+  border: $border-width solid $line;
+  background: $surface-deep;
+  border-radius: $border-radius-sm;
+  padding: $space-2;
+
+  strong { display: block; color: #e6ddd2; font-size: $text-base; }
+  small { color: $ink-faint; font-size: $text-xs; }
+  b { color: $gold; font-size: $text-base; }
+  em { font-style: normal; color: $ink-faint; font-size: $text-xs; }
+}
+
+.alliance-member { grid-template-columns: minmax(0, 1fr) auto auto; }
+.alliance-row    { grid-template-columns: 42px minmax(0, 1fr) auto auto; }
+.alliance-ask    { grid-template-columns: minmax(0, 1fr) auto auto; margin-bottom: 6px; }
+
+.alliance-row span { color: $ink-faint; font-size: $text-sm; }
+
+// The alliance panels were built after the phone layout was last revisited, so
+// their rows kept desktop column counts and crushed a member's name and town
+// into 35px. A member is a name with things attached to it, so the name gets the
+// width and the controls sit under it.
+@include media-breakpoint-down(md) {
+  .alliance-member, .alliance-ask { grid-template-columns: minmax(0, 1fr); }
+  .alliance-member-actions, .alliance-ask-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .alliance-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
+  .alliance-row em { grid-column: 2 / -1; }
+}
+
+.alliance-member-actions { display: flex; align-items: center; gap: $space-1; }
+.alliance-motto { color: $gold; font-style: italic; margin: 0 0 $space-2; }
+.alliance-roster { display: grid; gap: $space-1; margin: $space-3 0; }
+
+.alliance-powers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: $space-2;
+  margin-bottom: 10px;
+
+  @include media-breakpoint-down(md) { grid-template-columns: minmax(0, 1fr); }
+}
+
+.alliance-power {
+  display: grid;
+  gap: $space-hair;
+  font-size: $text-sm;
+
+  span { color: $teal-soft; }
+}
+
+// -----------------------------------------------------------------------------
+// A mission
+// -----------------------------------------------------------------------------
+
+.mission-card {
+  border-color: $line;
+  background: $surface;
+
+  &.fighting  { border-color: $gold-deep; background: #1a1710; }
+  &.returning { border-color: #315844; background: #111b16; }
+}
+
+.mission-event {
+  grid-template-columns: auto minmax(0, 1fr);
+  border-top: $border-width solid #252a28;
+
+  &:first-child { border-top: 0; padding-top: 0 !important; }
+
+  @include media-breakpoint-down(sm) {
+    span { text-align: left !important; }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// The admin tabs
+// -----------------------------------------------------------------------------
+// Six jobs, one at a time. Not Bootstrap's .nav-tabs: these carry a second line
+// saying what each tab is for, which a tab strip has no room for.
+
+.admin-tabs {
+  border-color: #242a29 !important;
+  background: #0c0f10;
+
+  .btn {
+    --#{$prefix}btn-bg: transparent;
+    --#{$prefix}btn-border-color: transparent;
+    --#{$prefix}btn-hover-bg: #121617;
+    --#{$prefix}btn-hover-border-color: transparent;
+    --#{$prefix}btn-border-radius: #{$border-radius-sm};
+    --#{$prefix}btn-font-weight: #{$weight-normal};
+
+    strong { color: #a89f96; }
+    &.active {
+      border-color: #3b4442;
+      background: #151a1b;
+      strong { color: $gold; }
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// The admin screens
+// -----------------------------------------------------------------------------
+// Denser than the rest of the game on purpose: these are read by somebody
+// looking for one row among hundreds, not played.
+
+.admin-player-list { max-height: 460px; }
+
+.admin-player-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: $space-hair $space-2;
+  text-align: left;
+  border: $border-width solid #28302f;
+  background: $surface-deep;
+  border-radius: $border-radius-sm;
+  padding: $space-2;
+  color: #d7cec3;
+
+  &.active { border-color: $gold-shade; background: #1a1610; }
+
+  strong { color: $ink; font-size: $text-base; }
+  small { grid-column: 1 / 2; color: $ink-faint; font-size: $text-xs; }
+  em {
+    grid-column: 1 / 2;
+    font-style: normal;
+    color: $ink-dim;
+    font-size: $text-xs;
+    text-transform: uppercase;
+    letter-spacing: $track-caps;
+  }
+  b {
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    align-self: center;
+    color: $gold;
+    font-size: $text-base;
+  }
+}
+
+// A row in the audit trail, and in the two oversight lists that share its shape.
+.audit-row {
+  display: grid;
+  gap: $space-hair;
+  border: $border-width solid #262b2a;
+  background: #0b0d0e;
+  border-radius: $border-radius-sm;
+  padding: $space-2;
+
+  > div {
+    display: flex;
+    justify-content: space-between;
+    gap: $space-2;
+    align-items: baseline;
+  }
+
+  strong {
+    color: $gold;
+    font-size: $text-sm;
+    text-transform: uppercase;
+    letter-spacing: $track-caps;
+  }
+  span { color: $ink-dim; font-size: $text-sm; }
+  p { margin: 0; color: #d7cec3; font-size: $text-base; }
+  small { color: $ink-soft; font-size: $text-sm; font-style: italic; }
+  em { font-style: normal; color: #6f6862; font-size: $text-xs; }
+
+  // A mission that should have finished and has not.
+  &.overdue {
+    border-color: $danger;
+    background: #1b1010;
+    strong { color: #ffb4a8; }
+  }
+
+  .control-row { margin-top: 4px; }
+}
+
+// A tuning value: its path, what it is, and the box you change it in.
+.config-list { max-height: 420px; overflow-y: auto; }
+
+.config-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px auto auto;
+  gap: $space-2;
+  align-items: center;
+  border: $border-width solid #262b2a;
+  background: #0b0d0e;
+  border-radius: $border-radius-sm;
+  padding: $space-2;
+
+  &.overridden { border-color: $gold-deep; background: #171410; }
+
+  @include media-breakpoint-down(md) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    input { grid-column: 1 / -1; }
+  }
+}
+
+.config-copy {
+  display: grid;
+  gap: $space-hair;
+  min-width: 0;
+
+  strong {
+    color: $ink;
+    font-size: $text-sm;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  span {
+    color: $ink-faint;
+    font-size: $text-xs;
+    text-transform: uppercase;
+    letter-spacing: $track-caps;
+  }
+}
+.config-row.overridden .config-copy span { color: $gold-bright; }
+
+// The reason box on an enforcement action, marked out because what goes in it
+// is written into the audit trail.
+.admin-reason input { border-color: $gold-deep; }
+
+// Maintenance mode is on. The panel says so by glowing rather than by adding a
+// row that says "on".
+.maintenance-on {
+  border-color: #8b6532 !important;
+  box-shadow: 0 0 0 1px rgba(224, 176, 94, .18), 0 18px 48px rgba(#000000, .28);
+}
+.maintenance-on .panel-title span { color: $gold; }
+
+// The stacked rows inside the tuning panel share a baseline, and a long value
+// wraps rather than pushing the row wide.
+.admin-config .status-row {
+  align-items: baseline;
+
+  strong { max-width: 62%; overflow-wrap: anywhere; }
+
+  @include media-breakpoint-down(md) {
+    flex-direction: column;
+    strong { max-width: 100%; text-align: left; }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Odds and ends
+// -----------------------------------------------------------------------------
+
+// Stepping on it: cut coke is a station's sibling rather than a station.
+.cut-panel {
+  border-color: $line;
+  border-left-color: $danger;
+
+  p { margin: $space-2 0; }
+}
+.cut-head strong { color: $ink; }
+.cut-head span { color: #7f8b87; font-size: $text-sm; }
+
+// What a building is costing while it goes up.
+.build-progress {
+  border-color: #3c3320 !important;
+  background: #14110b;
+
+  strong { color: #e8c07a; }
+  span { color: $ink-dim; font-size: $text-sm; }
+}
+
+.combat-history { max-height: 520px; padding-right: 3px; }
+
+// The combat feed marks whose fight it was, and a fight still running.
+.combat-entry {
+  &.attack  { background: #171f18; margin-inline: -8px; padding-inline: 8px; }
+  &.defense { background: #1b1717; margin-inline: -8px; padding-inline: 8px; }
+  &.pending {
+    border-color: $gold-deep;
+    background: #1a1710;
+    strong { color: $gold-bright; }
+  }
+}

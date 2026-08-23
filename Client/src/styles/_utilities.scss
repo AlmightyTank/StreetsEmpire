@@ -1,0 +1,225 @@
+// =============================================================================
+// Utility API extensions
+// =============================================================================
+// Bootstrap generates its utilities from a map, and that map is open: anything
+// added here comes out the far end as a real utility class with the same
+// responsive and print variants as the built-in ones. That is what lets the
+// game's palette and its grid tracks be written in the markup as Bootstrap
+// classes rather than as a parallel stylesheet.
+//
+// Merged in after bootstrap/scss/utilities and before bootstrap/scss/utilities/api,
+// which is the window in which $utilities can still be changed.
+
+// The game's own colours, added to the three colour utilities rather than to
+// $theme-colors: these want text-, bg- and border- classes, not a full set of
+// buttons and alerts in eleven shades nobody asked for.
+$game-colors: (
+  "gold":        $gold,
+  "gold-bright": $gold-bright,
+  "gold-deep":   $gold-deep,
+  "ink":         $ink,
+  "ink-dim":     $ink-dim,
+  "ink-faint":   $ink-faint,
+  "ink-soft":    $ink-soft,
+  "teal":        $teal,
+  "teal-soft":   $teal-soft,
+  "mint":        $mint,
+  "good":        $good,
+  "good-soft":   $good-soft,
+  "bad":         $bad,
+  "bad-soft":    $bad-soft,
+  "warn":        $warn,
+  "notice":      $notice,
+  "surface":     $surface,
+  "surface-deep": $surface-deep,
+  "line":        $line,
+  "line-soft":   $line-soft,
+);
+
+@each $utility-name in ("color", "background-color", "border-color") {
+  $utility: map-get($utilities, $utility-name);
+  $utility: map-merge(
+    $utility,
+    (values: map-merge(map-get($utility, "values"), $game-colors))
+  );
+  $utilities: map-merge($utilities, ($utility-name: $utility)) !global;
+}
+
+$utilities: map-merge(
+  $utilities,
+  (
+    // -- Grid ----------------------------------------------------------------
+    // The repeating column patterns, named for how many tracks they make.
+    // minmax(0, 1fr) rather than 1fr throughout, because a bare 1fr refuses to
+    // shrink below its content and a long crew name would otherwise push the
+    // row wider than its panel.
+    "grid-template-columns": (
+      responsive: true,
+      property: grid-template-columns,
+      class: gtc,
+      values: (
+        1: minmax(0, 1fr),
+        2: repeat(2, minmax(0, 1fr)),
+        3: repeat(3, minmax(0, 1fr)),
+        4: repeat(4, minmax(0, 1fr)),
+        5: repeat(5, minmax(0, 1fr)),
+        // A main column with something small pinned to its end.
+        "1-auto": minmax(0, 1fr) auto,
+        "1-auto-auto": minmax(0, 1fr) auto auto,
+        "auto-1": auto minmax(0, 1fr),
+        // A run of copy with one control beside it, sized to the control.
+        "1-field": minmax(0, 1fr) 120px,
+        // The page splits: a working column and a reference column beside it.
+        // The second track carries a minimum because the panels in it — a
+        // leaderboard, a price list — stop being readable below about 320px,
+        // and a fraction alone would happily take them there.
+        "split-11":  minmax(0, 1.1fr) minmax(320px, .9fr),
+        "split-108": minmax(0, 1.08fr) minmax(320px, .92fr),
+        "split-135": minmax(0, 1.35fr) minmax(320px, .8fr),
+        "split-92":  minmax(0, .92fr) minmax(380px, 1.08fr),
+        "split-90":  minmax(0, .9fr) minmax(360px, 1.1fr),
+        "split-80":  minmax(260px, .8fr) minmax(0, 1.2fr),
+        "split-280": minmax(0, 280px) minmax(0, 1fr),
+        // Tile beds that reflow on their own, so the panel decides how many fit
+        // rather than a breakpoint deciding for it.
+        "fill-120": repeat(auto-fit, minmax(120px, 1fr)),
+        "fill-130": repeat(auto-fit, minmax(130px, 1fr)),
+        "fill-140": repeat(auto-fit, minmax(140px, 1fr)),
+        "fill-150": repeat(auto-fit, minmax(150px, 1fr)),
+        "fill-190": repeat(auto-fit, minmax(190px, 1fr)),
+        "fill-210": repeat(auto-fit, minmax(210px, 1fr)),
+        "fill-268": repeat(auto-fill, minmax(268px, 1fr)),
+      )
+    ),
+    // Spanning the full width of whatever grid the element sits in, without
+    // needing to know how many columns that grid has.
+    "grid-column": (
+      responsive: true,
+      property: grid-column,
+      class: gcol,
+      values: (
+        full: unquote("1 / -1"),
+      )
+    ),
+    // Bootstrap ships align-items / align-self / align-content, but grid's
+    // inline-axis equivalents are missing because the flex utilities cover the
+    // same ground for flex containers. A grid needs them.
+    "justify-items": (
+      responsive: true,
+      property: justify-items,
+      class: justify-items,
+      values: start end center stretch,
+    ),
+    "justify-self": (
+      responsive: true,
+      property: justify-self,
+      class: justify-self,
+      values: start end center stretch,
+    ),
+    "place-items": (
+      property: place-items,
+      class: place-items,
+      values: (center: center),
+    ),
+    // -- Surface -------------------------------------------------------------
+    // Nearly every raised thing in this game is lit from the top: a one-stop
+    // vertical gradient that reads as a light source above the page. A flat
+    // background-color utility cannot express that, and background-image can,
+    // so the surfaces live here as gradients layered over a bg-* colour.
+    "gradient": (
+      property: background-image,
+      class: surface,
+      values: (
+        // A panel, and the well a panel sits in.
+        "panel": linear-gradient(180deg, rgba(24, 25, 24, .96), rgba(15, 17, 18, .96)),
+        "lit": linear-gradient(180deg, #171818, $surface),
+        "sunk": linear-gradient(180deg, #111516, #0e1112),
+        // Gold-tinted: the hero, the admin panel, anything the game is pushing.
+        "hero": linear-gradient(120deg, rgba(218, 171, 91, .18), rgba(26, 40, 42, .18)),
+        "admin": linear-gradient(180deg, rgba(34, 29, 22, .98), rgba(15, 17, 18, .98)),
+        "warm": linear-gradient(180deg, #1d1a15, #131110),
+        "ember": linear-gradient(180deg, #1b1710, $surface),
+        // The primary button, and the badge that counts what you have not read.
+        "gold": linear-gradient(180deg, $gold-lit, $gold-shade),
+        "count": linear-gradient(180deg, #d4574a, #a33a30),
+        // The rail and the page behind everything.
+        "rail": linear-gradient(180deg, #111314, #0b0d0e),
+        "night": linear-gradient(135deg, rgba(29, 42, 44, .5) 0%, rgba(9, 10, 11, 0) 36%),
+        "none": none,
+      )
+    ),
+    // -- The accent stripe ---------------------------------------------------
+    // A thick coloured edge down the left of a card, saying what kind of thing
+    // it is before a word of it is read: a headline's subject, whose ground a
+    // territory is, whether an order is legal. Bootstrap can set a border's
+    // width or its colour, but only on all four sides at once, so the one side
+    // that carries meaning here needs its own pair.
+    "border-start-width": (
+      property: border-left-width,
+      class: border-start,
+      values: (thick: 3px),
+    ),
+    "border-start-color": (
+      property: border-left-color,
+      class: border-start,
+      values: map-merge($game-colors, (
+        "success": $success,
+        "danger":  $danger,
+        "warning": $warning,
+        "info":    $info,
+      )),
+    ),
+    // -- Type ----------------------------------------------------------------
+    // The one tracking value uppercase labels use. It travels with
+    // text-uppercase everywhere it appears, but they are separate properties
+    // and a label is occasionally already capitalised in the copy.
+    "letter-spacing": (
+      property: letter-spacing,
+      class: tracking,
+      values: (
+        caps: $track-caps,
+        none: 0,
+      )
+    ),
+    // -- Size ----------------------------------------------------------------
+    // min-width: 0 is the single most load-bearing declaration in a grid this
+    // dense: without it a track refuses to shrink under its content and the
+    // ellipsis that should appear never does.
+    "min-width": (
+      property: min-width,
+      class: min-w,
+      values: (
+        0: 0,
+        tap: $tap,
+      )
+    ),
+    "min-height": (
+      property: min-height,
+      class: min-h,
+      values: (
+        0: 0,
+        tap: $tap,
+      )
+    ),
+  )
+);
+
+// line-height picks up $line-height-sm / -base / -lg from the theme, but the
+// tight setting a stat value uses is a fourth step the map has no room for.
+$utilities: map-merge(
+  $utilities,
+  (
+    "line-height": map-merge(
+      map-get($utilities, "line-height"),
+      (
+        values: (
+          1: 1,
+          tight: $leading-tight,
+          sm: $leading-snug,
+          base: $leading-body,
+          lg: $leading-body,
+        )
+      )
+    ),
+  )
+);

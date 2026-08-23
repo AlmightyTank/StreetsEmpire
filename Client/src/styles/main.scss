@@ -7,31 +7,28 @@
 // utility additions after its utilities map is built but before that map is
 // rendered into classes. Importing the bundled file leaves no such window.
 //
-// The order below is Bootstrap's own, with four of our files threaded through
+// The order below is Bootstrap's own, with three of our files threaded through
 // it. Do not reorder them.
 
-// 1. Our design tokens, so the theme can be written in terms of them.
-@import "tokens";
-
-// 2. Bootstrap's helpers. The theme calls none of them directly, but Bootstrap's
-//    own variables do, and they must exist before that file is read.
+// 1. Bootstrap's helpers. Nothing here calls them directly, but Bootstrap's own
+//    variables do, and they must exist before that file is read.
 @import "bootstrap/scss/functions";
 
-// 3. Our overrides. Every variable here wins because Bootstrap declares its own
-//    with !default.
+// 2. Our build switches. Small, and deliberately not a palette: the game wears
+//    Bootstrap's own face, so there is nothing to override.
 @import "theme";
 
-// 4. Bootstrap's configuration, now resolved against the overrides.
+// 3. Bootstrap's configuration.
 @import "bootstrap/scss/variables";
 @import "bootstrap/scss/variables-dark";
 @import "bootstrap/scss/maps";
 @import "bootstrap/scss/mixins";
 @import "bootstrap/scss/utilities";
 
-// 5. Our utility additions, merged while $utilities is still editable.
+// 4. Our structural utility additions, merged while $utilities is still editable.
 @import "utilities";
 
-// 6. Bootstrap itself, the complete stack. Nothing is trimmed: the JS bundle
+// 5. Bootstrap itself, the complete stack. Nothing is trimmed: the JS bundle
 //    imported by main.tsx registers every plugin, and a plugin whose stylesheet
 //    was left out is a trap for whoever reaches for it next.
 @import "bootstrap/scss/root";
@@ -67,11 +64,11 @@
 @import "bootstrap/scss/placeholders";
 @import "bootstrap/scss/helpers";
 
-// 7. The generated utilities. These come last of Bootstrap's own output so a
+// 6. The generated utilities. These come last of Bootstrap's own output so a
 //    utility can override a component, which is the whole point of one.
 @import "bootstrap/scss/utilities/api";
 
-// 8. What Bootstrap has no component for: the things this game has and a
-//    framework could not. Each is built from the same variables and mixins
-//    Bootstrap used above, so they answer to the theme rather than sit beside it.
+// 7. What Bootstrap has no component for: the shapes this game has and a
+//    framework could not - a price board's columns, a chat dock, a walkthrough
+//    spotlight. Structure only; the colours in them are Bootstrap's own.
 @import "components";

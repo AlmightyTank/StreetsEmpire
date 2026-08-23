@@ -1,58 +1,28 @@
 // =============================================================================
 // Utility API extensions
 // =============================================================================
-// Bootstrap generates its utilities from a map, and that map is open: anything
-// added here comes out the far end as a real utility class with the same
-// responsive and print variants as the built-in ones. That is what lets the
-// game's palette and its grid tracks be written in the markup as Bootstrap
-// classes rather than as a parallel stylesheet.
+// Bootstrap generates its utilities from a map, and that map is open. What is
+// added here is strictly structural: grid track lists, the grid axis Bootstrap
+// happens not to ship, and a couple of sizing values.
+//
+// Nothing here touches colour, type or spacing. Those were all in this file once
+// - a gold text utility, eleven surface gradients, a seven-step font scale - and
+// went when the game moved to Bootstrap's own face. Anything that decides how
+// the interface *looks* now comes from Bootstrap and only from Bootstrap.
 //
 // Merged in after bootstrap/scss/utilities and before bootstrap/scss/utilities/api,
 // which is the window in which $utilities can still be changed.
-
-// The game's own colours, added to the three colour utilities rather than to
-// $theme-colors: these want text-, bg- and border- classes, not a full set of
-// buttons and alerts in eleven shades nobody asked for.
-$game-colors: (
-  "gold":        $gold,
-  "gold-bright": $gold-bright,
-  "gold-deep":   $gold-deep,
-  "ink":         $ink,
-  "ink-dim":     $ink-dim,
-  "ink-faint":   $ink-faint,
-  "ink-soft":    $ink-soft,
-  "teal":        $teal,
-  "teal-soft":   $teal-soft,
-  "mint":        $mint,
-  "good":        $good,
-  "good-soft":   $good-soft,
-  "bad":         $bad,
-  "bad-soft":    $bad-soft,
-  "warn":        $warn,
-  "notice":      $notice,
-  "surface":     $surface,
-  "surface-deep": $surface-deep,
-  "line":        $line,
-  "line-soft":   $line-soft,
-);
-
-@each $utility-name in ("color", "background-color", "border-color") {
-  $utility: map-get($utilities, $utility-name);
-  $utility: map-merge(
-    $utility,
-    (values: map-merge(map-get($utility, "values"), $game-colors))
-  );
-  $utilities: map-merge($utilities, ($utility-name: $utility)) !global;
-}
 
 $utilities: map-merge(
   $utilities,
   (
     // -- Grid ----------------------------------------------------------------
-    // The repeating column patterns, named for how many tracks they make.
-    // minmax(0, 1fr) rather than 1fr throughout, because a bare 1fr refuses to
-    // shrink below its content and a long crew name would otherwise push the
-    // row wider than its panel.
+    // Bootstrap's own grid is twelve columns of equal width, which suits a page
+    // and not a price board. These are the column shapes this game repeats.
+    //
+    // minmax(0, 1fr) rather than a bare 1fr throughout, because 1fr refuses to
+    // shrink below its content and a long crew name would otherwise push the row
+    // wider than the panel holding it.
     "grid-template-columns": (
       responsive: true,
       property: grid-template-columns,
@@ -70,9 +40,9 @@ $utilities: map-merge(
         // A run of copy with one control beside it, sized to the control.
         "1-field": minmax(0, 1fr) 120px,
         // The page splits: a working column and a reference column beside it.
-        // The second track carries a minimum because the panels in it — a
-        // leaderboard, a price list — stop being readable below about 320px,
-        // and a fraction alone would happily take them there.
+        // The second track carries a minimum because the panels in it - a
+        // leaderboard, a price list - stop being readable much below 320px, and
+        // a fraction alone would happily take them there.
         "split-11":  minmax(0, 1.1fr) minmax(320px, .9fr),
         "split-108": minmax(0, 1.08fr) minmax(320px, .92fr),
         "split-135": minmax(0, 1.35fr) minmax(320px, .8fr),
@@ -86,7 +56,6 @@ $utilities: map-merge(
         "fill-130": repeat(auto-fit, minmax(130px, 1fr)),
         "fill-140": repeat(auto-fit, minmax(140px, 1fr)),
         "fill-150": repeat(auto-fit, minmax(150px, 1fr)),
-        "fill-190": repeat(auto-fit, minmax(190px, 1fr)),
         "fill-210": repeat(auto-fit, minmax(210px, 1fr)),
         "fill-268": repeat(auto-fill, minmax(268px, 1fr)),
       )
@@ -101,9 +70,9 @@ $utilities: map-merge(
         full: unquote("1 / -1"),
       )
     ),
-    // Bootstrap ships align-items / align-self / align-content, but grid's
-    // inline-axis equivalents are missing because the flex utilities cover the
-    // same ground for flex containers. A grid needs them.
+    // Bootstrap ships align-items, align-self and align-content, but not grid's
+    // inline-axis equivalents, because for a flex container the justify-content
+    // utilities already cover that ground. A grid needs them.
     "justify-items": (
       responsive: true,
       property: justify-items,
@@ -121,39 +90,12 @@ $utilities: map-merge(
       class: place-items,
       values: (center: center),
     ),
-    // -- Surface -------------------------------------------------------------
-    // Nearly every raised thing in this game is lit from the top: a one-stop
-    // vertical gradient that reads as a light source above the page. A flat
-    // background-color utility cannot express that, and background-image can,
-    // so the surfaces live here as gradients layered over a bg-* colour.
-    "gradient": (
-      property: background-image,
-      class: surface,
-      values: (
-        // A panel, and the well a panel sits in.
-        "panel": linear-gradient(180deg, rgba(24, 25, 24, .96), rgba(15, 17, 18, .96)),
-        "lit": linear-gradient(180deg, #171818, $surface),
-        "sunk": linear-gradient(180deg, #111516, #0e1112),
-        // Gold-tinted: the hero, the admin panel, anything the game is pushing.
-        "hero": linear-gradient(120deg, rgba(218, 171, 91, .18), rgba(26, 40, 42, .18)),
-        "admin": linear-gradient(180deg, rgba(34, 29, 22, .98), rgba(15, 17, 18, .98)),
-        "warm": linear-gradient(180deg, #1d1a15, #131110),
-        "ember": linear-gradient(180deg, #1b1710, $surface),
-        // The primary button, and the badge that counts what you have not read.
-        "gold": linear-gradient(180deg, $gold-lit, $gold-shade),
-        "count": linear-gradient(180deg, #d4574a, #a33a30),
-        // The rail and the page behind everything.
-        "rail": linear-gradient(180deg, #111314, #0b0d0e),
-        "night": linear-gradient(135deg, rgba(29, 42, 44, .5) 0%, rgba(9, 10, 11, 0) 36%),
-        "none": none,
-      )
-    ),
     // -- The accent stripe ---------------------------------------------------
-    // A thick coloured edge down the left of a card, saying what kind of thing
-    // it is before a word of it is read: a headline's subject, whose ground a
-    // territory is, whether an order is legal. Bootstrap can set a border's
-    // width or its colour, but only on all four sides at once, so the one side
-    // that carries meaning here needs its own pair.
+    // A thick coloured edge down the left of a card, saying what kind of thing it
+    // is before a word of it is read: whose ground a territory is, whether an
+    // order is legal, how a night went. Bootstrap can set a border's width or its
+    // colour, but only on all four sides at once, so the one side that carries
+    // meaning here needs its own pair. The colours are Bootstrap's own.
     "border-start-width": (
       property: border-left-width,
       class: border-start,
@@ -162,24 +104,10 @@ $utilities: map-merge(
     "border-start-color": (
       property: border-left-color,
       class: border-start,
-      values: map-merge($game-colors, (
-        "success": $success,
-        "danger":  $danger,
-        "warning": $warning,
-        "info":    $info,
-      )),
-    ),
-    // -- Type ----------------------------------------------------------------
-    // The one tracking value uppercase labels use. It travels with
-    // text-uppercase everywhere it appears, but they are separate properties
-    // and a label is occasionally already capitalised in the copy.
-    "letter-spacing": (
-      property: letter-spacing,
-      class: tracking,
-      values: (
-        caps: $track-caps,
-        none: 0,
-      )
+      values: map-merge(
+        $theme-colors,
+        ("body-secondary": var(--#{$prefix}secondary-color))
+      ),
     ),
     // -- Size ----------------------------------------------------------------
     // min-width: 0 is the single most load-bearing declaration in a grid this
@@ -188,38 +116,14 @@ $utilities: map-merge(
     "min-width": (
       property: min-width,
       class: min-w,
-      values: (
-        0: 0,
-        tap: $tap,
-      )
+      values: (0: 0),
     ),
+    // A phone is held, not sat in front of. 44px is the smallest thing a thumb
+    // hits reliably, and this game asks for a great many taps.
     "min-height": (
       property: min-height,
       class: min-h,
-      values: (
-        0: 0,
-        tap: $tap,
-      )
-    ),
-  )
-);
-
-// line-height picks up $line-height-sm / -base / -lg from the theme, but the
-// tight setting a stat value uses is a fourth step the map has no room for.
-$utilities: map-merge(
-  $utilities,
-  (
-    "line-height": map-merge(
-      map-get($utilities, "line-height"),
-      (
-        values: (
-          1: 1,
-          tight: $leading-tight,
-          sm: $leading-snug,
-          base: $leading-body,
-          lg: $leading-body,
-        )
-      )
+      values: (0: 0, tap: 44px),
     ),
   )
 );

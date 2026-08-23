@@ -3,14 +3,6 @@ import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, opsApi, RequestError } from './api'
 import type { BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
-/*
-  The stylesheet has asked for Inter since the beginning and nothing ever loaded it, so every player
-  has been reading the fallback - Segoe UI on Windows, SF on a Mac - and the weights above 700 were
-  rendering as plain bold because a system font has nothing between. Self-hosted rather than fetched
-  from a font CDN: it costs one dependency and removes a third-party request on every page load.
-  The variable axis is what makes 500/700/800 genuinely distinct rather than three names for bold.
-*/
-import '@fontsource-variable/inter/wght.css'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -24,6 +16,11 @@ import './styles/main.scss'
   and hide would be a second source of truth for it.
 */
 import * as bootstrap from 'bootstrap'
+/*
+  Bootstrap's own icon set, as a stylesheet of one class per glyph. Pulled in for the alerts bell and
+  available to anything else that wants a mark rather than a word.
+*/
+import 'bootstrap-icons/font/bootstrap-icons.css'
 
 // Bootstrap's own docs assume a <script> tag and therefore a global. Keeping one means a plugin can
 // be reached from the console when debugging, and that any future code can construct one the way
@@ -110,30 +107,30 @@ function MobileNav({ pages, active, onPick, onLogout }: {
   return <>
     {open && <div className="nav-sheet-backdrop position-fixed top-0 bottom-0 start-0 end-0 d-flex align-items-end d-md-none" onClick={() => setOpen(false)}>
       <div
-        className="nav-sheet w-100 bg-surface border-top rounded-top-3"
+        className="nav-sheet w-100 bg-body-secondary border-top rounded-top-3"
         role="dialog"
         aria-label="All pages"
         onClick={event => event.stopPropagation()}
       >
-        <div className="nav-sheet-grip mx-auto mb-3 rounded-pill bg-line" />
+        <div className="nav-sheet-grip mx-auto mb-3 rounded-pill bg-secondary" />
         <div className="d-grid gtc-2 gap-2">
           {rest.map(page => <button
-            className={`btn btn-secondary d-grid gap-hair text-start min-h-tap ${active === page ? 'border-gold text-gold' : ''}`}
+            className={`btn btn-secondary d-grid gap-1 text-start min-h-tap ${active === page ? 'border-primary text-primary' : ''}`}
             key={page}
             type="button"
             onClick={() => go(page)}
           >
-            <strong className="fs-base">{pageMeta[page].label}</strong>
-            <small className="fs-xs text-ink-faint">{pageMeta[page].kicker}</small>
+            <strong className="">{pageMeta[page].label}</strong>
+            <small className="small text-body-tertiary">{pageMeta[page].kicker}</small>
           </button>)}
         </div>
         <button className="btn btn-secondary w-100 mt-2" type="button" onClick={onLogout}>Logout</button>
       </div>
     </div>}
 
-    <nav className="tab-bar d-grid d-md-none position-fixed bottom-0 start-0 end-0 border-top gap-hair" aria-label="Primary">
+    <nav className="tab-bar d-grid d-md-none position-fixed bottom-0 start-0 end-0 border-top gap-1" aria-label="Primary">
       {primary.map(page => <button
-        className={`btn btn-sm fw-bold min-h-tap ${active === page ? 'text-dark bg-gold' : 'text-ink-dim'}`}
+        className={`btn btn-sm fw-bold min-h-tap ${active === page ? 'text-dark bg-primary' : 'text-body-secondary'}`}
         key={page}
         type="button"
         aria-current={active === page ? 'page' : undefined}
@@ -142,7 +139,7 @@ function MobileNav({ pages, active, onPick, onLogout }: {
       {/* More carries the name of wherever you are when you are somewhere it holds, so the bar never
           shows a page you cannot see yourself on. */}
       <button
-        className={`btn btn-sm fw-bold min-h-tap ${rest.includes(active) ? 'text-dark bg-gold' : 'text-ink-dim'}`}
+        className={`btn btn-sm fw-bold min-h-tap ${rest.includes(active) ? 'text-dark bg-primary' : 'text-body-secondary'}`}
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
@@ -332,10 +329,10 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
     />}
     {!rect && <div className="tour-dim position-fixed top-0 bottom-0 start-0 end-0" />}
 
-    <div className="tour-box d-grid gap-1 border border-gold-deep rounded-3 surface-ember" ref={boxRef} style={boxStyle}>
-      <span className="eyebrow text-ink-faint">Step {stepIndex + 1} of {tourSteps.length}</span>
-      <strong className="text-gold fs-lg">{step.title}</strong>
-      <p className="text-ink-dim fs-sm lh-base m-0">{step.body}</p>
+    <div className="tour-box d-grid gap-1 border border-primary rounded-3 bg-body-tertiary" ref={boxRef} style={boxStyle}>
+      <span className="eyebrow text-body-tertiary">Step {stepIndex + 1} of {tourSteps.length}</span>
+      <strong className="text-primary fs-5">{step.title}</strong>
+      <p className="text-body-secondary small lh-base m-0">{step.body}</p>
       <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
         <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
           {last ? 'Done' : 'Skip'}
@@ -523,12 +520,12 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
 
   if (state === 'closed') {
     return <button
-      className="chat-launcher position-fixed btn rounded-pill border-gold-deep text-gold fw-bold surface-ember px-4 py-2"
+      className="chat-launcher position-fixed btn rounded-pill border-primary text-primary fw-bold bg-body-tertiary px-3 py-2"
       type="button"
       onClick={() => move('open')}
       aria-label="Open chat"
     >
-      Talk{(list?.unread ?? 0) > 0 && <b className="badge rounded-pill surface-count text-white ms-1">{list!.unread}</b>}
+      Talk{(list?.unread ?? 0) > 0 && <b className="badge rounded-pill bg-danger text-white ms-1">{list!.unread}</b>}
     </button>
   }
 
@@ -536,7 +533,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
   const totalUnread = unread + (list?.unread ?? 0)
 
   return <section
-    className={`chat-dock position-fixed d-grid border border-bottom-0 rounded-top-3 surface-lit p-2 ${isOpen ? 'open gap-2' : ''}`}
+    className={`chat-dock position-fixed d-grid border border-bottom-0 rounded-top-3 bg-body-secondary p-2 ${isOpen ? 'open gap-2' : ''}`}
     aria-label="Chat"
   >
     <header className="d-flex align-items-center gap-2">
@@ -545,9 +542,9 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
         type="button"
         onClick={() => move(isOpen ? 'minimised' : 'open')}
       >
-        <strong className="text-gold fs-base">Talk</strong>
-        <span className="min-w-0 text-ink-faint fs-xs text-truncate">{channel === 'Direct' ? 'Messages' : board?.scope ?? ''}</span>
-        {!isOpen && totalUnread > 0 && <b className="badge rounded-pill surface-count text-white">{totalUnread > 99 ? '99+' : totalUnread}</b>}
+        <strong className="text-primary">Talk</strong>
+        <span className="min-w-0 text-body-tertiary small text-truncate">{channel === 'Direct' ? 'Messages' : board?.scope ?? ''}</span>
+        {!isOpen && totalUnread > 0 && <b className="badge rounded-pill bg-danger text-white">{totalUnread > 99 ? '99+' : totalUnread}</b>}
       </button>
       <div className="chat-dock-controls d-flex gap-1">
         <button className="btn btn-secondary p-0 lh-1" type="button" title={isOpen ? 'Minimise' : 'Maximise'} onClick={() => move(isOpen ? 'minimised' : 'open')}>
@@ -558,21 +555,21 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
     </header>
 
     {isOpen && <>
-      <div className="chat-tabs d-flex gap-1">
+      <div className="d-flex gap-1">
         {(board?.channels ?? []).map(tab => <button
-          className={`btn btn-sm flex-fill fs-xs fw-bold ${tab.channel === channel ? 'border-gold-deep surface-ember text-gold' : 'btn-secondary text-ink-dim'}`}
+          className={`btn btn-sm flex-fill small fw-bold ${tab.channel === channel ? 'border-primary bg-body-tertiary text-primary' : 'btn-secondary text-body-secondary'}`}
           key={tab.channel}
           type="button"
           title={tab.blockedReason ?? tab.detail}
           onClick={() => { setChannel(tab.channel); setPicking(false) }}
         >{tab.label}</button>)}
         <button
-          className={`btn btn-sm flex-fill fs-xs fw-bold ${channel === 'Direct' ? 'border-gold-deep surface-ember text-gold' : 'btn-secondary text-ink-dim'}`}
+          className={`btn btn-sm flex-fill small fw-bold ${channel === 'Direct' ? 'border-primary bg-body-tertiary text-primary' : 'btn-secondary text-body-secondary'}`}
           type="button"
           title="People you are talking to"
           onClick={() => setChannel('Direct')}
         >
-          Messages{(list?.unread ?? 0) > 0 && <b className="badge rounded-pill surface-count text-white ms-1">{list!.unread}</b>}
+          Messages{(list?.unread ?? 0) > 0 && <b className="badge rounded-pill bg-danger text-white ms-1">{list!.unread}</b>}
         </button>
       </div>
 
@@ -581,7 +578,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
           {picking ? 'Cancel' : 'New message'}
         </button>
         {(blocked?.blocked.length ?? 0) > 0 && <button
-          className="btn btn-link fs-xs text-ink-dim"
+          className="btn btn-link small text-body-secondary"
           type="button"
           onClick={() => { setShowBlocked(v => !v); setPicking(false) }}
         >{showBlocked ? 'Conversations' : `Blocked (${blocked!.blocked.length})`}</button>}
@@ -593,8 +590,8 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
           onCancel={() => setPicking(false)}
           onStarted={id => { setPicking(false); onOpenConversation(id); void refreshList() }}
         />
-        : <div className="chat-log d-grid align-content-start gap-1 border border-line-soft rounded bg-surface-deep p-2 overflow-y-auto" ref={log} onScroll={onScroll}>
-          {channel === 'Direct' && showBlocked && blocked?.blocked.map(person => <div className="chat-thread d-grid border border-line-soft rounded bg-surface p-2" key={person.playerId}>
+        : <div className="chat-log d-grid align-content-start gap-1 border rounded bg-body-tertiary p-2 overflow-y-auto" ref={log} onScroll={onScroll}>
+          {channel === 'Direct' && showBlocked && blocked?.blocked.map(person => <div className="chat-thread d-grid border rounded bg-body-secondary p-2" key={person.playerId}>
             <strong>{person.name}</strong>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => void (async () => {
               try { await api.unblock(person.playerId); window.dispatchEvent(new CustomEvent('street-empire:blocked')) }
@@ -603,35 +600,35 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
           </div>)}
 
           {channel === 'Direct' && !showBlocked && <>
-            {!list && <p className="text-ink-soft fs-sm m-0">Looking.</p>}
-            {list && list.conversations.length === 0 && <p className="text-ink-soft fs-sm m-0">
+            {!list && <p className="text-body-tertiary small m-0">Looking.</p>}
+            {list && list.conversations.length === 0 && <p className="text-body-tertiary small m-0">
               Nobody yet. Use New message to find somebody.
             </p>}
             {list?.conversations.map(row => <button
-              className={`chat-thread d-grid text-start border rounded bg-surface p-2 ${row.unread > 0 ? 'border-gold-deep' : 'border-line-soft'}`}
+              className={`chat-thread d-grid text-start border rounded bg-body-secondary p-2 ${row.unread > 0 ? 'border-primary' : ''}`}
               key={row.id}
               type="button"
               onClick={() => onOpenConversation(row.id)}
             >
-              <strong className="d-flex align-items-center gap-2 text-gold-bright fs-sm">
+              <strong className="d-flex align-items-center gap-2 text-primary small">
                 {row.name}
-                {row.isGroup && <em className="badge rounded-pill border border-gold-deep text-gold fst-normal fs-xs px-1 py-0">{row.others.length + 1}</em>}
-                {row.unread > 0 && <b className="badge rounded-pill surface-count text-white">{row.unread}</b>}
+                {row.isGroup && <em className="badge rounded-pill border border-primary text-primary fst-normal small px-1 py-0">{row.others.length + 1}</em>}
+                {row.unread > 0 && <b className="badge rounded-pill bg-danger text-white">{row.unread}</b>}
               </strong>
-              <span className="min-w-0 text-ink-dim fs-xs text-truncate">{row.lastBody}</span>
-              <small className="text-ink-faint fs-xs">{new Date(row.sentAtUtc).toLocaleDateString([], { day: 'numeric', month: 'short' })}</small>
+              <span className="min-w-0 text-body-secondary small text-truncate">{row.lastBody}</span>
+              <small className="text-body-tertiary small">{new Date(row.sentAtUtc).toLocaleDateString([], { day: 'numeric', month: 'short' })}</small>
             </button>)}
           </>}
 
           {channel !== 'Direct' && <>
-            {!board && <p className="text-ink-soft fs-sm m-0">Listening.</p>}
-            {board && board.messages.length === 0 && <p className="text-ink-soft fs-sm m-0">
+            {!board && <p className="text-body-tertiary small m-0">Listening.</p>}
+            {board && board.messages.length === 0 && <p className="text-body-tertiary small m-0">
               {current?.blockedReason ?? 'Nobody has said anything here yet.'}
             </p>}
-            {board?.messages.map(line => <div className="chat-line d-grid gap-2 align-items-baseline fs-sm" key={line.id}>
-              <strong className={`text-nowrap ${line.yours ? 'text-ink' : 'text-gold-bright'}`}>{line.author}</strong>
-              <span className="text-ink text-break">{line.body}</span>
-              <small className="text-ink-faint fs-xs text-nowrap">{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+            {board?.messages.map(line => <div className="chat-line d-grid gap-2 align-items-baseline small" key={line.id}>
+              <strong className={`text-nowrap ${line.yours ? 'text-body' : 'text-primary'}`}>{line.author}</strong>
+              <span className="text-body text-break">{line.body}</span>
+              <small className="text-body-tertiary small text-nowrap">{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
             </div>)}
           </>}
         </div>}
@@ -650,7 +647,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
         />
         <button className="btn btn-primary btn-sm" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
       </form>}
-      {channel !== 'Direct' && draft.length > max * 0.75 && <small className={`d-block fs-xs text-end ${over ? 'text-bad-soft' : 'text-ink-faint'}`}>
+      {channel !== 'Direct' && draft.length > max * 0.75 && <small className={`d-block small text-end ${over ? 'text-danger' : 'text-body-tertiary'}`}>
         {draft.length} / {max}
       </small>}
     </>}
@@ -718,7 +715,7 @@ function PeoplePicker({ busy, onCancel, onStarted }: {
 
     {chosen.length > 0 && <div className="d-flex flex-wrap gap-1">
       {chosen.map(person => <button
-        className="btn rounded-pill border-gold-deep surface-ember text-gold fs-xs px-2 py-1"
+        className="btn rounded-pill border-primary bg-body-tertiary text-primary small px-2 py-1"
         key={person.playerId}
         type="button"
         onClick={() => toggle(person)}
@@ -736,17 +733,17 @@ function PeoplePicker({ busy, onCancel, onStarted }: {
       onChange={event => setTitle(event.target.value)}
     />}
 
-    <div className="chat-log d-grid align-content-start gap-1 border border-line-soft rounded bg-surface-deep p-2 overflow-y-auto">
-      {term.trim().length > 0 && term.trim().length < 2 && <p className="text-ink-soft fs-sm m-0">Two letters at least.</p>}
-      {term.trim().length >= 2 && found.length === 0 && <p className="text-ink-soft fs-sm m-0">Nobody by that name.</p>}
+    <div className="chat-log d-grid align-content-start gap-1 border rounded bg-body-tertiary p-2 overflow-y-auto">
+      {term.trim().length > 0 && term.trim().length < 2 && <p className="text-body-tertiary small m-0">Two letters at least.</p>}
+      {term.trim().length >= 2 && found.length === 0 && <p className="text-body-tertiary small m-0">Nobody by that name.</p>}
       {found.map(person => <button
-        className={`chat-thread d-grid text-start border rounded bg-surface p-2 ${chosen.some(x => x.playerId === person.playerId) ? 'border-gold-deep' : 'border-line-soft'}`}
+        className={`chat-thread d-grid text-start border rounded bg-body-secondary p-2 ${chosen.some(x => x.playerId === person.playerId) ? 'border-primary' : ''}`}
         key={person.playerId}
         type="button"
         onClick={() => toggle(person)}
       >
-        <strong className="d-flex align-items-center gap-2 text-gold-bright fs-sm">{person.name}</strong>
-        <span className="min-w-0 text-ink-dim fs-xs text-truncate">{person.city}</span>
+        <strong className="d-flex align-items-center gap-2 text-primary small">{person.name}</strong>
+        <span className="min-w-0 text-body-secondary small text-truncate">{person.city}</span>
       </button>)}
     </div>
 
@@ -831,7 +828,7 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
   const style = { right: `calc(1rem + ${(index + 1) * 352}px)` } as React.CSSProperties
 
   return <section
-    className={`chat-dock chat-window position-fixed d-grid border border-bottom-0 rounded-top-3 surface-lit p-2 ${minimised ? '' : 'open gap-2'}`}
+    className={`chat-dock chat-window position-fixed d-grid border border-bottom-0 rounded-top-3 bg-body-secondary p-2 ${minimised ? '' : 'open gap-2'}`}
     style={style}
   >
     <header className="d-flex align-items-center gap-2">
@@ -840,8 +837,8 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
         type="button"
         onClick={() => setMinimised(v => !v)}
       >
-        <strong className="text-gold fs-base">{talk?.name ?? 'Loading'}</strong>
-        {talk?.isGroup && <span className="min-w-0 text-ink-faint fs-xs text-truncate">{talk.others.length + 1} people</span>}
+        <strong className="text-primary">{talk?.name ?? 'Loading'}</strong>
+        {talk?.isGroup && <span className="min-w-0 text-body-tertiary small text-truncate">{talk.others.length + 1} people</span>}
       </button>
       <div className="chat-dock-controls d-flex gap-1">
         <button className="btn btn-secondary p-0 lh-1" type="button" title={minimised ? 'Maximise' : 'Minimise'} onClick={() => setMinimised(v => !v)}>
@@ -852,13 +849,13 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
     </header>
 
     {!minimised && <>
-      <div className="chat-log d-grid align-content-start gap-1 border border-line-soft rounded bg-surface-deep p-2 overflow-y-auto" ref={log} onScroll={onScroll}>
-        {!talk && <p className="text-ink-soft fs-sm m-0">Looking.</p>}
-        {talk && talk.messages.length === 0 && <p className="text-ink-soft fs-sm m-0">Nothing said yet. Say something.</p>}
-        {talk?.messages.map(line => <div className="chat-line d-grid gap-2 align-items-baseline fs-sm" key={line.id}>
-          <strong className={`text-nowrap ${line.yours ? 'text-ink' : 'text-gold-bright'}`}>{line.author}</strong>
-          <span className="text-ink text-break">{line.body}</span>
-          <small className="text-ink-faint fs-xs text-nowrap">{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+      <div className="chat-log d-grid align-content-start gap-1 border rounded bg-body-tertiary p-2 overflow-y-auto" ref={log} onScroll={onScroll}>
+        {!talk && <p className="text-body-tertiary small m-0">Looking.</p>}
+        {talk && talk.messages.length === 0 && <p className="text-body-tertiary small m-0">Nothing said yet. Say something.</p>}
+        {talk?.messages.map(line => <div className="chat-line d-grid gap-2 align-items-baseline small" key={line.id}>
+          <strong className={`text-nowrap ${line.yours ? 'text-body' : 'text-primary'}`}>{line.author}</strong>
+          <span className="text-body text-break">{line.body}</span>
+          <small className="text-body-tertiary small text-nowrap">{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
         </div>)}
       </div>
 
@@ -1088,16 +1085,16 @@ function App() {
   }
 
   if (!dashboard) {
-    return <main className="auth-shell d-grid place-items-center p-6">
-      <section className="auth-card card surface-panel p-7">
-        <div className="brand-mark d-grid place-items-center border border-gold-deep text-gold fw-bolder mb-4">SE</div>
+    return <main className="auth-shell d-grid place-items-center p-4">
+      <section className="auth-card card p-4">
+        <div className="brand-mark d-grid place-items-center border border-primary text-primary fw-bolder mb-3">SE</div>
         <h1>Street Empire</h1>
-        <p className="text-ink-dim">Old-school browser strategy, rebuilt.</p>
+        <p className="text-body-secondary">Old-school browser strategy, rebuilt.</p>
         {/*
           Bootstrap's pill nav rather than the hand-rolled pair of buttons. It is the same two
           controls, and it brings the roles and the active state with it.
         */}
-        <ul className="nav nav-pills gap-2 my-6" role="tablist">
+        <ul className="nav nav-pills gap-2 my-4" role="tablist">
           <li className="nav-item" role="presentation">
             <button
               className={`nav-link px-3 py-2 ${authMode === 'login' ? 'active' : ''}`}
@@ -1219,11 +1216,11 @@ function App() {
       onPick={setActivePage}
       onLogout={() => void act(api.logout)}
     />
-    <aside className="app-nav d-none d-md-grid position-sticky top-0 gap-4 surface-rail border-end">
-      <div className="nav-brand d-grid gap-hair border-bottom p-1 pb-3">
-        <span className="d-grid place-items-center text-dark bg-gold fw-bolder rounded">SE</span>
-        <strong className="fs-base">Street Empire</strong>
-        <small className="text-ink-faint">0.2.5</small>
+    <aside className="app-nav d-none d-md-grid position-sticky top-0 gap-3 bg-body-tertiary border-end">
+      <div className="nav-brand d-grid gap-1 border-bottom p-1 pb-3">
+        <span className="d-grid place-items-center text-dark bg-primary fw-bolder rounded">SE</span>
+        <strong className="">Street Empire</strong>
+        <small className="text-body-tertiary">0.2.5</small>
       </div>
       <nav className="d-grid gap-1 align-content-start">
         {visiblePages.map(page => <button
@@ -1235,23 +1232,23 @@ function App() {
           title={pageMeta[page].label}
           onClick={() => setActivePage(page)}
         >
-          <span className="d-grid place-items-center border rounded fs-xs fw-bolder text-teal-soft">{pageMeta[page].short}</span>
+          <span className="d-grid place-items-center border rounded small fw-bolder text-info-emphasis">{pageMeta[page].short}</span>
           <strong className="text-truncate">{pageMeta[page].label}</strong>
         </button>)}
       </nav>
-      <button className="btn btn-logout w-100" onClick={() => void act(api.logout)}>Logout</button>
+      <button className="btn btn-outline-danger w-100" onClick={() => void act(api.logout)}>Logout</button>
     </aside>
 
     <section className="app-main min-w-0 mx-auto">
-      <header className="command-header d-flex justify-content-between align-items-end gap-4 mb-4">
+      <header className="command-header d-flex justify-content-between align-items-end gap-3 mb-3">
         <div className="min-w-0 flex-fill">
           <span className="eyebrow d-block text-truncate">{pageMeta[activePage].kicker}</span>
           <h1 className="mt-1 text-truncate">{pageMeta[activePage].label}</h1>
         </div>
         <div className="d-flex align-items-stretch gap-2 flex-shrink-0">
           <AlertBell unread={dashboard.unreadDefenceAlerts} onRead={() => void refresh()} />
-          <div className="player-plate tnum d-grid justify-items-end gap-hair border rounded p-3">
-            <strong className="text-gold">{dashboard.name}</strong>
+          <div className="player-plate tnum d-grid justify-items-end gap-1 border rounded p-3">
+            <strong className="text-primary">{dashboard.name}</strong>
             <span className="eyebrow text-end">{dashboard.city} / Rank #{dashboard.rank}</span>
           </div>
         </div>
@@ -1270,10 +1267,10 @@ function App() {
         {lastBreakdown && dashboard.isAdmin && <div className="alert alert-info tnum d-flex align-items-center justify-content-between gap-3">
           <div className="min-w-0 d-flex flex-wrap gap-1">
             {Object.entries(lastBreakdown).filter(([, value]) => value !== 0 && value !== null).slice(0, 18).map(([key, value]) =>
-              <span className="d-grid fs-xs" key={key}><strong className="eyebrow">{formatBreakdownKey(key)}</strong>{formatBreakdownValue(key, value)}</span>
+              <span className="d-grid small" key={key}><strong className="eyebrow">{formatBreakdownKey(key)}</strong>{formatBreakdownValue(key, value)}</span>
             )}
           </div>
-          <button className="dismiss btn flex-shrink-0 d-grid place-items-center p-0 fw-bolder lh-tight" type="button" aria-label="Close breakdown" onClick={() => setLastBreakdown(null)}>x</button>
+          <button className="btn-close flex-shrink-0" type="button" aria-label="Close breakdown" onClick={() => setLastBreakdown(null)} />
         </div>}
       </section>
 
@@ -1361,15 +1358,15 @@ function OverviewPage(ctx: PageContext) {
   const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
     <div className="d-grid gap-3 align-items-start">
-      <section className="card surface-panel surface-hero p-5 hero-panel d-grid align-content-between">
+      <section className="card p-3 hero-panel d-grid align-content-between">
         <span className="eyebrow">Empire Snapshot</span>
-        <h2 className="fs-hero my-2 mb-4">{dashboard.name}</h2>
+        <h2 className="fs-1 my-2 mb-3">{dashboard.name}</h2>
         <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
           <AdminMetric label="Net worth" value={money.format(dashboard.netWorth)} />
           <AdminMetric label="Crew" value={number.format(totalCrew)} />
           <AdminMetric label="Turns" value={`${dashboard.turns}/${dashboard.maxTurns}`} />
         </div>
-        <div className="d-flex flex-wrap gap-2 mt-6">
+        <div className="d-flex flex-wrap gap-2 mt-4">
           <button className="btn btn-primary" onClick={() => setActivePage('street')}>Work Streets</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('crew')}>Manage Crew</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('market')}>Open Market</button>
@@ -1384,7 +1381,7 @@ function OverviewPage(ctx: PageContext) {
     </div>
 
     <div className="d-grid gap-3 align-items-start">
-      <section className="card surface-panel p-5">
+      <section className="card p-3">
         <div className="panel-title"><h2>Readiness</h2><span>Combat prep</span></div>
         <StatusRow
           label="Hoe morale"
@@ -1407,12 +1404,12 @@ function OverviewPage(ctx: PageContext) {
       </section>
 
       {/* Directly under readiness, because the last two readiness rows are counts of these same piles. */}
-      <section className="card surface-panel p-5">
+      <section className="card p-3">
         <div className="panel-title"><h2>Inventory</h2><span>On hand</span></div>
         <MiniInventory dashboard={dashboard} />
       </section>
 
-      <section className="card surface-panel p-5">
+      <section className="card p-3">
         <StandingsPanel dashboard={dashboard} leaders={leaders} cityLeaders={ctx.cityLeaders} limit={8} />
       </section>
     </div>
@@ -1426,12 +1423,12 @@ function StreetPage(ctx: PageContext) {
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
   const restock = restockEstimate(dashboard, streetTurns)
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
-    <section className="card surface-panel p-5 gcol-full" data-tour="street-action">
+    <section className="card p-3 gcol-full" data-tour="street-action">
       <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
       <p>Your hoes earn, and their cut comes off the top before anything reaches your pocket. A shift also turns up new crew and whatever is lying about.</p>
-      {pendingOutgoingAttack && <div className="d-flex justify-content-between align-items-center gap-3 border border-gold-deep rounded surface-ember px-3 py-2 mt-4">
-        <strong className="text-gold-bright">Crew is out</strong>
-        <span className="text-ink-dim fs-base text-end">Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
+      {pendingOutgoingAttack && <div className="d-flex justify-content-between align-items-center gap-3 border border-primary rounded bg-body-tertiary px-3 py-2 mt-3">
+        <strong className="text-primary">Crew is out</strong>
+        <span className="text-body-secondary text-end">Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
       </div>}
       <DistrictPicker districts={dashboard.districts} selected={district} onSelect={setDistrict} />
       <StorageSupplyNotice dashboard={dashboard} />
@@ -1450,23 +1447,23 @@ function StreetPage(ctx: PageContext) {
         <button className="btn btn-secondary" disabled={busy || hoeCut < 10 || hoeCut > 80 || hoeCut === dashboard.hoeCutPercent} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</button>
         <button className="btn btn-primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
       </div>
-      <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-gold-deep surface-ember' : 'bg-surface-deep'}`}>
-        <input className="form-check-input flex-shrink-0 mt-hair" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
-        <span className="d-grid gap-hair">
-          <strong className="text-ink fs-base">Auto-buy upkeep before working</strong>
-          <small className={`fs-sm ${autoBuySupplies ? 'text-gold-bright' : 'text-ink-dim'}`}>{restockLabel(restock, dashboard.cash)}</small>
+      <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>
+        <input className="form-check-input flex-shrink-0 mt-1" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
+        <span className="d-grid gap-1">
+          <strong className="text-body">Auto-buy upkeep before working</strong>
+          <small className={`small ${autoBuySupplies ? 'text-primary' : 'text-body-secondary'}`}>{restockLabel(restock, dashboard.cash)}</small>
         </span>
       </label>
-      <div className="d-flex flex-wrap gap-2 mt-4">
-        <span className="border rounded-pill bg-surface-deep text-ink-soft px-2 py-1 fs-sm">1 pimp manages 10 hoes</span>
-        <span className="border rounded-pill bg-surface-deep text-ink-soft px-2 py-1 fs-sm">Condoms support hoes</span>
-        <span className="border rounded-pill bg-surface-deep text-ink-soft px-2 py-1 fs-sm">Beer + weapons support thugs</span>
+      <div className="d-flex flex-wrap gap-2 mt-3">
+        <span className="border rounded-pill bg-body-tertiary text-body-tertiary px-2 py-1 small">1 pimp manages 10 hoes</span>
+        <span className="border rounded-pill bg-body-tertiary text-body-tertiary px-2 py-1 small">Condoms support hoes</span>
+        <span className="border rounded-pill bg-body-tertiary text-body-tertiary px-2 py-1 small">Beer + weapons support thugs</span>
       </div>
     </section>
 
     <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} />
 
-    <section className="card surface-panel p-5">
+    <section className="card p-3">
       <div className="panel-title"><h2>Activity</h2><span>Last 12 actions</span></div>
       <ActivityList entries={dashboard.recentActivity} />
     </section>
@@ -1478,7 +1475,7 @@ function CrewPage(ctx: PageContext) {
   const combatCrew = dashboard.combatCrew
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start">
     <ShrinePanel busy={busy} act={act} />
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
       <StorageSupplyNotice dashboard={dashboard} />
       <div className="d-grid gtc-1 gtc-md-3 gap-2">
@@ -1495,7 +1492,7 @@ function CrewPage(ctx: PageContext) {
       </div>
     </section>
 
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Crew Management</h2><span>Hire + fire</span></div>
       <div className="d-grid">
         <CrewManageRow
@@ -1561,10 +1558,10 @@ function HideoutPage(ctx: PageContext) {
   const { dashboard, busy, act } = ctx
   const hideout = dashboard.hideout
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>{hideout.tierName}</h2><span>Tier {hideout.tier}</span></div>
       <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
-      <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-4">
+      <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-3">
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
         <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
         <CapacityBar label="Thugs" used={dashboard.thugs} cap={hideout.maxThugs} />
@@ -1584,9 +1581,9 @@ function HideoutPage(ctx: PageContext) {
 
     <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
 
-    <section className="card surface-panel p-5 gcol-full" data-tour="rooms">
+    <section className="card p-3 gcol-full" data-tour="rooms">
       <div className="panel-title"><h2>Rooms</h2><span>Paid from the bank first</span></div>
-      <div className="d-grid gap-2 mt-4">
+      <div className="d-grid gap-2 mt-3">
         <RoomRow
           name="Storage Room"
           level={hideout.storageLevel}
@@ -1650,7 +1647,7 @@ function HideoutPage(ctx: PageContext) {
           onUpgrade={() => void act(() => api.upgradeHideout('intelligence'))}
         />
       </div>
-      {(hideout.weedLabLevel > 0 || hideout.cokeLabLevel > 0) && <p className="text-ink-soft fs-sm mt-3">
+      {(hideout.weedLabLevel > 0 || hideout.cokeLabLevel > 0) && <p className="text-body-tertiary small mt-3">
         Labs keep running while you are away, up to {hideout.maxOfflineProductionHours} hours of work at a time,
         and stop at whatever your storage room holds. What they make is contraband, so a full lab and a
         full store draw heat whether you are here or not.
@@ -1704,7 +1701,7 @@ function MulePage(ctx: PageContext) {
     return () => { stale = true }
   }, [city, good, hoes, cash])
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card surface-panel p-5 gcol-full">
+  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Mules</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
@@ -1722,7 +1719,7 @@ function MulePage(ctx: PageContext) {
   }
 
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>Mule Runs</h2>
         <span>{board.runsOut} of {board.concurrentRunCap} out</span>
@@ -1739,10 +1736,10 @@ function MulePage(ctx: PageContext) {
       </div>}
     </section>
 
-    {board.concurrentRunCap > 0 && <section className="card surface-panel p-5 gcol-full">
+    {board.concurrentRunCap > 0 && <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Plan a run</h2><span>Prices are what they cost there</span></div>
-      <div className="d-grid gtc-fill-150 gap-2 mb-4">
-        <label className="field fs-sm">Town<select className="form-select" value={city} onChange={e => setCity(e.target.value)}>
+      <div className="d-grid gtc-fill-150 gap-2 mb-3">
+        <label className="field small">Town<select className="form-select" value={city} onChange={e => setCity(e.target.value)}>
           {board.destinations.map(d => <option key={d.city} value={d.city}>
             {d.city} - {d.flightMinutes}m each way, {d.risk.toLowerCase()} risk
           </option>)}
@@ -1771,7 +1768,7 @@ function MulePage(ctx: PageContext) {
         </select></label>
       </div>
 
-      {quote && <div className="border rounded surface-lit p-3">
+      {quote && <div className="border rounded bg-body-secondary p-3">
         <div className="tnum d-grid gtc-fill-130 gap-2 mb-3">
           <MuleFigure label="Buys there" value={`${money.format(quote.unitPriceThere)} each`} />
           <MuleFigure label="Sells here" value={`${money.format(quote.homePrice)} each`} tone={spread > 0 ? 'good' : 'bad'} />
@@ -1797,7 +1794,7 @@ function MulePage(ctx: PageContext) {
               ? `A clean run still loses ${money.format(-quote.projectedProfit)}. The ${money.format(quote.fare + quote.upkeep)} in fares and keep is more than ${number.format(quote.unitsAffordable)} ${quote.good} makes at ${money.format(spread)} a unit. Send more hoes, or find a wider spread.`
               : `Clean, this run comes home ${money.format(quote.projectedProfit)} up: ${number.format(quote.unitsAffordable)} ${quote.good} worth ${money.format(quote.projectedGross)}, less ${money.format(quote.fare + quote.upkeep + quote.projectedSpend)} spent getting it.`}
         </p>
-        {unspendable > 0 && <p className="text-ink-soft fs-sm mt-3">
+        {unspendable > 0 && <p className="text-body-tertiary small mt-3">
           {money.format(unspendable)} of what you send cannot be spent: {quote.hoes} hoe(s) only carry {number.format(quote.capacity)}.
           It comes home with them, unless they are stopped, in which case it is taken too.
         </p>}
@@ -1811,9 +1808,9 @@ function MulePage(ctx: PageContext) {
       </div>}
     </section>}
 
-    {out.length > 0 && <section className="card surface-panel p-5 gcol-full">
+    {out.length > 0 && <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>In the air</h2><span>{out.length} out</span></div>
-      <div className="d-grid gap-2 mt-4">
+      <div className="d-grid gap-2 mt-3">
         {out.map(run => <div className="room-row" key={run.id}>
           <div className="room-copy">
             <strong>{run.pimpName} to {run.destinationCity}</strong>
@@ -1829,9 +1826,9 @@ function MulePage(ctx: PageContext) {
       </div>
     </section>}
 
-    {home.length > 0 && <section className="card surface-panel p-5 gcol-full">
+    {home.length > 0 && <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Recently home</h2><span>Last 12 hours</span></div>
-      <div className="d-grid gap-2 mt-4">
+      <div className="d-grid gap-2 mt-3">
         {home.map(run => <div className={`room-row ${run.outcome === 'Delivered' ? '' : 'border-start-thick border-start-danger'}`} key={run.id}>
           <div className="room-copy">
             <strong>{run.pimpName} from {run.destinationCity}</strong>
@@ -1845,10 +1842,10 @@ function MulePage(ctx: PageContext) {
 }
 
 function MuleFigure({ label, value, tone }: { label: string, value: string, tone?: 'good' | 'bad' }) {
-  const value_tone = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : 'text-ink'
-  return <div className="d-grid gap-hair min-w-0">
-    <span className="eyebrow tracking-none">{label}</span>
-    <strong className={`fs-md text-truncate ${value_tone}`}>{value}</strong>
+  const value_tone = tone === 'good' ? 'text-success' : tone === 'bad' ? 'text-danger' : 'text-body'
+  return <div className="d-grid gap-1 min-w-0">
+    <span className="eyebrow">{label}</span>
+    <strong className={`fs-6 text-truncate ${value_tone}`}>{value}</strong>
   </div>
 }
 
@@ -1856,20 +1853,23 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
   const percent = cap <= 0 ? 0 : Math.min(100, (used / cap) * 100)
   const over = used > cap
   const format = (value: number) => asMoney ? money.format(value) : number.format(value)
-  const state = over ? 'over' : percent >= 90 ? 'near' : ''
-  return <div className={`capacity d-grid gap-1 border rounded bg-surface-deep px-3 py-2 ${state}`}>
+  // A room filling up is a warning and a room overflowing is a problem, so the
+  // bar says which by colour rather than only by length.
+  const edge = over ? 'border-danger' : percent >= 90 ? 'border-warning' : ''
+  const fill = over ? 'bg-danger' : percent >= 90 ? 'bg-warning' : ''
+  return <div className={`d-grid gap-1 border rounded bg-body-tertiary px-3 py-2 ${edge}`}>
     <div className="d-flex justify-content-between align-items-baseline gap-2">
       <span className="eyebrow">{label}</span>
-      <strong className="text-ink fs-base">{format(used)} / {format(cap)}</strong>
+      <strong className="text-body">{format(used)} / {format(cap)}</strong>
     </div>
     {/*
       Bootstrap's progress bar, which is exactly this: a track, a fill, and a value the assistive
       layer can read out. The width still comes from an inline style, because it is data.
     */}
     <div className="progress" role="progressbar" aria-label={`${label} capacity`} aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
-      <div className="progress-bar" style={{ width: `${Math.max(2, percent)}%` }} />
+      <div className={`progress-bar ${fill}`} style={{ width: `${Math.max(2, percent)}%` }} />
     </div>
-    {over && <small className="text-gold-bright fs-xs">More than the room holds. Nothing is lost, but nothing more comes in until it goes down.</small>}
+    {over && <small className="text-danger">More than the room holds. Nothing is lost, but nothing more comes in until it goes down.</small>}
   </div>
 }
 
@@ -1888,13 +1888,13 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
   const workshopLevel = stations.find(x => x.key === 'workshop')?.level ?? 0
   const makeable = dashboard.weaponRack.filter(x => x.forgeCost !== null && (x.minWorkshopLevel ?? 99) <= workshopLevel)
 
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Production</h2><span>Turns and materials into goods</span></div>
     <p>
       What you make here is what the market has to trade. Each station is priced against the thing it
       replaces, so building one only pays while its output costs less than buying the same thing.
     </p>
-    <div className="d-grid gap-2 mt-4">
+    <div className="d-grid gap-2 mt-3">
       {stations.map(station => {
         const runTurns = turns[station.key] ?? 5
         const built = station.level > 0
@@ -1903,18 +1903,18 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
           key={station.key}
         >
           <div className="room-copy">
-            <strong className="text-ink">{station.name}{station.heatPerUnit > 0 && <small className="ms-1 eyebrow text-bad-soft"> contraband</small>}</strong>
-            <span className="text-ink-dim fs-sm">
+            <strong className="text-body">{station.name}{station.heatPerUnit > 0 && <small className="ms-1 eyebrow text-danger"> contraband</small>}</strong>
+            <span className="text-body-secondary small">
               {built
                 ? `${number.format(station.perTurn)} ${station.good} a turn at ${money.format(station.costPerUnit)} each, against ${money.format(station.comparePrice)} for ${station.compareLabel}`
                 : `Not built. Makes ${station.good} for less than ${money.format(station.comparePrice)}, the price of ${station.compareLabel}.`}
             </span>
-            {station.heatPerUnit > 0 && built && <small className="text-warning-emphasis fs-xs">
+            {station.heatPerUnit > 0 && built && <small className="text-warning-emphasis small">
               Each one held adds {station.heatPerUnit} heat. Make and sell rather than stockpile.
             </small>}
-            {station.upgrade?.tierLocked && <small className="text-warning-emphasis fs-xs">Level {station.upgrade.level} needs the {station.upgrade.requiredTierName} or better.</small>}
+            {station.upgrade?.tierLocked && <small className="text-warning-emphasis small">Level {station.upgrade.level} needs the {station.upgrade.requiredTierName} or better.</small>}
           </div>
-          <em className="eyebrow fst-normal fs-sm">{built ? `Level ${station.level}` : 'Not built'}</em>
+          <em className="eyebrow fst-normal small">{built ? `Level ${station.level}` : 'Not built'}</em>
           <div className="d-flex flex-wrap align-items-end gap-1 mt-1">
             {built && <>
               <label className="field">Turns<input className="form-control"
@@ -1995,8 +1995,8 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
         ? 'Your store is full of coke already.'
         : null
 
-  return <div className="cut-panel mt-4 border border-start-thick border-start-danger rounded p-3 surface-lit">
-    <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2 cut-head">
+  return <div className="mt-3 border border-start-thick border-start-danger rounded p-3 bg-body-secondary">
+    <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
       <strong>Step on it</strong>
       <span>
         {number.format(dashboard.cut)} cut, {number.format(dashboard.coke)} coke at {dashboard.cokePurityPercent}% pure,
@@ -2010,8 +2010,8 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
       notice than anything else you can hold.
     </p>
     {blocked
-      ? <p className="text-ink-soft fs-sm mt-3">{blocked}</p>
-      : <p className="text-ink-soft fs-sm mt-3">
+      ? <p className="text-body-tertiary small mt-3">{blocked}</p>
+      : <p className="text-body-tertiary small mt-3">
           {number.format(batch)} coke from {number.format(batch)} cut, in {turnsNeeded} turn{turnsNeeded === 1 ? '' : 's'}.
           {' '}Purity {dashboard.cokePurityPercent}% to {afterPurity}%, so a unit drops from{' '}
           {money.format(dashboard.cokeSellPriceAtPurity)} to about {money.format(afterPrice)}.
@@ -2059,7 +2059,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
     return () => window.clearInterval(timer)
   }, [building?.completesAtUtc])
 
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title">
       <h2>The Building</h2>
       {/* The one number that used to be missing. A hideout counted for nothing on the board, so the
@@ -2068,7 +2068,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
       <span>Worth {money.format(hideout.value)} on the board</span>
     </div>
     {building
-      ? <div className="d-grid gap-1 mt-4 border rounded px-3 py-3 build-progress">
+      ? <div className="d-grid gap-1 mt-3 border border-warning rounded px-3 py-3">
         <strong>Building the {building.name}</strong>
         <span>Ready in {timeUntil(building.completesAtUtc)}. Your crew caps stay where they are until it lands.</span>
       </div>
@@ -2127,7 +2127,7 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
       {/* What the upgrade actually returns. The later levels are meant to be a poor deal - somewhere
           for money to go once there is nothing left to buy - and saying so is the difference between
           a trophy and a room that quietly took a fortune while looking like an investment. */}
-      {!locked && upgrade?.paybackDays != null && <small className={upgrade.paybackDays > 30 ? 'text-gold-bright' : 'text-ink-dim'}>
+      {!locked && upgrade?.paybackDays != null && <small className={upgrade.paybackDays > 30 ? 'text-primary' : 'text-body-secondary'}>
         {upgrade.paybackDays > 30
           ? `Pays for itself in ${upgrade.paybackDays} days. A trophy more than an investment.`
           : `Pays for itself in ${upgrade.paybackDays} days.`}
@@ -2162,7 +2162,7 @@ function TerritoryPage(ctx: PageContext) {
     await load()
   }
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card surface-panel p-5 gcol-full">
+  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Territory</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
@@ -2177,7 +2177,7 @@ function TerritoryPage(ctx: PageContext) {
     && !board.territories.some(t => t.id !== id && t.heldByYou && t.garrisonPimpName === p.name))
 
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>{board.city}</h2>
         <span>{board.held} of {board.holdingCap} held</span>
@@ -2189,39 +2189,39 @@ function TerritoryPage(ctx: PageContext) {
         Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
       </p>
       {anyEffect
-        ? <div className="d-flex flex-wrap gap-2 mt-4">
-          {effects.streetIncomePercent > 0 && <span className="rule-chip">+{effects.streetIncomePercent}% street income</span>}
-          {effects.productionYieldPercent > 0 && <span className="rule-chip">+{effects.productionYieldPercent}% production</span>}
-          {effects.moraleRecoveryPercent > 0 && <span className="rule-chip">+{effects.moraleRecoveryPercent}% morale recovery</span>}
-          {effects.lootPercent > 0 && <span className="rule-chip">+{effects.lootPercent}% haul</span>}
+        ? <div className="d-flex flex-wrap gap-2 mt-3">
+          {effects.streetIncomePercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.streetIncomePercent}% street income</span>}
+          {effects.productionYieldPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.productionYieldPercent}% production</span>}
+          {effects.moraleRecoveryPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.moraleRecoveryPercent}% morale recovery</span>}
+          {effects.lootPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.lootPercent}% haul</span>}
         </div>
-        : <p className="text-ink-soft fs-sm mt-3">You hold no ground yet, so nothing out there is working for you.</p>}
+        : <p className="text-body-tertiary small mt-3">You hold no ground yet, so nothing out there is working for you.</p>}
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
     </section>
 
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The Map</h2><span>{board.territories.length} pieces in {board.city}</span></div>
-      <div className="d-grid gtc-fill-268 gap-2 mt-4">
+      <div className="d-grid gtc-fill-268 gap-2 mt-3">
         {board.territories.map(t => <div
-          className={`territory-card d-grid gap-1 align-content-start border border-line-soft rounded bg-surface-deep p-3 border-start-thick ${t.heldByYou ? 'mine' : t.holderId ? 'taken' : 'open'}`}
+          className={`d-grid gap-1 align-content-start border rounded bg-body-tertiary p-3 border-start-thick ${t.heldByYou ? 'border-start-success' : t.holderId ? 'border-start-danger' : 'border-start-warning'}`}
           key={t.id}
         >
           <div className="d-flex justify-content-between align-items-baseline gap-2">
-            <strong className="text-ink fs-base">{t.name}</strong>
+            <strong className="text-body">{t.name}</strong>
             <em className="eyebrow fst-normal">{t.typeLabel}</em>
           </div>
-          <span className="text-warning-emphasis fs-sm">{t.effect}</span>
-          <span className="text-ink-dim fs-sm">
+          <span className="text-warning-emphasis small">{t.effect}</span>
+          <span className="text-body-secondary small">
             {t.heldByYou ? `Yours, ${number.format(t.garrisonThugs)} thug(s) on it`
               : t.holderId ? `${t.holderName} holds it with ${number.format(t.garrisonThugs)} thug(s)`
                 : 'Nobody holds this'}
             {' / '}{t.city}
           </span>
-          {t.garrisonPimpName && <span className="text-success-emphasis fs-sm">
+          {t.garrisonPimpName && <span className="text-success-emphasis small">
             Run by {t.garrisonPimpName}{t.garrisonBonusPercent > 0 ? ` (+${t.garrisonBonusPercent}% defence)` : ''}
           </span>}
-          {t.isProtected && t.protectedUntilUtc && <small className="text-ink-faint fs-xs">Settled for {timeUntil(t.protectedUntilUtc)}</small>}
-          {t.blockedReason && <small className="text-ink-faint fs-xs">{t.blockedReason}</small>}
+          {t.isProtected && t.protectedUntilUtc && <small className="text-body-tertiary small">Settled for {timeUntil(t.protectedUntilUtc)}</small>}
+          {t.blockedReason && <small className="text-body-tertiary small">{t.blockedReason}</small>}
           <div className="territory-actions d-flex flex-wrap align-items-end gap-1 mt-1">
             <label className="field">Thugs<input className="form-control"
               type="number"
@@ -2275,13 +2275,13 @@ function TradingPanel(ctx: PageContext) {
   // Seeded from what the game itself pays, so the first listing is not a guess in the dark.
   useEffect(() => { if (good && price === 0) setPrice(good.referencePrice) }, [good?.item])
 
-  if (!board) return <section className="card surface-panel p-5 gcol-full">
+  if (!board) return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Market</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section>
 
   return <>
-    <section className="card surface-panel p-5 gcol-full" data-tour="market-trade">
+    <section className="card p-3 gcol-full" data-tour="market-trade">
       <div className="panel-title">
         <h2>Market</h2>
         <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
@@ -2305,26 +2305,26 @@ function TradingPanel(ctx: PageContext) {
           List for {money.format(qty * price)}
         </button>
       </div>
-      {good && <p className="text-ink-soft fs-sm mt-3">
+      {good && <p className="text-body-tertiary small mt-3">
         The game pays {money.format(good.referencePrice)} for {good.label.toLowerCase()}.
         {good.bestPrice ? ` Cheapest on the board right now is ${money.format(good.bestPrice)}.` : ' Nothing listed yet.'}
         {' '}You hold {number.format(good.held)} with room for {number.format(good.room)} more.
       </p>}
     </section>
 
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>On the Board</h2><span>{board.listings.length} listings</span></div>
-      {board.listings.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">Nothing for sale. Be the first.</p>}
-      {board.listings.length > 0 && <div className="table-responsive mt-4"><table className="table table-sm table-hover align-middle game-table">
+      {board.listings.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing for sale. Be the first.</p>}
+      {board.listings.length > 0 && <div className="table-responsive mt-3"><table className="table table-sm table-hover align-middle game-table">
         <thead><tr><th>Good</th><th>Left</th><th>Each</th><th>vs game</th><th>Seller</th><th /></tr></thead>
         <tbody>
-          {board.listings.map(l => <tr key={l.id} className={l.yours ? 'paused' : ''}>
+          {board.listings.map(l => <tr key={l.id} className={l.yours ? 'text-body-tertiary fst-italic' : ''}>
             <td>{l.itemLabel}</td>
             <td>{number.format(l.quantity)} of {number.format(l.originalQuantity)}</td>
             <td>{money.format(l.pricePerUnit)}</td>
             <td>{l.referencePrice > 0 ? `${Math.round((l.pricePerUnit / l.referencePrice - 1) * 100)}%` : '-'}</td>
             <td>{l.yours ? 'You' : l.sellerName}</td>
-            <td className="admin-table-actions">
+            <td className="d-flex gap-1">
               {l.yours
                 ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.cancelListing(l.id))}>Pull it</button>
                 : <>
@@ -2349,9 +2349,9 @@ function MarketPage(ctx: PageContext) {
   const { dashboard, busy, productionTurns, bankAmount, storeQty, sellQty, setProductionTurns, setBankAmount, setStoreQty, setSellQty, act } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
     <ContractsPanel dashboard={dashboard} busy={busy} act={act} />
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
-      <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-5 gap-2 mt-4">
+      <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-5 gap-2 mt-3">
         <InventoryCard name="Condoms" count={dashboard.condoms} note="Hoe upkeep" />
         <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
         {/* One card a gun. A single "weapons" number would hide the only thing that matters about
@@ -2379,28 +2379,28 @@ function MarketPage(ctx: PageContext) {
 
     <TradingPanel {...ctx} />
 
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Street Store</h2><span>Cash on hand only</span></div>
-      <div className="d-grid gtc-1 gtc-xl-3 gap-2 mt-4">
+      <div className="d-grid gtc-1 gtc-xl-3 gap-2 mt-3">
         {dashboard.store.map(item => {
           const qty = storeQty[item.key] ?? 1
-          return <div className="store-row tnum d-grid gtc-1 gap-3 align-content-between border rounded surface-sunk p-4" key={item.key}>
+          return <div className="store-row tnum d-grid gtc-1 gap-3 align-content-between border rounded bg-body-tertiary p-3" key={item.key}>
             <div className="min-w-0 d-grid align-content-start gap-2">
               <div className="d-flex flex-wrap align-items-center gap-2">
-                <strong className="text-ink fs-lg">{item.name}</strong>
-                <span className="eyebrow border rounded-pill text-teal-soft px-2 py-1">{item.category}</span>
+                <strong className="text-body fs-5">{item.name}</strong>
+                <span className="eyebrow border rounded-pill text-info-emphasis px-2 py-1">{item.category}</span>
               </div>
-              <p className="m-0 text-ink-dim fs-base">{item.description}</p>
+              <p className="m-0 text-body-secondary">{item.description}</p>
             </div>
-            <div className="d-grid gtc-2 gap-2 align-items-end border rounded bg-surface-deep p-2">
+            <div className="d-grid gtc-2 gap-2 align-items-end border rounded bg-body-tertiary p-2">
               <div className="d-grid gap-1">
                 <span className="eyebrow">Unit</span>
-                <strong className="text-gold fs-md">{money.format(item.price)}</strong>
+                <strong className="text-primary fs-6">{money.format(item.price)}</strong>
               </div>
-              <label className="field fs-sm">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
+              <label className="field small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
               <div className="d-grid gap-1">
                 <span className="eyebrow">Total</span>
-                <strong className="text-gold fs-md">{money.format(qty * item.price)}</strong>
+                <strong className="text-primary fs-6">{money.format(qty * item.price)}</strong>
               </div>
               <button className="btn btn-primary btn-sm w-100" disabled={busy || qty < 1 || dashboard.cash < qty * item.price} onClick={() => void act(() => api.buyStoreItem(item.key, qty))}>Buy</button>
               {/* Rides are the only store item with a resale price, so the sell button only exists here. */}
@@ -2417,9 +2417,9 @@ function MarketPage(ctx: PageContext) {
 
     <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" />
 
-    <section className="card surface-panel p-5 market-production">
+    <section className="card p-3 market-production">
       <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
-      <div className="d-grid gtc-1 gtc-md-1-field gap-3 align-items-end mb-4">
+      <div className="d-grid gtc-1 gtc-md-1-field gap-3 align-items-end mb-3">
         <p className="m-0">Cash on hand buys stock, and the town pays its own price for it.</p>
         <label className="field">Turns<input className="form-control" type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
       </div>
@@ -2456,11 +2456,11 @@ function TravelPanel({ markets, turns, travel, busy, act }: { markets: CityMarke
   // The city you stand in leads the list: every other row's price is read as a move against it, so
   // the baseline has to sit where the eye starts rather than wherever the alphabet dropped it.
   const ordered = here ? [here, ...markets.filter(x => !x.current)] : markets
-  return <section className="card surface-panel p-5 travel-panel">
+  return <section className="card p-3 travel-panel">
     {/* The stake is on the title line because it is the number that decides whether to bank first. */}
     <div className="panel-title"><h2>Travel</h2><span>{turns.toLocaleString()} turns, carrying {money.format(travel.carriedValue)}</span></div>
-    {travel.blockedReason !== null && <p className="travel-note border-start-thick border-start-danger ps-2 text-danger-emphasis fs-base">{travel.blockedReason}</p>}
-    {travel.carriedValue > 0 && <p className="travel-note text-ink-soft fs-sm">A stop takes {travel.seizureMinPercent}–{travel.seizureMaxPercent}% of what you carry.</p>}
+    {travel.blockedReason !== null && <p className="travel-note border-start-thick border-start-danger ps-2 text-danger-emphasis">{travel.blockedReason}</p>}
+    {travel.carriedValue > 0 && <p className="travel-note text-body-tertiary small">A stop takes {travel.seizureMinPercent}–{travel.seizureMaxPercent}% of what you carry.</p>}
     <div className="tnum d-grid gap-1">
       {/* Column headings, so the prices are not made to label themselves in every row. */}
       <div className="city-market head">
@@ -2468,16 +2468,16 @@ function TravelPanel({ markets, turns, travel, busy, act }: { markets: CityMarke
       </div>
       {ordered.map(city => {
         const shortfall = city.travelTurns - turns
-        return <div className={`city-market border rounded px-3 py-2 ${city.current ? 'current border-gold-deep' : 'bg-surface-deep'}`} key={city.city}>
-          <div className="min-w-0 d-grid gap-hair">
-            <strong className="text-ink fs-base">{city.city}</strong>
-            <span className={`eyebrow ${city.current ? 'text-gold-bright' : ''}`}>{city.current ? 'Current city' : riskLine(city, travel)}</span>
+        return <div className={`city-market border rounded px-3 py-2 ${city.current ? 'current border-primary' : 'bg-body-tertiary'}`} key={city.city}>
+          <div className="min-w-0 d-grid gap-1">
+            <strong className="text-body">{city.city}</strong>
+            <span className={`eyebrow ${city.current ? 'text-primary' : ''}`}>{city.current ? 'Current city' : riskLine(city, travel)}</span>
           </div>
           <CityPrice price={city.weedSellPrice} base={here?.weedSellPrice} showDelta={!city.current} />
           <CityPrice price={city.cokeSellPrice} base={here?.cokeSellPrice} showDelta={!city.current} />
-          <div className="city-market-go d-grid justify-items-end gap-hair">
+          <div className="city-market-go d-grid justify-items-end gap-1">
             {city.current
-              ? <span className="eyebrow text-gold-bright">You are here</span>
+              ? <span className="eyebrow text-primary">You are here</span>
               : <>
                 <button
                   className="btn btn-secondary btn-sm"
@@ -2486,7 +2486,7 @@ function TravelPanel({ markets, turns, travel, busy, act }: { markets: CityMarke
                 >
                   Travel
                 </button>
-                <small className={`fs-xs text-end ${shortfall > 0 ? 'text-bad-soft' : 'text-ink-soft'}`}>
+                <small className={`small text-end ${shortfall > 0 ? 'text-danger' : 'text-body-tertiary'}`}>
                   {shortfall > 0 ? `need ${shortfall} more` : `${city.travelTurns} turns`}
                 </small>
               </>}
@@ -2516,10 +2516,10 @@ function riskLine(city: CityMarket, travel: TravelStatus) {
 function CityPrice({ price, base, showDelta }: { price: number, base: number | undefined, showDelta: boolean }) {
   const delta = base === undefined ? 0 : price - base
   return <div className="d-grid justify-items-end text-end">
-    <b className="text-ink fs-md fw-bold lh-tight">{money.format(price)}</b>
+    <b className="text-body fs-6 fw-bold lh-1">{money.format(price)}</b>
     {showDelta && base !== undefined && (delta === 0
-      ? <small className="text-ink-faint fs-xs">same</small>
-      : <small className={`fs-xs ${delta > 0 ? 'text-good-soft' : 'text-bad-soft'}`}>{delta > 0 ? '+' : '−'}{money.format(Math.abs(delta))}</small>)}
+      ? <small className="text-body-tertiary small">same</small>
+      : <small className={`small ${delta > 0 ? 'text-success' : 'text-danger'}`}>{delta > 0 ? '+' : '−'}{money.format(Math.abs(delta))}</small>)}
   </div>
 }
 
@@ -2551,7 +2551,7 @@ function ReconPage(ctx: PageContext) {
     />
     <CombatMissionsPanel ctx={ctx} />
     <CombatHistoryPanel entries={ctx.combatLogs} currentPlayerId={ctx.dashboard.playerId} />
-    <section className="card surface-panel p-5">
+    <section className="card p-3">
       <StandingsPanel dashboard={ctx.dashboard} leaders={ctx.leaders} cityLeaders={ctx.cityLeaders} limit={50} />
     </section>
   </div>
@@ -2562,24 +2562,24 @@ function CombatMissionsPanel({ ctx }: { ctx: PageContext }) {
   const completed = ctx.combatMissions.filter(mission => mission.status === 'Complete').slice(0, 8)
   const crew = ctx.dashboard.combatCrew
   return <>
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Active Missions</h2><span>{active.length} active</span></div>
-      <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-4">
+      <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
         <AdminMetric label="Available pimps" value={number.format(crew.availablePimps)} />
         <AdminMetric label="Available thugs" value={number.format(crew.availableThugs)} />
         <AdminMetric label="Available weapons" value={number.format(crew.availableWeapons)} />
         <AdminMetric label="Active missions" value={`${crew.activeAttackMissions}/${crew.maxActiveAttackMissions}`} />
       </div>
       <div className="d-grid gap-2">
-        {active.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No active missions.</p>}
+        {active.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No active missions.</p>}
         {active.map(mission => <MissionCard mission={mission} currentPlayerId={ctx.dashboard.playerId} busy={ctx.busy} onCancel={ctx.cancelMission} key={mission.id} />)}
       </div>
     </section>
 
-    <section className="card surface-panel p-5">
+    <section className="card p-3">
       <div className="panel-title"><h2>Recent Results</h2><span>Completed</span></div>
       <div className="d-grid gap-2">
-        {completed.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No completed missions yet.</p>}
+        {completed.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No completed missions yet.</p>}
         {completed.map(mission => <MissionCard mission={mission} currentPlayerId={ctx.dashboard.playerId} compact key={mission.id} />)}
       </div>
     </section>
@@ -2595,22 +2595,22 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
   const commander = mission.commanderName ?? 'A pimp'
   const title = attacking ? `${commander} -> ${mission.defenderName}` : `${mission.attackerName} attacking you`
   const canCancel = attacking && !compact && mission.canCancel && onCancel
-  return <div className={`mission-card d-grid gap-2 border rounded-2 p-3 ${mission.status.toLowerCase()}`}>
-    <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-baseline gap-hair gap-sm-3">
-      <div className="min-w-0 d-grid gap-hair">
-        <strong className="text-ink text-truncate">{title}</strong>
+  return <div className={`d-grid gap-2 border rounded-2 p-3 ${mission.status === 'Fighting' ? 'border-warning' : mission.status === 'Returning' ? 'border-success' : ''}`}>
+    <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-baseline gap-1 gap-sm-3">
+      <div className="min-w-0 d-grid gap-1">
+        <strong className="text-body text-truncate">{title}</strong>
         <span className="eyebrow">{mission.status} / {mission.outcome}</span>
       </div>
       {compact
         ? <button
-            className="btn btn-secondary btn-sm flex-shrink-0 rounded-pill px-3 py-1 fs-xs fw-bold"
+            className="btn btn-secondary btn-sm flex-shrink-0 rounded-pill px-3 py-1 small fw-bold"
             type="button"
             aria-expanded={expanded}
             onClick={() => setExpanded(value => !value)}
           >
             {expanded ? 'Hide log' : `${mission.events.length} update${mission.events.length === 1 ? '' : 's'}`}
           </button>
-        : <b className="text-gold text-nowrap">{mission.status === 'Complete' ? 'Done' : timeUntil(nextAt)}</b>}
+        : <b className="text-primary text-nowrap">{mission.status === 'Complete' ? 'Done' : timeUntil(nextAt)}</b>}
     </div>
     {!compact && <div className="tnum d-grid gtc-1 gtc-md-4 gap-2">
       <AdminMetric label="Commander" value={mission.commanderBonusPercent > 0 ? `${commander} +${mission.commanderBonusPercent}%` : commander} />
@@ -2619,9 +2619,9 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
       <AdminMetric label="Morale" value={`${mission.attackerMorale.toFixed(0)} / ${mission.defenderMorale.toFixed(0)}`} />
       {mission.lootMultiplierPercent < 100 && <AdminMetric label="Haul" value={`${mission.lootMultiplierPercent}% (repeat target)`} />}
     </div>}
-    <p className="m-0 text-ink-dim fs-base">{mission.summary}</p>
-    {canCancel && <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 border border-gold-deep rounded surface-ember p-2">
-      <span className="text-gold-bright fs-sm">Call the crew back now for {money.format(mission.cancelCashCost)} cash on hand.</span>
+    <p className="m-0 text-body-secondary">{mission.summary}</p>
+    {canCancel && <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 border border-primary rounded bg-body-tertiary p-2">
+      <span className="text-primary small">Call the crew back now for {money.format(mission.cancelCashCost)} cash on hand.</span>
       <button
         className="btn btn-secondary btn-sm"
         disabled={busy}
@@ -2631,12 +2631,12 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
         }}
       >Cancel Mission</button>
     </div>}
-    {showEvents && <div className="d-grid border-top border-line-soft pt-2">
-      {mission.events.length === 0 && <small className="text-ink-faint fs-xs">No updates yet.</small>}
+    {showEvents && <div className="d-grid border-top pt-2">
+      {mission.events.length === 0 && <small className="text-body-tertiary small">No updates yet.</small>}
       {mission.events.map(event => <div className="mission-event d-grid gap-1 column-gap-2 py-2" key={event.id}>
-        <strong className="text-gold fs-sm">{event.kind}{event.round > 0 ? ` ${event.round}` : ''}</strong>
-        <span className="text-ink-faint fs-xs text-end">{new Date(event.createdAtUtc).toLocaleTimeString()}</span>
-        <p className="gcol-full m-0 fs-base">{event.summary}</p>
+        <strong className="text-primary small">{event.kind}{event.round > 0 ? ` ${event.round}` : ''}</strong>
+        <span className="text-body-tertiary small text-end">{new Date(event.createdAtUtc).toLocaleTimeString()}</span>
+        <p className="gcol-full m-0">{event.summary}</p>
       </div>)}
     </div>}
   </div>
@@ -2662,16 +2662,16 @@ const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
 function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
   const [tab, setTab] = useState<AdminTab>('overview')
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
-    <nav className="admin-tabs d-grid gtc-fill-150 gap-1 border rounded p-1">
+    <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
       {ADMIN_TABS.map(name => <button
         key={name}
         type="button"
-        className={`btn d-grid gap-hair text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
+        className={`btn d-grid gap-1 text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
         aria-current={tab === name ? 'page' : undefined}
         onClick={() => setTab(name)}
       >
-        <strong className="fs-base">{ADMIN_TAB_META[name].label}</strong>
-        <span className="fs-xs text-ink-faint">{ADMIN_TAB_META[name].kicker}</span>
+        <strong className="">{ADMIN_TAB_META[name].label}</strong>
+        <span className="small text-body-tertiary">{ADMIN_TAB_META[name].kicker}</span>
       </button>)}
     </nav>
     {tab === 'overview' && <AdminOverviewTab overview={ctx.overview} busy={ctx.busy} />}
@@ -2685,7 +2685,7 @@ function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
 
 function AdminOverviewTab({ overview, busy }: { overview: AdminOverview, busy: boolean }) {
   return <>
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The World</h2><span>As of {new Date(overview.generatedAtUtc).toLocaleTimeString()}</span></div>
       <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
         <AdminMetric label="Accounts" value={number.format(overview.totalAccounts)} />
@@ -2706,9 +2706,9 @@ function AdminOverviewTab({ overview, busy }: { overview: AdminOverview, busy: b
 
 function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
   const game = overview.economy
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>In Effect Now</h2><span>Read-only summary</span></div>
-    <div className="admin-config mt-3 border-top border-line-soft">
+    <div className="mt-3 border-top">
       <StatusRow label="Turns" value={`+${game.turnsPerTick} / ${game.turnTickMinutes}m, cap ${game.maxTurns}`} />
       <StatusRow label="Action limit" value={`${game.maxActionTurns} turns`} />
       <StatusRow label="Store prices" value={`Condom ${money.format(game.condomPrice)}, beer ${money.format(game.beerPrice)}, weapon ${money.format(game.weaponPrice)}`} />
@@ -2749,7 +2749,7 @@ function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
   }
 
   const locked = busy || working
-  return <section className={ops?.maintenanceMode ? 'card surface-panel p-5 gcol-full maintenance-on' : 'card surface-panel p-5 gcol-full'}>
+  return <section className={`card p-3 gcol-full ${ops?.maintenanceMode ? 'border-warning' : ''}`}>
     <div className="panel-title">
       <h2>Live Operations</h2>
       <span>{ops?.maintenanceMode ? 'Maintenance is ON' : 'Game is open'}</span>
@@ -2775,7 +2775,7 @@ function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
       <button className="btn btn-secondary btn-sm" disabled={locked || !ops?.announcement}
         onClick={() => void apply({ announcement: '' })}>Clear</button>
     </div>
-    {ops && <small className="d-block mt-2 text-ink-faint fs-xs">Last changed {new Date(ops.updatedAtUtc).toLocaleString()}{ops.updatedBy ? ` by ${ops.updatedBy}` : ''}.</small>}
+    {ops && <small className="d-block mt-2 text-body-tertiary small">Last changed {new Date(ops.updatedAtUtc).toLocaleString()}{ops.updatedBy ? ` by ${ops.updatedBy}` : ''}.</small>}
   </section>
 }
 
@@ -2813,9 +2813,9 @@ function AdminConfigPanel({ busy }: { busy: boolean }) {
     finally { setWorking(false) }
   }
 
-  if (!config) return <section className="card surface-panel p-5 gcol-full">
+  if (!config) return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Tuning</h2><span>Live config</span></div>
-    {error ? <div className="alert alert-danger"><span>{error}</span></div> : <p className="text-ink-soft fs-sm mt-3 mb-0">Loading.</p>}
+    {error ? <div className="alert alert-danger"><span>{error}</span></div> : <p className="text-body-tertiary small mt-3 mb-0">Loading.</p>}
   </section>
 
   const needle = filter.trim().toLowerCase()
@@ -2824,7 +2824,7 @@ function AdminConfigPanel({ busy }: { busy: boolean }) {
     && (needle.length === 0 || entry.path.toLowerCase().includes(needle)))
   const locked = busy || working
 
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title">
       <h2>Tuning</h2>
       <span>{config.overrideCount} override{config.overrideCount === 1 ? '' : 's'} live</span>
@@ -2833,7 +2833,7 @@ function AdminConfigPanel({ busy }: { busy: boolean }) {
     {message && <div className="alert alert-success"><span>{message}</span></div>}
     <p>Changes apply on the next request, no restart. Overrides are stored in the database and layered over appsettings, so clearing one falls back to the shipped value. Table-shaped settings like storage levels are not editable here.</p>
 
-    <label className="field admin-reason">Reason (recorded in the audit trail)
+    <label className="field">Reason (recorded in the audit trail)
       <input className="form-control" value={reason} onChange={e => setReason(e.target.value)} placeholder="Why are you retuning this?" />
     </label>
 
@@ -2845,7 +2845,7 @@ function AdminConfigPanel({ busy }: { busy: boolean }) {
     </div>
 
     <div className="d-grid gap-1 mt-3 config-list">
-      {matches.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">
+      {matches.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">
         {showAll ? 'Nothing matches that filter.' : 'No overrides yet. Filter or show all to change something.'}
       </p>}
       {matches.map(entry => <ConfigRow
@@ -2898,13 +2898,13 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
     finally { setWorking(false) }
   }
 
-  if (!data) return <section className="card surface-panel p-5 gcol-full">
+  if (!data) return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Oversight</h2><span>Economy and combat</span></div>
-    {error ? <div className="alert alert-danger"><span>{error}</span></div> : <p className="text-ink-soft fs-sm mt-3 mb-0">Loading.</p>}
+    {error ? <div className="alert alert-danger"><span>{error}</span></div> : <p className="text-body-tertiary small mt-3 mb-0">Loading.</p>}
   </section>
 
   const overdue = data.activeMissions.filter(mission => mission.isOverdue)
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Oversight</h2><span>Economy and combat</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
     <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
@@ -2926,7 +2926,7 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
     <div className="control-block">
       <strong>Fastest movers, last 24h</strong>
       <div className="d-grid gap-1">
-        {data.fastestMovers.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No logged activity in the last day.</p>}
+        {data.fastestMovers.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No logged activity in the last day.</p>}
         {data.fastestMovers.map(mover => <div className="audit-row" key={mover.playerId}>
           <div>
             <strong>{mover.name}{mover.isBot ? ' (AI)' : ''}</strong>
@@ -2941,7 +2941,7 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
     <div className="control-block">
       <strong>In-flight missions</strong>
       <div className="d-grid gap-1">
-        {data.activeMissions.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">Nothing in flight.</p>}
+        {data.activeMissions.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing in flight.</p>}
         {data.activeMissions.map(mission => <div className={`audit-row ${mission.isOverdue ? 'overdue' : ''}`} key={mission.missionId}>
           <div>
             <strong>{mission.status}{mission.isOverdue ? ' / STUCK' : ''}</strong>
@@ -3027,9 +3027,9 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
   const locked = busy || working
   const target = detail?.summary
 
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Players</h2><span>Find and fix</span></div>
-    <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-4" onSubmit={search}>
+    <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-3" onSubmit={search}>
       <label className="field">Search<input className="form-control" value={query} onChange={e => setQuery(e.target.value)} placeholder="Player, username, or city" /></label>
       <button className="btn btn-secondary btn-sm" disabled={locked}>Search</button>
     </form>
@@ -3037,9 +3037,9 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
     {message && <div className="alert alert-success"><span>{message}</span></div>}
 
-    <div className="d-grid gtc-1 gtc-lg-split-280 gap-3 mt-4">
+    <div className="d-grid gtc-1 gtc-lg-split-280 gap-3 mt-3">
       <div className="admin-player-list d-grid gap-1 align-content-start overflow-y-auto">
-        {results.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No players matched.</p>}
+        {results.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No players matched.</p>}
         {results.map(player => <button
           className={`admin-player-row ${target?.playerId === player.playerId ? 'active' : ''}`}
           key={player.playerId}
@@ -3054,13 +3054,13 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
         </button>)}
       </div>
 
-      {detail && target && <div className="d-grid gap-3 align-content-start border rounded bg-surface-deep p-3">
+      {detail && target && <div className="d-grid gap-3 align-content-start border rounded bg-body-tertiary p-3">
         <div className="d-flex justify-content-between align-items-start gap-3">
-          <div className="d-grid gap-hair">
-            <strong className="text-ink fs-md">{target.name}</strong>
-            <span className="text-ink-dim fs-sm">{target.username} / {target.city}</span>
+          <div className="d-grid gap-1">
+            <strong className="text-body fs-6">{target.name}</strong>
+            <span className="text-body-secondary small">{target.username} / {target.city}</span>
           </div>
-          <b className={target.isBanned ? 'tag banned' : 'tag ok'}>{enforcementLabel(target)}</b>
+          <b className={`badge ${target.isBanned ? 'text-bg-danger' : 'text-bg-success'}`}>{enforcementLabel(target)}</b>
         </div>
         <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
           <AdminMetric label="Net worth" value={money.format(target.netWorth)} />
@@ -3073,7 +3073,7 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           <AdminMetric label="Joined" value={new Date(target.createdAtUtc).toLocaleDateString()} />
         </div>
 
-        <label className="field admin-reason">Reason (recorded in the audit trail)
+        <label className="field">Reason (recorded in the audit trail)
           <input className="form-control" value={reason} onChange={e => setReason(e.target.value)} placeholder="Why are you doing this?" />
         </label>
 
@@ -3171,10 +3171,10 @@ function AdminAuditPanel() {
     })()
   }, [])
 
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Audit Trail</h2><span>Every admin action</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
-    {entries.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No admin actions recorded yet.</p>}
+    {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No admin actions recorded yet.</p>}
     <AuditList entries={entries.slice(0, 30)} />
   </section>
 }
@@ -3228,18 +3228,18 @@ function CatchUpDialog({ news, onClose }: { news: CatchUp, onClose: () => void }
     <div className="modal-backdrop show" />
     <div className="modal d-block" role="dialog" aria-modal="true" aria-label="While you were away" onClick={onClose}>
       <div className="modal-dialog modal-dialog-centered" onClick={event => event.stopPropagation()}>
-        <div className="modal-content surface-panel p-5">
-          <div className="d-grid gap-1 mb-4">
-            <h2 className="m-0 text-ink fs-lg">While you were away</h2>
-            <span className="text-ink-soft fs-sm">{away} since you last looked in</span>
+        <div className="modal-content p-3">
+          <div className="d-grid gap-1 mb-3">
+            <h2 className="m-0 text-body fs-5">While you were away</h2>
+            <span className="text-body-tertiary small">{away} since you last looked in</span>
           </div>
-          <div className="d-grid gap-2 mb-5">
+          <div className="d-grid gap-2 mb-4">
             {news.items.map((item, index) => <div
-              className={`catch-up-item d-grid gap-1 border rounded bg-surface-deep p-3 ${item.tone}`}
+              className={`d-grid gap-1 border rounded bg-body-tertiary p-3 border-start-thick ${item.tone === 'good' ? 'border-start-success' : item.tone === 'bad' ? 'border-start-danger' : 'border-start-secondary'}`}
               key={`${item.kind}-${index}`}
             >
-              <strong className="text-ink fs-base">{item.headline}</strong>
-              <span className="text-ink-dim fs-sm lh-sm">{item.detail}</span>
+              <strong className="text-body">{item.headline}</strong>
+              <span className="text-body-secondary small lh-sm">{item.detail}</span>
             </div>)}
           </div>
           <button className="btn btn-primary w-100" onClick={onClose}>Back to work</button>
@@ -3273,25 +3273,31 @@ function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
 
   return <div className="alert-bell position-relative d-flex align-items-stretch">
     <button
-      className={`bell btn d-flex align-items-center gap-2 border rounded px-3 fw-bold ${unread > 0 ? 'unread border-warning text-gold' : ''}`}
+      className={`btn position-relative d-flex align-items-center px-3 ${unread > 0 ? 'btn-outline-warning' : 'btn-outline-secondary'}`}
       type="button"
       onClick={() => void toggle()}
       aria-expanded={open}
+      title={unread > 0 ? `${unread} unread alert${unread === 1 ? '' : 's'}` : 'Alerts'}
     >
-      Alerts
-      {unread > 0 && <b className="badge rounded-pill surface-count text-white">{unread > 99 ? '99+' : unread}</b>}
+      {/* A filled bell when something is waiting, so the state reads without the count. */}
+      <i className={`bi ${unread > 0 ? 'bi-bell-fill' : 'bi-bell'} fs-5`} aria-hidden="true" />
+      <span className="visually-hidden">Alerts</span>
+      {unread > 0 && <b className="badge rounded-pill bg-danger">
+        {unread > 99 ? '99+' : unread}
+        <span className="visually-hidden"> unread</span>
+      </b>}
     </button>
-    {open && <div className="alert-panel position-absolute d-grid gap-1 border rounded surface-lit p-3 overflow-y-auto">
+    {open && <div className="alert-panel position-absolute d-grid gap-1 border rounded bg-body-secondary p-3 overflow-y-auto">
       <div className="d-flex justify-content-between align-items-center gap-2">
-        <strong className="text-ink fs-base">Alerts</strong>
-        <button className="dismiss btn d-grid place-items-center p-0 fw-bolder lh-tight" type="button" aria-label="Close alerts" onClick={() => setOpen(false)}>x</button>
+        <strong className="text-body">Alerts</strong>
+        <button className="btn-close" type="button" aria-label="Close alerts" onClick={() => setOpen(false)} />
       </div>
-      {error && <p className="text-ink-soft fs-sm mt-3 mb-0">{error}</p>}
-      {!error && alerts.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">Nothing has happened to you yet.</p>}
-      {alerts.map(alert => <div className={`alert-row d-grid gap-hair border rounded p-2 border-start-thick ${alertClass(alert)}`} key={alert.id}>
-        <strong className="text-ink fs-base">{alert.headline}</strong>
-        <span className="fs-sm">{alert.detail}</span>
-        <small className="text-ink-faint fs-xs">{new Date(alert.createdAtUtc).toLocaleString()}</small>
+      {error && <p className="text-body-tertiary small mt-3 mb-0">{error}</p>}
+      {!error && alerts.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing has happened to you yet.</p>}
+      {alerts.map(alert => <div className={`d-grid gap-1 border rounded p-2 border-start-thick ${alertClass(alert)}`} key={alert.id}>
+        <strong className="text-body">{alert.headline}</strong>
+        <span className="small">{alert.detail}</span>
+        <small className="text-body-tertiary small">{new Date(alert.createdAtUtc).toLocaleString()}</small>
       </div>)}
     </div>}
   </div>
@@ -3319,7 +3325,7 @@ function rivalRowClass(bot: AdminBotHealth) {
 function alertClass(alert: Alert) {
   // The stripe says what happened, the fill says whether you have seen it.
   const base = alert.tone === 'bad' ? 'border-start-danger' : 'border-start-success'
-  return alert.isUnread ? `${base} fresh` : base
+  return alert.isUnread ? `${base} bg-body-secondary` : base
 }
 
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
@@ -3409,10 +3415,10 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
     ].filter(key => !catalog.has(key)).join(', '))
   if (supplies.length === 0) return null
 
-  return <div className="tnum d-grid gap-2 my-4 border rounded bg-surface p-3">
+  return <div className="tnum d-grid gap-2 my-3 border rounded bg-body-secondary p-3">
     <div className="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-3">
-      <div className="d-grid gap-hair">
-        <strong className="text-ink">Supplies</strong>
+      <div className="d-grid gap-1">
+        <strong className="text-body">Supplies</strong>
         <span className="eyebrow">Checked against {turnLabel}</span>
       </div>
       <button className="btn btn-primary" type="button" onClick={onMarket}>Open Market</button>
@@ -3425,15 +3431,15 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
         const room = Math.max(0, supply.cap - supply.owned)
         const qty = Math.min(storeQty[supply.key] ?? Math.max(1, short), Math.max(1, room))
         const total = qty * item.price
-        return <div className={`supply-row d-grid gtc-1-auto gap-2 align-content-start border rounded p-3 ${short > 0 ? 'short border-warning' : 'bg-surface-deep'}`} key={supply.key}>
-          <div className="d-grid gap-hair">
-            <strong className="text-ink">{item.name}</strong>
-            <span className={`fs-sm ${short > 0 ? 'text-gold-bright' : 'text-ink-dim'}`}>{number.format(supply.owned)} on hand / {number.format(supply.needed)} {supply.basis} / {number.format(supply.cap)} storage</span>
+        return <div className={`d-grid gtc-1-auto gap-2 align-content-start border rounded p-3 ${short > 0 ? 'border-warning' : 'bg-body-tertiary'}`} key={supply.key}>
+          <div className="d-grid gap-1">
+            <strong className="text-body">{item.name}</strong>
+            <span className={`small ${short > 0 ? 'text-primary' : 'text-body-secondary'}`}>{number.format(supply.owned)} on hand / {number.format(supply.needed)} {supply.basis} / {number.format(supply.cap)} storage</span>
           </div>
-          <em className={`eyebrow fst-normal align-self-start justify-self-end text-nowrap ${short > 0 ? 'text-gold-bright' : 'text-ink-soft'}`}>
+          <em className={`eyebrow fst-normal align-self-start justify-self-end text-nowrap ${short > 0 ? 'text-primary' : 'text-body-tertiary'}`}>
             {room === 0 ? 'Storage full' : short > 0 ? `${number.format(short)} short` : 'Covered'}
           </em>
-          <label className="field gcol-full fs-sm">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={Math.max(1, room)} value={qty} onChange={event => setStoreQty(value => ({ ...value, [supply.key]: Number(event.target.value) }))} /></label>
+          <label className="field gcol-full small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={Math.max(1, room)} value={qty} onChange={event => setStoreQty(value => ({ ...value, [supply.key]: Number(event.target.value) }))} /></label>
           <button
             className="btn btn-primary gcol-full w-100 min-w-0"
             disabled={busy || qty < 1 || room === 0 || qty > room || dashboard.cash < total}
@@ -3444,9 +3450,9 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
         </div>
       })}
     </div>
-    <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-baseline gap-1 gap-sm-3 border-top border-line-soft pt-2">
-      <span className="text-ink-soft fs-sm">Street work also turns up product.</span>
-      <small className="text-ink-dim fs-sm">Carrying {number.format(dashboard.weed)} weed / {number.format(dashboard.coke)} coke</small>
+    <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-baseline gap-1 gap-sm-3 border-top pt-2">
+      <span className="text-body-tertiary small">Street work also turns up product.</span>
+      <small className="text-body-secondary small">Carrying {number.format(dashboard.weed)} weed / {number.format(dashboard.coke)} coke</small>
     </div>
   </div>
 }
@@ -3463,20 +3469,20 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (p
   const moves = dashboard.guidance?.moves ?? []
   if (moves.length === 0) return null
 
-  return <section className="card surface-panel p-5">
+  return <section className="card p-3">
     <div className="panel-title"><h2>Next Moves</h2><span>Worth doing now</span></div>
     <div className="d-grid gap-2">
       {moves.map(move => <button
-        className={`w-100 d-grid gap-hair text-start border rounded p-3 ${move.urgent ? 'border-warning surface-ember' : 'bg-surface'}`}
+        className={`w-100 d-grid gap-1 text-start border rounded p-3 ${move.urgent ? 'border-warning bg-body-tertiary' : 'bg-body-secondary'}`}
         type="button"
         key={move.label}
         onClick={() => onPage(move.page as AppPage)}
       >
         {/* Advice carries a price, so the cost sits with the label rather than buried in the reason. */}
-        <strong className={move.urgent ? 'text-gold' : 'text-ink'}>
-          {move.label}{move.cost > 0 && <b className="float-end text-gold-bright fw-bold fs-base">{money.format(move.cost)}</b>}
+        <strong className={move.urgent ? 'text-primary' : 'text-body'}>
+          {move.label}{move.cost > 0 && <b className="float-end text-primary fw-bold">{money.format(move.cost)}</b>}
         </strong>
-        <span className="text-ink-dim fs-base lh-sm">{move.why}</span>
+        <span className="text-body-secondary lh-sm">{move.why}</span>
       </button>)}
     </div>
   </section>
@@ -3498,7 +3504,7 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
   // The next unfinished rung, plus what has been done, so progress is visible without listing it all.
   const next = guidance.objectives.find(o => !o.done)
 
-  return <section className="card surface-panel p-5" data-tour="ladder">
+  return <section className="card p-3" data-tour="ladder">
     <div className="panel-title">
       <h2>Getting Started</h2>
       <div className="d-flex align-items-center gap-2">
@@ -3510,15 +3516,15 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
     </div>
     <div className="d-grid gap-1">
       {guidance.objectives.map(step => <button
-        className={`ladder-row d-grid gap-2 align-items-start text-start border rounded-2 p-2 ${step.done ? 'done' : step === next ? 'next border-line surface-lit text-ink' : 'border-0 bg-transparent'}`}
+        className={`ladder-row d-grid gap-2 align-items-start text-start border rounded-2 p-2 ${step.done ? 'done' : step === next ? 'next bg-body-secondary text-body' : 'border-0 bg-transparent'}`}
         type="button"
         key={step.label}
         onClick={() => onPage(step.page as AppPage)}
       >
         <em className="fst-normal text-success-emphasis">{step.done ? '✓' : ''}</em>
         <div>
-          <strong className={`fs-base ${step === next ? 'fw-bold' : 'fw-normal'}`}>{step.label}</strong>
-          {step === next && <span className="d-block mt-hair text-ink-dim fs-sm">{step.why}</span>}
+          <strong className={` ${step === next ? 'fw-bold' : 'fw-normal'}`}>{step.label}</strong>
+          {step === next && <span className="d-block mt-1 text-body-secondary small">{step.why}</span>}
         </div>
       </button>)}
     </div>
@@ -3528,38 +3534,38 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
 function PimpRosterPanel({ dashboard }: { dashboard: Dashboard }) {
   const crew = dashboard.crew
   const fallen = dashboard.fallenCrew
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Your Pimps</h2><span>{crew.length}/{dashboard.hideout.maxPimps} on the payroll</span></div>
     <p>Pimps are the only crew you know by name. One of them commands each attack, and loyalty slides when the operation is miserable or a mission goes badly.</p>
-    <div className="d-grid gap-2 mt-4">
-      {crew.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No pimps left. Hire one before you can run the streets or attack.</p>}
+    <div className="d-grid gap-2 mt-3">
+      {crew.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No pimps left. Hire one before you can run the streets or attack.</p>}
       {crew.map(pimp => <div
-        className={`pimp-row d-grid gap-3 align-items-center border rounded px-3 py-2 ${pimp.isCommanding ? 'border-gold-deep surface-ember' : 'bg-surface-deep'}`}
+        className={`pimp-row d-grid gap-3 align-items-center border rounded px-3 py-2 ${pimp.isCommanding ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}
         key={pimp.id}
       >
-        <div className="d-grid gap-hair">
-          <strong className="text-ink">
-            {pimp.name} <b className={`tag ${pimp.specialty === 'Enforcer' ? 'enforcer' : 'hustler'}`}>{pimp.specialty} +{pimp.bonusPercent}%</b>
+        <div className="d-grid gap-1">
+          <strong className="text-body">
+            {pimp.name} <b className={`badge ${pimp.specialty === 'Enforcer' ? 'text-bg-warning' : 'text-bg-success'} ms-1`}>{pimp.specialty} +{pimp.bonusPercent}%</b>
           </strong>
-          <span className="text-ink-dim fs-sm">{pimp.specialty === 'Enforcer' ? 'Sharpens any attack they lead, and the house whenever they are in it' : 'Lifts street income while home'}</span>
-          <span className="text-ink-dim fs-sm">{pimp.missionsLed === 0 ? 'No missions led yet' : `${number.format(pimp.missionsLed)} mission${pimp.missionsLed === 1 ? '' : 's'} led / ${number.format(pimp.victories)} won`}</span>
+          <span className="text-body-secondary small">{pimp.specialty === 'Enforcer' ? 'Sharpens any attack they lead, and the house whenever they are in it' : 'Lifts street income while home'}</span>
+          <span className="text-body-secondary small">{pimp.missionsLed === 0 ? 'No missions led yet' : `${number.format(pimp.missionsLed)} mission${pimp.missionsLed === 1 ? '' : 's'} led / ${number.format(pimp.victories)} won`}</span>
         </div>
-        <em className={`eyebrow fst-normal ${pimp.isCommanding ? 'text-gold-bright' : 'text-ink-soft'}`}>{pimp.isCommanding ? 'Out commanding' : 'At the house'}</em>
-        <div className="d-grid gap-hair justify-items-end">
-          <span className="eyebrow text-ink-faint">Loyalty</span>
-          <strong className={`fs-lg ${moraleTone(pimp.loyalty) === 'danger' ? 'text-danger-emphasis' : moraleTone(pimp.loyalty) === 'warn' ? 'text-gold-bright' : 'text-success-emphasis'}`}>
+        <em className={`eyebrow fst-normal ${pimp.isCommanding ? 'text-primary' : 'text-body-tertiary'}`}>{pimp.isCommanding ? 'Out commanding' : 'At the house'}</em>
+        <div className="d-grid gap-1 justify-items-end">
+          <span className="eyebrow text-body-tertiary">Loyalty</span>
+          <strong className={`fs-5 ${moraleTone(pimp.loyalty) === 'danger' ? 'text-danger-emphasis' : moraleTone(pimp.loyalty) === 'warn' ? 'text-primary' : 'text-success-emphasis'}`}>
             {pimp.loyalty.toFixed(0)}%
           </strong>
         </div>
       </div>)}
     </div>
-    {fallen.length > 0 && <div className="d-grid gap-2 mt-4 border-top border-line-soft pt-3">
+    {fallen.length > 0 && <div className="d-grid gap-2 mt-3 border-top pt-3">
       <strong className="eyebrow">Gone</strong>
       <div className="d-flex flex-wrap gap-2">
-        {fallen.map(pimp => <div className="d-grid gap-hair border rounded bg-surface-deep p-2 pimp-gone" key={pimp.id}>
-          <b className="text-ink-dim">{pimp.name}</b>
-          <span className="text-warning-emphasis fs-sm">{pimp.lostReason}</span>
-          <small className="text-ink-faint fs-xs">{pimp.lostAtUtc ? new Date(pimp.lostAtUtc).toLocaleDateString() : ''}</small>
+        {fallen.map(pimp => <div className="d-grid gap-1 border rounded bg-body-tertiary p-2 pimp-gone" key={pimp.id}>
+          <b className="text-body-secondary">{pimp.name}</b>
+          <span className="text-warning-emphasis small">{pimp.lostReason}</span>
+          <small className="text-body-tertiary small">{pimp.lostAtUtc ? new Date(pimp.lostAtUtc).toLocaleDateString() : ''}</small>
         </div>)}
       </div>
     </div>}
@@ -3598,16 +3604,16 @@ function DistrictPicker({ districts, selected, onSelect }: {
   if (districts.length === 0) return null
   const active = selected || districts.find(x => x.isDefault)?.key || districts[0].key
 
-  return <div className="d-grid gtc-fill-140 gap-2 mb-3 mt-4">
+  return <div className="d-grid gtc-fill-140 gap-2 mb-3 mt-3">
     {districts.map(entry => <button
-      className={`tile d-grid gap-hair text-start border rounded p-2 ${entry.key === active ? 'active border-gold' : 'bg-surface-deep'}`}
+      className={`tile d-grid gap-1 text-start border rounded p-2 ${entry.key === active ? 'active border-primary' : 'bg-body-tertiary'}`}
       key={entry.key}
       type="button"
       title={entry.blurb}
       onClick={() => onSelect(entry.key)}
     >
-      <strong className="text-ink fs-base">{entry.name}</strong>
-      <small className="text-ink-faint fs-xs">{districtEdge(entry)}</small>
+      <strong className="text-body">{entry.name}</strong>
+      <small className="text-body-tertiary small">{districtEdge(entry)}</small>
     </button>)}
   </div>
 }
@@ -3660,12 +3666,12 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
     && dashboard.beer >= report.hqPartyBeerCost
     && dashboard.weed >= report.hqPartyWeedCost
 
-  return <section className="card surface-panel p-5 gcol-full hideout-panel">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>{dashboard.hideout.tierName}</h2><span>Hideout morale</span></div>
     <div className="d-grid gtc-1 gtc-md-split-90 gap-3 align-items-stretch">
-      <div className="d-grid align-content-center gap-2 border rounded-2 bg-surface p-3">
-        <strong className="text-gold">Current hideout</strong>
-        <p className="m-0 fs-base">Your crew comes back here after street work and fights. Low morale heals slowly over time, or you can spend turns and supplies to steady them faster.</p>
+      <div className="d-grid align-content-center gap-2 border rounded-2 bg-body-secondary p-3">
+        <strong className="text-primary">Current hideout</strong>
+        <p className="m-0">Your crew comes back here after street work and fights. Low morale heals slowly over time, or you can spend turns and supplies to steady them faster.</p>
       </div>
       <div className="d-grid gtc-1 gtc-md-2 gap-2">
         <button className="btn btn-secondary btn-stacked" disabled={!canRest} onClick={() => void act(() => api.recoverMorale('rest'))}>
@@ -3731,35 +3737,35 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     && (!isRaid || raidReady)
     // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
     && (method.key !== 'poach' || (poachCoke > 0 && poachCoke <= dashboard.coke))
-  return <div className="card surface-panel p-5 gcol-full">
+  return <div className="card p-3 gcol-full">
     <div className="panel-title" data-tour="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
-    <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-4" onSubmit={onSearch}>
+    <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
       <label className="field">Search<input className="form-control" value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
       <button className="btn btn-secondary btn-sm" disabled={busy}>Search</button>
     </form>
     <div className="d-grid gtc-1 gtc-xl-split-80 gap-3 align-items-start">
       <div className="d-grid gap-2">
-        {targets.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No targets found.</p>}
+        {targets.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No targets found.</p>}
         {targets.map(target => <button
-          className={`target-row w-100 d-grid gap-1 column-gap-2 align-items-center text-start border rounded p-2 ${profile?.playerId === target.playerId ? 'active border-teal' : 'bg-surface'}`}
+          className={`target-row w-100 d-grid gap-1 column-gap-2 align-items-center text-start border rounded p-2 ${profile?.playerId === target.playerId ? 'active border-info' : 'bg-body-secondary'}`}
           key={target.playerId}
           type="button"
           disabled={busy}
           onClick={() => onInspect(target.playerId)}
         >
-          <span className="text-gold fw-bolder">#{target.rank}</span>
+          <span className="text-primary fw-bolder">#{target.rank}</span>
           <strong className="min-w-0 text-truncate">{target.name}</strong>
-          <small className="text-ink-dim fs-sm">{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
+          <small className="text-body-secondary small">{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
           <em className={`eyebrow fst-normal ${target.combatStatus.mismatchReason ? 'text-warning-emphasis' : ''}`}>{target.titles.length > 0 ? target.titles.join(', ') : `${target.combatStatus.eligibility} / ${target.combatReadiness.riskBand}`}{target.rides > 0 ? ` / ${target.rides} parked` : ''}</em>
-          <b className="text-ink fs-base">{money.format(target.netWorth)}</b>
+          <b className="text-body">{money.format(target.netWorth)}</b>
         </button>)}
       </div>
-      {profile && <div className="border rounded bg-surface p-3">
+      {profile && <div className="border rounded bg-body-secondary p-3">
         <div className="d-flex justify-content-between align-items-baseline gap-3 mb-3">
-          <div className="d-grid gap-hair">
-            <strong className="text-ink fs-lg">{profile.name}</strong>
+          <div className="d-grid gap-1">
+            <strong className="text-body fs-5">{profile.name}</strong>
             <span className="eyebrow">{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span>
-            {profile.titles.length > 0 && <small className="d-block mt-hair text-gold fs-xs">{profile.titles.join(' / ')}</small>}
+            {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
           </div>
           {/* The only place a conversation can start. Everywhere else in chat you are answering
               somebody; this is where you pick who to write to in the first place. */}
@@ -3786,7 +3792,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
               } catch { /* the profile shows its own errors elsewhere */ }
             })()}
           >Block</button>
-          <b className="text-gold fs-lg">#{profile.rank}</b>
+          <b className="text-primary fs-5">#{profile.rank}</b>
         </div>
         <AttackMethodPicker
           methods={dashboard.attackMethods}
@@ -3795,11 +3801,11 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           onSelect={setAttackMethod}
         />
         {/* A raid is the only method that commits crew, so it is the only one that asks for any. */}
-        {isRaid && <div className="d-grid gap-2 mb-3 border rounded bg-surface-deep p-2">
+        {isRaid && <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
           <StatusRow label="Available" value={`${crew.availablePimps} P / ${crew.availableThugs} T / ${crew.availableWeapons} W`} warn={crew.availablePimps < 1 || crew.availableThugs < 1} />
           <StatusRow label="Committed" value={`${crew.committedPimps} P / ${crew.committedThugs} T / ${crew.committedWeapons} W`} warn={crew.committedThugs > 0} />
           <div className="d-grid gtc-1 gtc-md-3 gap-2">
-            <label className="field fs-sm">Commander
+            <label className="field small">Commander
               <select className="form-select"
                 value={commanderId ?? ''}
                 onChange={event => setCommanderId(event.target.value === '' ? null : Number(event.target.value))}
@@ -3824,12 +3830,12 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
               />
             </label>}
           </div>
-          <small className="d-block mt-1 text-ink-faint fs-xs measure">{commanderNote(freeCommanders.find(x => x.id === commanderId) ?? null)}</small>
+          <small className="d-block mt-1 text-body-tertiary small measure">{commanderNote(freeCommanders.find(x => x.id === commanderId) ?? null)}</small>
         </div>}
-        {method && !isRaid && <div className="d-grid gap-2 mb-3 border rounded bg-surface-deep p-2">
-          <p className="m-0 text-teal-soft fs-sm">{method.description}</p>
+        {method && !isRaid && <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+          <p className="m-0 text-info-emphasis small">{method.description}</p>
           {method.key === 'poach' && <div className="d-grid gtc-1 gtc-md-3 gap-2">
-            <label className="field fs-sm">Coke to spend<input className="form-control"
+            <label className="field small">Coke to spend<input className="form-control"
               type="number"
               min={1}
               max={Math.max(1, dashboard.coke)}
@@ -3837,9 +3843,9 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
               onChange={event => setPoachCoke(Number(event.target.value))}
             /></label>
           </div>}
-          <small className="d-block mt-1 text-ink-faint fs-xs measure">{strikeNote(method, profile, dashboard, poachCoke)}</small>
+          <small className="d-block mt-1 text-body-tertiary small measure">{strikeNote(method, profile, dashboard, poachCoke)}</small>
         </div>}
-        <div className="d-grid gtc-1 gtc-md-auto-1 gap-2 align-items-center mb-3 border rounded p-2 target-actions">
+        <div className="d-grid gtc-1 gtc-md-auto-1 gap-2 align-items-center mb-3 border rounded p-2">
           <button
             className="btn btn-primary"
             type="button"
@@ -3877,7 +3883,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <AdminMetric label="Risk" value={profile.combatReadiness.riskBand} />
           <AdminMetric label="Combat" value={profile.combatStatus.eligibility} />
         </div>
-        <div className="mt-3 border-top border-line-soft">
+        <div className="mt-3 border-top">
           <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
           <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
           {/* Coverage says how many are armed; the rack says how hard that is going to hit back. */}
@@ -3903,9 +3909,9 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
           <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
         </div>
-        <div className="mt-3 border-top border-line-soft pt-3">
-          <strong className="d-block mb-1 text-gold">Public Activity</strong>
-          {profile.publicActivity.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No public activity yet.</p>}
+        <div className="mt-3 border-top pt-3">
+          <strong className="d-block mb-1 text-primary">Public Activity</strong>
+          {profile.publicActivity.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No public activity yet.</p>}
           <ActivityList entries={profile.publicActivity} />
         </div>
       </div>}
@@ -3929,15 +3935,15 @@ function AttackMethodPicker({ methods, selected, turns, onSelect }: {
       // other is something to go and wait for.
       const unaffordable = turns < method.turnCost
       return <button
-        className={`tile d-grid gap-hair text-start border rounded p-2 ${method.key === selected ? 'active border-gold' : 'bg-surface-deep'}`}
+        className={`tile d-grid gap-1 text-start border rounded p-2 ${method.key === selected ? 'active border-primary' : 'bg-body-tertiary'}`}
         key={method.key}
         type="button"
         title={method.blockedReason ?? method.description}
         onClick={() => onSelect(method.key)}
       >
-        <strong className="text-ink fs-base">{method.label}</strong>
-        <small className={`fs-xs ${unaffordable ? 'text-warning-emphasis' : 'text-ink-faint'}`}>{method.turnCost} turns</small>
-        {method.blockedReason && <em className="fst-normal fs-xs text-warning-emphasis">{method.blockedReason}</em>}
+        <strong className="text-body">{method.label}</strong>
+        <small className={`small ${unaffordable ? 'text-warning-emphasis' : 'text-body-tertiary'}`}>{method.turnCost} turns</small>
+        {method.blockedReason && <em className="fst-normal small text-warning-emphasis">{method.blockedReason}</em>}
       </button>
     })}
   </div>
@@ -4016,9 +4022,9 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
 
   const enough = board.held >= board.quantity
   const generous = offered >= board.generousQuantity
-  return <section className="card surface-panel p-5 shrine-panel">
+  return <section className="card p-3">
     <div className="panel-title"><h2>The Pimp Gods</h2><span>Once a week</span></div>
-    <p className="text-teal-soft">
+    <p className="text-info-emphasis">
       They want <strong>{number.format(board.quantity)} {board.label}</strong> this week. You hold{' '}
       {number.format(board.held)}. What comes back is never money: they deal in what the law has on you,
       how the house feels, and whether your pimps still believe in you.
@@ -4041,7 +4047,7 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
       >
         Make the offering
       </button>
-      <span className="text-ink-faint fs-sm">
+      <span className="text-body-tertiary small">
         {board.blockedReason
           ?? (generous
             ? `Twice what they asked. Generosity buys what meeting the ask does not.`
@@ -4071,17 +4077,17 @@ function TitleBoardPanel({ currentPlayerId }: { currentPlayerId: string }) {
     return () => { live = false }
   }, [])
 
-  return <section className="card surface-panel p-5">
+  return <section className="card p-3">
     <div className="panel-title"><h2>Today's Names</h2><span>Last 24 hours</span></div>
-    {titles.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">Nobody has done enough today to be called anything.</p>}
+    {titles.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody has done enough today to be called anything.</p>}
     <div className="tnum d-grid gap-1">
       {titles.map(title => <div
-        className={`title-row d-grid gap-hair column-gap-2 border rounded bg-surface-deep p-2 ${title.playerId === currentPlayerId ? 'border-gold' : ''}`}
+        className={`title-row d-grid gap-1 column-gap-2 border rounded bg-body-tertiary p-2 ${title.playerId === currentPlayerId ? 'border-primary' : ''}`}
         key={title.key}
       >
-        <strong className="text-gold fs-base">{title.title}</strong>
-        <b className="text-ink fs-base">{title.playerName}</b>
-        <small className="gcol-full text-ink-faint fs-xs">{title.detail}</small>
+        <strong className="text-primary">{title.title}</strong>
+        <b className="text-body">{title.playerName}</b>
+        <small className="gcol-full text-body-tertiary small">{title.detail}</small>
       </div>)}
     </div>
   </section>
@@ -4115,19 +4121,19 @@ function AlliancePage(ctx: PageContext) {
     return result
   })
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start"><section className="card surface-panel p-5"><p className="text-ink-soft fs-sm mt-3 mb-0">Reading the board.</p></section></div>
+  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start"><section className="card p-3"><p className="text-body-tertiary small mt-3 mb-0">Reading the board.</p></section></div>
 
   const yours = board.yours
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
     {yours
-      ? <section className="card surface-panel p-5 gcol-full">
+      ? <section className="card p-3 gcol-full">
         <div className="panel-title"><h2>{yours.name}</h2><span>#{yours.rank} / {yours.members} of {yours.maxMembers}</span></div>
-        {yours.motto && <p className="alliance-motto">{yours.motto}</p>}
+        {yours.motto && <p className="fst-italic text-primary mb-2">{yours.motto}</p>}
         <p>
           Nobody on this list can attack you and you cannot attack them, by any method. That is what the{' '}
           {yours.duesPercent}% off every shift is buying.
         </p>
-        <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-4">
+        <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
           <AdminMetric label="Crew worth" value={money.format(yours.netWorth)} />
           <AdminMetric label="Treasury" value={money.format(board.treasury)} />
           <AdminMetric label="Dues" value={`${yours.duesPercent}%`} />
@@ -4135,7 +4141,7 @@ function AlliancePage(ctx: PageContext) {
           <AdminMetric label="You are" value={board.yourRank} />
         </div>
 
-        <div className="alliance-roster">
+        <div className="d-grid gap-1 my-3">
           {board.members.map(member => <AllianceMemberRow
             key={member.playerId}
             member={member}
@@ -4157,7 +4163,7 @@ function AlliancePage(ctx: PageContext) {
           </button>
         </div>
       </section>
-      : <section className="card surface-panel p-5 gcol-full">
+      : <section className="card p-3 gcol-full">
         <div className="panel-title"><h2>Start a Crew</h2><span>{money.format(board.foundingCost)}</span></div>
         <p>
           A crew is people who have agreed not to rob each other. Members cannot attack you by any method
@@ -4174,11 +4180,11 @@ function AlliancePage(ctx: PageContext) {
         </div>
       </section>}
 
-    <section className="card surface-panel p-5">
+    <section className="card p-3">
       <div className="panel-title"><h2>The Board</h2><span>{board.board.length} crews</span></div>
-      {board.board.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">Nobody is running with anybody yet.</p>}
+      {board.board.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody is running with anybody yet.</p>}
       <div className="tnum d-grid gap-1 my-3">
-        {board.board.map(crew => <div className={`alliance-row ${crew.yours ? 'border-gold' : ''}`} key={crew.id}>
+        {board.board.map(crew => <div className={`alliance-row ${crew.yours ? 'border-primary' : ''}`} key={crew.id}>
           <span>#{crew.rank}</span>
           <div>
             <strong>{crew.name}</strong>
@@ -4224,13 +4230,13 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
   // that gives yours away.
   const promotable = board.ranks.filter(x => x !== 'Boss')
 
-  return <div className={`alliance-member ${member.isYou ? 'border-gold' : ''}`}>
+  return <div className={`alliance-member ${member.isYou ? 'border-primary' : ''}`}>
     <div>
       <strong>{member.name}</strong>
       <small>{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
     </div>
     <b>{money.format(member.netWorth)}</b>
-    {!member.isYou && <div className="alliance-member-actions">
+    {!member.isYou && <div className="d-flex align-items-center gap-1">
       {isBoss && <select className="form-select"
         value={member.rank === 'Boss' ? '' : member.rank}
         disabled={busy || member.rank === 'Boss'}
@@ -4268,9 +4274,9 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
   const sent = board.requests.filter(x => !x.yoursToAnswer)
   if (answerable.length === 0 && sent.length === 0) return null
 
-  return <div className="d-grid gap-2 mb-3 border rounded bg-surface-deep p-2">
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     {sent.length > 0 && <>
-      <strong className="d-block mb-1 text-gold fs-sm">Asked, waiting to hear</strong>
+      <strong className="d-block mb-1 text-primary small">Asked, waiting to hear</strong>
       {sent.map(ask => <div className="alliance-ask" key={ask.id}>
         <div>
           <strong>{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
@@ -4282,7 +4288,7 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
         <span />
       </div>)}
     </>}
-    {answerable.length > 0 && <strong className="d-block mb-1 text-gold fs-sm">Waiting on you</strong>}
+    {answerable.length > 0 && <strong className="d-block mb-1 text-primary small">Waiting on you</strong>}
     {answerable.map(ask => <div className="alliance-ask" key={ask.id}>
       <div>
         <strong>{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
@@ -4311,7 +4317,7 @@ function AlliancePoolPanel({ board, crew, busy, onAct }: {
   const [post, setPost] = useState(1)
   const room = Math.max(0, board.borrowLimit - board.yourDefenders)
 
-  return <div className="d-grid gap-2 mb-3 border rounded bg-surface-deep p-2">
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     <StatusRow label="Pool" value={`${crew.offensiveThugs} offensive / ${crew.defensiveThugs} defensive`} />
     <StatusRow
       label="You may borrow"
@@ -4346,7 +4352,7 @@ function AlliancePoolPanel({ board, crew, busy, onAct }: {
         onClick={() => onAct(() => api.postDefenders(-post))}
       >Send back</button>
     </div>
-    <small className="d-block mt-1 text-ink-faint fs-xs measure">
+    <small className="d-block mt-1 text-body-tertiary small measure">
       Offensive thugs ride along on a raid and defensive ones stand at your place. Both die like anybody
       else, and what dies is gone from the pool for good.
     </small>
@@ -4370,10 +4376,10 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
   const [dues, setDues] = useState(crew.duesPercent)
   const [door, setDoor] = useState<AllianceDoorKey>(crew.door)
 
-  return <div className="d-grid gap-2 mb-3 border rounded bg-surface-deep p-2">
-    <strong className="d-block mb-1 text-gold fs-sm">Who may do what</strong>
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Who may do what</strong>
     <div className="alliance-powers">
-      {board.powers.map(power => <label className="alliance-power" key={power.power}>
+      {board.powers.map(power => <label className="d-grid gap-1 small" key={power.power}>
         <span>{power.label}</span>
         <select className="form-select"
           value={power.minRank}
@@ -4397,7 +4403,7 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
         onClick={() => onSave(() => api.updateAlliance({ duesPercent: dues, door }))}
       >Save</button>
     </div>
-    <small className="d-block mt-1 text-ink-faint fs-xs measure">
+    <small className="d-block mt-1 text-body-tertiary small measure">
       Dues come off the gross of every member's shift, beside the hoe cut. The ceiling is {maxDues}%.{' '}
       {board.doors.find(x => x.door === door)?.detail}
     </small>
@@ -4412,7 +4418,7 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className 
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
   className?: string
 }) {
-  return <section className={`card surface-panel p-5 ${className ?? ''}`}>
+  return <section className={`card p-3 ${className ?? ''}`}>
     <div className="panel-title"><h2>Bank</h2><span>Cash handling</span></div>
     <p>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
     <div className="control-row">
@@ -4424,10 +4430,10 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className 
 }
 
 function CombatHistoryPanel({ entries, currentPlayerId }: { entries: CombatLog[], currentPlayerId: string }) {
-  return <section className="card surface-panel p-5">
+  return <section className="card p-3">
     <div className="panel-title"><h2>Combat History</h2><span>Last {entries.length}</span></div>
     <div className="combat-history d-grid overflow-y-auto">
-      {entries.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No fights yet.</p>}
+      {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No fights yet.</p>}
       {entries.map(entry => {
         const attacking = entry.attackerId === currentPlayerId
         const pending = entry.outcome === 'Pending'
@@ -4457,17 +4463,17 @@ function ProductTradeCard({ name, owned, price, quantity, canProduce, disabled, 
   onQuantity: (quantity: number) => void
   onSell: () => void
 }) {
-  return <div className="d-grid gap-3 border rounded bg-surface p-3">
+  return <div className="d-grid gap-3 border rounded bg-body-secondary p-3">
     <div className="d-flex justify-content-between align-items-baseline gap-2">
-      <div className="d-grid gap-hair">
-        <strong className="text-ink fs-md">{name}</strong>
-        <span className="text-ink-faint fs-sm">{number.format(owned)} owned</span>
+      <div className="d-grid gap-1">
+        <strong className="text-body fs-6">{name}</strong>
+        <span className="text-body-tertiary small">{number.format(owned)} owned</span>
       </div>
-      <b className="text-gold">{money.format(price)}</b>
+      <b className="text-primary">{money.format(price)}</b>
     </div>
     <button className="btn btn-primary btn-sm" disabled={disabled || !canProduce} onClick={onProduce}>Produce {name}</button>
-    <div className="d-grid gtc-1 gtc-sm-1-auto gap-2 align-items-end border-top border-line-soft pt-2">
-      <label className="field fs-sm">Sell Qty<input className="form-control" type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} /></label>
+    <div className="d-grid gtc-1 gtc-sm-1-auto gap-2 align-items-end border-top pt-2">
+      <label className="field small">Sell Qty<input className="form-control" type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} /></label>
       <button className="btn btn-secondary btn-sm" disabled={disabled || quantity < 1 || quantity > owned} onClick={onSell}>Sell</button>
     </div>
   </div>
@@ -4518,7 +4524,7 @@ function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
     }
   }
 
-  return <div className="mt-4 border rounded bg-surface-deep p-3">
+  return <div className="mt-3 border rounded bg-body-tertiary p-3">
     <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-baseline gap-1 gap-md-3">
       <strong>Direct {bot.name}</strong>
       <span className="eyebrow">Runs through the real rules, so a refusal is the game refusing</span>
@@ -4616,7 +4622,7 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
   const atDefaults = auto.tickSeconds === auto.defaultTickSeconds && auto.roundsPerTick === auto.defaultRoundsPerTick
 
   return <>
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>Automatic AI</h2>
         <span>{auto.enabled ? `On, ${auto.roundsPerTick} round(s) every ${auto.tickSeconds}s` : 'Off'}</span>
@@ -4662,13 +4668,13 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
           Reset to {auto.defaultTickSeconds}s / {auto.defaultRoundsPerTick}
         </button>
       </div>
-      {!timingValid && <p className="text-ink-soft fs-sm mt-3">
+      {!timingValid && <p className="text-body-tertiary small mt-3">
         Tick must be {auto.minTickSeconds}-{auto.maxTickSeconds}s and rounds {auto.minRoundsPerTick}-{auto.maxRoundsPerTick}.
       </p>}
-      {overview.botAccounts < 1 && <p className="text-ink-soft fs-sm mt-3">Seed some rivals below before turning the loop on.</p>}
+      {overview.botAccounts < 1 && <p className="text-body-tertiary small mt-3">Seed some rivals below before turning the loop on.</p>}
     </section>
 
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Seed and Run</h2><span>{number.format(overview.botAccounts)} rivals exist</span></div>
       <div className="control-row">
         <label className="field">Seed count<input className="form-control" type="number" min={1} max={15} value={seedCount} onChange={e => setSeedCount(Number(e.target.value))} /></label>
@@ -4686,11 +4692,11 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
       </div>
     </section>
 
-    <section className="card surface-panel p-5 gcol-full">
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The Rivals</h2><span>Personality and playing habits</span></div>
       {rosterError && <div className="alert alert-danger"><span>{rosterError}</span></div>}
-      {roster.length === 0 && !rosterError && <p className="text-ink-soft fs-sm mt-3 mb-0">No AI rivals yet.</p>}
-      {roster.length > 0 && <div className="table-responsive mt-4"><table className="table table-sm table-hover align-middle game-table">
+      {roster.length === 0 && !rosterError && <p className="text-body-tertiary small mt-3 mb-0">No AI rivals yet.</p>}
+      {roster.length > 0 && <div className="table-responsive mt-3"><table className="table table-sm table-hover align-middle game-table">
         <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th><th>Habits</th><th>State</th><th /></tr></thead>
         <tbody>
           {roster.map(bot => <tr key={bot.playerId} className={rivalRowClass(bot)}>
@@ -4700,7 +4706,7 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
             <td>{bot.lastActionAtUtc ? `${number.format(bot.minutesIdle)}m` : 'never acted'}</td>
             <td>{bot.habits}</td>
             <td>{bot.isPaused ? 'Paused' : botPresence(bot)}</td>
-            <td className="admin-table-actions">
+            <td className="d-flex gap-1">
               <button
                 className="btn btn-secondary btn-sm"
                 disabled={working === bot.playerId}
@@ -4782,19 +4788,19 @@ function StandingsPanel({ dashboard, leaders, cityLeaders, limit }: {
     <div className="btn-group w-100 mb-2" role="group" aria-label="Standings scope">
       <button
         type="button"
-        className={`btn btn-sm ${scope === 'city' ? 'scope-on' : 'btn-secondary text-ink-dim'}`}
+        className={`btn btn-sm ${scope === 'city' ? 'scope-on' : 'btn-secondary text-body-secondary'}`}
         aria-pressed={scope === 'city'}
         onClick={() => setScope('city')}
       >{dashboard.city}</button>
       <button
         type="button"
-        className={`btn btn-sm ${scope === 'world' ? 'scope-on' : 'btn-secondary text-ink-dim'}`}
+        className={`btn btn-sm ${scope === 'world' ? 'scope-on' : 'btn-secondary text-body-secondary'}`}
         aria-pressed={scope === 'world'}
         onClick={() => setScope('world')}
       >Everywhere</button>
     </div>
     {rows.length === 0
-      ? <p className="text-ink-soft fs-sm mt-3 mb-0">Nobody else has set up in {dashboard.city} yet. That makes you first.</p>
+      ? <p className="text-body-tertiary small mt-3 mb-0">Nobody else has set up in {dashboard.city} yet. That makes you first.</p>
       : <Leaderboard leaders={rows.slice(0, limit)} currentPlayer={dashboard.name} />}
   </>
 }
@@ -4802,34 +4808,54 @@ function StandingsPanel({ dashboard, leaders, cityLeaders, limit }: {
 function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], currentPlayer: string }) {
   return <div className="leaderboard tnum d-grid overflow-y-auto">
     {leaders.map(l => <div
-      className={`leader d-grid gap-2 p-2 fs-base border-top border-line-soft ${l.playerName === currentPlayer ? 'bg-success-subtle' : ''}`}
+      className={`leader d-grid gap-2 p-2 border-top ${l.playerName === currentPlayer ? 'bg-success-subtle' : ''}`}
       key={l.rank}
     >
-      <span className="text-ink-dim">#{l.rank}</span>
+      <span className="text-body-secondary">#{l.rank}</span>
       <strong className="min-w-0 text-truncate">{l.playerName}</strong>
-      <span className="text-ink-dim">{money.format(l.netWorth)}</span>
+      <span className="text-body-secondary">{money.format(l.netWorth)}</span>
     </div>)}
   </div>
 }
 
 function ActivityList({ entries }: { entries: { id: number, action: string, createdAtUtc: string, summary: string }[] }) {
   return <div className="d-grid">
-    {entries.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">No activity yet.</p>}
-    {entries.map(a => <div className="feed-item py-3 border-top border-line-soft" key={a.id}>
-      <div className="d-flex flex-column flex-sm-row justify-content-between gap-hair gap-sm-2">
-        <strong className="text-gold fs-base">{a.action}</strong>
-        <span className="text-ink-faint fs-sm text-sm-end">{new Date(a.createdAtUtc).toLocaleString()}</span>
+    {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No activity yet.</p>}
+    {entries.map(a => <div className="feed-item py-3 border-top" key={a.id}>
+      <div className="d-flex flex-column flex-sm-row justify-content-between gap-1 gap-sm-2">
+        <strong className="text-primary">{a.action}</strong>
+        <span className="text-body-tertiary small text-sm-end">{new Date(a.createdAtUtc).toLocaleString()}</span>
       </div>
-      <p className="mt-1 mb-0 fs-base">{a.summary}</p>
+      <p className="mt-1 mb-0">{a.summary}</p>
     </div>)}
   </div>
 }
 
 function AdminMetric({ label, value }: { label: string, value: string }) {
-  return <div className="d-grid gap-1 border rounded bg-surface px-3 py-2">
+  return <div className="d-grid gap-1 border rounded bg-body-secondary px-3 py-2">
     <span className="eyebrow">{label}</span>
-    <strong className="min-w-0 fs-lg text-break">{value}</strong>
+    <strong className="min-w-0 fs-5 text-break">{value}</strong>
   </div>
+}
+
+// The stripe down the side of a headline, keyed by what the story is about. Held
+// as a map rather than as five CSS classes, because the colour is Bootstrap's and
+// the only decision left is which of its six a given kind of news belongs to.
+const HEADLINE_EDGE: Record<string, string> = {
+  leader: 'border-start-warning',
+  robbery: 'border-start-danger',
+  score: 'border-start-success',
+  arrival: 'border-start-info',
+  ground: 'border-start-primary',
+}
+
+// What a line of world news is, in one word, and the colour it is said in.
+const NEWS_TONE: Record<WorldNewsEntry['category'], string> = {
+  combat: 'text-danger',
+  build: 'text-warning',
+  arrival: 'text-info',
+  crew: 'text-success',
+  money: 'text-primary',
 }
 
 const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
@@ -4842,29 +4868,29 @@ const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
 
 function WorldNewsPanel({ news, currentPlayer }: { news: WorldNews, currentPlayer: string }) {
   const entries = news.feed.slice(0, 8)
-  return <div className="card surface-panel p-5 gcol-full">
+  return <div className="card p-3 gcol-full">
     <div className="panel-title"><h2>World News</h2><span>What is worth knowing</span></div>
     {news.headlines.length > 0 && <div className="d-grid gtc-fill-210 gap-2 mt-3 mb-1">
       {news.headlines.map(headline => <div
-        className={`headline headline-${headline.kind} d-grid gtc-1 gap-1 border border-line-soft rounded-1 bg-surface-deep px-3 py-2`}
+        className={`d-grid gtc-1 gap-1 border rounded-1 bg-body-tertiary px-3 py-2 border-start-thick ${HEADLINE_EDGE[headline.kind] ?? 'border-start-secondary'}`}
         key={headline.kind}
       >
-        <strong className="fs-base text-break">{headline.title}</strong>
-        <span className="text-ink-dim fs-sm">{headline.detail}</span>
+        <strong className="text-break">{headline.title}</strong>
+        <span className="text-body-secondary small">{headline.detail}</span>
       </div>)}
     </div>}
     <div className="world-news d-grid overflow-y-auto">
-      {entries.length === 0 && <p className="text-ink-soft fs-sm mt-3 mb-0">Nothing worth reporting yet. Small moves stay off the page.</p>}
+      {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing worth reporting yet. Small moves stay off the page.</p>}
       {entries.map(entry => <div
-        className={`feed-item py-2 border-top border-line-soft ${entry.playerName === currentPlayer ? 'mine' : ''}`}
+        className={`feed-item py-2 border-top ${entry.playerName === currentPlayer ? 'mine' : ''}`}
         key={entry.id}
       >
-        <div className="d-flex flex-column flex-sm-row justify-content-between gap-hair gap-sm-2">
-          <strong className={`news-tag ${entry.category} eyebrow`}>{NEWS_LABELS[entry.category] ?? entry.action}</strong>
-          <span className="text-ink-faint fs-xs text-sm-end">{new Date(entry.createdAtUtc).toLocaleString()}</span>
+        <div className="d-flex flex-column flex-sm-row justify-content-between gap-1 gap-sm-2">
+          <strong className={`small fw-bold ${NEWS_TONE[entry.category] ?? 'text-body-secondary'}`}>{NEWS_LABELS[entry.category] ?? entry.action}</strong>
+          <span className="text-body-tertiary small text-sm-end">{new Date(entry.createdAtUtc).toLocaleString()}</span>
         </div>
-        <p className="my-1 fs-base">{entry.summary}</p>
-        <small className="text-ink-faint fs-xs">{entry.playerName} / {entry.city}{entry.turnsSpent > 0 ? ` / ${entry.turnsSpent} turn${entry.turnsSpent === 1 ? '' : 's'}` : ''}</small>
+        <p className="my-1">{entry.summary}</p>
+        <small className="text-body-tertiary small">{entry.playerName} / {entry.city}{entry.turnsSpent > 0 ? ` / ${entry.turnsSpent} turn${entry.turnsSpent === 1 ? '' : 's'}` : ''}</small>
       </div>)}
     </div>
   </div>
@@ -4946,15 +4972,15 @@ function formatBreakdownValue(key: string, value: unknown) {
 function DismissibleMessage({ className, children, onClose }: { className: string, children: ReactNode, onClose: () => void }) {
   return <div className={`${className} d-flex align-items-center justify-content-between gap-3`}>
     <span>{children}</span>
-    <button className="dismiss" type="button" aria-label="Close notification" onClick={onClose}>x</button>
+    <button className="btn-close" type="button" aria-label="Close notification" onClick={onClose} />
   </div>
 }
 
 function Stat({ label, value, sub, tone, title }: { label: string, value: string, sub?: string, tone?: string, title?: string }) {
-  return <div className={`stat d-grid gap-hair border rounded surface-lit p-3 ${tone ?? ''}`} title={title}>
+  return <div className={`stat d-grid gap-1 border rounded bg-body-secondary p-3 ${tone ?? ''}`} title={title}>
     <span className="eyebrow">{label}</span>
-    <strong className="min-w-0 fs-lg lh-tight text-truncate">{value}</strong>
-    {sub && <small className="fs-sm text-truncate">{sub}</small>}
+    <strong className="min-w-0 fs-5 lh-1 text-truncate">{value}</strong>
+    {sub && <small className="small text-truncate">{sub}</small>}
   </div>
 }
 
@@ -4971,9 +4997,9 @@ function StorageSupplyNotice({ dashboard }: { dashboard: Dashboard }) {
   if (hoesOver) over.push(`${number.format(report.hoesStorageCanSupply)} of your ${number.format(dashboard.hoes)} hoes`)
   if (thugsOver) over.push(`${number.format(report.thugsStorageCanSupply)} of your ${number.format(dashboard.thugs)} thugs`)
 
-  return <div className="d-grid gap-1 mt-4 border rounded border-start-thick border-start-bad-soft px-3 py-3 supply-warning">
-    <strong className="text-bad-soft fs-base">Your storage room cannot supply this crew</strong>
-    <span className="text-ink-dim fs-sm lh-sm">
+  return <div className="d-grid gap-1 mt-3 border rounded border-start-thick border-start-danger px-3 py-3">
+    <strong className="text-danger">Your storage room cannot supply this crew</strong>
+    <span className="text-body-secondary small lh-sm">
       Even completely full, a level {dashboard.hideout.storageLevel} room carries {over.join(' and ')} through a
       full-length street action. Every shift past that runs a shortage and morale falls.
       {report.storageLevelToSupplyCrew
@@ -4989,12 +5015,12 @@ function StorageSupplyNotice({ dashboard }: { dashboard: Dashboard }) {
 
 function CrewCard({ name, count, desc, tone, cap, trend }: { name: string, count: number, desc: string, tone?: string, cap?: number, trend?: ReactNode }) {
   const edge = tone === 'good' ? 'border-success' : tone === 'warn' ? 'border-warning' : tone === 'danger' ? 'border-danger' : ''
-  return <div className={`border rounded bg-surface p-4 ${edge}`}>
-    <span className="text-ink-dim">{name}</span>
-    <strong className="d-block fs-xl my-1 text-gold">
-      {number.format(count)}{cap !== undefined && <small className="text-ink-dim fs-base fw-bold"> / {number.format(cap)}</small>}
+  return <div className={`border rounded bg-body-secondary p-3 ${edge}`}>
+    <span className="text-body-secondary">{name}</span>
+    <strong className="d-block fs-3 my-1 text-primary">
+      {number.format(count)}{cap !== undefined && <small className="text-body-secondary fw-bold"> / {number.format(cap)}</small>}
     </strong>
-    <p className="text-ink-dim fs-base m-0">{desc}{trend}</p>
+    <p className="text-body-secondary m-0">{desc}{trend}</p>
   </div>
 }
 
@@ -5022,13 +5048,13 @@ function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: 
     await load()
   }
 
-  return <section className="card surface-panel p-5 gcol-full">
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Wanted in {board.city}</h2><span>Buyers with a deadline</span></div>
     <p>
       These pay over the counter price, but they want a set amount by a set time, and some of them care
       what it is cut with. Selling flat is always there; this is what makes it worth choosing what to make.
     </p>
-    <div className="d-grid gap-2 mt-4">
+    <div className="d-grid gap-2 mt-3">
       {board.contracts.map(c => {
         const hours = Math.floor(c.minutesRemaining / 60)
         const left = hours >= 1 ? `${hours}h left` : `${c.minutesRemaining}m left`
@@ -5036,7 +5062,7 @@ function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: 
         const finishes = c.canDeliverNow >= c.remaining && c.canDeliverNow > 0
         return <div className={`room-row ${c.blockedReason ? '' : 'border-start-thick border-start-success'}`} key={c.id}>
           <div className="room-copy">
-            <strong>{c.buyer}{c.yours && <span className="tag yours">Yours</span>}</strong>
+            <strong>{c.buyer}{c.yours && <span className="badge text-bg-primary">Yours</span>}</strong>
             <span>
               Wants {number.format(c.quantity)} {c.good}
               {c.minimumPurityPercent ? `, at least ${c.minimumPurityPercent}% pure` : ''}
@@ -5083,10 +5109,10 @@ function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: 
 }
 
 function InventoryCard({ name, count, note }: { name: string, count: number, note: string }) {
-  return <div className="inventory-card d-grid gap-1 align-content-center border rounded bg-surface p-3">
+  return <div className="inventory-card d-grid gap-1 align-content-center border rounded bg-body-secondary p-3">
     <span className="eyebrow">{name}</span>
-    <strong className="fs-xl text-gold lh-tight">{number.format(count)}</strong>
-    <small className="text-ink-faint">{note}</small>
+    <strong className="fs-3 text-primary lh-1">{number.format(count)}</strong>
+    <small className="text-body-tertiary">{note}</small>
   </div>
 }
 
@@ -5114,11 +5140,11 @@ function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire =
   const moraleCost = Math.min(maxFirePenalty || Infinity, quantity * firePenalty)
   const worthTrimming = trims.filter(t => t.cut > 0 && t.cut <= owned)
 
-  return <div className="crew-manage-row d-grid gap-2 align-items-center py-3 border-top border-line-soft">
-    <div className="d-grid gap-hair">
+  return <div className="crew-manage-row d-grid gap-2 align-items-center py-3 border-top">
+    <div className="d-grid gap-1">
       <strong>{label}</strong>
-      <span className="text-ink-dim fs-base">{number.format(owned)} owned | {money.format(hireCost)} each | {note}</span>
-      {worthTrimming.length > 0 && <span className="d-flex flex-wrap gap-1 column-gap-3 mt-hair fs-sm text-ink-soft">
+      <span className="text-body-secondary">{number.format(owned)} owned | {money.format(hireCost)} each | {note}</span>
+      {worthTrimming.length > 0 && <span className="d-flex flex-wrap gap-1 column-gap-3 mt-1 small text-body-tertiary">
         {worthTrimming.map(trim => <button
           type="button"
           key={trim.label}
@@ -5129,7 +5155,7 @@ function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire =
           let {number.format(trim.cut)} go to {trim.label}
         </button>)}
       </span>}
-      {firePenalty > 0 && quantity > 0 && <span className="d-flex flex-wrap gap-1 column-gap-3 mt-hair fs-sm text-ink-soft">
+      {firePenalty > 0 && quantity > 0 && <span className="d-flex flex-wrap gap-1 column-gap-3 mt-1 small text-body-tertiary">
         Firing {number.format(quantity)} costs {moraleCost.toFixed(0)}% morale{moraleCost >= (maxFirePenalty || Infinity) ? ', the most a single cut can' : ''}.
       </span>}
     </div>
@@ -5148,10 +5174,10 @@ function SellRow({ name, owned, price, quantity, onQuantity, onSell, disabled }:
   onSell: () => void
   disabled: boolean
 }) {
-  return <div className="sell-row d-grid gap-2 align-items-center border-top border-line-soft pt-2">
-    <div className="d-grid gap-hair">
+  return <div className="sell-row d-grid gap-2 align-items-center border-top pt-2">
+    <div className="d-grid gap-1">
       <strong>{name}</strong>
-      <span className="text-ink-dim fs-base">{number.format(owned)} owned | {money.format(price)} each</span>
+      <span className="text-body-secondary">{number.format(owned)} owned | {money.format(price)} each</span>
     </div>
     <input className="form-control" type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} />
     <button className="btn btn-secondary btn-sm" disabled={disabled || quantity < 1 || quantity > owned} onClick={onSell}>Sell</button>
@@ -5159,9 +5185,9 @@ function SellRow({ name, owned, price, quantity, onQuantity, onSell, disabled }:
 }
 
 function StatusRow({ label, value, warn, trend }: { label: string, value: string, warn?: boolean, trend?: ReactNode }) {
-  return <div className="status-row d-flex justify-content-between gap-3 py-2 fs-base border-top border-line-soft">
-    <span className="text-ink-dim">{label}</span>
-    <strong className={`text-end text-break ${warn ? 'text-gold-bright' : 'text-ink'}`}>{value}{trend}</strong>
+  return <div className="status-row d-flex justify-content-between gap-3 py-2 border-top">
+    <span className="text-body-secondary">{label}</span>
+    <strong className={`text-end text-break ${warn ? 'text-primary' : 'text-body'}`}>{value}{trend}</strong>
   </div>
 }
 
@@ -5178,8 +5204,8 @@ function MoraleArrow({ trend, crew }: { trend: MoraleTrend, crew: 'hoe' | 'thug'
   const title = direction === 'steady'
     ? 'Steady since your last action'
     : `${sign}${delta?.toFixed(1)} since your last action`
-  const tone = direction === 'up' ? 'text-good-soft' : direction === 'down' ? 'text-bad-soft' : 'text-ink-faint'
-  return <em className={`fst-normal ms-1 fs-sm ${tone}`} title={title}>{MORALE_ARROWS[direction]}</em>
+  const tone = direction === 'up' ? 'text-success' : direction === 'down' ? 'text-danger' : 'text-body-tertiary'
+  return <em className={`fst-normal ms-1 small ${tone}`} title={title}>{MORALE_ARROWS[direction]}</em>
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)

@@ -1990,6 +1990,75 @@ input:focus-visible, textarea:focus-visible {
 .chat-line small { color: var(--ink-faint); font-size: var(--text-xs); white-space: nowrap; }
 .chat-line.yours strong { color: var(--ink); }
 
+/* A conversation in the list: who, what they last said, and when. */
+.chat-thread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--space-2);
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-2);
+}
+.chat-thread:hover { border-color: var(--line); }
+.chat-thread.unread { border-color: var(--gold-deep); }
+.chat-thread strong {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--gold-bright);
+  font-size: var(--text-sm);
+}
+.chat-thread span {
+  grid-column: 1 / 2;
+  min-width: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-thread small { grid-row: 1 / 2; grid-column: 2 / 3; color: var(--ink-faint); font-size: var(--text-xs); }
+
+/* Back out of a conversation to the list. */
+.chat-back {
+  justify-self: start;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font-size: var(--text-xs);
+  padding: var(--space-1) 0;
+}
+.chat-back:hover { color: var(--gold); }
+
+/* A conversation window, stacked leftwards from the dock. */
+.chat-window { right: auto; }
+.chat-list-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+
+/* A group says how many are in it, so the name alone does not have to. */
+.chat-group-tag {
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  color: var(--gold);
+  font-size: var(--text-xs);
+  font-style: normal;
+  padding: 0 var(--space-1);
+}
+
+.chat-picker { display: grid; gap: var(--space-2); }
+.chat-picker-actions { display: flex; justify-content: space-between; gap: var(--space-2); }
+.chat-chosen { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.chat-chip {
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: #1b1710;
+  color: var(--gold);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+}
+.chat-chip:hover { border-color: var(--gold); }
+
 .chat-say { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); }
 .chat-count { color: var(--ink-faint); font-size: var(--text-xs); text-align: right; }
 .chat-count.over { color: #d4756a; }
@@ -2009,6 +2078,8 @@ input:focus-visible, textarea:focus-visible {
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }
   .chat-launcher { bottom: calc(84px + env(safe-area-inset-bottom)); right: var(--space-3); }
+  /* One window fits. A conversation takes the screen and the dock waits behind it. */
+  .chat-window { right: 0 !important; left: 0; z-index: 36; }
   .chat-log { height: 44vh; }
   .chat-line { grid-template-columns: minmax(0, 1fr) auto; }
   .chat-line strong { grid-column: 1 / -1; }

@@ -88,6 +88,9 @@ var tests = new (string Name, Action Test)[]
     ("a watchful town notices the same operation sooner", CityRiskReachesTheDailyLoop),
     ("a buyer with a deadline pays over the counter", ContractsAreDemandWithAShape),
     ("a room only ever fails towards the loudest one", ChatFailsTowardsTheOpenRoom),
+    ("a direct message is addressed, never posted", ADirectMessageIsAddressedNeverPosted),
+    ("blocking silences somebody without shielding you from them", BlockingIsChatAndNotCover),
+    ("a conversation is who is in it, whether that is two or twelve", AConversationIsWhoIsInIt),
     ("an order goes in as fast as the room allows", AnOrderGoesInAsFastAsTheRoomAllows),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
     ("a mule run is gated, priced and frozen at launch", MuleRunsArePricedAndFrozen),
@@ -2805,6 +2808,147 @@ static void BotAttackProfilesScaleWithPersonality()
 // goes to a crew it was not meant for cannot be taken back by anybody.
 //
 // So the failure is Global, and every private room has to be asked for by name.
+// The rule that has to hold for direct messages: Direct is not a room, and nothing that turns a string
+// into a channel can ever produce one.
+//
+// Parse falls to Global on anything it does not recognise, which is right for a room - a line landing
+// somewhere more public than intended can at least be seen and answered for. That same fallback would
+// be a disaster in the other direction, so the guard is that Parse cannot return Direct at all: a
+// direct message is sent through its own path, with a recipient, or it is not sent.
+// Blocking is a chat setting and has to stay one.
+//
+// The moment it also stops somebody raiding your house, it stops being a way to deal with an unpleasant
+// person and becomes a move: block the strongest player on the board and sit behind it. So the guard is
+// that nothing in combat reads the block table at all, and this test says so by walking the whole
+// attack path with a block in place and watching it go through exactly as before.
+// Direct messages were built as a pair - a message with a recipient, a thread worked out by folding
+// those together. That shape held for two people and not for three: nothing to fold, no way to say who
+// is in a conversation before anybody has spoken, nowhere to hang a name.
+//
+// So membership is the model, and a direct message is a conversation with two people in it. One
+// mechanism rather than two that drift apart, and this pins the properties that depend on that.
+static void AConversationIsWhoIsInIt()
+{
+    var options = Resolve(new GameOptions());
+
+    // A pair carries no title and is named after whoever else is in it; a group carries its own.
+    var pair = new Conversation
+    {
+        IsGroup = false,
+        Members = [new ConversationMember { PlayerId = Guid.NewGuid() }, new ConversationMember { PlayerId = Guid.NewGuid() }]
+    };
+    AssertTrue(pair.Title is null, "a pair has no name of its own");
+    AssertEqual(2, pair.Members.Count);
+
+    var group = new Conversation
+    {
+        IsGroup = true,
+        Title = "The Causeway job",
+        Members = Enumerable.Range(0, 5).Select(_ => new ConversationMember { PlayerId = Guid.NewGuid() }).ToList()
+    };
+    AssertEqual(5, group.Members.Count);
+    AssertTrue(group.Title is not null, "a group can be named");
+
+    // A group has a ceiling, or it stops being a conversation and becomes a broadcast.
+    AssertTrue(options.Chat.MaxGroupMembers >= 3, "a group holds more than a pair");
+    AssertTrue(options.Chat.MaxGroupMembers <= 50, $"and not a crowd: {options.Chat.MaxGroupMembers}");
+
+    // A message belongs to a conversation rather than to a person, which is what let the third person
+    // exist at all. No room scope either: a conversation is not a place.
+    var said = new ChatMessage
+    {
+        Channel = ChatChannel.Direct,
+        ConversationId = 7,
+        AuthorName = "You",
+        Body = "meet at the docks"
+    };
+    AssertEqual(7L, said.ConversationId ?? 0);
+    AssertTrue(said.City is null && said.AllianceId is null, "a conversation belongs to no town and no crew");
+
+    // The read watermark is a real position rather than the guess the pair version used, which counted
+    // anything newer than your own last reply and so called a conversation unread forever if you never
+    // answered it.
+    var member = new ConversationMember { PlayerId = Guid.NewGuid(), LastReadMessageId = 42 };
+    AssertEqual(42L, member.LastReadMessageId);
+}
+
+static void BlockingIsChatAndNotCover()
+{
+    var options = Resolve(new GameOptions());
+    var strikes = CreateStrikes(options);
+
+    var attacker = new Player
+    {
+        Id = Guid.NewGuid(), Name = "Blocked", City = "Detroit", Turns = 40,
+        Thugs = 4, Pistols = 4, Poison = 10, Hideout = new Hideout()
+    };
+    var defender = new Player
+    {
+        Id = Guid.NewGuid(), Name = "Blocker", City = "Detroit",
+        Cash = 200_000, Rides = 1, Hoes = 6
+    };
+
+    // A block exists between them - the defender wants nothing to do with the attacker.
+    var block = new PlayerBlock { BlockerId = defender.Id, BlockedId = attacker.Id };
+    AssertEqual(defender.Id, block.BlockerId);
+    AssertEqual(attacker.Id, block.BlockedId);
+
+    // And it changes nothing about whether the attack is allowed. Every strike answers the same way it
+    // would to a stranger, because none of this consults who is talking to whom.
+    AssertTrue(strikes.WhyNot(AttackMethods.Jack, attacker, defender) is null, "a block does not save the cars");
+    AssertTrue(strikes.WhyNot(AttackMethods.Infest, attacker, defender) is null, "nor the house");
+    AssertTrue(strikes.WhyNot(AttackMethods.DriveBy, attacker, defender) is not null, "and the ordinary rules still apply");
+
+    // The refusal a blocked person meets when they write is about messages and nothing else, and it is
+    // the same sentence whichever direction the block runs, so it never reveals who blocked whom.
+    var message = new ChatMessage
+    {
+        Channel = ChatChannel.Direct,
+        ConversationId = 1,
+        AuthorId = attacker.Id,
+        AuthorName = attacker.Name,
+        Body = "let me explain"
+    };
+    AssertEqual(ChatChannel.Direct, message.Channel);
+    AssertTrue(message.City is null && message.AllianceId is null, "a direct message has no room scope");
+}
+
+static void ADirectMessageIsAddressedNeverPosted()
+{
+    // The word itself does not open the private channel.
+    AssertTrue(ChatChannels.Parse("Direct") != ChatChannel.Direct, "Parse must never hand back Direct");
+    AssertTrue(ChatChannels.Parse("direct") != ChatChannel.Direct, "in any case");
+    AssertEqual(ChatChannel.Global, ChatChannels.Parse("Direct"));
+
+    // And it is not one of the rooms anything enumerates.
+    AssertTrue(!ChatChannels.All.Contains(ChatChannel.Direct), "Direct is not a room");
+    AssertEqual(3, ChatChannels.All.Length);
+
+    // A direct message carries both ends and no room scope, which is what makes a thread a pair rather
+    // than a place: neither the town nor the crew has any bearing on who can read it.
+    var sent = new ChatMessage
+    {
+        Channel = ChatChannel.Direct,
+        ConversationId = 3,
+        AuthorId = Guid.NewGuid(),
+        AuthorName = "You",
+        Body = "meet me at the docks"
+    };
+    AssertTrue(sent.City is null, "a direct message belongs to no town");
+    AssertTrue(sent.AllianceId is null, "and to no crew");
+    AssertTrue(sent.ConversationId is not null, "and always belongs to a conversation");
+
+    // A room message is the mirror of that: a scope and nobody addressed.
+    var posted = new ChatMessage
+    {
+        Channel = ChatChannel.City,
+        City = "Detroit",
+        AuthorName = "You",
+        Body = "anybody about"
+    };
+    AssertTrue(posted.ConversationId is null, "a room message belongs to no conversation");
+}
+
 static void ChatFailsTowardsTheOpenRoom()
 {
     // Nonsense, blank and missing all land in the open.

@@ -23,6 +23,9 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<PlayerBlock> PlayerBlocks => Set<PlayerBlock>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -148,6 +151,12 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasIndex(x => new { x.Channel, x.AllianceId, x.Id });
             // The rate limit asks "has this person spoken lately", which is this.
             entity.HasIndex(x => new { x.AuthorId, x.CreatedAtUtc });
+            // Every conversation read is "the newest in this one", which is this.
+            entity.HasIndex(x => new { x.ConversationId, x.Id });
+            entity.HasOne(x => x.Conversation)
+                .WithMany()
+                .HasForeignKey(x => x.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
             entity.Property(x => x.City).HasMaxLength(64);
             entity.Property(x => x.AuthorName).HasMaxLength(32);
             entity.Property(x => x.Body).HasMaxLength(400);
@@ -157,6 +166,45 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.AuthorId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<PlayerBlock>(entity =>
+        {
+            // One block per pair per direction, enforced rather than checked: blocking somebody twice
+            // is a double-click, not a decision, and a duplicate row would make unblocking a lottery.
+            entity.HasIndex(x => new { x.BlockerId, x.BlockedId }).IsUnique();
+            // Read from both ends on every chat read: who I have silenced, and who has silenced me.
+            entity.HasIndex(x => x.BlockedId);
+            entity.HasOne(x => x.Blocker)
+                .WithMany()
+                .HasForeignKey(x => x.BlockerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Blocked)
+                .WithMany()
+                .HasForeignKey(x => x.BlockedId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ConversationMember>(entity =>
+        {
+            // One membership per person per conversation, and the two ways it is read: who is in this
+            // conversation, and which conversations is this person in.
+            entity.HasIndex(x => new { x.ConversationId, x.PlayerId }).IsUnique();
+            entity.HasIndex(x => x.PlayerId);
+            entity.HasOne(x => x.Conversation)
+                .WithMany(x => x.Members)
+                .HasForeignKey(x => x.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Conversation>(entity =>
+        {
+            entity.Property(x => x.Title).HasMaxLength(48);
+            entity.HasIndex(x => x.LastMessageAtUtc);
         });
 
         modelBuilder.Entity<Territory>(entity =>

@@ -103,6 +103,35 @@ export type ChatBoard = {
   maxLength: number
 }
 
+/** A conversation in the list: what it is called, who is in it, and where it got to. */
+export type ChatConversationSummary = {
+  id: number
+  name: string
+  isGroup: boolean
+  others: string[]
+  lastBody: string
+  sentAtUtc: string
+  unread: number
+}
+
+export type ChatConversationList = { conversations: ChatConversationSummary[], unread: number }
+
+export type ChatConversation = {
+  id: number
+  name: string
+  isGroup: boolean
+  others: string[]
+  messages: ChatMessage[]
+  maxLength: number
+}
+
+/** Somebody the picker found. */
+export type Person = { playerId: string, name: string, city: string }
+export type PeopleSearch = { people: Person[] }
+
+export type BlockedPlayer = { playerId: string, name: string }
+export type BlockedList = { blocked: BlockedPlayer[] }
+
 export type NextMove = { label: string, why: string, page: string, cost: number, urgent: boolean }
 export type Objective = { label: string, why: string, page: string, done: boolean }
 export type Guidance = {
@@ -809,6 +838,23 @@ export type BotAutomationStatus = {
   maxRoundsPerTick: number
 }
 
+/**
+ * A refusal from the server, carrying the code it came with.
+ *
+ * Worth the extra type because a caller often needs to tell a refusal from a wobble: the server saying
+ * this cannot be read is final and worth acting on, while a request that never arrived is worth trying
+ * again in eight seconds. Both used to arrive as the same bare Error.
+ */
+export class RequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = 'RequestError'
+  }
+
+  /** The server understood and said no, rather than never having answered at all. */
+  get refused() { return this.status >= 400 && this.status < 500 && this.status !== 401 }
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     credentials: 'include',
@@ -822,7 +868,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       const body = await response.json()
       if (body?.error) message = body.error
     } catch { /* empty */ }
-    throw new Error(message)
+    throw new RequestError(message, response.status)
   }
 
   if (response.status === 204) return undefined as T
@@ -988,6 +1034,20 @@ export const api = {
     request<ChatBoard>(`/api/game/chat?channel=${encodeURIComponent(channel)}`),
   say: (channel: ChatChannelKey, body: string) =>
     request<ChatMessage>('/api/game/chat', { method: 'POST', body: JSON.stringify({ channel, body }) }),
+  conversations: () => request<ChatConversationList>('/api/game/chat/conversations'),
+  conversation: (id: number) => request<ChatConversation>(`/api/game/chat/conversations/${id}`),
+  openDirect: (playerId: string) =>
+    request<{ id: number }>('/api/game/chat/conversations/direct', { method: 'POST', body: JSON.stringify({ playerId }) }),
+  startGroup: (playerIds: string[], title: string) =>
+    request<{ id: number }>('/api/game/chat/conversations/group', { method: 'POST', body: JSON.stringify({ playerIds, title }) }),
+  sayIn: (id: number, body: string) =>
+    request<ChatMessage>(`/api/game/chat/conversations/${id}/say`, { method: 'POST', body: JSON.stringify({ body }) }),
+  findPeople: (q: string) => request<PeopleSearch>(`/api/game/chat/people?q=${encodeURIComponent(q)}`),
+  blocked: () => request<BlockedList>('/api/game/chat/blocked'),
+  block: (playerId: string) =>
+    request<{ blocked: boolean }>('/api/game/chat/block', { method: 'POST', body: JSON.stringify({ playerId }) }),
+  unblock: (playerId: string) =>
+    request<{ blocked: boolean }>('/api/game/chat/unblock', { method: 'POST', body: JSON.stringify({ playerId }) }),
   /** Hands over part of an order, or as much as will go when no amount is given. */
   fillContract: (id: number, quantity?: number) =>
     request<ActionResult>(`/api/game/contracts/${id}/fill`, {

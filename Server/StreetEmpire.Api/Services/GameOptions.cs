@@ -1882,4 +1882,10 @@ public sealed class ChatOptions
     /// it is the one that needs sweeping; nobody scrolls back a fortnight.
     /// </summary>
     public int RetentionDays { get; set; } = 14;
+
+    /// <summary>
+    /// People in one group, counting whoever started it. Small enough that a group is a table rather
+    /// than a broadcast: past a dozen, nobody is talking to anybody.
+    /// </summary>
+    public int MaxGroupMembers { get; set; } = 12;
 }

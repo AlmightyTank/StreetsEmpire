@@ -1,8 +1,8 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { adminApi, api, cheapestWeapon, configApi, opsApi } from './api'
-import type { ChatBoard, ChatChannelKey, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import { adminApi, api, cheapestWeapon, configApi, opsApi, RequestError } from './api'
+import type { BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 /*
   The stylesheet has asked for Inter since the beginning and nothing ever loaded it, so every player
   has been reading the fallback - Segoe UI on Windows, SF on a Mac - and the weights above 700 were
@@ -345,84 +345,427 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
  * reasoned about every time the tab sleeps.
  */
 const chatDockKey = 'street-empire.chat.state'
+const chatOpenKey = 'street-empire.chat.open'
 
 type ChatDockState = 'open' | 'minimised' | 'closed'
 
 /**
- * Talking, in a window that follows you.
+ * Talking.
  *
- * It began as a panel on the overview page, which meant a conversation ended the moment you went to
- * work the streets - the one screen you are least likely to be sitting on when somebody says something
- * to you. A chat is not a thing you visit; it is a thing that is open while you do something else.
+ * One window for the rooms and the list of conversations, and a window of its own for each conversation
+ * you have open - which is the shape people already know from every messenger, and the reason it is
+ * worth the extra state: reading one conversation should not close another, and a group is only useful
+ * if you can keep an eye on it while you answer somebody else.
  *
- * So it docks: a bar in the corner that expands, collapses to its own header, and remembers which of
- * those it was across page changes and reloads. The same shape a direct message will want, which is
- * why the room is a tab inside the window rather than the window itself.
+ * The open windows are remembered across page changes and reloads, because a window that closes itself
+ * when you go to work the streets is the thing this whole dock exists to stop.
  */
-function ChatDock({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) {
+function ChatWindows({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) {
+  const [open, setOpen] = useState<number[]>(() => {
+    try { return JSON.parse(localStorage.getItem(chatOpenKey) ?? '[]') as number[] }
+    catch { return [] }
+  })
+
+  const remember = (next: number[]) => {
+    // Only so many fit along the bottom before they start stacking on top of each other.
+    const capped = next.slice(0, 3)
+    setOpen(capped)
+    localStorage.setItem(chatOpenKey, JSON.stringify(capped))
+  }
+
+  const openOne = (id: number) => remember([id, ...open.filter(x => x !== id)])
+  const closeOne = (id: number) => remember(open.filter(x => x !== id))
+
+  useEffect(() => {
+    const fromElsewhere = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId?: number }>).detail
+      if (detail?.conversationId) openOne(detail.conversationId)
+    }
+    window.addEventListener('street-empire:conversation', fromElsewhere)
+    return () => window.removeEventListener('street-empire:conversation', fromElsewhere)
+  }, [open])
+
+  return <>
+    {open.map((id, index) => <ConversationWindow
+      busy={busy}
+      index={index}
+      key={id}
+      conversationId={id}
+      onClose={() => closeOne(id)}
+    />)}
+    <ChatDock dashboard={dashboard} busy={busy} onOpenConversation={openOne} />
+  </>
+}
+
+/** The rooms, and the list of everything you have open elsewhere. */
+function ChatDock({ dashboard, busy, onOpenConversation }: {
+  dashboard: Dashboard
+  busy: boolean
+  onOpenConversation: (id: number) => void
+}) {
   const [state, setState] = useState<ChatDockState>(() => {
     const saved = localStorage.getItem(chatDockKey)
     return saved === 'open' || saved === 'minimised' || saved === 'closed' ? saved : 'minimised'
   })
-  const [channel, setChannel] = useState<ChatChannelKey>('Global')
+  const [channel, setChannel] = useState<ChatChannelKey | 'Direct'>('Global')
   const [board, setBoard] = useState<ChatBoard | null>(null)
+  const [list, setList] = useState<ChatConversationList | null>(null)
+  const [blocked, setBlocked] = useState<BlockedList | null>(null)
+  const [showBlocked, setShowBlocked] = useState(false)
+  const [picking, setPicking] = useState(false)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const [unread, setUnread] = useState(0)
   const log = useRef<HTMLDivElement | null>(null)
   const pinned = useRef(true)
-  const seen = useRef<number>(0)
+  const seen = useRef(0)
 
   const move = (next: ChatDockState) => {
     setState(next)
     localStorage.setItem(chatDockKey, next)
   }
 
-  const load = async (which: ChatChannelKey, open: boolean) => {
+  const loadRoom = async (which: ChatChannelKey, isOpen: boolean) => {
     try {
       const next = await api.chat(which)
       setBoard(next)
       setError('')
       const newest = next.messages.length > 0 ? next.messages[next.messages.length - 1].id : 0
-      if (open) {
-        seen.current = newest
-        setUnread(0)
-      } else {
-        // Only other people's lines count as unread. Your own arriving back is not news.
-        setUnread(next.messages.filter(m => m.id > seen.current && !m.yours).length)
-      }
+      if (isOpen) { seen.current = newest; setUnread(0) }
+      else setUnread(next.messages.filter(m => m.id > seen.current && !m.yours).length)
     } catch (e) { setError((e as Error).message) }
   }
 
   useEffect(() => {
-    if (state === 'closed') return
-    void load(channel, state === 'open')
+    if (state === 'closed' || channel === 'Direct') return
+    void loadRoom(channel, state === 'open')
   }, [channel, state, dashboard.city, dashboard.alliance?.id])
 
-  // Open, it keeps up with the room. Minimised, it only asks often enough to notice somebody talking.
-  // Closed, it does not ask at all - a window nobody has open should cost nothing.
   useEffect(() => {
     if (state === 'closed') return
     const every = state === 'open' ? 8000 : 25000
     const tick = setInterval(() => {
-      if (document.visibilityState === 'visible') void load(channel, state === 'open')
+      if (document.visibilityState !== 'visible') return
+      if (channel !== 'Direct') void loadRoom(channel, state === 'open')
     }, every)
     return () => clearInterval(tick)
   }, [channel, state])
 
+  // The conversation list is kept up to date whatever tab is showing, so the badge is honest while you
+  // are reading the global room.
+  const refreshList = async () => {
+    try { setList(await api.conversations()); setBlocked(await api.blocked()) }
+    catch { /* the panel shows read errors from the room it is on */ }
+  }
+
+  useEffect(() => {
+    if (state === 'closed') return
+    void refreshList()
+    const tick = setInterval(() => { if (document.visibilityState === 'visible') void refreshList() }, 20000)
+    const again = () => void refreshList()
+    window.addEventListener('street-empire:blocked', again)
+    window.addEventListener('street-empire:conversation', again)
+    return () => { clearInterval(tick); window.removeEventListener('street-empire:blocked', again); window.removeEventListener('street-empire:conversation', again) }
+  }, [state])
+
   useEffect(() => {
     const node = log.current
     if (node && pinned.current) node.scrollTop = node.scrollHeight
-  }, [board, state])
+  }, [board, state, channel])
 
   const onScroll = () => {
     const node = log.current
     if (node) pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 40
   }
 
-  const current = board?.channels.find(x => x.channel === channel)
+  const current = channel === 'Direct' ? undefined : board?.channels.find(x => x.channel === channel)
   const max = board?.maxLength ?? 280
+  const over = draft.length > max
+
+  const say = async () => {
+    const body = draft.trim()
+    if (!body || sending || channel === 'Direct') return
+    setSending(true)
+    try {
+      await api.say(channel, body)
+      setDraft('')
+      pinned.current = true
+      await loadRoom(channel, true)
+    } catch (e) { setError((e as Error).message) }
+    finally { setSending(false) }
+  }
+
+  if (state === 'closed') {
+    return <button className="chat-launcher" type="button" onClick={() => move('open')} aria-label="Open chat">
+      Talk{(list?.unread ?? 0) > 0 && <b className="chat-unread">{list!.unread}</b>}
+    </button>
+  }
+
+  const isOpen = state === 'open'
+  const totalUnread = unread + (list?.unread ?? 0)
+
+  return <section className={isOpen ? 'chat-dock open' : 'chat-dock'} aria-label="Chat">
+    <header className="chat-dock-head">
+      <button className="chat-dock-title" type="button" onClick={() => move(isOpen ? 'minimised' : 'open')}>
+        <strong>Talk</strong>
+        <span>{channel === 'Direct' ? 'Messages' : board?.scope ?? ''}</span>
+        {!isOpen && totalUnread > 0 && <b className="chat-unread">{totalUnread > 99 ? '99+' : totalUnread}</b>}
+      </button>
+      <div className="chat-dock-controls">
+        <button type="button" title={isOpen ? 'Minimise' : 'Maximise'} onClick={() => move(isOpen ? 'minimised' : 'open')}>
+          {isOpen ? '–' : '▲'}
+        </button>
+        <button type="button" title="Close" onClick={() => move('closed')}>{'×'}</button>
+      </div>
+    </header>
+
+    {isOpen && <>
+      <div className="chat-tabs">
+        {(board?.channels ?? []).map(tab => <button
+          className={tab.channel === channel ? 'active' : ''}
+          key={tab.channel}
+          type="button"
+          title={tab.blockedReason ?? tab.detail}
+          onClick={() => { setChannel(tab.channel); setPicking(false) }}
+        >{tab.label}</button>)}
+        <button
+          className={channel === 'Direct' ? 'active' : ''}
+          type="button"
+          title="People you are talking to"
+          onClick={() => setChannel('Direct')}
+        >
+          Messages{(list?.unread ?? 0) > 0 && <b className="chat-unread">{list!.unread}</b>}
+        </button>
+      </div>
+
+      {channel === 'Direct' && <div className="chat-list-actions">
+        <button className="secondary compact" type="button" onClick={() => { setPicking(v => !v); setShowBlocked(false) }}>
+          {picking ? 'Cancel' : 'New message'}
+        </button>
+        {(blocked?.blocked.length ?? 0) > 0 && <button
+          className="chat-back"
+          type="button"
+          onClick={() => { setShowBlocked(v => !v); setPicking(false) }}
+        >{showBlocked ? 'Conversations' : `Blocked (${blocked!.blocked.length})`}</button>}
+      </div>}
+
+      {channel === 'Direct' && picking
+        ? <PeoplePicker
+          busy={busy}
+          onCancel={() => setPicking(false)}
+          onStarted={id => { setPicking(false); onOpenConversation(id); void refreshList() }}
+        />
+        : <div className="chat-log" ref={log} onScroll={onScroll}>
+          {channel === 'Direct' && showBlocked && blocked?.blocked.map(person => <div className="chat-thread" key={person.playerId}>
+            <strong>{person.name}</strong>
+            <button className="secondary compact" type="button" onClick={() => void (async () => {
+              try { await api.unblock(person.playerId); window.dispatchEvent(new CustomEvent('street-empire:blocked')) }
+              catch (e) { setError((e as Error).message) }
+            })()}>Unblock</button>
+          </div>)}
+
+          {channel === 'Direct' && !showBlocked && <>
+            {!list && <p className="hint">Looking.</p>}
+            {list && list.conversations.length === 0 && <p className="hint">
+              Nobody yet. Use New message to find somebody.
+            </p>}
+            {list?.conversations.map(row => <button
+              className={row.unread > 0 ? 'chat-thread unread' : 'chat-thread'}
+              key={row.id}
+              type="button"
+              onClick={() => onOpenConversation(row.id)}
+            >
+              <strong>
+                {row.name}
+                {row.isGroup && <em className="chat-group-tag">{row.others.length + 1}</em>}
+                {row.unread > 0 && <b className="chat-unread">{row.unread}</b>}
+              </strong>
+              <span>{row.lastBody}</span>
+              <small>{new Date(row.sentAtUtc).toLocaleDateString([], { day: 'numeric', month: 'short' })}</small>
+            </button>)}
+          </>}
+
+          {channel !== 'Direct' && <>
+            {!board && <p className="hint">Listening.</p>}
+            {board && board.messages.length === 0 && <p className="hint">
+              {current?.blockedReason ?? 'Nobody has said anything here yet.'}
+            </p>}
+            {board?.messages.map(line => <div className={line.yours ? 'chat-line yours' : 'chat-line'} key={line.id}>
+              <strong>{line.author}</strong>
+              <span>{line.body}</span>
+              <small>{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
+            </div>)}
+          </>}
+        </div>}
+
+      {error && <div className="error banner"><span>{error}</span></div>}
+
+      {channel !== 'Direct' && <form className="chat-say" onSubmit={event => { event.preventDefault(); void say() }}>
+        <input
+          aria-label={`Say something in ${current?.label ?? 'chat'}`}
+          disabled={busy || sending || !(current?.canPost ?? false)}
+          maxLength={max + 40}
+          placeholder={current?.canPost === false ? current.blockedReason ?? 'You cannot speak here.' : 'Say something'}
+          value={draft}
+          onChange={event => setDraft(event.target.value)}
+        />
+        <button className="primary compact" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
+      </form>}
+      {channel !== 'Direct' && draft.length > max * 0.75 && <small className={over ? 'chat-count over' : 'chat-count'}>
+        {draft.length} / {max}
+      </small>}
+    </>}
+  </section>
+}
+
+/**
+ * Finding somebody to write to.
+ *
+ * Search rather than a roster: the board can hold any number of players and a list of all of them is
+ * not a thing anybody reads. Picking more than one turns it into a group, which is the only difference
+ * between the two - a group is a conversation with more people in it, not a separate feature.
+ */
+function PeoplePicker({ busy, onCancel, onStarted }: {
+  busy: boolean
+  onCancel: () => void
+  onStarted: (conversationId: number) => void
+}) {
+  const [term, setTerm] = useState('')
+  const [found, setFound] = useState<Person[]>([])
+  const [chosen, setChosen] = useState<Person[]>([])
+  const [title, setTitle] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  // Debounced, because a search on every keystroke is a request per letter for a list nobody has
+  // finished typing the name of yet.
+  useEffect(() => {
+    if (term.trim().length < 2) { setFound([]); return }
+    const timer = setTimeout(() => {
+      void (async () => {
+        try { setFound((await api.findPeople(term)).people); setError('') }
+        catch (e) { setError((e as Error).message) }
+      })()
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [term])
+
+  const toggle = (person: Person) => setChosen(list =>
+    list.some(x => x.playerId === person.playerId)
+      ? list.filter(x => x.playerId !== person.playerId)
+      : [...list, person])
+
+  const start = async () => {
+    if (chosen.length === 0 || working) return
+    setWorking(true)
+    try {
+      const result = chosen.length === 1
+        ? await api.openDirect(chosen[0].playerId)
+        : await api.startGroup(chosen.map(x => x.playerId), title)
+      onStarted(result.id)
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  return <div className="chat-picker">
+    <input
+      aria-label="Find somebody"
+      autoFocus
+      placeholder="Find somebody by name"
+      value={term}
+      onChange={event => setTerm(event.target.value)}
+    />
+
+    {chosen.length > 0 && <div className="chat-chosen">
+      {chosen.map(person => <button className="chat-chip" key={person.playerId} type="button" onClick={() => toggle(person)}>
+        {person.name} {'×'}
+      </button>)}
+    </div>}
+
+    {chosen.length > 1 && <input
+      aria-label="Name this group"
+      maxLength={48}
+      placeholder="Name this group (optional)"
+      value={title}
+      onChange={event => setTitle(event.target.value)}
+    />}
+
+    <div className="chat-log">
+      {term.trim().length > 0 && term.trim().length < 2 && <p className="hint">Two letters at least.</p>}
+      {term.trim().length >= 2 && found.length === 0 && <p className="hint">Nobody by that name.</p>}
+      {found.map(person => <button
+        className={chosen.some(x => x.playerId === person.playerId) ? 'chat-thread unread' : 'chat-thread'}
+        key={person.playerId}
+        type="button"
+        onClick={() => toggle(person)}
+      >
+        <strong>{person.name}</strong>
+        <span>{person.city}</span>
+      </button>)}
+    </div>
+
+    {error && <div className="error banner"><span>{error}</span></div>}
+
+    <div className="chat-picker-actions">
+      <button className="secondary compact" type="button" onClick={onCancel}>Cancel</button>
+      <button className="primary compact" type="button" disabled={busy || working || chosen.length === 0} onClick={() => void start()}>
+        {chosen.length > 1 ? `Start group of ${chosen.length + 1}` : 'Open'}
+      </button>
+    </div>
+  </div>
+}
+
+/** One conversation, in a window of its own. */
+function ConversationWindow({ conversationId, index, busy, onClose }: {
+  conversationId: number
+  index: number
+  busy: boolean
+  onClose: () => void
+}) {
+  const [talk, setTalk] = useState<ChatConversation | null>(null)
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
+  const [minimised, setMinimised] = useState(false)
+  const log = useRef<HTMLDivElement | null>(null)
+  const pinned = useRef(true)
+
+  const load = async () => {
+    try { setTalk(await api.conversation(conversationId)); setError('') }
+    catch (e) {
+      // A conversation can stop being readable while its window is still on the screen: it was swept
+      // for age, or you were put out of the group. Left alone the window sat there saying Loading for
+      // ever, and because the open list is kept in storage it came back on every reload - a dead
+      // window you could close but never be rid of.
+      //
+      // Only a refusal closes it. A request that never landed is a wobble, and the next tick will
+      // pick the conversation back up rather than throwing it away because the server was restarting.
+      if (e instanceof RequestError && e.refused && !talk) { onClose(); return }
+      setError((e as Error).message)
+    }
+  }
+
+  useEffect(() => { void load() }, [conversationId])
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      if (document.visibilityState === 'visible' && !minimised) void load()
+    }, 8000)
+    return () => clearInterval(tick)
+  }, [conversationId, minimised])
+
+  useEffect(() => {
+    const node = log.current
+    if (node && pinned.current) node.scrollTop = node.scrollHeight
+  }, [talk, minimised])
+
+  const onScroll = () => {
+    const node = log.current
+    if (node) pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 40
+  }
+
+  const max = talk?.maxLength ?? 280
   const over = draft.length > max
 
   const say = async () => {
@@ -430,56 +773,37 @@ function ChatDock({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) 
     if (!body || sending) return
     setSending(true)
     try {
-      await api.say(channel, body)
+      await api.sayIn(conversationId, body)
       setDraft('')
       pinned.current = true
-      await load(channel, true)
+      await load()
+      window.dispatchEvent(new CustomEvent('street-empire:conversation'))
     } catch (e) { setError((e as Error).message) }
     finally { setSending(false) }
   }
 
-  if (state === 'closed') {
-    return <button className="chat-launcher" type="button" onClick={() => move('open')} aria-label="Open chat">
-      Talk
-    </button>
-  }
+  // Stacked leftwards from the dock, so the newest conversation is nearest to hand.
+  const style = { right: `calc(var(--space-4) + ${(index + 1) * 352}px)` } as React.CSSProperties
 
-  const open = state === 'open'
-
-  return <section className={open ? 'chat-dock open' : 'chat-dock'} aria-label="Chat">
+  return <section className={minimised ? 'chat-dock chat-window' : 'chat-dock chat-window open'} style={style}>
     <header className="chat-dock-head">
-      {/* The whole bar toggles, because a collapsed window whose only target is a small glyph is a
-          window people give up on. The buttons still work for anybody aiming at them. */}
-      <button className="chat-dock-title" type="button" onClick={() => move(open ? 'minimised' : 'open')}>
-        <strong>Talk</strong>
-        <span>{board?.scope ?? ''}</span>
-        {!open && unread > 0 && <b className="chat-unread">{unread > 99 ? '99+' : unread}</b>}
+      <button className="chat-dock-title" type="button" onClick={() => setMinimised(v => !v)}>
+        <strong>{talk?.name ?? 'Loading'}</strong>
+        {talk?.isGroup && <span>{talk.others.length + 1} people</span>}
       </button>
       <div className="chat-dock-controls">
-        <button type="button" title={open ? 'Minimise' : 'Maximise'} onClick={() => move(open ? 'minimised' : 'open')}>
-          {open ? '\u2013' : '\u25b2'}
+        <button type="button" title={minimised ? 'Maximise' : 'Minimise'} onClick={() => setMinimised(v => !v)}>
+          {minimised ? '▲' : '–'}
         </button>
-        <button type="button" title="Close" onClick={() => move('closed')}>{'\u00d7'}</button>
+        <button type="button" title="Close" onClick={onClose}>{'×'}</button>
       </div>
     </header>
 
-    {open && <>
-      <div className="chat-tabs">
-        {(board?.channels ?? []).map(tab => <button
-          className={tab.channel === channel ? 'active' : ''}
-          key={tab.channel}
-          type="button"
-          title={tab.blockedReason ?? tab.detail}
-          onClick={() => setChannel(tab.channel)}
-        >{tab.label}</button>)}
-      </div>
-
+    {!minimised && <>
       <div className="chat-log" ref={log} onScroll={onScroll}>
-        {!board && <p className="hint">Listening.</p>}
-        {board && board.messages.length === 0 && <p className="hint">
-          {current?.blockedReason ?? 'Nobody has said anything here yet.'}
-        </p>}
-        {board?.messages.map(line => <div className={line.yours ? 'chat-line yours' : 'chat-line'} key={line.id}>
+        {!talk && <p className="hint">Looking.</p>}
+        {talk && talk.messages.length === 0 && <p className="hint">Nothing said yet. Say something.</p>}
+        {talk?.messages.map(line => <div className={line.yours ? 'chat-line yours' : 'chat-line'} key={line.id}>
           <strong>{line.author}</strong>
           <span>{line.body}</span>
           <small>{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
@@ -490,18 +814,15 @@ function ChatDock({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) 
 
       <form className="chat-say" onSubmit={event => { event.preventDefault(); void say() }}>
         <input
-          aria-label={`Say something in ${current?.label ?? 'chat'}`}
-          disabled={busy || sending || !(current?.canPost ?? false)}
+          aria-label={`Write to ${talk?.name ?? 'them'}`}
+          disabled={busy || sending}
           maxLength={max + 40}
-          placeholder={current?.canPost === false ? current.blockedReason ?? 'You cannot speak here.' : 'Say something'}
+          placeholder={`Write to ${talk?.name ?? 'them'}`}
           value={draft}
           onChange={event => setDraft(event.target.value)}
         />
         <button className="primary compact" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
       </form>
-      {draft.length > max * 0.75 && <small className={over ? 'chat-count over' : 'chat-count'}>
-        {draft.length} / {max}
-      </small>}
     </>}
   </section>
 }
@@ -811,7 +1132,7 @@ function App() {
 
   return <main className="game-shell">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
-    <ChatDock dashboard={dashboard} busy={busy} />
+    <ChatWindows dashboard={dashboard} busy={busy} />
     <Walkthrough
       active={tourStep !== null}
       stepIndex={tourStep ?? 0}
@@ -3300,6 +3621,31 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
             <span>{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span>
             {profile.titles.length > 0 && <small className="profile-titles">{profile.titles.join(' / ')}</small>}
           </div>
+          {/* The only place a conversation can start. Everywhere else in chat you are answering
+              somebody; this is where you pick who to write to in the first place. */}
+          <button
+            className="secondary compact"
+            type="button"
+            onClick={() => void (async () => {
+              try {
+                const { id } = await api.openDirect(profile.playerId)
+                window.dispatchEvent(new CustomEvent('street-empire:conversation', { detail: { conversationId: id } }))
+              } catch { /* the profile shows its own errors elsewhere */ }
+            })()}
+          >Message</button>
+          {/* Silences them. Says so plainly, because a player who thinks this also keeps them from
+              raiding the house will find out the hard way and blame the button. */}
+          <button
+            className="secondary compact"
+            type="button"
+            title="Stops them writing to you and hides them from your rooms. It does not stop them attacking you."
+            onClick={() => void (async () => {
+              try {
+                await api.block(profile.playerId)
+                window.dispatchEvent(new CustomEvent('street-empire:blocked'))
+              } catch { /* the profile shows its own errors elsewhere */ }
+            })()}
+          >Block</button>
           <b>#{profile.rank}</b>
         </div>
         <AttackMethodPicker

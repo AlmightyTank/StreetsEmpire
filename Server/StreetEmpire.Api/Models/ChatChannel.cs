@@ -17,11 +17,24 @@ public enum ChatChannel
     City = 1,
 
     /// <summary>Your crew, and nobody else.</summary>
-    Alliance = 2
+    Alliance = 2,
+
+    /// <summary>
+    /// One person, and only them. Deliberately not one of the rooms below: the three public channels
+    /// are places anybody in them can read, and a direct message is addressed rather than posted. It
+    /// carries a recipient, it is never listed among the rooms, and it can only be asked for with
+    /// somebody's name attached - which is what stops "unknown channel falls to Global" from ever
+    /// turning a private message into a public one.
+    /// </summary>
+    Direct = 3
 }
 
 public static class ChatChannels
 {
+    /// <summary>
+    /// The rooms. Direct is not among them on purpose - it is not somewhere you go, it is somebody you
+    /// write to, and anything that enumerates channels wants the three public ones.
+    /// </summary>
     public static readonly ChatChannel[] All = [ChatChannel.Global, ChatChannel.City, ChatChannel.Alliance];
 
     public static string Label(ChatChannel channel) => channel switch
@@ -50,4 +63,8 @@ public static class ChatChannels
         => Enum.TryParse<ChatChannel>(value?.Trim(), ignoreCase: true, out var channel) && All.Contains(channel)
             ? channel
             : ChatChannel.Global;
+
+    public static string Label(ChatChannel channel, bool includeDirect) => channel == ChatChannel.Direct && includeDirect
+        ? "Direct"
+        : Label(channel);
 }

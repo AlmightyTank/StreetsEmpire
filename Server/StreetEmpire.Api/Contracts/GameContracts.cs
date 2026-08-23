@@ -697,6 +697,42 @@ public sealed record ChatBoardResponse(
 
 public sealed record PostChatRequest(string? Channel, string? Body);
 
+/// <summary>A conversation in the list: what it is called, who is in it, and where it got to.</summary>
+public sealed record ChatConversationSummaryResponse(
+    long Id,
+    string Name,
+    bool IsGroup,
+    IReadOnlyList<string> Others,
+    string LastBody,
+    DateTime SentAtUtc,
+    int Unread);
+
+public sealed record ChatConversationListResponse(
+    IReadOnlyList<ChatConversationSummaryResponse> Conversations,
+    int Unread);
+
+public sealed record ChatConversationResponse(
+    long Id,
+    string Name,
+    bool IsGroup,
+    IReadOnlyList<string> Others,
+    IReadOnlyList<ChatMessageResponse> Messages,
+    int MaxLength);
+
+public sealed record StartGroupRequest(IReadOnlyList<Guid>? PlayerIds, string? Title);
+
+/// <summary>Somebody the picker found.</summary>
+public sealed record PersonResponse(Guid PlayerId, string Name, string City);
+
+public sealed record PeopleSearchResponse(IReadOnlyList<PersonResponse> People);
+
+/// <summary>Somebody this player has silenced.</summary>
+public sealed record BlockedPlayerResponse(Guid PlayerId, string Name);
+
+public sealed record BlockedListResponse(IReadOnlyList<BlockedPlayerResponse> Blocked);
+
+public sealed record BlockRequest(Guid? PlayerId);
+
 /// <summary>How much of an order to hand over. Null means as much as will go.</summary>
 public sealed record DeliverContractRequest(int? Quantity);
 

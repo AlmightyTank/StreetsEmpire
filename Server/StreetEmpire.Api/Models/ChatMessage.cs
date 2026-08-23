@@ -31,6 +31,17 @@ public sealed class ChatMessage
     /// </summary>
     public string AuthorName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The conversation this belongs to, for anything that is not a room. Null on the three channels.
+    ///
+    /// This began as a recipient, with a thread worked out by folding the pair together. That shape
+    /// could not hold a third person: nothing to fold, no way to say who is in a conversation before
+    /// anybody has spoken, nowhere to hang a name. The conversation is a row of its own now and a
+    /// direct message is one with two people in it.
+    /// </summary>
+    public long? ConversationId { get; set; }
+    public Conversation? Conversation { get; set; }
+
     public string Body { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

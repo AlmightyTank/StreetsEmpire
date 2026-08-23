@@ -3,6 +3,23 @@
 ## 0.2.5 (in progress)
 
 ### Fixed
+- **The list of your conversations threw rather than arriving, every single time it was asked for.**
+  The query that fetched the names of everybody in them closed over the conversations already in memory
+  and walked a navigation property inside a database filter, which EF cannot turn into SQL, so the
+  endpoint answered 500 to every request. The dock hid it well: each window polls for itself and those
+  calls were fine, so messages arrived, threads opened, and only the list behind them was dead.
+  The member ids are folded into a flat list before the query now.
+  This is the class of fault the suite cannot see - it runs without a database, so a query that compiles
+  and cannot translate looks exactly like a query that works. It was found by reading the server log
+  while clicking, and that is the only place it could have been found.
+- **A window whose conversation had gone sat there saying "Loading" for ever, and came back every
+  reload.** Open windows are remembered in storage so that a conversation survives changing pages, which
+  also meant a conversation that stopped being readable - swept for age, or you were put out of the
+  group - left a dead window that could be closed but never got rid of, because the next load put it
+  straight back. A window now closes itself when the server refuses it, and only then: an outage is a
+  wobble and the next tick picks the conversation back up, rather than throwing your windows away
+  because the API was restarting. API errors carry their status code now, which is what lets the two be
+  told apart at all.
 - **Pistols are on the street's quick-buy, where a row for guns had silently gone missing.** The supplies
   panel asked the counter for a key called "weapons", which stopped existing the day guns split into
   tiers, and the filter that guards against a missing key dropped the row without a word. It has been
@@ -230,6 +247,65 @@
   loses the return sweep, and the wide desktop panels were running paragraphs to 1,400px.
 
 ### Added
+- **Group messages, a people search, and several conversations open at once.**
+- Direct messages were built as a pair - a message with a recipient, a thread worked out by folding
+  those together. That held for two people and does not survive three: nothing to fold, no way to say
+  who is in a conversation before anybody has spoken, nowhere to hang a name. So a conversation is a
+  row of its own now, with members, and a direct message is one with two people in it. One mechanism
+  rather than two that drift.
+- **Membership is the whole of the security model.** There is no query in the service that reaches a
+  conversation the asker is not a member of, and reading one you are not in refuses rather than coming
+  back empty - an empty one reads as "nothing said yet" and invites another go.
+- Unread is a real watermark per person now rather than the guess the pair version used, which counted
+  anything newer than your own last reply and so called a conversation unread forever if you never
+  answered it.
+- **Finding somebody is a search rather than a roster**, because a board can hold any number of players
+  and a list of all of them is not a thing anybody reads. Picking one opens a conversation; picking
+  several starts a group, which is the only difference between the two.
+- Anybody who has silenced you is left out of a group rather than quietly added, so a block cannot be
+  walked around by putting somebody in a room with you.
+- **Windows stack.** Each conversation gets its own, up to three across the bottom, remembered across
+  page changes and reloads - reading one should not close another, and a group is only useful if you can
+  watch it while answering somebody else. On a phone there is room for one, so it covers the dock.
+- The migration builds the new tables, moves every existing pair into a conversation, and only then
+  drops the columns that recorded the pair. The scaffold had those drops first, which would have thrown
+  the conversations away before there was anywhere to put them.
+
+- **Blocking**, and deliberately narrow: it silences somebody, it does not shield you from them.
+  Blocking a player does not stop them raiding your house, jacking your cars or poisoning your crew,
+  and it never will - the moment a social setting can be used to duck a fight it stops being a way to
+  deal with an unpleasant person and becomes a move. There is a test that walks the whole attack path
+  with a block in place and watches it go through exactly as before.
+- It cuts both ways. Somebody you have blocked cannot write to you and does not appear in your rooms,
+  and you do not appear in theirs either: a block that let the blocker keep reading would be
+  surveillance dressed up as a refusal.
+- The refusal is the same sentence in both directions, so it never says which of the two people did the
+  blocking. That is theirs to know.
+- A silenced conversation is refused rather than shown empty, because one that looks merely quiet
+  invites somebody to keep trying.
+- Room reads fetch deeper than the page when a block is in play, so a room where half the voices are
+  silenced still hands back a full screen of the ones that are not.
+
+- **Direct messages**, as a fourth tab in the dock rather than a window of its own - which is why the
+  room was a tab inside the window in the first place.
+- A thread is the pair rather than a conversation row of its own: everything between two people is the
+  messages where one wrote and the other was written to, in either direction. One table, nothing second
+  to keep in step, and a thread that exists the moment somebody says something rather than needing to
+  be opened first.
+- **Direct is deliberately not one of the rooms.** An unknown channel falls to Global, which is right
+  for a room and would be a disaster in the other direction, so the guard is that the parser cannot
+  return Direct at all - a direct message goes through its own path, with a recipient, or it does not
+  go. A test holds that, because it is the one mistake here that could not be taken back.
+- The tab carries its own unread count, polled whatever tab is showing, or a badge that only appears
+  once you are already looking at it would be telling you something you can see.
+- Conversations start from a player's profile, which is the only place in the game you are choosing who
+  to write to rather than answering somebody.
+- The length and pace limits are shared with the rooms and counted across all of them at once. The
+  reason for them does not change when the audience shrinks to one, and a limit counted per channel is
+  an invitation to alternate.
+- **Not built: blocking.** Nothing currently stops somebody writing to you repeatedly except the pace
+  limit and an admin ban, and one-to-one is where that matters most. It is the obvious next thing.
+
 - **Chat is a window in the corner rather than a panel on a page.** It started on the overview, which
   meant a conversation ended the moment you went to work the streets - the one screen you are least
   likely to be sitting on when somebody says something to you. It docks now: a bar bottom-right that

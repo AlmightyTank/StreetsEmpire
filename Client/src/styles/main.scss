@@ -14,8 +14,8 @@
 //    variables do, and they must exist before that file is read.
 @import "bootstrap/scss/functions";
 
-// 2. Our build switches. Small, and deliberately not a palette: the game wears
-//    Bootstrap's own face, so there is nothing to override.
+// 2. Our palette, mapped onto Bootstrap's colour variables. Type and spacing are
+//    deliberately absent: those stayed with Bootstrap. This is colour only.
 @import "theme";
 
 // 3. Bootstrap's configuration.
@@ -70,5 +70,6 @@
 
 // 7. What Bootstrap has no component for: the shapes this game has and a
 //    framework could not - a price board's columns, a chat dock, a walkthrough
-//    spotlight. Structure only; the colours in them are Bootstrap's own.
+//    spotlight - plus the handful of surfaces that are a gradient rather than a
+//    fill, which no colour variable can carry.
 @import "components";

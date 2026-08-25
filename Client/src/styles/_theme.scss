@@ -1,23 +1,164 @@
 // =============================================================================
 // Bootstrap configuration
 // =============================================================================
-// Almost empty, on purpose.
+// Colour, and nothing else.
 //
-// This file used to be three hundred lines mapping a bespoke palette, a
-// seven-step type scale and a 4px spacing rhythm onto Bootstrap's variables, so
-// that stock components came out looking like the hand-written ones they
-// replaced. That has been deleted: the game wears Bootstrap's own face now, so
-// every colour, size and step is Bootstrap's default and there is nothing left
-// here to restate.
+// This file once mapped a bespoke palette, a seven-step type scale and a 4px
+// spacing rhythm onto Bootstrap. Type and space stayed with Bootstrap when they
+// were handed over, and they stay with it now: the base size is 1rem, the steps
+// are .25/.5/1/1.5/3rem, and there is not a font or a margin named below.
 //
-// What remains is the handful of switches that change what Bootstrap builds
-// rather than what it looks like.
+// What comes back is the palette. It can come back without touching a line of
+// markup because the JSX asks for colour semantically - text-primary,
+// bg-body-secondary, border-primary - rather than by name. Those classes are
+// generated from the variables below, so re-pointing the variables re-colours
+// every screen at once.
 
-// The layouts in this game are grids - a price board whose columns have to line
-// up, a roster, a tile bed - so Bootstrap's opt-in CSS grid and the utilities
-// that come with it are worth having.
-$enable-cssgrid: true;
+@import "tokens";
 
-// The walkthrough box is positioned against whatever it is pointing at, and
-// occasionally has to be pulled back from an edge.
+// -- Options -----------------------------------------------------------------
+$enable-cssgrid:          true;   // the layouts here are grids, not float rows
 $enable-negative-margins: true;
+$enable-shadows:          false;  // panels carry one deliberate shadow, not a set
+$enable-gradients:        false;  // the gradients here are specific, not Bootstrap's overlay
+
+// -- Theme colours -----------------------------------------------------------
+// Gold is the accent the whole interface points at, so it is $primary: every
+// text-primary, border-primary and btn-primary in the markup resolves to it.
+// The rest are the meanings the game already had.
+$primary:   $gold-lit;
+$secondary: #3f4543;
+$success:   $good;
+$info:      $teal;
+$warning:   $warn;
+$danger:    $bad;
+$light:     $ink;
+$dark:      $surface-deep;
+
+// Bootstrap picks black or white for text on a coloured background. On gold it
+// correctly picks dark; this makes "dark" the near-black the primary button used
+// rather than pure black.
+$color-contrast-dark:  #130f0a;
+$color-contrast-light: $ink;
+
+// -- Surfaces and text -------------------------------------------------------
+// The -secondary and -tertiary pairs are what .text-body-secondary,
+// .bg-body-tertiary and their kin are built from, which is most of the quiet
+// text and most of the panel interiors in the game.
+$body-bg:              $void;
+$body-color:           $ink;
+$body-secondary-color: $ink-dim;
+$body-secondary-bg:    $surface;
+$body-tertiary-color:  $ink-faint;
+$body-tertiary-bg:     $surface-deep;
+$body-emphasis-color:  #ffffff;
+
+$border-color:             $line;
+$border-color-translucent: rgba(#ffffff, .12);
+
+$link-color:       $gold;
+$link-hover-color: $gold-bright;
+
+// One shadow, the one a panel carries.
+$box-shadow:    0 18px 48px rgba(#000000, .28);
+$box-shadow-sm: 0 6px 18px rgba(#000000, .22);
+$box-shadow-lg: 0 26px 70px rgba(#000000, .55);
+
+// -- Components --------------------------------------------------------------
+// Only where the default would fight the palette. Sizes and spacing are left
+// alone throughout.
+$card-bg:           $surface;
+$card-border-color: $line;
+$card-box-shadow:   0 18px 48px rgba(#000000, .28);
+
+$input-bg:                 #0b0d0e;
+$input-disabled-bg:        $surface-deep;
+$input-color:              $ink;
+$input-border-color:       #383a37;
+$input-focus-bg:           #0b0d0e;
+$input-focus-border-color: $teal;
+$input-focus-color:        $ink;
+$input-focus-box-shadow:   0 0 0 2px rgba($teal, .15);
+$input-placeholder-color:  $ink-faint;
+$input-btn-focus-color:    rgba($teal, .15);
+$input-btn-focus-box-shadow: 0 0 0 2px rgba($teal, .15);
+
+$form-label-color: #bcb1a5;
+$form-text-color:  $ink-soft;
+
+$form-select-bg:                 #0b0d0e;
+$form-select-color:              $ink;
+$form-select-border-color:       #383a37;
+$form-select-focus-border-color: $teal;
+$form-select-indicator-color:    $ink-dim;
+
+$form-check-input-bg:                   #0b0d0e;
+$form-check-input-border:               1px solid #383a37;
+$form-check-input-checked-bg-color:     #c8983f;
+$form-check-input-checked-border-color: #c8983f;
+
+$modal-content-bg:           $surface;
+$modal-content-border-color: $gold-deep;
+$modal-backdrop-bg:          #05070a;
+$modal-backdrop-opacity:     .72;
+
+$table-color:        $ink;
+$table-border-color: $line-soft;
+$table-striped-bg:   rgba(#ffffff, .02);
+$table-hover-bg:     rgba(#ffffff, .04);
+
+$progress-bg:     $surface-deep;
+$progress-bar-bg: $gold-lit;
+
+$list-group-bg:           $surface-deep;
+$list-group-border-color: $line;
+$list-group-color:        $ink;
+
+$dropdown-bg:           $surface;
+$dropdown-border-color: $line;
+$dropdown-link-color:   #d8d0c7;
+
+$tooltip-bg:    $surface;
+$tooltip-color: $ink;
+$tooltip-opacity: 1;
+
+$popover-bg:           $surface;
+$popover-border-color: $line;
+
+$offcanvas-bg-color:     #111314;
+$offcanvas-border-color: #2e3331;
+
+$toast-background-color: $surface;
+$toast-border-color:     $line;
+
+$accordion-bg:           $surface-deep;
+$accordion-border-color: $line;
+
+$nav-link-color:            #bdb4aa;
+$nav-link-hover-color:      #f4eadc;
+$nav-tabs-border-color:     #3e3b36;
+$nav-tabs-link-active-color: #f2c46f;
+$nav-tabs-link-active-bg:   #211b14;
+$nav-tabs-link-active-border-color: $gold-shade;
+
+// -- Dark mode ---------------------------------------------------------------
+// data-bs-theme="dark" is set on <html>. These repeat the values above so the
+// dark branch of every component resolves to this palette rather than to
+// Bootstrap's stock slate greys.
+$body-bg-dark:                  $void;
+$body-color-dark:               $ink;
+$body-secondary-color-dark:     $ink-dim;
+$body-secondary-bg-dark:        $surface;
+$body-tertiary-color-dark:      $ink-faint;
+$body-tertiary-bg-dark:         $surface-deep;
+$body-emphasis-color-dark:      #ffffff;
+$border-color-dark:             $line;
+$border-color-translucent-dark: rgba(#ffffff, .12);
+$headings-color-dark:           $ink;
+$link-color-dark:               $gold;
+$link-hover-color-dark:         $gold-bright;
+$form-select-indicator-color-dark: $ink-dim;
+$form-valid-color-dark:         $good;
+$form-valid-border-color-dark:  $good;
+$form-invalid-color-dark:       $bad;
+$form-invalid-border-color-dark: $bad;

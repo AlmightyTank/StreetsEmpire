@@ -1,0 +1,85 @@
+// =============================================================================
+// Colour tokens
+// =============================================================================
+// The game's palette, named for the job each colour does rather than the colour
+// it is, so a later change of mind is one edit here instead of a search across
+// the components.
+//
+// Colour only. The seven-step type scale and the 4px spacing rhythm that used to
+// live beside these are gone for good: type and space are Bootstrap's now, and
+// this file exists purely so the interface keeps its own face rather than
+// wearing the framework's blue and grey.
+//
+// Nothing here is used directly by a component. _theme.scss maps every one of
+// these onto a Bootstrap variable, which is what carries them out to the markup:
+// the JSX says text-primary and bg-body-secondary, and these decide what those
+// resolve to.
+
+// -- The accent ---------------------------------------------------------------
+// Money, your own name, anything the eye should land on.
+$gold:          #f0c875;
+$gold-bright:   #e4b76b;
+$gold-deep:     #6b5630;  // the border a gold thing sits inside
+$gold-lit:      #e1b05e;  // the top of the primary button's gradient
+$gold-shade:    #a98245;  // the bottom of it
+
+// -- Text ---------------------------------------------------------------------
+$ink:           #f4eee5;  // body copy
+$ink-dim:       #938b82;  // labels and captions
+$ink-faint:     #837c75;  // detail nobody reads twice. 4.54:1 on $surface: AA, barely
+$ink-soft:      #8e877f;
+
+// -- Structure ----------------------------------------------------------------
+$line:          #303532;  // the default border
+$line-soft:     #2c302e;  // a divider inside something already bordered
+
+$surface:       #101314;  // a card
+$surface-deep:  #0d1011;  // the well a card sits in
+$void:          #090a0b;  // the page behind everything
+
+// -- Meaning ------------------------------------------------------------------
+// These carry meaning in the game rather than decoration: heat is a temperature,
+// a supply runs short, an attack is blocked.
+$teal:          #1f8d86;  // the focus ring and the selected target
+$teal-soft:     #9bbdb6;  // supporting copy inside a teal-bordered thing
+$good:          #58c39a;
+$bad:           #d9695d;
+$warn:          #e0913f;
+
+// -- Controls -----------------------------------------------------------------
+// The three buttons that are not the gold one: the workhorse secondary, a page
+// in the rail, and a tab in the admin strip. Each is a resting colour, a hover
+// and a chosen state, and none of them is expressible as a tint of a theme
+// colour - which is why they are named here rather than derived.
+$btn-quiet-edge:   #3f4543;  // the secondary button's border
+$btn-quiet-ink:    #d7cec3;  // and its label
+$btn-quiet-lift:   #171b1c;  // where it goes under the pointer
+$btn-quiet-edge-lift: #566060;
+
+$rail-ink:         #bdb4aa;  // a page you are not on
+$rail-ink-lit:     #f4eadc;  // the one you are
+$rail-lift:        #171b1b;
+$rail-edge-lift:   #37413d;
+$rail-badge-edge:  #39413f;  // the two-letter code's outline
+
+$tab-ink:          #a89f96;  // an admin tab you are not on
+$tab-lift:         #121617;
+$tab-chosen:       #151a1b;
+$tab-chosen-edge:  #3b4442;
+
+// -- Surfaces -----------------------------------------------------------------
+// Nearly every raised thing in this game is lit from the top: a one-stop vertical
+// gradient that reads as a light source above the page. Held here as whole
+// values rather than as pairs of stops, because a component wants the surface,
+// not the recipe for it.
+$surface-panel: linear-gradient(180deg, rgba(24, 25, 24, .96), rgba(15, 17, 18, .96));
+$surface-lit:   linear-gradient(180deg, #171818, $surface);
+$surface-rail:  linear-gradient(180deg, #111314, #0b0d0e);
+$surface-gold:  linear-gradient(180deg, $gold-lit, $gold-shade);
+$surface-hero:  linear-gradient(120deg, rgba(218, 171, 91, .18), rgba(26, 40, 42, .18));
+
+// Two layers behind the whole page: a cold light falling from the top left, over
+// a warm-to-cold vertical wash. A street at night before anything is drawn on it.
+$surface-night:
+  linear-gradient(135deg, rgba(29, 42, 44, .5) 0%, rgba(9, 10, 11, 0) 36%),
+  linear-gradient(180deg, #15100f 0%, $void 48%, $surface-deep 100%);

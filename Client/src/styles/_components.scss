@@ -9,8 +9,8 @@
 // their figures to be comparable, overlays that have to be pinned to the
 // viewport, and a few things sized for a thumb.
 //
-// Every colour below is a Bootstrap variable or CSS custom property. A raw hex
-// code in this file is a bug.
+// Every colour below comes from a Bootstrap variable or a token in _tokens.scss.
+// A raw hex code in this file is a bug.
 
 // -----------------------------------------------------------------------------
 // Foundations
@@ -20,6 +20,90 @@ body {
   min-width: 320px;
   min-height: 100vh;
   min-height: 100dvh;
+  background-image: $surface-night;
+  background-attachment: fixed;
+}
+
+// -----------------------------------------------------------------------------
+// Surfaces
+// -----------------------------------------------------------------------------
+// A flat fill would have been the framework's answer, and the palette's answer
+// is a light source above the page. These are the four places that matters
+// enough to say so; everything else takes a plain bg-* utility.
+
+.card { background-image: $surface-panel; }
+.hero-panel { background-image: $surface-hero, $surface-panel !important; }
+.app-nav { background-image: $surface-rail; }
+.chat-dock, .alert-panel { background-image: $surface-lit; }
+
+// The two buttons the whole game is played through. Bootstrap builds .btn on CSS
+// variables, so both are retuned by setting them rather than by overriding the
+// rules they feed.
+.btn-primary {
+  --#{$prefix}btn-bg: transparent;
+  --#{$prefix}btn-border-color: transparent;
+  --#{$prefix}btn-hover-bg: transparent;
+  --#{$prefix}btn-hover-border-color: transparent;
+  --#{$prefix}btn-active-bg: transparent;
+  --#{$prefix}btn-active-border-color: transparent;
+  --#{$prefix}btn-disabled-bg: transparent;
+  --#{$prefix}btn-disabled-border-color: transparent;
+  // The gradient is the button, so it goes on background-image and the variable
+  // above keeps background-color out of its way.
+  background-image: $surface-gold;
+}
+
+.btn-secondary {
+  --#{$prefix}btn-bg: #{$surface};
+  --#{$prefix}btn-border-color: #{$btn-quiet-edge};
+  --#{$prefix}btn-color: #{$btn-quiet-ink};
+  --#{$prefix}btn-hover-bg: #{$btn-quiet-lift};
+  --#{$prefix}btn-hover-border-color: #{$btn-quiet-edge-lift};
+  --#{$prefix}btn-hover-color: #{$ink};
+  --#{$prefix}btn-active-bg: #{$btn-quiet-lift};
+  --#{$prefix}btn-active-border-color: #{$btn-quiet-edge-lift};
+  --#{$prefix}btn-active-color: #{$ink};
+  --#{$prefix}btn-disabled-bg: #{$surface};
+  --#{$prefix}btn-disabled-border-color: #{$btn-quiet-edge};
+  --#{$prefix}btn-disabled-color: #{$btn-quiet-ink};
+}
+
+// A hover state behind a hover query, so a touch screen does not paint it on and
+// leave it there: a phone reports a tap as a hover and never takes it back,
+// which is how a stuck highlight follows you around.
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled) { transform: translateY(1px); }
+
+// Bootstrap routes every component shadow through a mixin that $enable-shadows
+// switches off wholesale, and this build wants exactly one shadow - the panel's -
+// without the inset glow that flag would also put inside every input. So these
+// two take theirs straight from the variable the mixin would have read.
+.card { box-shadow: var(--#{$prefix}card-box-shadow); }
+.modal-content { box-shadow: var(--#{$prefix}modal-box-shadow); }
+
+// Focus.
+//
+// A game played almost entirely by pressing buttons should be able to say where
+// the keyboard is. :focus-visible rather than :focus, so a mouse click does not
+// leave a ring behind it. Two rings, dark under light, so the indicator survives
+// whichever surface it lands on - a single gold ring vanishes against the gold
+// primary button, and a single dark one vanishes against the page.
+:where(button, a, select, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid $gold;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(4, 5, 6, .85);
+  border-radius: var(--#{$prefix}border-radius);
+}
+
+// Inputs already replace the ring with their own border and glow, so they only
+// need the offset one.
+input:focus-visible, textarea:focus-visible {
+  outline: 2px solid $gold;
+  outline-offset: 1px;
 }
 
 // Every figure in the game changes while you watch it - cash after a shift,
@@ -696,3 +780,42 @@ body {
 // The travel panel's two notes sit tight under the heading rather than being
 // spaced off it as a paragraph would be.
 .travel-note { margin: -4px 0 12px; }
+
+// -----------------------------------------------------------------------------
+// Chosen-one buttons
+// -----------------------------------------------------------------------------
+// A page in the rail and a tab in the admin strip are both "one of these is
+// selected", which is what Bootstrap's .active is for. What .active cannot do on
+// its own is decide the resting colour: an outline variant paints that in
+// $secondary, and in this palette $secondary is a structural dark - fine as a
+// border, invisible as text on a dark rail. So both set their own.
+
+.nav-page {
+  --#{$prefix}btn-color: #{$rail-ink};
+  --#{$prefix}btn-bg: transparent;
+  --#{$prefix}btn-border-color: transparent;
+  --#{$prefix}btn-hover-color: #{$rail-ink-lit};
+  --#{$prefix}btn-hover-bg: #{$rail-lift};
+  --#{$prefix}btn-hover-border-color: #{$rail-edge-lift};
+  --#{$prefix}btn-active-color: #{$rail-ink-lit};
+  --#{$prefix}btn-active-bg: #{$rail-lift};
+  --#{$prefix}btn-active-border-color: #{$rail-edge-lift};
+  --#{$prefix}btn-font-weight: #{$font-weight-normal};
+
+  // The two-letter badge is the only thing left of a page name at 86px wide, so
+  // the selected one fills to say which page you are on.
+  > span { border-color: #{$rail-badge-edge}; color: $teal-soft; }
+}
+
+.admin-tab {
+  --#{$prefix}btn-color: #{$tab-ink};
+  --#{$prefix}btn-bg: transparent;
+  --#{$prefix}btn-border-color: transparent;
+  --#{$prefix}btn-hover-color: #{$ink};
+  --#{$prefix}btn-hover-bg: #{$tab-lift};
+  --#{$prefix}btn-hover-border-color: transparent;
+  --#{$prefix}btn-active-color: #{$gold};
+  --#{$prefix}btn-active-bg: #{$tab-chosen};
+  --#{$prefix}btn-active-border-color: #{$tab-chosen-edge};
+  --#{$prefix}btn-font-weight: #{$font-weight-normal};
+}

@@ -1232,7 +1232,7 @@ function App() {
           title={pageMeta[page].label}
           onClick={() => setActivePage(page)}
         >
-          <span className="d-grid place-items-center border rounded small fw-bolder text-info-emphasis">{pageMeta[page].short}</span>
+          <span className={`d-grid place-items-center border rounded small fw-bolder ${activePage === page ? 'text-bg-primary border-primary' : ''}`}>{pageMeta[page].short}</span>
           <strong className="text-truncate">{pageMeta[page].label}</strong>
         </button>)}
       </nav>
@@ -2666,12 +2666,13 @@ function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
       {ADMIN_TABS.map(name => <button
         key={name}
         type="button"
-        className={`btn d-grid gap-1 text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
+        className={`admin-tab btn d-grid gap-1 text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
         aria-current={tab === name ? 'page' : undefined}
         onClick={() => setTab(name)}
       >
-        <strong className="">{ADMIN_TAB_META[name].label}</strong>
-        <span className="small text-body-tertiary">{ADMIN_TAB_META[name].kicker}</span>
+        <strong>{ADMIN_TAB_META[name].label}</strong>
+        {/* Inherits the button's colour so it stays legible once the tab fills in. */}
+        <span className="small opacity-75">{ADMIN_TAB_META[name].kicker}</span>
       </button>)}
     </nav>
     {tab === 'overview' && <AdminOverviewTab overview={ctx.overview} busy={ctx.busy} />}

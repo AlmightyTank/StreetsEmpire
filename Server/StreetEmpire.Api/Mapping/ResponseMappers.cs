@@ -242,7 +242,7 @@ internal static class ResponseMappers
         };
     }
 
-    internal static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts, DateTime nowUtc, GameOptions options)
+    internal static HideoutResponse ToHideoutResponse(Player player, HideoutService hideouts, DateTime nowUtc, GameOptions options, WorkshopCraft? craft = null)
     {
         var capacity = hideouts.CapacityFor(player.Hideout);
         var heat = hideouts.HeatFor(player);
@@ -310,7 +310,55 @@ internal static class ResponseMappers
                     nextTier.MaxHoes,
                     nextTier.MaxThugs),
             building,
+            Math.Max(1, options.WorkshopCraftMinutesPerTurn),
+            craft is null
+                ? null
+                : new WorkshopCraftResponse(
+                    craft.Id,
+                    craft.Good,
+                    craft.Label,
+                    craft.Quantity,
+                    craft.UnitCost,
+                    craft.TotalCost,
+                    craft.WorkUnits,
+                    craft.WorkshopLevel,
+                    craft.StartedAtUtc,
+                    craft.CompletesAtUtc,
+                    Math.Max(0, (int)Math.Ceiling((craft.CompletesAtUtc - nowUtc).TotalSeconds))),
+            ProductionStations(player, hideouts, options),
             Stations(player, hideouts, options));
+    }
+
+    private static List<ProductionStationResponse> ProductionStations(Player player, HideoutService hideouts, GameOptions options)
+    {
+        var weed = options.Production.Weed;
+        var coke = options.Production.Coke;
+        var market = options.CityMarkets.ProfileFor(player.City);
+        return
+        [
+            new(
+                "weed",
+                "Weed",
+                weed.UnitsMin,
+                weed.UnitsMax,
+                weed.CostPerTurn,
+                TradeGoods.ReferencePrice(options, "weed", player.City),
+                $"{market.Weed} market in {player.City}",
+                hideouts.ProductionYieldBonusPercent(player.Hideout, "weed"),
+                weed.MinWorkshopLevel,
+                HeatPerUnit(options, "weed")),
+            new(
+                "coke",
+                "Coke",
+                coke.UnitsMin,
+                coke.UnitsMax,
+                coke.CostPerTurn,
+                TradeGoods.ReferencePrice(options, "coke", player.City),
+                $"{market.Coke} market in {player.City}",
+                hideouts.ProductionYieldBonusPercent(player.Hideout, "coke"),
+                coke.MinWorkshopLevel,
+                HeatPerUnit(options, "coke"))
+        ];
     }
 
     /// <summary>
@@ -354,6 +402,7 @@ internal static class ResponseMappers
                 forging?.Price ?? options.WeaponPrice,
                 $"store {WeaponTiers.Label(forgeGood).ToLowerInvariant()}",
                 HeatPerUnit(options, forgeGood),
+                forging?.MinWorkshopLevel ?? 1,
                 upgrade)
         };
 
@@ -365,7 +414,6 @@ internal static class ResponseMappers
             {
                 "moonshine" => ((long)options.BeerPrice, "store beer"),
                 "cut" => (Math.Max(1, cokePrice / 4), "what it stretches"),
-                "condoms" => ((long)options.CondomPrice, "store condoms"),
                 "medicine" => ((long)options.MedicinePrice, "store medicine"),
                 _ => ((long)options.PoisonPrice, "store poison")
             };
@@ -382,6 +430,7 @@ internal static class ResponseMappers
                 compare,
                 compareLabel,
                 HeatPerUnit(options, recipe.Key),
+                recipe.MinWorkshopLevel,
                 upgrade));
         }
 
@@ -464,6 +513,8 @@ internal static class ResponseMappers
                 next.RequiredTier,
                 hideouts.TierName(next.RequiredTier),
                 next.TierLocked,
+                next.RequiredWorkshopLevel,
+                next.WorkshopLocked,
                 PaybackDays(options, city, room, hideout, next.Level, next.Cost))
             : null;
 

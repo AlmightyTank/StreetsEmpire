@@ -187,22 +187,47 @@ internal static class MarketEndpoints
             if (player is null) return Results.Unauthorized();
 
             var now = DateTime.UtcNow;
-            await clock.AdvanceAsync(player, now, db, ct);
+            var tick = await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
+                var active = await db.WorkshopCrafts
+                    .AnyAsync(x => x.PlayerId == player.Id && x.CompletedAtUtc == null, ct);
+                if (active)
+                {
+                    if (tick.Changed)
+                        await db.SaveChangesAsync(ct);
+                    return Results.BadRequest(new { error = "The workshop is already crafting something." });
+                }
+
                 // The station used to say which room; there is one room now, so what arrives is what to
                 // make. Either name is accepted: an old client asking for "still" wants moonshine.
                 var asked = request.Weapon ?? request.Station?.Trim().ToLowerInvariant() switch
                 {
                     "still" => "moonshine",
                     "mix" => "cut",
+                    "workshop" => null,
+                    { Length: > 0 } station => station,
                     _ => null
                 };
-                var result = economy.Make(player, request.Turns, asked);
-                AddLog(db, player, before, "WORKSHOP", request.Turns, result.Summary, now);
+                var craft = economy.StartCraft(player, request.Turns, asked, now);
+                db.WorkshopCrafts.Add(craft);
+
+                var minutes = Math.Max(1, (int)Math.Ceiling((craft.CompletesAtUtc - now).TotalMinutes));
+                var summary = $"Started crafting {craft.Quantity:N0} {craft.Label.ToLowerInvariant()} with {craft.WorkUnits:N0} turn{(craft.WorkUnits == 1 ? string.Empty : "s")} and {craft.TotalCost:C0}. Ready in {minutes:N0} minute{(minutes == 1 ? string.Empty : "s")}.";
+                AddLog(db, player, before, "WORKSHOP", craft.WorkUnits, summary, now);
                 await db.SaveChangesAsync(ct);
-                return Results.Ok(result);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
+                {
+                    ["craftId"] = craft.Id,
+                    ["good"] = craft.Good,
+                    ["unitsQueued"] = craft.Quantity,
+                    ["workUnits"] = craft.WorkUnits,
+                    ["turnsSpent"] = craft.WorkUnits,
+                    ["unitCost"] = craft.UnitCost,
+                    ["totalCost"] = craft.TotalCost,
+                    ["completesAtUtc"] = craft.CompletesAtUtc
+                }));
             }
             catch (GameRuleException ex)
             {

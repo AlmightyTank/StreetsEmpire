@@ -205,7 +205,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// <summary>What a lab makes per hour on its own, before storage limits.</summary>
     public int PassivePerHour(Hideout? hideout, string product)
     {
-        var (levels, level) = LabFor(hideout, product);
+        var (levels, level) = EffectiveLabFor(hideout, product);
         return level <= 0 ? 0 : Level(levels, level, x => x.Level)?.PassivePerHour ?? 0;
     }
 
@@ -293,14 +293,29 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public int ProductionYieldBonusPercent(Hideout? hideout, string product)
     {
-        var (levels, level) = LabFor(hideout, product);
+        var (levels, level) = EffectiveLabFor(hideout, product);
         return level <= 0 ? 0 : Level(levels, level, x => x.Level)?.YieldBonusPercent ?? 0;
+    }
+
+    private (List<LabLevelOptions> Levels, int Level) EffectiveLabFor(Hideout? hideout, string product)
+    {
+        var (levels, level) = LabFor(hideout, product);
+        if (level <= 0)
+            return (levels, 0);
+
+        // A lab level upgrades the workshop level below it: level 1 can stand alone, level 2 needs a
+        // level 1 workshop, and so on. Existing saves keep their purchased lab level, but output waits
+        // for the bench that can actually support it.
+        var workshopReach = Math.Max(1, (hideout?.WorkshopLevel ?? 0) + 1);
+        return (levels, Math.Min(level, workshopReach));
     }
 
     private (List<LabLevelOptions> Levels, int Level) LabFor(Hideout? hideout, string product)
         => product == "coke"
             ? (_options.Hideout.CokeLab, hideout?.CokeLabLevel ?? 0)
             : (_options.Hideout.WeedLab, hideout?.WeedLabLevel ?? 0);
+
+    private static int RequiredWorkshopForLab(int labLevel) => Math.Max(0, labLevel - 1);
 
     /// <summary>How much of a passive run actually fits, never taking away what is already held.</summary>
     private static int Produce(int held, int cap, int produced)
@@ -408,9 +423,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             "safe" => ApplyUpgrade(player, hideout, config.Safe, hideout.SafeLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.SafeLevel = level, "safe"),
             "weedlab" => ApplyUpgrade(player, hideout, config.WeedLab, hideout.WeedLabLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
-                level => BuildLab(hideout, nowUtc, () => hideout.WeedLabLevel = level), "weed lab"),
+                level => BuildLab(hideout, nowUtc, () => hideout.WeedLabLevel = level), "weed lab", RequiredWorkshopForLab),
             "cokelab" => ApplyUpgrade(player, hideout, config.CokeLab, hideout.CokeLabLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
-                level => BuildLab(hideout, nowUtc, () => hideout.CokeLabLevel = level), "coke lab"),
+                level => BuildLab(hideout, nowUtc, () => hideout.CokeLabLevel = level), "coke lab", RequiredWorkshopForLab),
             "workshop" => ApplyUpgrade(player, hideout, config.Workshop, hideout.WorkshopLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
                 level => hideout.WorkshopLevel = level, "workshop"),
             "intelligence" => ApplyUpgrade(player, hideout, config.Intelligence, hideout.IntelligenceLevel, x => x.Level, x => x.UpgradeCost, x => x.MinTier,
@@ -473,8 +488,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         {
             "storage" => Next(config.Storage, hideout?.StorageLevel ?? 1, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "safe" => Next(config.Safe, hideout?.SafeLevel ?? 1, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
-            "weedlab" => Next(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
-            "cokelab" => Next(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
+            "weedlab" => Next(config.WeedLab, hideout?.WeedLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier, hideout?.WorkshopLevel ?? 0, RequiredWorkshopForLab),
+            "cokelab" => Next(config.CokeLab, hideout?.CokeLabLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier, hideout?.WorkshopLevel ?? 0, RequiredWorkshopForLab),
             "workshop" => Next(config.Workshop, hideout?.WorkshopLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "intelligence" => Next(config.Intelligence, hideout?.IntelligenceLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
             "lookout" => Next(config.Lookout, hideout?.LookoutLevel ?? 0, x => x.Level, x => x.UpgradeCost, x => x.MinTier, currentTier),
@@ -548,12 +563,15 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         Func<T, long> costOf,
         Func<T, int> minTierOf,
         Action<int> setLevel,
-        string label)
+        string label,
+        Func<int, int>? requiredWorkshopOf = null)
     {
-        var next = Next(levels, currentLevel, levelOf, costOf, minTierOf, hideout.Tier)
+        var next = Next(levels, currentLevel, levelOf, costOf, minTierOf, hideout.Tier, hideout.WorkshopLevel, requiredWorkshopOf)
             ?? throw new GameRuleException($"Your {label} is already at its highest level.");
         if (next.TierLocked)
             throw new GameRuleException($"A level {next.Level} {label} needs the {TierName(next.RequiredTier)} or better.");
+        if (next.WorkshopLocked)
+            throw new GameRuleException($"A level {next.Level} {label} needs a level {next.RequiredWorkshopLevel} workshop.");
         if (player.Cash + player.BankCash < next.Cost)
             throw new GameRuleException($"You need {next.Cost:C0} across your cash and bank to upgrade the {label}.");
 
@@ -599,11 +617,23 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         Func<T, int> levelOf,
         Func<T, long> costOf,
         Func<T, int> minTierOf,
-        int currentTier)
+        int currentTier,
+        int currentWorkshop = int.MaxValue,
+        Func<int, int>? requiredWorkshopOf = null)
     {
         foreach (var level in levels)
             if (levelOf(level) == currentLevel + 1)
-                return new NextRoomUpgrade(levelOf(level), costOf(level), minTierOf(level), minTierOf(level) > currentTier);
+            {
+                var nextLevel = levelOf(level);
+                var requiredWorkshop = requiredWorkshopOf?.Invoke(nextLevel) ?? 0;
+                return new NextRoomUpgrade(
+                    nextLevel,
+                    costOf(level),
+                    minTierOf(level),
+                    minTierOf(level) > currentTier,
+                    requiredWorkshop,
+                    requiredWorkshop > currentWorkshop);
+            }
         return null;
     }
 
@@ -621,7 +651,16 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 }
 
 /// <summary>The next level of a room, and whether the hideout is big enough to hold it yet.</summary>
-public sealed record NextRoomUpgrade(int Level, long Cost, int RequiredTier, bool TierLocked);
+public sealed record NextRoomUpgrade(
+    int Level,
+    long Cost,
+    int RequiredTier,
+    bool TierLocked,
+    int RequiredWorkshopLevel = 0,
+    bool WorkshopLocked = false)
+{
+    public bool Locked => TierLocked || WorkshopLocked;
+}
 
 /// <summary>What the labs banked on their own, and whether the offline ceiling cut it short.</summary>
 /// <param name="ClockMoved">

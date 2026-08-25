@@ -580,6 +580,62 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             });
     }
 
+    public WorkshopCraft StartProductionCraft(Player player, string? product, int workUnits, TerritoryEffects? territory, DateTime nowUtc)
+    {
+        TravelGate.EnsureLanded(player);
+        if (workUnits < 1 || workUnits > _options.MaxActionTurns)
+            throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
+        if (player.Turns < workUnits)
+            throw new GameRuleException($"That is {workUnits:N0} turns and you have {player.Turns:N0}.");
+
+        var key = NormalizeProduct(product);
+        var production = GetProduction(key);
+        var workshopLevel = player.Hideout?.WorkshopLevel ?? 0;
+        if (workshopLevel < production.MinWorkshopLevel)
+            throw new GameRuleException($"{TradeGoods.Label(key)} needs a level {production.MinWorkshopLevel} workshop. Yours is level {workshopLevel}.");
+
+        var baseUnits = 0;
+        for (var i = 0; i < workUnits; i++)
+            baseUnits += random.NextInclusive(production.UnitsMin, production.UnitsMax);
+
+        var labBonusPercent = hideout.ProductionYieldBonusPercent(player.Hideout, key) + (territory?.ProductionYieldPercent ?? 0);
+        var wanted = (int)Math.Round(baseUnits * (1 + labBonusPercent / 100.0), MidpointRounding.AwayFromZero);
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var room = TradeGoods.Room(player, capacity, key);
+        if (room <= 0)
+            throw new GameRuleException($"Your storage has no room for more {key}.");
+
+        var produced = Math.Min(wanted, room);
+        var totalCost = (long)production.CostPerTurn * workUnits;
+        if (player.Cash < totalCost)
+            throw new GameRuleException($"Materials for {workUnits:N0} work unit{Plural(workUnits)} of {key} cost {totalCost:C0}.");
+
+        player.Cash -= totalCost;
+        player.Turns -= workUnits;
+        var minutes = Math.Max(1, _options.WorkshopCraftMinutesPerTurn) * workUnits;
+        var label = TradeGoods.Label(key);
+        var summary = $"Producing {produced:N0} {label.ToLowerInvariant()}.";
+        if (produced < wanted)
+            summary += " Storage capped the batch.";
+        if (labBonusPercent > 0)
+            summary += $" Lab and territory bonuses added {labBonusPercent:N0}% yield.";
+
+        return new WorkshopCraft
+        {
+            PlayerId = player.Id,
+            Good = key,
+            Label = label,
+            Quantity = produced,
+            UnitCost = produced <= 0 ? 0 : Math.Max(1, totalCost / produced),
+            TotalCost = totalCost,
+            WorkUnits = workUnits,
+            WorkshopLevel = workshopLevel,
+            StartedAtUtc = nowUtc,
+            CompletesAtUtc = nowUtc.AddMinutes(minutes),
+            Summary = summary
+        };
+    }
+
     /// <summary>
     /// Steps on the coke you already hold: cut goes in, and the pile comes out bigger.
     ///
@@ -679,11 +735,87 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// </param>
     public ActionResultResponse Make(Player player, int turns, string? good = null)
     {
+        var plan = PlanCraft(player, turns, good, requireTurns: true);
+
+        player.Turns -= plan.WorkUnits;
+        player.Cash -= plan.TotalCost;
+        TradeGoods.Add(player, plan.Good, plan.Quantity);
+
+        var summary = $"Turned out {plan.Quantity:N0} {plan.Label} over {plan.WorkUnits} turn{Plural(plan.WorkUnits)} for {plan.TotalCost:C0} in materials.";
+        if (plan.Quantity < plan.Wanted)
+            summary += " Storage filled up before the run finished.";
+
+        return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
+        {
+            ["good"] = plan.Good,
+            ["weaponsMade"] = plan.Quantity,
+            ["unitsMade"] = plan.Quantity,
+            ["turnsSpent"] = plan.WorkUnits,
+            ["costPerWeapon"] = plan.UnitCost,
+            ["totalCost"] = plan.TotalCost,
+            ["storePrice"] = TradeGoods.ReferencePrice(_options, plan.Good, player.City)
+        });
+    }
+
+    public WorkshopCraft StartCraft(Player player, int workUnits, string? good, DateTime nowUtc)
+    {
+        var plan = PlanCraft(player, workUnits, good, requireTurns: true);
+
+        player.Turns -= plan.WorkUnits;
+        player.Cash -= plan.TotalCost;
+        var minutes = Math.Max(1, _options.WorkshopCraftMinutesPerTurn) * plan.WorkUnits;
+        return new WorkshopCraft
+        {
+            PlayerId = player.Id,
+            Good = plan.Good,
+            Label = TradeGoods.Label(plan.Good),
+            Quantity = plan.Quantity,
+            UnitCost = plan.UnitCost,
+            TotalCost = plan.TotalCost,
+            WorkUnits = plan.WorkUnits,
+            WorkshopLevel = plan.WorkshopLevel,
+            StartedAtUtc = nowUtc,
+            CompletesAtUtc = nowUtc.AddMinutes(minutes),
+            Summary = $"Crafting {plan.Quantity:N0} {plan.Label}."
+        };
+    }
+
+    public ActionResultResponse CompleteCraft(Player player, WorkshopCraft craft, DateTime nowUtc)
+    {
+        if (craft.CompletedAtUtc is not null)
+            return new ActionResultResponse(craft.Summary, player.Turns);
+
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var room = TradeGoods.Room(player, capacity, craft.Good);
+        var delivered = Math.Min(craft.Quantity, room);
+        var spilled = craft.Quantity - delivered;
+        TradeGoods.Add(player, craft.Good, delivered);
+
+        craft.CompletedAtUtc = nowUtc;
+        craft.Delivered = delivered;
+        craft.Spilled = spilled;
+        var source = craft.Good is "weed" or "coke" ? "craft queue" : "workshop";
+        craft.Summary = $"Finished {craft.Quantity:N0} {craft.Label.ToLowerInvariant()} from the {source}.";
+        if (spilled > 0)
+            craft.Summary += $" {spilled:N0} would not fit and was dumped.";
+
+        return new ActionResultResponse(craft.Summary, player.Turns, new Dictionary<string, object?>
+        {
+            ["good"] = craft.Good,
+            ["unitsMade"] = delivered,
+            ["unitsSpilled"] = spilled,
+            ["totalCost"] = craft.TotalCost,
+            ["completedCraftId"] = craft.Id
+        });
+    }
+
+    private WorkshopCraftPlan PlanCraft(Player player, int workUnits, string? good, bool requireTurns)
+    {
         TravelGate.EnsureLanded(player);
-        if (turns < 1 || turns > _options.MaxActionTurns)
+        if (workUnits < 1 || workUnits > _options.MaxActionTurns)
             throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
-        if (player.Turns < turns)
-            throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
+        if (requireTurns && player.Turns < workUnits)
+            throw new GameRuleException($"That is {workUnits:N0} turns and you have {player.Turns:N0}.");
 
         var workshop = hideout.WorkshopFor(player.Hideout)
             ?? throw new GameRuleException("You need a workshop before you can make anything.");
@@ -730,31 +862,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         // Bounded by the room up front rather than made and spilled, so nobody pays for materials that
         // turn into nothing.
-        var wanted = rate * turns;
+        var wanted = rate * workUnits;
         var made = Math.Min(wanted, room);
         var turnsUsed = (int)Math.Ceiling((double)made / rate);
         var cost = unitCost * made;
         if (player.Cash < cost)
             throw new GameRuleException($"Materials for {made:N0} {label} cost {cost:C0}.");
 
-        player.Turns -= turnsUsed;
-        player.Cash -= cost;
-        TradeGoods.Add(player, key, made);
-
-        var summary = $"Turned out {made:N0} {label} over {turnsUsed} turn{Plural(turnsUsed)} for {cost:C0} in materials.";
-        if (made < wanted)
-            summary += " Storage filled up before the run finished.";
-
-        return new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
-        {
-            ["good"] = key,
-            ["weaponsMade"] = made,
-            ["unitsMade"] = made,
-            ["turnsSpent"] = turnsUsed,
-            ["costPerWeapon"] = unitCost,
-            ["totalCost"] = cost,
-            ["storePrice"] = TradeGoods.ReferencePrice(_options, key, player.City)
-        });
+        return new WorkshopCraftPlan(key, label, made, wanted, unitCost, cost, turnsUsed, workshop.Level);
     }
 
     /// <summary>
@@ -794,6 +909,16 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         return (wanted.Key, WeaponTiers.Label(wanted.Key).ToLowerInvariant(), wanted.ForgeCost);
     }
+
+    private sealed record WorkshopCraftPlan(
+        string Good,
+        string Label,
+        int Quantity,
+        int Wanted,
+        long UnitCost,
+        long TotalCost,
+        int WorkUnits,
+        int WorkshopLevel);
 
     public ActionResultResponse SellProduct(Player player, string? product, int quantity)
     {

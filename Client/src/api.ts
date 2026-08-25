@@ -185,7 +185,37 @@ export type Hideout = {
   bustRiskReductionPercent: number
   nextTier?: HideoutTierUpgrade | null
   building?: HideoutBuild | null
+  craftMinutesPerWork: number
+  workshopCraft?: WorkshopCraft | null
+  production: ProductionStation[]
   stations: HideoutStation[]
+}
+
+export type ProductionStation = {
+  key: 'weed' | 'coke'
+  name: string
+  minPerWork: number
+  maxPerWork: number
+  costPerWork: number
+  sellPrice: number
+  sellLabel: string
+  labBonusPercent: number
+  requiredWorkshopLevel: number
+  heatPerUnit: number
+}
+
+export type WorkshopCraft = {
+  id: number
+  good: string
+  label: string
+  quantity: number
+  unitCost: number
+  totalCost: number
+  workUnits: number
+  workshopLevel: number
+  startedAtUtc: string
+  completesAtUtc: string
+  secondsRemaining: number
 }
 
 export type HideoutStation = {
@@ -198,6 +228,7 @@ export type HideoutStation = {
   comparePrice: number
   compareLabel: string
   heatPerUnit: number
+  requiredWorkshopLevel: number
   upgrade?: HideoutRoomUpgrade | null
 }
 
@@ -207,6 +238,8 @@ export type HideoutRoomUpgrade = {
   requiredTier: number
   requiredTierName: string
   tierLocked: boolean
+  requiredWorkshopLevel: number
+  workshopLocked: boolean
   /** Days of this room's own output before the upgrade pays for itself. Null when it makes nothing. */
   paybackDays: number | null
 }

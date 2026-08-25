@@ -33,7 +33,7 @@ window.bootstrap = bootstrap
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AppPage = 'overview' | 'street' | 'crew' | 'hideout' | 'territory' | 'market' | 'mules' | 'recon' | 'alliance' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'alliance' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -63,20 +63,23 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   overview: { label: 'Overview', short: 'OV', kicker: 'Command centre' },
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
   crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
-  hideout: { label: 'Hideout', short: 'HO', kicker: 'Capacity and upgrades' },
-  territory: { label: 'Territory', short: 'TR', kicker: 'Ground you hold' },
-  market: { label: 'Market', short: 'MK', kicker: 'Store, product, bank' },
-  mules: { label: 'Mules', short: 'MU', kicker: 'Runs out of town' },
-  recon: { label: 'Combat', short: 'CB', kicker: 'Targets and missions' },
+  market: { label: 'Business', short: 'BZ', kicker: 'Shop, rooms, craft, runs' },
+  recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
   alliance: { label: 'Alliance', short: 'AL', kicker: 'Who you run with' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control centre' },
+}
+
+function flowPage(page: string): AppPage {
+  if (page === 'hideout' || page === 'mules') return 'market'
+  if (page === 'territory') return 'recon'
+  return page in pageMeta ? page as AppPage : 'overview'
 }
 
 /**
  * Navigation for a phone.
  *
  * The desktop rail collapsed to a horizontal strip of two-letter codes that scrolled sideways, which
- * failed twice over: three of the nine destinations sat off the edge with nothing to say they were
+ * failed twice over: destinations sat off the edge with nothing to say they were
  * there, and the six you could see were abbreviations you had to learn. A thumb also reaches the
  * bottom of a phone far more easily than the top, which is where the strip was.
  *
@@ -151,7 +154,7 @@ function MobileNav({ pages, active, onPick, onLogout }: {
 /**
  * The walkthrough.
  *
- * A new player arrives at nine pages of numbers with no idea which of them is the one that matters
+ * A new player arrives at a wall of numbers with no idea which of them is the one that matters
  * today. The opening ladder tells them what to do next, but not what any of it is or where it lives,
  * and reading a panel does not tell you why you would ever open it.
  *
@@ -186,7 +189,7 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
       + 'sours the crew.',
   },
   {
-    page: 'hideout',
+    page: 'market',
     target: 'rooms',
     title: 'The hideout is the engine',
     body: 'Every room does one job: the store decides how big a crew you can feed, the labs make product '
@@ -198,7 +201,7 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
     target: 'market-trade',
     title: 'Buying and selling',
     body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
-      + 'cash: money on hand is stolen in a raid and money in the bank is not, which is the cheapest '
+      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not, which is the cheapest '
       + 'insurance in the game.',
   },
   {
@@ -221,7 +224,7 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
   const [rect, setRect] = useState<DOMRect | null>(null)
   // The card measures itself. The first version guessed 200px of height and placed the card against
   // that guess, which put it off the top of the screen the moment a target was tall - the opening
-  // ladder is nine rungs, so the step explaining it was the step you could not read.
+  // ladder is long enough that the step explaining it was the step you could not read.
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [boxSize, setBoxSize] = useState({ width: 330, height: 190 })
   const step = tourSteps[stepIndex]
@@ -1341,11 +1344,8 @@ function renderPage(page: AppPage, ctx: PageContext) {
   switch (page) {
     case 'street': return <StreetPage {...ctx} />
     case 'crew': return <CrewPage {...ctx} />
-    case 'hideout': return <HideoutPage {...ctx} />
-    case 'territory': return <TerritoryPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
-    case 'mules': return <MulePage {...ctx} />
-    case 'recon': return <ReconPage {...ctx} />
+    case 'recon': return <CombatPage {...ctx} />
     case 'alliance': return <AlliancePage {...ctx} />
     case 'admin': return ctx.adminOverview
       ? <AdminPage {...ctx} overview={ctx.adminOverview} />
@@ -1369,8 +1369,8 @@ function OverviewPage(ctx: PageContext) {
         <div className="d-flex flex-wrap gap-2 mt-4">
           <button className="btn btn-primary" onClick={() => setActivePage('street')}>Work Streets</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('crew')}>Manage Crew</button>
-          <button className="btn btn-secondary" onClick={() => setActivePage('market')}>Open Market</button>
-          <button className="btn btn-secondary" onClick={() => setActivePage('recon')}>Combat</button>
+          <button className="btn btn-secondary" onClick={() => setActivePage('market')}>Open Business</button>
+          <button className="btn btn-secondary" onClick={() => setActivePage('recon')}>Raids & Map</button>
         </div>
       </section>
 
@@ -1557,9 +1557,10 @@ function CrewPage(ctx: PageContext) {
 function HideoutPage(ctx: PageContext) {
   const { dashboard, busy, act } = ctx
   const hideout = dashboard.hideout
+  const workshop = hideout.stations?.find(station => station.key === 'workshop')
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
     <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>{hideout.tierName}</h2><span>Tier {hideout.tier}</span></div>
+      <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier}</span></div>
       <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
       <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-3">
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
@@ -1607,7 +1608,7 @@ function HideoutPage(ctx: PageContext) {
           level={hideout.weedLabLevel}
           detail={hideout.weedLabLevel === 0
             ? 'Not built. Grows weed on its own while you are out, and stretches a shift further when you are in.'
-            : `+${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own`}
+            : `Active +${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own.`}
           upgrade={hideout.weedLabUpgrade}
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
@@ -1618,12 +1619,24 @@ function HideoutPage(ctx: PageContext) {
           level={hideout.cokeLabLevel}
           detail={hideout.cokeLabLevel === 0
             ? 'Not built. Cooks coke on its own while you are out, and stretches a shift further when you are in.'
-            : `+${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own`}
+            : `Active +${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own.`}
           upgrade={hideout.cokeLabUpgrade}
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
         />
+        {workshop && <RoomRow
+          name="Workshop"
+          level={workshop.level}
+          detail={workshop.level === 0
+            ? 'Not built. Unlocks crafting for guns, moonshine, cut, medicine and poison.'
+            : `Crafts run at ${number.format(workshop.perTurn)} unit${workshop.perTurn === 1 ? '' : 's'} a turn before each recipe's own rate.`}
+          upgrade={workshop.upgrade}
+          funds={dashboard.cash + dashboard.bankCash}
+          busy={busy}
+          onUpgrade={() => void act(() => api.upgradeHideout('workshop'))}
+        />}
+        {workshop && <WorkshopUnlockGrid dashboard={dashboard} />}
         <RoomRow
           name="Lookout"
           level={hideout.lookoutLevel}
@@ -1653,8 +1666,6 @@ function HideoutPage(ctx: PageContext) {
         full store draw heat whether you are here or not.
       </p>}
     </section>
-
-    <HideoutStationsPanel dashboard={dashboard} busy={busy} act={act} />
 
     <HideoutMoralePanel dashboard={dashboard} busy={busy} act={act} />
   </div>
@@ -1732,7 +1743,7 @@ function MulePage(ctx: PageContext) {
         their fares and keep before anybody leaves.
       </p>
       {board.concurrentRunCap === 0 && <div className="alert alert-danger">
-        <span>You need an intelligence centre before you can run mules. Build one on the Hideout page.</span>
+        <span>You need an intelligence centre before you can run mules. Build one under Business / Hideout.</span>
       </div>}
     </section>
 
@@ -1873,31 +1884,212 @@ function CapacityBar({ label, used, cap, money: asMoney = false }: { label: stri
   </div>
 }
 
-/**
- * The making stations. Each is shown next to the price it exists to beat, because a station whose
- * output costs more than the thing it replaces has no reason to be built.
- */
-function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
-  const [turns, setTurns] = useState<Record<string, number>>({})
-  // Which gun the workshop is making. Only the workshop has a choice; the still and the mix house
-  // each make exactly one thing.
-  const [forging, setForging] = useState<WeaponTierKey | ''>('')
+function WorkshopUnlockGrid({ dashboard }: { dashboard: Dashboard }) {
+  const [open, setOpen] = useState(false)
   const stations = dashboard.hideout.stations ?? []
-  if (stations.length === 0) return null
+  const workshop = stations.find(station => station.key === 'workshop')
+  if (!workshop) return null
 
-  const workshopLevel = stations.find(x => x.key === 'workshop')?.level ?? 0
-  const makeable = dashboard.weaponRack.filter(x => x.forgeCost !== null && (x.minWorkshopLevel ?? 99) <= workshopLevel)
+  const currentLevel = workshop.level
+  const craftRows = [
+    ...(dashboard.hideout.production ?? [])
+      .map(product => ({
+        key: product.key,
+        label: product.name,
+        requirement: product.requiredWorkshopLevel,
+        cost: product.costPerWork,
+      })),
+    ...dashboard.weaponRack
+      .filter(tier => tier.forgeCost !== null)
+      .map(tier => ({
+        key: tier.key,
+        label: tier.label,
+        requirement: tier.minWorkshopLevel ?? 1,
+        cost: tier.forgeCost ?? 0,
+      })),
+    ...stations
+      .filter(station => station.key !== 'workshop')
+      .map(station => ({
+        key: station.key,
+        label: station.name,
+        requirement: station.requiredWorkshopLevel,
+        cost: station.costPerUnit,
+      })),
+  ].sort((a, b) => a.requirement - b.requirement || a.label.localeCompare(b.label))
+  const unlocked = craftRows.filter(craft => currentLevel >= craft.requirement).length
+  const collapseId = 'workshop-unlocks'
+
+  return <div className="workshop-unlocks border-start border-primary-subtle ps-3 py-1">
+    <button
+      className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2"
+      type="button"
+      aria-expanded={open}
+      aria-controls={collapseId}
+      onClick={() => setOpen(value => !value)}
+    >
+      <i className={`bi ${open ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true" />
+      <span>Workshop unlocks</span>
+      <span className="badge text-bg-secondary">{unlocked}/{craftRows.length}</span>
+    </button>
+    <div id={collapseId} className={`collapse ${open ? 'show' : ''}`}>
+      <div className="d-grid gtc-fill-180 gap-2 mt-2">
+        {craftRows.map(craft => {
+          const craftUnlocked = currentLevel >= craft.requirement
+          return <div className={`border rounded bg-body-tertiary p-2 ${craftUnlocked ? 'border-success' : ''}`} key={craft.key}>
+            <div className="d-flex justify-content-between align-items-baseline gap-2">
+              <strong className="text-body">{craft.label}</strong>
+              <span className={`eyebrow ${craftUnlocked ? 'text-success-emphasis' : 'text-warning-emphasis'}`}>
+                {craftUnlocked ? 'Unlocked' : `Level ${craft.requirement}`}
+              </span>
+            </div>
+            <small className="text-body-tertiary">Materials {money.format(craft.cost)} each</small>
+          </div>
+        })}
+      </div>
+    </div>
+  </div>
+}
+
+/**
+ * The craft bench. Each craft is shown next to the price it exists to beat, because a recipe whose
+ * output costs more than the thing it replaces has no reason to be used.
+ */
+function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
+  dashboard: Dashboard
+  busy: boolean
+  act: PageContext['act']
+  sellQty: Record<'weed' | 'coke', number>
+  setSellQty: React.Dispatch<React.SetStateAction<Record<'weed' | 'coke', number>>>
+}) {
+  const [turns, setTurns] = useState<Record<string, number>>({})
+  const [productionWork, setProductionWork] = useState<Record<'weed' | 'coke', number>>({ weed: 5, coke: 5 })
+  const stations = dashboard.hideout.stations ?? []
+  const production = dashboard.hideout.production ?? []
+  if (stations.length === 0 && production.length === 0) return null
+
+  const activeCraft = dashboard.hideout.workshopCraft ?? null
+  const craftMinutes = Math.max(1, dashboard.hideout.craftMinutesPerWork ?? 1)
+  const workshop = stations.find(x => x.key === 'workshop')
+  const workshopLevel = workshop?.level ?? 0
+  const gunRate = Math.max(1, workshop?.perTurn ?? 0)
+  const crafts = [
+    ...dashboard.weaponRack
+      .filter(tier => tier.forgeCost !== null)
+      .map(tier => ({
+        key: tier.key,
+        name: tier.label,
+        good: tier.key,
+        level: workshopLevel >= (tier.minWorkshopLevel ?? 1) ? workshopLevel : 0,
+        perTurn: gunRate,
+        costPerUnit: tier.forgeCost ?? 0,
+        comparePrice: tier.price,
+        compareLabel: `store ${tier.label.toLowerCase()}`,
+        heatPerUnit: 0,
+        requiredWorkshopLevel: tier.minWorkshopLevel ?? 1,
+        weapon: tier.key,
+      })),
+    ...stations
+      .filter(station => station.key !== 'workshop')
+      .map(station => ({ ...station, weapon: undefined })),
+  ].sort((a, b) => a.requiredWorkshopLevel - b.requiredWorkshopLevel || a.name.localeCompare(b.name))
 
   return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Production</h2><span>Turns and materials into goods</span></div>
+    <div className="panel-title"><h2>Craft Queue</h2><span>Workbench crafts</span></div>
     <p>
-      What you make here is what the market has to trade. Each station is priced against the thing it
-      replaces, so building one only pays while its output costs less than buying the same thing.
+      Weed, coke, guns and back-room goods all run through the same queue. Turns and cash
+      are paid up front, and the finished batch lands in storage when the timer clears.
     </p>
+    {activeCraft && <div className="alert alert-primary d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 mb-0">
+      <div>
+        <strong className="d-block">Crafting {number.format(activeCraft.quantity)} {activeCraft.label.toLowerCase()}</strong>
+        <span className="small">Spent {number.format(activeCraft.workUnits)} turn{activeCraft.workUnits === 1 ? '' : 's'} and {money.format(activeCraft.totalCost)}.</span>
+      </div>
+      <b className="text-nowrap">Ready in {timeUntil(activeCraft.completesAtUtc)}</b>
+    </div>}
     <div className="d-grid gap-2 mt-3">
-      {stations.map(station => {
+      {production.map(station => {
+        const key = station.key
+        const workUnits = productionWork[key] ?? 5
+        const minQuantity = station.minPerWork * workUnits
+        const maxQuantity = station.maxPerWork * workUnits
+        const quantityLabel = minQuantity === maxQuantity
+          ? number.format(minQuantity)
+          : `${number.format(minQuantity)}-${number.format(maxQuantity)}`
+        const totalCost = station.costPerWork * workUnits
+        const held = key === 'weed' ? dashboard.weed : dashboard.coke
+        const sellPrice = key === 'coke' ? dashboard.cokeSellPriceAtPurity : station.sellPrice
+        const saleQty = sellQty[key]
+        const built = workshopLevel >= station.requiredWorkshopLevel
+        const canStart = built
+          && !activeCraft
+          && !busy
+          && workUnits >= 1
+          && workUnits <= dashboard.maxActionTurns
+          && workUnits <= dashboard.turns
+          && totalCost <= dashboard.cash
+        return <div className="room-row border-start-thick border-start-danger" key={station.key}>
+          <div className="room-copy">
+            <strong className="text-body">{station.name}<small className="ms-1 eyebrow text-danger"> contraband</small></strong>
+            <span className="text-body-secondary small">
+              {built
+                ? `${number.format(station.minPerWork)}-${number.format(station.maxPerWork)} ${station.key} per work unit at ${money.format(station.costPerWork)} each, selling here for ${money.format(sellPrice)}. ${station.sellLabel}.`
+                : `Needs a level ${station.requiredWorkshopLevel} workshop. Queues ${station.key} production for the ${station.sellLabel.toLowerCase()}.`}
+            </span>
+            {built && <small className="text-body-tertiary">
+              Current batch: {quantityLabel} for {money.format(totalCost)} and {number.format(workUnits)} turn{workUnits === 1 ? '' : 's'}, ready in {formatCraftMinutes(workUnits * craftMinutes)}.
+              {station.labBonusPercent > 0 && ` Lab bonus adds ${station.labBonusPercent}%.`}
+            </small>}
+            {built && <small className="text-warning-emphasis small">
+              Each one held adds {station.heatPerUnit} heat. Make and sell rather than stockpile.
+            </small>}
+          </div>
+          <em className="eyebrow fst-normal small">{built ? `${number.format(held)} held` : `Needs L${station.requiredWorkshopLevel}`}</em>
+          <div className="d-flex flex-wrap align-items-end gap-1 mt-1">
+            {built && <>
+              <label className="field">Work<input className="form-control"
+                type="number"
+                min={1}
+                max={dashboard.maxActionTurns}
+                value={workUnits}
+                onChange={e => setProductionWork(v => ({ ...v, [key]: Number(e.target.value) }))}
+              /></label>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!canStart}
+                onClick={() => void act(() => api.produce(key, workUnits))}
+              >
+                Queue {quantityLabel}
+              </button>
+            </>}
+            <label className="field">Sell Qty<input className="form-control"
+              type="number"
+              min={1}
+              max={Math.max(1, held)}
+              value={saleQty}
+              onChange={e => setSellQty(v => ({ ...v, [key]: Number(e.target.value) }))}
+            /></label>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={busy || saleQty < 1 || saleQty > held}
+              onClick={() => void act(() => api.sellProduct(key, saleQty))}
+            >
+              Sell
+            </button>
+          </div>
+        </div>
+      })}
+      {crafts.map(station => {
         const runTurns = turns[station.key] ?? 5
         const built = station.level > 0
+        const quantity = station.perTurn * runTurns
+        const totalCost = station.costPerUnit * quantity
+        const canStart = built
+          && !activeCraft
+          && !busy
+          && runTurns >= 1
+          && runTurns <= dashboard.maxActionTurns
+          && runTurns <= dashboard.turns
+          && totalCost <= dashboard.cash
         return <div
           className={`room-row ${station.heatPerUnit > 0 ? 'border-start-thick border-start-danger' : ''}`}
           key={station.key}
@@ -1906,48 +2098,34 @@ function HideoutStationsPanel({ dashboard, busy, act }: { dashboard: Dashboard, 
             <strong className="text-body">{station.name}{station.heatPerUnit > 0 && <small className="ms-1 eyebrow text-danger"> contraband</small>}</strong>
             <span className="text-body-secondary small">
               {built
-                ? `${number.format(station.perTurn)} ${station.good} a turn at ${money.format(station.costPerUnit)} each, against ${money.format(station.comparePrice)} for ${station.compareLabel}`
-                : `Not built. Makes ${station.good} for less than ${money.format(station.comparePrice)}, the price of ${station.compareLabel}.`}
+                ? `${number.format(station.perTurn)} ${station.good} per work unit at ${money.format(station.costPerUnit)} each, against ${money.format(station.comparePrice)} for ${station.compareLabel}`
+                : `Needs a level ${station.requiredWorkshopLevel} workshop. Makes ${station.good} for less than ${money.format(station.comparePrice)}, the price of ${station.compareLabel}.`}
             </span>
+            {built && <small className="text-body-tertiary">
+              Current batch: {number.format(quantity)} for {money.format(totalCost)} and {number.format(runTurns)} turn{runTurns === 1 ? '' : 's'}, ready in {formatCraftMinutes(runTurns * craftMinutes)}.
+            </small>}
             {station.heatPerUnit > 0 && built && <small className="text-warning-emphasis small">
               Each one held adds {station.heatPerUnit} heat. Make and sell rather than stockpile.
             </small>}
-            {station.upgrade?.tierLocked && <small className="text-warning-emphasis small">Level {station.upgrade.level} needs the {station.upgrade.requiredTierName} or better.</small>}
           </div>
-          <em className="eyebrow fst-normal small">{built ? `Level ${station.level}` : 'Not built'}</em>
+          <em className="eyebrow fst-normal small">{built ? `Level ${station.level}` : `Needs L${station.requiredWorkshopLevel}`}</em>
           <div className="d-flex flex-wrap align-items-end gap-1 mt-1">
             {built && <>
-              <label className="field">Turns<input className="form-control"
+              <label className="field">Work<input className="form-control"
                 type="number"
                 min={1}
                 max={dashboard.maxActionTurns}
                 value={runTurns}
                 onChange={e => setTurns(v => ({ ...v, [station.key]: Number(e.target.value) }))}
               /></label>
-              {/* A workshop that has unlocked more than one gun asks which. One gun, no question. */}
-              {station.key === 'workshop' && makeable.length > 1 && <label className="field">Make
-                <select className="form-select" value={forging} onChange={event => setForging(event.target.value as WeaponTierKey | '')}>
-                  <option value="">Best available</option>
-                  {makeable.map(tier => <option key={tier.key} value={tier.key}>
-                    {tier.label} - {money.format(tier.forgeCost ?? 0)} each
-                  </option>)}
-                </select>
-              </label>}
               <button
                 className="btn btn-primary btn-sm"
-                disabled={busy || runTurns < 1 || runTurns > dashboard.turns}
-                onClick={() => void act(() => api.forge(runTurns, station.key, station.key === 'workshop' && forging !== '' ? forging : undefined))}
+                disabled={!canStart}
+                onClick={() => void act(() => api.forge(runTurns, station.weapon ? 'workshop' : station.key, station.weapon as WeaponTierKey | undefined))}
               >
-                Make {number.format(station.perTurn * runTurns)}
+                Queue {number.format(quantity)}
               </button>
             </>}
-            <button
-              className="btn btn-secondary btn-sm"
-              disabled={busy || !station.upgrade || station.upgrade.tierLocked || dashboard.cash + dashboard.bankCash < station.upgrade.cost}
-              onClick={() => void act(() => api.upgradeHideout(station.key as HideoutRoom))}
-            >
-              {!station.upgrade ? 'Maxed' : built ? `Upgrade ${money.format(station.upgrade.cost)}` : `Build ${money.format(station.upgrade.cost)}`}
-            </button>
           </div>
         </div>
       })}
@@ -2118,12 +2296,19 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
   busy: boolean
   onUpgrade: () => void
 }) {
-  const locked = upgrade?.tierLocked ?? false
+  const tierLocked = upgrade?.tierLocked ?? false
+  const workshopLocked = upgrade?.workshopLocked ?? false
+  const locked = tierLocked || workshopLocked
   return <div className="room-row">
     <div className="room-copy">
       <strong>{name}</strong>
       <span>{detail}</span>
-      {locked && <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better.</small>}
+      {tierLocked && workshopLocked
+        ? <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better, and will be needing a level {upgrade!.requiredWorkshopLevel} workshop.</small>
+        : <>
+          {tierLocked && <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better.</small>}
+          {workshopLocked && <small>Level {upgrade!.level} needs a level {upgrade!.requiredWorkshopLevel} workshop.</small>}
+        </>}
       {/* What the upgrade actually returns. The later levels are meant to be a poor deal - somewhere
           for money to go once there is nothing left to buy - and saying so is the difference between
           a trophy and a room that quietly took a fortune while looking like an investment. */}
@@ -2276,14 +2461,14 @@ function TradingPanel(ctx: PageContext) {
   useEffect(() => { if (good && price === 0) setPrice(good.referencePrice) }, [good?.item])
 
   if (!board) return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Market</h2><span>Loading</span></div>
+    <div className="panel-title"><h2>Player Market</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section>
 
   return <>
     <section className="card p-3 gcol-full" data-tour="market-trade">
       <div className="panel-title">
-        <h2>Market</h2>
+        <h2>Player Market</h2>
         <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
       </div>
       <p>
@@ -2345,8 +2530,48 @@ function TradingPanel(ctx: PageContext) {
   </>
 }
 
+function SectionTabs({ label, tabs, active, onActive }: {
+  label: string
+  tabs: { key: string, label: string }[]
+  active: string
+  onActive: (key: string) => void
+}) {
+  return <nav className="nav nav-pills gap-2" aria-label={label}>
+    {tabs.map(tab => <button
+      className={`nav-link ${active === tab.key ? 'active' : ''}`}
+      type="button"
+      key={tab.key}
+      aria-current={active === tab.key ? 'page' : undefined}
+      onClick={() => onActive(tab.key)}
+    >
+      {tab.label}
+    </button>)}
+  </nav>
+}
+
 function MarketPage(ctx: PageContext) {
-  const { dashboard, busy, productionTurns, bankAmount, storeQty, sellQty, setProductionTurns, setBankAmount, setStoreQty, setSellQty, act } = ctx
+  const [tab, setTab] = useState('trade')
+  return <div className="d-grid gap-3">
+    <SectionTabs
+      label="Business sections"
+      active={tab}
+      onActive={setTab}
+      tabs={[
+        { key: 'trade', label: 'Shop' },
+        { key: 'hideout', label: 'Hideout' },
+        { key: 'production', label: 'Craft Queue' },
+        { key: 'routes', label: 'Runs' },
+      ]}
+    />
+    {tab === 'trade' && <MarketCorePage {...ctx} />}
+    {tab === 'hideout' && <HideoutPage {...ctx} />}
+    {tab === 'production' && <ProductionPage {...ctx} />}
+    {tab === 'routes' && <MulePage {...ctx} />}
+  </div>
+}
+
+function MarketCorePage(ctx: PageContext) {
+  const { dashboard, busy, bankAmount, storeQty, setBankAmount, setStoreQty, act } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
     <ContractsPanel dashboard={dashboard} busy={busy} act={act} />
     <section className="card p-3 gcol-full">
@@ -2416,38 +2641,18 @@ function MarketPage(ctx: PageContext) {
     </section>
 
     <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" />
+  </div>
+}
 
-    <section className="card p-3 market-production">
-      <div className="panel-title"><h2>Production</h2><span>Spend turns, build product</span></div>
-      <div className="d-grid gtc-1 gtc-md-1-field gap-3 align-items-end mb-3">
-        <p className="m-0">Cash on hand buys stock, and the town pays its own price for it.</p>
-        <label className="field">Turns<input className="form-control" type="number" min={1} max={dashboard.maxActionTurns} value={productionTurns} onChange={e => setProductionTurns(Number(e.target.value))} /></label>
-      </div>
-      <div className="d-grid gtc-1 gtc-md-2 gap-2">
-        <ProductTradeCard
-          name="Weed"
-          owned={dashboard.weed}
-          price={dashboard.weedSellPrice}
-          quantity={sellQty.weed}
-          disabled={busy}
-          canProduce={productionTurns >= 1 && productionTurns <= dashboard.turns && productionTurns <= dashboard.maxActionTurns}
-          onProduce={() => void act(() => api.produce('weed', productionTurns))}
-          onQuantity={q => setSellQty(v => ({ ...v, weed: q }))}
-          onSell={() => void act(() => api.sellProduct('weed', sellQty.weed))}
-        />
-        <ProductTradeCard
-          name="Coke"
-          owned={dashboard.coke}
-          price={dashboard.cokeSellPrice}
-          quantity={sellQty.coke}
-          disabled={busy}
-          canProduce={productionTurns >= 1 && productionTurns <= dashboard.turns && productionTurns <= dashboard.maxActionTurns}
-          onProduce={() => void act(() => api.produce('coke', productionTurns))}
-          onQuantity={q => setSellQty(v => ({ ...v, coke: q }))}
-          onSell={() => void act(() => api.sellProduct('coke', sellQty.coke))}
-        />
-      </div>
-    </section>
+function ProductionPage(ctx: PageContext) {
+  return <div className="d-grid gap-3">
+    <WorkshopCraftPanel
+      dashboard={ctx.dashboard}
+      busy={ctx.busy}
+      act={ctx.act}
+      sellQty={ctx.sellQty}
+      setSellQty={ctx.setSellQty}
+    />
   </div>
 }
 
@@ -2520,6 +2725,23 @@ function CityPrice({ price, base, showDelta }: { price: number, base: number | u
     {showDelta && base !== undefined && (delta === 0
       ? <small className="text-body-tertiary small">same</small>
       : <small className={`small ${delta > 0 ? 'text-success' : 'text-danger'}`}>{delta > 0 ? '+' : '−'}{money.format(Math.abs(delta))}</small>)}
+  </div>
+}
+
+function CombatPage(ctx: PageContext) {
+  const [tab, setTab] = useState('targets')
+  return <div className="d-grid gap-3">
+    <SectionTabs
+      label="Raids and map sections"
+      active={tab}
+      onActive={setTab}
+      tabs={[
+        { key: 'targets', label: 'Raids' },
+        { key: 'ground', label: 'Map' },
+      ]}
+    />
+    {tab === 'targets' && <ReconPage {...ctx} />}
+    {tab === 'ground' && <TerritoryPage {...ctx} />}
   </div>
 }
 
@@ -2871,8 +3093,8 @@ function ConfigRow({ entry, draft, locked, onDraft, onSave, onClear }: {
   onClear: () => void
 }) {
   const dirty = draft.trim() !== entry.effectiveValue.trim()
-  return <div className={`config-row ${entry.isOverridden ? 'overridden' : ''}`}>
-    <div className="config-copy">
+  return <div className={`config-row d-grid gap-2 align-items-center border-top py-2 ${entry.isOverridden ? 'border-primary' : ''}`}>
+    <div className="config-copy d-grid gap-1 min-w-0">
       <strong>{entry.path}</strong>
       <span>{entry.type}{entry.isOverridden ? ' / overridden' : ' / from appsettings'}</span>
     </div>
@@ -2928,7 +3150,7 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
       <strong>Fastest movers, last 24h</strong>
       <div className="d-grid gap-1">
         {data.fastestMovers.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No logged activity in the last day.</p>}
-        {data.fastestMovers.map(mover => <div className="audit-row" key={mover.playerId}>
+        {data.fastestMovers.map(mover => <div className="audit-row d-grid gap-1 border-top py-2" key={mover.playerId}>
           <div>
             <strong>{mover.name}{mover.isBot ? ' (AI)' : ''}</strong>
             <span>{money.format(mover.cashGained24h)} in {number.format(mover.actionsLast24h)} actions</span>
@@ -2943,7 +3165,7 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
       <strong>In-flight missions</strong>
       <div className="d-grid gap-1">
         {data.activeMissions.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing in flight.</p>}
-        {data.activeMissions.map(mission => <div className={`audit-row ${mission.isOverdue ? 'overdue' : ''}`} key={mission.missionId}>
+        {data.activeMissions.map(mission => <div className={`audit-row d-grid gap-1 border-top py-2 ${mission.isOverdue ? 'border-primary' : ''}`} key={mission.missionId}>
           <div>
             <strong>{mission.status}{mission.isOverdue ? ' / STUCK' : ''}</strong>
             <span>round {mission.currentRound}/{mission.maxRounds}</span>
@@ -2961,7 +3183,7 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
     <div className="control-block">
       <strong>AI health</strong>
       <div className="d-grid gap-1">
-        {data.bots.map(bot => <div className="audit-row" key={bot.playerId}>
+        {data.bots.map(bot => <div className="audit-row d-grid gap-1 border-top py-2" key={bot.playerId}>
           <div>
             <strong>{bot.name}</strong>
             <span>{bot.personality}</span>
@@ -3042,7 +3264,7 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
       <div className="admin-player-list d-grid gap-1 align-content-start overflow-y-auto">
         {results.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No players matched.</p>}
         {results.map(player => <button
-          className={`admin-player-row ${target?.playerId === player.playerId ? 'active' : ''}`}
+          className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${target?.playerId === player.playerId ? 'active border-primary' : ''}`}
           key={player.playerId}
           type="button"
           disabled={locked}
@@ -3182,7 +3404,7 @@ function AdminAuditPanel() {
 
 function AuditList({ entries }: { entries: AdminAuditEntry[] }) {
   return <div className="d-grid gap-1">
-    {entries.map(entry => <div className="audit-row" key={entry.id}>
+    {entries.map(entry => <div className="audit-row d-grid gap-1 border-top py-2" key={entry.id}>
       <div>
         <strong>{entry.action}</strong>
         <span>{entry.actorUsername}{entry.targetName ? ` -> ${entry.targetName}` : ''}</span>
@@ -3422,7 +3644,7 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
         <strong className="text-body">Supplies</strong>
         <span className="eyebrow">Checked against {turnLabel}</span>
       </div>
-      <button className="btn btn-primary" type="button" onClick={onMarket}>Open Market</button>
+      <button className="btn btn-primary" type="button" onClick={onMarket}>Open Business</button>
     </div>
     <div className="d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2">
       {supplies.map(supply => {
@@ -3477,7 +3699,7 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (p
         className={`w-100 d-grid gap-1 text-start border rounded p-3 ${move.urgent ? 'border-warning bg-body-tertiary' : 'bg-body-secondary'}`}
         type="button"
         key={move.label}
-        onClick={() => onPage(move.page as AppPage)}
+        onClick={() => onPage(flowPage(move.page))}
       >
         {/* Advice carries a price, so the cost sits with the label rather than buried in the reason. */}
         <strong className={move.urgent ? 'text-primary' : 'text-body'}>
@@ -3520,7 +3742,7 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
         className={`ladder-row d-grid gap-2 align-items-start text-start border rounded-2 p-2 ${step.done ? 'done' : step === next ? 'next bg-body-secondary text-body' : 'border-0 bg-transparent'}`}
         type="button"
         key={step.label}
-        onClick={() => onPage(step.page as AppPage)}
+        onClick={() => onPage(flowPage(step.page))}
       >
         <em className="fst-normal text-success-emphasis">{step.done ? '✓' : ''}</em>
         <div>
@@ -3620,27 +3842,36 @@ function DistrictPicker({ districts, selected, onSelect }: {
 }
 
 /**
- * A district in one line: what it is best at, and what going there costs. Written from the numbers
- * rather than a stored sentence, so retuning a district retunes what it says about itself.
+ * A district in one line. The full numbers are useful for tuning, but too loud in the picker; this
+ * keeps the visible choice to the role and the heat feel.
  */
 function districtEdge(district: StreetDistrict) {
+  const roles: Record<string, string> = {
+    casino: 'Cash focus',
+    winos: 'Thug recruits',
+    lowrent: 'Balanced',
+    nightclub: 'Pimp network',
+    ghetto: 'Street finds',
+  }
   const claims: { label: string, value: number }[] = [
-    { label: 'money', value: district.grossPercent },
-    { label: 'hoes', value: district.hoeRecruitPercent },
-    { label: 'thugs', value: district.thugRecruitPercent },
-    { label: 'pimps', value: district.pimpRecruitPercent },
-    { label: 'finds', value: district.findPercent },
+    { label: 'Cash focus', value: district.grossPercent },
+    { label: 'Hoe recruits', value: district.hoeRecruitPercent },
+    { label: 'Thug recruits', value: district.thugRecruitPercent },
+    { label: 'Pimp network', value: district.pimpRecruitPercent },
+    { label: 'Street finds', value: district.findPercent },
   ]
   const best = claims.reduce((a, b) => (b.value > a.value ? b : a))
   const worst = claims.reduce((a, b) => (b.value < a.value ? b : a))
-  if (best.value <= 100 && worst.value >= 100) return 'Even on everything'
+  const role = roles[district.key] ?? (best.value <= 100 && worst.value >= 100 ? 'Balanced' : best.label)
 
-  const gain = best.value > 100 ? `${best.value - 100}% more ${best.label}` : ''
-  const cost = worst.value < 100 ? `${100 - worst.value}% less ${worst.label}` : ''
-  const heat = district.heatPercent > 100
-    ? `${district.heatPercent - 100}% more heat`
-    : district.heatPercent < 100 ? `${100 - district.heatPercent}% less heat` : ''
-  return [gain, cost, heat].filter(Boolean).join(' / ')
+  const heat = district.heatPercent >= 150
+    ? 'Hot'
+    : district.heatPercent > 100
+      ? 'Warm'
+      : district.heatPercent <= 60
+        ? 'Quiet'
+        : ''
+  return heat && role !== 'Balanced' ? `${role} / ${heat}` : role
 }
 
 function moraleTone(value: number) {
@@ -3668,7 +3899,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
     && dashboard.weed >= report.hqPartyWeedCost
 
   return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>{dashboard.hideout.tierName}</h2><span>Hideout morale</span></div>
+    <div className="panel-title"><h2>Recovery</h2><span>{dashboard.hideout.tierName} morale</span></div>
     <div className="d-grid gtc-1 gtc-md-split-90 gap-3 align-items-stretch">
       <div className="d-grid align-content-center gap-2 border rounded-2 bg-body-secondary p-3">
         <strong className="text-primary">Current hideout</strong>
@@ -4185,7 +4416,7 @@ function AlliancePage(ctx: PageContext) {
       <div className="panel-title"><h2>The Board</h2><span>{board.board.length} crews</span></div>
       {board.board.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody is running with anybody yet.</p>}
       <div className="tnum d-grid gap-1 my-3">
-        {board.board.map(crew => <div className={`alliance-row ${crew.yours ? 'border-primary' : ''}`} key={crew.id}>
+        {board.board.map(crew => <div className={`alliance-row d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${crew.yours ? 'border-primary' : ''}`} key={crew.id}>
           <span>#{crew.rank}</span>
           <div>
             <strong>{crew.name}</strong>
@@ -4231,7 +4462,7 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
   // that gives yours away.
   const promotable = board.ranks.filter(x => x !== 'Boss')
 
-  return <div className={`alliance-member ${member.isYou ? 'border-primary' : ''}`}>
+  return <div className={`alliance-member d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${member.isYou ? 'border-primary' : ''}`}>
     <div>
       <strong>{member.name}</strong>
       <small>{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
@@ -4278,7 +4509,7 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
   return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     {sent.length > 0 && <>
       <strong className="d-block mb-1 text-primary small">Asked, waiting to hear</strong>
-      {sent.map(ask => <div className="alliance-ask" key={ask.id}>
+      {sent.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
         <div>
           <strong>{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
           <small>{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
@@ -4290,7 +4521,7 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
       </div>)}
     </>}
     {answerable.length > 0 && <strong className="d-block mb-1 text-primary small">Waiting on you</strong>}
-    {answerable.map(ask => <div className="alliance-ask" key={ask.id}>
+    {answerable.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
       <div>
         <strong>{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
         <small>{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
@@ -4379,7 +4610,7 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
 
   return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     <strong className="d-block mb-1 text-primary small">Who may do what</strong>
-    <div className="alliance-powers">
+    <div className="alliance-powers d-grid gap-2">
       {board.powers.map(power => <label className="d-grid gap-1 small" key={power.power}>
         <span>{power.label}</span>
         <select className="form-select"
@@ -4451,33 +4682,6 @@ function CombatHistoryPanel({ entries, currentPlayerId }: { entries: CombatLog[]
       })}
     </div>
   </section>
-}
-
-function ProductTradeCard({ name, owned, price, quantity, canProduce, disabled, onProduce, onQuantity, onSell }: {
-  name: 'Weed' | 'Coke'
-  owned: number
-  price: number
-  quantity: number
-  canProduce: boolean
-  disabled: boolean
-  onProduce: () => void
-  onQuantity: (quantity: number) => void
-  onSell: () => void
-}) {
-  return <div className="d-grid gap-3 border rounded bg-body-secondary p-3">
-    <div className="d-flex justify-content-between align-items-baseline gap-2">
-      <div className="d-grid gap-1">
-        <strong className="text-body fs-6">{name}</strong>
-        <span className="text-body-tertiary small">{number.format(owned)} owned</span>
-      </div>
-      <b className="text-primary">{money.format(price)}</b>
-    </div>
-    <button className="btn btn-primary btn-sm" disabled={disabled || !canProduce} onClick={onProduce}>Produce {name}</button>
-    <div className="d-grid gtc-1 gtc-sm-1-auto gap-2 align-items-end border-top pt-2">
-      <label className="field small">Sell Qty<input className="form-control" type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} /></label>
-      <button className="btn btn-secondary btn-sm" disabled={disabled || quantity < 1 || quantity > owned} onClick={onSell}>Sell</button>
-    </div>
-  </div>
 }
 
 /**
@@ -4953,6 +5157,11 @@ function timeUntil(value: string) {
   // Hideout builds run for hours, where a bare minute count stops being readable.
   if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
   return minutes <= 0 ? `${seconds}s` : `${minutes}m ${String(remainder).padStart(2, '0')}s`
+}
+
+function formatCraftMinutes(minutes: number) {
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
+  return `${Math.max(1, minutes)}m`
 }
 
 function formatBreakdownKey(key: string) {

@@ -564,6 +564,21 @@ static void ProductionUsesConfiguredTables()
     AssertEqual(12, player.Weed);
     AssertEqual(12, Value<int>(breakdown, "unitsProduced"));
     AssertEqual(21L, Value<long>(breakdown, "totalCost"));
+
+    var queued = new Player { Turns = 5, Cash = 100, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 1 } };
+    var queuedAt = new DateTime(2026, 8, 24, 2, 0, 0, DateTimeKind.Utc);
+    var craft = service.StartProductionCraft(queued, "weed", 3, null, queuedAt);
+    AssertEqual(2, queued.Turns);
+    AssertEqual(79, queued.Cash);
+    AssertEqual(0, queued.Weed);
+    AssertEqual(12, craft.Quantity);
+    AssertEqual(queuedAt.AddMinutes(3 * craft.WorkUnits), craft.CompletesAtUtc);
+    service.CompleteCraft(queued, craft, craft.CompletesAtUtc);
+    AssertEqual(12, queued.Weed);
+    AssertRuleError(() => service.StartProductionCraft(new Player { Turns = 5, Cash = 100, Hideout = new Hideout { StorageLevel = 2 } }, "weed", 3, null, queuedAt),
+        "queued production without a workshop");
+    AssertRuleError(() => service.StartProductionCraft(new Player { Turns = 2, Cash = 100, Hideout = new Hideout { StorageLevel = 2 } }, "weed", 3, null, queuedAt),
+        "queued production without enough turns");
 }
 
 static void InvalidProductIsRuleError()
@@ -1078,12 +1093,11 @@ static void DefenceIsNeverDearerThanAttack()
             $"making {recipe.Key} costs {recipe.MaterialCost} against a counter price of {counter}");
     }
 
-    // A recipe unlocked later should not be a worse deal than one unlocked earlier for the same job:
-    // the pair that feed crew upkeep are both first-level, because upkeep is what an early player is
-    // actually spending on.
-    var condoms = options.Makeables.Single(x => x.Key == "condoms");
-    var moonshine = options.Makeables.Single(x => x.Key == "moonshine");
-    AssertEqual(moonshine.MinWorkshopLevel, condoms.MinWorkshopLevel);
+    AssertTrue(!options.Makeables.Any(x => x.Key == "condoms" && x.CanMake),
+        "condoms stay a store supply, not a workshop craft");
+
+    var levelThreeRecipes = options.Makeables.Where(x => x.CanMake && x.MinWorkshopLevel == 3).Select(x => x.Key).OrderBy(x => x).ToArray();
+    AssertTrue(levelThreeRecipes.Length > 0, "workshop level three needs at least one craft unlock");
 }
 
 static void EverythingYouCanHoldIsWorthSomething()
@@ -1317,16 +1331,20 @@ static void HideoutLabRaisesProductionYield()
     };
     var service = CreateEconomy(options);
     var withoutLab = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout() };
-    var withLab = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3 } };
+    var withLab = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3, WorkshopLevel = 2 } };
+    var underBenched = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3, WorkshopLevel = 1 } };
 
     var plain = service.Produce(withoutLab, "weed", 5);
     var boosted = service.Produce(withLab, "weed", 5);
+    var capped = service.Produce(underBenched, "weed", 5);
 
     // MinimumRandom always rolls the low end, so five turns is a flat 20 units before the lab.
     AssertEqual(20, Value<int>(RequiredBreakdown(plain), "baseUnits"));
     AssertEqual(20, Value<int>(RequiredBreakdown(boosted), "baseUnits"));
     AssertEqual(110, Value<int>(RequiredBreakdown(boosted), "labBonusPercent"));
     AssertEqual(42, Value<int>(RequiredBreakdown(boosted), "unitsProduced"));
+    AssertEqual(60, Value<int>(RequiredBreakdown(capped), "labBonusPercent"));
+    AssertEqual(32, Value<int>(RequiredBreakdown(capped), "unitsProduced"));
 }
 
 static void HideoutTierBuildChargesUpFrontAndLandsOnTime()
@@ -1391,9 +1409,19 @@ static void HideoutTierGatesDeeperRooms()
     AssertEqual(5_000_000L, player.Cash);
 
     player.Hideout.Tier = 2;
-    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.TierLocked, "the second tier holds a level 3 room");
+    AssertTrue(!hideouts.NextUpgrade(player.Hideout, "storage")!.Locked, "the second tier holds a level 3 room");
     hideouts.Upgrade(player, "storage", DateTime.UtcNow);
     AssertEqual(3, player.Hideout.StorageLevel);
+
+    var lab = new Player { Cash = 5_000_000, Hideout = new Hideout { Tier = 2, WeedLabLevel = 1 } };
+    var labLocked = hideouts.NextUpgrade(lab.Hideout, "weedlab");
+    AssertEqual(2, labLocked!.Level);
+    AssertTrue(labLocked.WorkshopLocked, "a level 2 lab needs the level 1 workshop that supports it");
+    AssertRuleError(() => hideouts.Upgrade(lab, "weedlab", DateTime.UtcNow), "upgrading a lab past the workshop");
+    lab.Hideout!.WorkshopLevel = 1;
+    AssertTrue(!hideouts.NextUpgrade(lab.Hideout, "weedlab")!.Locked, "the workshop unlocks the next lab bonus");
+    hideouts.Upgrade(lab, "weedlab", DateTime.UtcNow);
+    AssertEqual(2, lab.Hideout.WeedLabLevel);
 }
 
 /// <summary>
@@ -1630,13 +1658,13 @@ static void EveryHideoutUpgradeIsReachable()
     var now = new DateTime(2026, 8, 14, 0, 0, 0, DateTimeKind.Utc);
     var player = new Player { BankCash = 100_000_000, Turns = 200, Hideout = new Hideout() };
 
-    var rooms = new[] { "storage", "safe", "weedlab", "cokelab" };
+    var rooms = new[] { "storage", "safe", "workshop", "weedlab", "cokelab" };
     var topTier = options.Hideout.Tiers.Max(x => x.Level);
 
     for (var tier = 1; ; tier++)
     {
         foreach (var room in rooms)
-            while (hideouts.NextUpgrade(player.Hideout, room) is { TierLocked: false })
+            while (hideouts.NextUpgrade(player.Hideout, room) is { Locked: false })
             {
                 var before = hideouts.NextUpgrade(player.Hideout, room)!.Level;
                 hideouts.Upgrade(player, room, now);
@@ -1656,6 +1684,7 @@ static void EveryHideoutUpgradeIsReachable()
     // Everything in the tables is now owned, which is the point: no level is stranded.
     AssertEqual(topTier, player.Hideout!.Tier);
     AssertEqual(options.Hideout.Storage.Max(x => x.Level), player.Hideout.StorageLevel);
+    AssertEqual(options.Hideout.Workshop.Max(x => x.Level), player.Hideout.WorkshopLevel);
     AssertEqual(options.Hideout.Safe.Max(x => x.Level), player.Hideout.SafeLevel);
     AssertEqual(options.Hideout.WeedLab.Max(x => x.Level), player.Hideout.WeedLabLevel);
     AssertEqual(options.Hideout.CokeLab.Max(x => x.Level), player.Hideout.CokeLabLevel);
@@ -1704,7 +1733,7 @@ static void LabsStartTheirClockWhenBuilt()
     var hideouts = CreateHideouts();
     var built = new DateTime(2026, 8, 13, 6, 0, 0, DateTimeKind.Utc);
     // A hideout founded long ago that only just built a lab.
-    var player = new Player { Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3, CreatedAtUtc = built.AddDays(-30) } };
+    var player = new Player { Hideout = new Hideout { StorageLevel = 3, WeedLabLevel = 3, WorkshopLevel = 2, CreatedAtUtc = built.AddDays(-30) } };
 
     var first = hideouts.AccrueLabs(player, built);
     AssertEqual(0, first.Weed);
@@ -1829,16 +1858,19 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     AssertTrue(!options.WeaponTier(WeaponTiers.Rifle)!.CanForge, "rifles are bought, never made");
 
     var service = CreateEconomy(options);
-    var maker = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 1 } };
+    AssertRuleError(() => service.Forge(new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 1 } }, 5),
+        "forging before level two");
+
+    var maker = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 2 } };
     var made = service.Forge(maker, 5);
-    AssertEqual(5, Value<int>(RequiredBreakdown(made), "weaponsMade"));
-    AssertEqual(5, maker.Weapons);
+    AssertEqual(10, Value<int>(RequiredBreakdown(made), "weaponsMade"));
+    AssertEqual(10, maker.Weapons);
     AssertEqual(15, maker.Turns);
 
-    // Left to itself a shop makes the best gun it has unlocked, and a level 1 shop tops out at
+    // Left to itself a shop makes the best gun it has unlocked, and a level 2 shop tops out at
     // shotguns. Asking for what it cannot reach is refused by name rather than quietly downgraded.
     AssertEqual(WeaponTiers.Shotgun, Value<string>(RequiredBreakdown(made), "good"));
-    AssertEqual(5, maker.Shotguns);
+    AssertEqual(10, maker.Shotguns);
     AssertRuleError(() => service.Forge(maker, 1, WeaponTiers.Smg), "forging above the workshop level");
     AssertRuleError(() => service.Forge(maker, 1, WeaponTiers.Rifle), "forging a gun nobody makes");
 
@@ -1847,9 +1879,23 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     AssertEqual(WeaponTiers.Pistol, Value<string>(RequiredBreakdown(pistols), "good"));
     AssertTrue(maker.Pistols > 0, "a shop that has moved on can still make the cheap ones");
 
+    // The queue version pays turns and materials up front, then delivers only when the clock clears it.
+    var queued = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 2 } };
+    var queuedAt = new DateTime(2026, 8, 24, 1, 0, 0, DateTimeKind.Utc);
+    var craft = service.StartCraft(queued, 5, WeaponTiers.Pistol, queuedAt);
+    AssertEqual(0, queued.Weapons);
+    AssertEqual(15, queued.Turns);
+    AssertEqual(100_000L - craft.TotalCost, queued.Cash);
+    AssertEqual(queuedAt.AddMinutes(options.WorkshopCraftMinutesPerTurn * craft.WorkUnits), craft.CompletesAtUtc);
+    service.CompleteCraft(queued, craft, craft.CompletesAtUtc);
+    AssertEqual(craft.Quantity, queued.Pistols);
+    AssertEqual(craft.CompletesAtUtc, craft.CompletedAtUtc!.Value);
+    AssertRuleError(() => service.StartCraft(new Player { Turns = 2, Cash = 100_000, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 2 } }, 5, WeaponTiers.Pistol, queuedAt),
+        "queued workshop craft without enough turns");
+
     // Bounded by the room up front rather than made and spilled, so nobody pays for nothing.
     // Twenty-four guns already on a shelf that holds twenty-five, whatever kind they are.
-    var cramped = new Player { Turns = 20, Cash = 100_000, Pistols = 24, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 1 } };
+    var cramped = new Player { Turns = 20, Cash = 100_000, Pistols = 24, Hideout = new Hideout { StorageLevel = 2, WorkshopLevel = 2 } };
     var partial = service.Forge(cramped, 10);
     AssertEqual(1, Value<int>(RequiredBreakdown(partial), "weaponsMade"));
     AssertEqual(25, cramped.Weapons);
@@ -1866,22 +1912,31 @@ static void WorkshopMakesWeaponsUnderStorePrice()
 
     var moonshine = options.Makeables.Single(x => x.Key == "moonshine");
     var cut = options.Makeables.Single(x => x.Key == "cut");
+    var medicine = options.Makeables.Single(x => x.Key == "medicine");
     var poison = options.Makeables.Single(x => x.Key == "poison");
     AssertTrue(moonshine.MinWorkshopLevel < cut.MinWorkshopLevel, "moonshine comes before cut");
-    AssertTrue(cut.MinWorkshopLevel < poison.MinWorkshopLevel, "cut comes before poison");
+    AssertEqual(3, cut.MinWorkshopLevel);
+    AssertEqual(3, medicine.MinWorkshopLevel);
+    AssertTrue(cut.MinWorkshopLevel < poison.MinWorkshopLevel, "poison stays after the utility tier");
 
     // A shop that cannot reach a recipe says so by name rather than making the wrong thing.
     var firstBench = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 2, StorageLevel = 4, WorkshopLevel = 1 } };
-    AssertEqual(20, Value<int>(RequiredBreakdown(service.Make(firstBench, 5, "moonshine")), "unitsMade"));
+    AssertRuleError(() => service.Make(firstBench, 5, "moonshine"), "workshop makes moonshine");
     AssertRuleError(() => service.Make(firstBench, 5, "cut"), "workshop makes cut");
     AssertRuleError(() => service.Make(firstBench, 5, "poison"), "workshop makes poison");
 
-    // And a deeper one reaches further and works faster, which is the whole of what a level buys.
-    var deeper = new Player { Turns = 20, Cash = 500_000, Hideout = new Hideout { Tier = 3, StorageLevel = 5, WorkshopLevel = 3 } };
-    var brewed = Value<int>(RequiredBreakdown(service.Make(deeper, 5, "moonshine")), "unitsMade");
-    AssertTrue(brewed > 20, $"a level 3 bench out-brews a level 1 one, made {brewed}");
-    AssertTrue(Value<int>(RequiredBreakdown(service.Make(deeper, 5, "cut")), "unitsMade") > 0, "and reaches cut");
-    AssertTrue(Value<int>(RequiredBreakdown(service.Make(deeper, 5, "poison")), "unitsMade") > 0, "and poison");
+    var secondBench = new Player { Turns = 20, Cash = 100_000, Hideout = new Hideout { Tier = 2, StorageLevel = 4, WorkshopLevel = 2 } };
+    AssertTrue(Value<int>(RequiredBreakdown(service.Make(secondBench, 5, "moonshine")), "unitsMade") > 0, "level two reaches moonshine");
+    AssertRuleError(() => service.Make(secondBench, 5, "cut"), "level two workshop makes cut");
+
+    var thirdBench = new Player { Turns = 20, Cash = 500_000, Hideout = new Hideout { Tier = 3, StorageLevel = 5, WorkshopLevel = 3 } };
+    AssertTrue(Value<int>(RequiredBreakdown(service.Make(thirdBench, 5, "cut")), "unitsMade") > 0, "level three reaches cut");
+    AssertTrue(Value<int>(RequiredBreakdown(service.Make(thirdBench, 5, "medicine")), "unitsMade") > 0, "level three reaches medicine");
+    AssertRuleError(() => service.Make(thirdBench, 5, "poison"), "level three workshop makes poison");
+
+    // And the deepest one reaches the dangerous craft.
+    var deeper = new Player { Turns = 20, Cash = 500_000, Hideout = new Hideout { Tier = 3, StorageLevel = 5, WorkshopLevel = 4 } };
+    AssertTrue(Value<int>(RequiredBreakdown(service.Make(deeper, 5, "poison")), "unitsMade") > 0, "level four reaches poison");
 }
 
 /// <summary>
@@ -2245,11 +2300,11 @@ static void CuttingStretchesWhatYouAlreadyHold()
     // is something at both ends of the mix.
     var roomless = Stocked(workshop: 0, coke: 50, cut: 50);
     AssertRuleError(() => economy.CutCoke(roomless, 5), "workshop");
-    AssertRuleError(() => economy.CutCoke(Stocked(workshop: 2, coke: 50, cut: 0), 5), "no cut to work with");
-    AssertRuleError(() => economy.CutCoke(Stocked(workshop: 2, coke: 0, cut: 50), 5), "no coke to step on");
+    AssertRuleError(() => economy.CutCoke(Stocked(workshop: 3, coke: 50, cut: 0), 5), "no cut to work with");
+    AssertRuleError(() => economy.CutCoke(Stocked(workshop: 3, coke: 0, cut: 50), 5), "no coke to step on");
 
     // One cut makes one coke. The cut is spent, the pile grows by the same.
-    var player = Stocked(workshop: 2, coke: 60, cut: 40);
+    var player = Stocked(workshop: 3, coke: 60, cut: 40);
     var result = economy.CutCoke(player, 4);
     AssertEqual(100, player.Coke);
     AssertEqual(0, player.Cut);
@@ -2259,22 +2314,22 @@ static void CuttingStretchesWhatYouAlreadyHold()
 
     // Only the turns the batch actually needed. Asking for ten on a two-turn batch should not cost
     // eight turns of standing about.
-    var quick = Stocked(workshop: 2, coke: 100, cut: perTurn);
+    var quick = Stocked(workshop: 3, coke: 100, cut: perTurn);
     var turnsBefore = quick.Turns;
     economy.CutCoke(quick, 10);
     AssertEqual(turnsBefore - 1, quick.Turns);
 
-    // A deeper bench works faster, which is the room's second reason to exist.
-    var basic = Stocked(workshop: 2, coke: 100, cut: 500);
-    var better = Stocked(workshop: 3, coke: 100, cut: 500);
-    economy.CutCoke(basic, 1);
-    economy.CutCoke(better, 1);
-    AssertEqual(perTurn * 2, 500 - basic.Cut);
-    AssertEqual(perTurn * 3, 500 - better.Cut);
+    // The top bench still works faster, which gives level four value even after cut opens at three.
+    var mid = Stocked(workshop: 3, coke: 100, cut: 500);
+    var deep = Stocked(workshop: 4, coke: 100, cut: 500);
+    economy.CutCoke(mid, 1);
+    economy.CutCoke(deep, 1);
+    AssertEqual(perTurn * 3, 500 - mid.Cut);
+    AssertEqual(perTurn * 4, 500 - deep.Cut);
 
     // Never past the walls. Cutting into a full store would destroy cut already paid for, so the
     // batch stops at the room instead of spilling.
-    var cramped = Stocked(workshop: 2, coke: 60, cut: 200, storage: 1);
+    var cramped = Stocked(workshop: 3, coke: 60, cut: 200, storage: 1);
     var capacity = CreateHideouts(options).CapacityFor(cramped.Hideout).MaxCoke;
     cramped.Coke = capacity - 3;
     economy.CutCoke(cramped, 20);
@@ -2288,12 +2343,12 @@ static void CuttingStretchesWhatYouAlreadyHold()
         Turns = 100,
         Coke = coke,
         Cut = cut,
-        Hideout = new Hideout { Tier = 2, StorageLevel = storage, WorkshopLevel = workshop }
+        Hideout = new Hideout { Tier = 3, StorageLevel = storage, WorkshopLevel = workshop }
     };
 
     Player Full(GameOptions opts)
     {
-        var player = Stocked(workshop: 2, coke: 0, cut: 50, storage: 1);
+        var player = Stocked(workshop: 3, coke: 0, cut: 50, storage: 1);
         player.Coke = CreateHideouts(opts).CapacityFor(player.Hideout).MaxCoke;
         return player;
     }
@@ -3405,12 +3460,13 @@ static void MuleRunsArePricedAndFrozen()
     AssertEqual(1, quote.Turns);
     AssertTrue(quote.Turns < quote.TravelTurns * 2, "a run costs fewer turns than the round trip it replaces");
 
-    // Three hoes carry ninety units, and the fare and upkeep are charged for four heads.
-    AssertEqual(90, quote.Capacity);
+    // Three hoes carry one hundred thirty-five units, and the fare and upkeep are charged for four heads.
+    AssertEqual(135, quote.Capacity);
     AssertEqual(4 * 2 * 60L, quote.Fare);
     AssertEqual(34, quote.TripMinutes);
     AssertEqual(quote.CashSent + quote.Fare + quote.Upkeep, quote.TotalCost);
     AssertTrue(quote.Upkeep > 0, "keeping crew away costs something");
+    AssertEqual(mules.BustChancePercent(player, "Detroit", 3), quote.BustChancePercent);
 
     // They buy at the destination's price, not at ours, which is the entire reason to go.
     AssertEqual(options.CityMarkets.ProductPrice("Detroit", "weed", options.WeedSellPrice), quote.UnitPriceThere);
@@ -3448,7 +3504,7 @@ static void MuleRunsArePricedAndFrozen()
 
     // Frozen at launch. A pimp whose loyalty slips mid-flight must not change a run already in the air.
     AssertEqual(100.0, run.PimpLoyaltyAtLaunch);
-    AssertEqual(90, run.Capacity);
+    AssertEqual(135, run.Capacity);
     AssertEqual(30_000L, run.CashSent);
 
     // A loyal pimp does not walk; a wavering one is likelier to the further he is sent.
@@ -3496,13 +3552,13 @@ static void MuleRunsSettleThreeWays()
     var settled = mules.Settle(run, lucky, Pimp(lucky, "Vic", 100), new MinimumRandom(), Landing());
 
     AssertEqual(MuleRunOutcome.Delivered, run.Outcome);
-    // Ninety is what three hoes carry, so the load binds long before the money does.
-    AssertEqual(90, run.UnitsBought);
-    AssertEqual(30_000L - 90 * price, run.CashReturned);
-    AssertEqual(90, lucky.Weed);
+    // One hundred thirty-five is what three hoes carry, so the load binds long before the money does.
+    AssertEqual(135, run.UnitsBought);
+    AssertEqual(30_000L - 135 * price, run.CashReturned);
+    AssertEqual(135, lucky.Weed);
     AssertEqual(20, lucky.Hoes);
-    AssertEqual(30_000L - 90 * price, lucky.Cash);
-    AssertEqual(90, settled.UnitsDelivered);
+    AssertEqual(30_000L - 135 * price, lucky.Cash);
+    AssertEqual(135, settled.UnitsDelivered);
     AssertTrue(!run.IsOut, "a settled run is no longer out");
 
     // Seized: a share of the load goes, the unspent cash goes with it because it was in the room when
@@ -3517,7 +3573,7 @@ static void MuleRunsSettleThreeWays()
     AssertEqual(0L, seizedRun.CashReturned);
     AssertEqual(0L, stopped.Cash);
     AssertTrue(seizedRun.SeizedUnits > 0, "a stop takes something");
-    AssertEqual(90 - seizedRun.SeizedUnits, stopped.Weed);
+    AssertEqual(135 - seizedRun.SeizedUnits, stopped.Weed);
     AssertEqual(seizedRun.SeizedUnits * options.Mules.HeatPerSeizedUnit, stopped.Heat);
     AssertEqual(20, stopped.Hoes);
     AssertTrue(seizedRun.Summary.Contains("was stopped"), $"the notice says what happened: {seizedRun.Summary}");
@@ -3551,10 +3607,10 @@ static void MuleRunsSettleThreeWays()
     var room = CreateHideouts(options).CapacityFor(cramped.Hideout).MaxWeed;
     AssertEqual(room, cramped.Weed);
     AssertEqual(room, tight.UnitsDelivered);
-    // The player paid for all 90. A run that quietly dropped the rest would read as the price being
+    // The player paid for all 135. A run that quietly dropped the rest would read as the price being
     // wrong rather than the room being full, so the notice has to say so.
-    AssertEqual(90, overflowing.UnitsBought);
-    AssertTrue(overflowing.Summary.Contains($"{90 - room:N0} weed was dumped"),
+    AssertEqual(135, overflowing.UnitsBought);
+    AssertTrue(overflowing.Summary.Contains($"{135 - room:N0} weed was dumped"),
         $"a short delivery says why: {overflowing.Summary}");
 
     static Player Loaded() => new()
@@ -3604,7 +3660,7 @@ static MuleRun Out(Player player, long cash, int hoes) => new()
     PimpName = "Vic",
     PimpLoyaltyAtLaunch = 100,
     AssignedHoes = hoes,
-    Capacity = hoes * 30,
+    Capacity = hoes * 45,
     CashSent = cash,
     DepartedAtUtc = Landing().AddHours(-1),
     ArrivesAtUtc = Landing().AddMinutes(-30),

@@ -13,7 +13,7 @@ namespace StreetEmpire.Api.Services;
 /// Wall-clock earnings have to happen wherever a player is loaded, not only on the dashboard, or the
 /// same hour pays out twice depending on which page they opened first.
 /// </summary>
-public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules)
+public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules, EconomyService economy)
 {
     /// <summary>
     /// Brings a player up to date. The caller saves when <see cref="PlayerTick.Changed"/> is set, and
@@ -58,9 +58,10 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         }
 
         var runsHome = await SettleMuleRunsAsync(player, nowUtc, db, ct);
+        var craftsDone = await CompleteWorkshopCraftsAsync(player, nowUtc, db, ct);
 
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome, built, labs);
+        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone, built, labs);
     }
 
     /// <summary>
@@ -89,6 +90,29 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
             mules.Settle(run, player, crew.FirstOrDefault(x => x.Id == run.PimpId), random, nowUtc);
             if (db is not null)
                 AddLog(db, player, before, "MULE", 0, run.Summary, nowUtc);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Pays out workshop orders whose timers have finished. Starting a craft pays for materials, but
+    /// the goods do not hit storage until this clock pass.
+    /// </summary>
+    private async Task<bool> CompleteWorkshopCraftsAsync(Player player, DateTime nowUtc, GameDbContext? db, CancellationToken ct)
+    {
+        var due = await territoryDb.WorkshopCrafts
+            .Where(x => x.PlayerId == player.Id && x.CompletedAtUtc == null && x.CompletesAtUtc <= nowUtc)
+            .OrderBy(x => x.CompletesAtUtc)
+            .ToListAsync(ct);
+        if (due.Count == 0) return false;
+
+        foreach (var craft in due)
+        {
+            var before = Snapshot(player);
+            economy.CompleteCraft(player, craft, nowUtc);
+            if (db is not null)
+                AddLog(db, player, before, "WORKSHOP", 0, craft.Summary, nowUtc);
         }
 
         return true;

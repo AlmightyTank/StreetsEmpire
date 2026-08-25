@@ -116,6 +116,10 @@ internal static class GameEndpoints
                 .Distinct()
                 .ToListAsync(ct);
             var objectives = guidance.Objectives(player, actionsTaken);
+            var activeCraft = await db.WorkshopCrafts.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id && x.CompletedAtUtc == null)
+                .OrderBy(x => x.CompletesAtUtc)
+                .FirstOrDefaultAsync(ct);
 
             // Notifications are excluded: this list is what the player did, and a lab payout they had
             // no hand in reads as an action they took. They surface in the alert bell instead.
@@ -178,7 +182,7 @@ internal static class GameEndpoints
                     objectives,
                     objectives.Count(x => x.Done),
                     objectives.Count),
-                ToHideoutResponse(player, hideouts, now, opts),
+                ToHideoutResponse(player, hideouts, now, opts, activeCraft),
                 pimps.Active(player).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 ToCombatCrewResponse(combatCrew),
@@ -315,14 +319,37 @@ internal static class GameEndpoints
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
-            await clock.AdvanceAsync(player, DateTime.UtcNow, db, ct);
+            var now = DateTime.UtcNow;
+            var tick = await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.Produce(player, request.Product, request.Turns, await territories.EffectsForAsync(player.Id, player.City, ct));
-                AddLog(db, player, before, "PRODUCTION", request.Turns, result.Summary);
+                var active = await db.WorkshopCrafts
+                    .AnyAsync(x => x.PlayerId == player.Id && x.CompletedAtUtc == null, ct);
+                if (active)
+                {
+                    if (tick.Changed)
+                        await db.SaveChangesAsync(ct);
+                    return Results.BadRequest(new { error = "The craft queue is already running something." });
+                }
+
+                var craft = economy.StartProductionCraft(player, request.Product, request.Turns, await territories.EffectsForAsync(player.Id, player.City, ct), now);
+                db.WorkshopCrafts.Add(craft);
+
+                var minutes = Math.Max(1, (int)Math.Ceiling((craft.CompletesAtUtc - now).TotalMinutes));
+                var summary = $"Queued {craft.Quantity:N0} {craft.Label.ToLowerInvariant()} with {craft.WorkUnits:N0} turn{(craft.WorkUnits == 1 ? string.Empty : "s")} and {craft.TotalCost:C0}. Ready in {minutes:N0} minute{(minutes == 1 ? string.Empty : "s")}.";
+                AddLog(db, player, before, "PRODUCTION", craft.WorkUnits, summary, now);
                 await db.SaveChangesAsync(ct);
-                return Results.Ok(result);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
+                {
+                    ["craftId"] = craft.Id,
+                    ["product"] = craft.Good,
+                    ["unitsQueued"] = craft.Quantity,
+                    ["workUnits"] = craft.WorkUnits,
+                    ["turnsSpent"] = craft.WorkUnits,
+                    ["totalCost"] = craft.TotalCost,
+                    ["completesAtUtc"] = craft.CompletesAtUtc
+                }));
             }
             catch (GameRuleException ex)
             {

@@ -19,6 +19,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Territory> Territories => Set<Territory>();
     public DbSet<MarketListing> MarketListings => Set<MarketListing>();
     public DbSet<MuleRun> MuleRuns => Set<MuleRun>();
+    public DbSet<WorkshopCraft> WorkshopCrafts => Set<WorkshopCraft>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
@@ -122,6 +123,18 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.PimpId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<WorkshopCraft>(entity =>
+        {
+            entity.HasIndex(x => new { x.PlayerId, x.CompletedAtUtc });
+            entity.HasIndex(x => x.CompletesAtUtc);
+            entity.Property(x => x.Good).HasMaxLength(16);
+            entity.Property(x => x.Label).HasMaxLength(32);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Contract>(entity =>

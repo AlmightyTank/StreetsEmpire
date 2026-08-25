@@ -598,6 +598,7 @@ forward.
   whether or not it pays: the first tuning had a head costing more to fly than a hoe could carry
   margin for, so every route in the game lost money and the mechanic was dead on arrival. Short hops
   are now thin, bad routes are clearly negative, and a long run into a wide spread is worth the risk.
+  Capacity, not odds, is the profit lever: each hoe carries more without lowering bust or defect risk.
 - Cash beyond what the crew can carry goods for is dead weight, and the page says so. It comes home
   untouched on a clean run and is taken on a bad one, so sending a fat purse is pure exposure.
 

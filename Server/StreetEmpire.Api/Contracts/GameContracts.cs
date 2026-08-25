@@ -781,7 +781,37 @@ public sealed record HideoutResponse(
     HideoutRoomUpgradeResponse? LookoutUpgrade,
     HideoutTierUpgradeResponse? NextTier,
     HideoutBuildResponse? Building,
+    int CraftMinutesPerWork,
+    WorkshopCraftResponse? WorkshopCraft,
+    IReadOnlyList<ProductionStationResponse> Production,
     IReadOnlyList<HideoutStationResponse> Stations);
+
+/// <summary>One street product recipe, priced and timed like the workshop craft rows.</summary>
+public sealed record ProductionStationResponse(
+    string Key,
+    string Name,
+    int MinPerWork,
+    int MaxPerWork,
+    long CostPerWork,
+    long SellPrice,
+    string SellLabel,
+    int LabBonusPercent,
+    int RequiredWorkshopLevel,
+    double HeatPerUnit);
+
+/// <summary>What the workshop has on the bench right now.</summary>
+public sealed record WorkshopCraftResponse(
+    long Id,
+    string Good,
+    string Label,
+    int Quantity,
+    long UnitCost,
+    long TotalCost,
+    int WorkUnits,
+    int WorkshopLevel,
+    DateTime StartedAtUtc,
+    DateTime CompletesAtUtc,
+    int SecondsRemaining);
 
 /// <summary>
 /// A making station: turns and materials in, one good out. Reported together because they are the
@@ -797,6 +827,7 @@ public sealed record HideoutStationResponse(
     long ComparePrice,
     string CompareLabel,
     double HeatPerUnit,
+    int RequiredWorkshopLevel,
     HideoutRoomUpgradeResponse? Upgrade);
 
 /// <summary>The next level of a room. Null once the room is maxed out for good.</summary>
@@ -806,6 +837,8 @@ public sealed record HideoutRoomUpgradeResponse(
     int RequiredTier,
     string RequiredTierName,
     bool TierLocked,
+    int RequiredWorkshopLevel,
+    bool WorkshopLocked,
     /// <summary>
     /// Days of this room's own output at the town's price before the upgrade has paid for itself, or
     /// null for a room that produces nothing to measure.

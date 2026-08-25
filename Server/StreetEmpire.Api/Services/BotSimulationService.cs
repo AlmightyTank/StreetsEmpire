@@ -985,13 +985,13 @@ public sealed class BotSimulationService(
 
         // The safe first. Cash over it is swept into the bank, and a bot that cannot hold cash on hand
         // can never save up for anything larger.
-        if (hideouts.NextUpgrade(hideout, "safe") is { TierLocked: false } safe
+        if (hideouts.NextUpgrade(hideout, "safe") is { Locked: false } safe
             && bot.Cash + bot.BankCash >= safe.Cost + reserve
             && bot.Cash >= capacity.MaxCash * 3 / 4)
             return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "safe", actionTimeUtc));
 
         var report = economy.GetCrewReport(bot);
-        if (hideouts.NextUpgrade(hideout, "storage") is { TierLocked: false } storage
+        if (hideouts.NextUpgrade(hideout, "storage") is { Locked: false } storage
             && bot.Cash + bot.BankCash >= storage.Cost + reserve
             && (report.CondomsNeededForMaxStreetAction > capacity.MaxCondoms || bot.Condoms >= capacity.MaxCondoms))
             return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "storage", actionTimeUtc));
@@ -1010,14 +1010,14 @@ public sealed class BotSimulationService(
         // already running, and without it a rival can never run a mule at all.
         var muleProfile = BotMuleProfile.For(brain.Focus);
         if (muleProfile.RunChance >= 0.2
-            && hideouts.NextUpgrade(hideout, "intelligence") is { TierLocked: false } intel
+            && hideouts.NextUpgrade(hideout, "intelligence") is { Locked: false } intel
             && bot.Cash + bot.BankCash >= intel.Cost + reserve * 2)
             return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, "intelligence", actionTimeUtc));
 
         // Labs last, and only for the brain that actually runs product.
         if (brain.Focus == BotBrainFocus.ProductRunner)
             foreach (var lab in new[] { "weedlab", "cokelab" })
-                if (hideouts.NextUpgrade(hideout, lab) is { TierLocked: false } next && bot.Cash + bot.BankCash >= next.Cost + reserve * 2)
+                if (hideouts.NextUpgrade(hideout, lab) is { Locked: false } next && bot.Cash + bot.BankCash >= next.Cost + reserve * 2)
                     return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Upgrade(bot, lab, actionTimeUtc));
 
         return 0;

@@ -53,6 +53,7 @@ public sealed class GameOptions
 
     public int CondomPrice { get; set; } = 10;
     public int BeerPrice { get; set; } = 15;
+    public int WorkshopCraftMinutesPerTurn { get; set; } = 3;
 
     /// <summary>
     /// What the single generic weapon used to cost, kept only for the places that want one number to
@@ -169,20 +170,15 @@ public sealed class GameOptions
         if (Makeables.Count == 0)
             Makeables =
             [
-                // Condoms by the case rather than over the counter. Not manufactured - nobody is
-                // making these in a back room - but bought wholesale, which is the same saving in the
-                // player's hands and the same shape on the bench. Beer already had this in moonshine;
-                // the hoes' half of upkeep is the larger cost and had nothing.
-                new MakeableOptions { Key = "condoms", PerTurn = 6, MaterialCost = 4, MinWorkshopLevel = 1 },
-                new MakeableOptions { Key = "moonshine", PerTurn = 4, MaterialCost = 6, MinWorkshopLevel = 1 },
-                new MakeableOptions { Key = "cut", PerTurn = 3, MaterialCost = 20, MinWorkshopLevel = 2 },
+                new MakeableOptions { Key = "moonshine", PerTurn = 4, MaterialCost = 6, MinWorkshopLevel = 2 },
+                new MakeableOptions { Key = "cut", PerTurn = 3, MaterialCost = 20, MinWorkshopLevel = 3 },
                 // Medicine before poison, deliberately. They are the two ends of one mechanic and the
                 // bench reached the attacking end first, which quietly made it cheaper to poison a
                 // house than to protect your own - a player could buy the attack at a third of the
                 // price while the answer to it stayed full price at the counter. Defence comes first
                 // now: you can look after your own house a level before you can go after anybody's.
-                new MakeableOptions { Key = "medicine", PerTurn = 2, MaterialCost = 90, MinWorkshopLevel = 2 },
-                new MakeableOptions { Key = "poison", PerTurn = 1, MaterialCost = 140, MinWorkshopLevel = 3 }
+                new MakeableOptions { Key = "medicine", PerTurn = 2, MaterialCost = 90, MinWorkshopLevel = 3 },
+                new MakeableOptions { Key = "poison", PerTurn = 1, MaterialCost = 140, MinWorkshopLevel = 4 }
             ];
 
         if (Weapons.Count > 0)
@@ -198,9 +194,9 @@ public sealed class GameOptions
         // strength moved when tiers arrived - only what their rack is worth on paper.
         Weapons =
         [
-            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 1 },
-            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 1_250, Firepower = 1.4, ForgeCost = 880, MinWorkshopLevel = 1 },
-            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 2_500, Firepower = 1.9, ForgeCost = 1_800, MinWorkshopLevel = 2 },
+            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 2 },
+            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 1_250, Firepower = 1.4, ForgeCost = 880, MinWorkshopLevel = 2 },
+            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 2_500, Firepower = 1.9, ForgeCost = 1_800, MinWorkshopLevel = 4 },
             // No forge cost and no workshop level: a rifle is the one gun nobody makes in a back room,
             // which is what stops the workshop from eventually replacing the shop entirely.
             new WeaponTierOptions { Key = WeaponTiers.Rifle, Price = 5_500, Firepower = 2.5 }
@@ -1427,11 +1423,11 @@ public sealed class MuleOptions
 
     /// <summary>
     /// Units one hoe can carry, and how many may go. The number of hoes sent is the player's greed
-    /// dial. Sized against the storage room rather than against nothing: six hoes at thirty apiece is
-    /// close to what a deep store holds, so a big run makes the room matter instead of vanishing into
-    /// it. It also has to clear what flying her costs, or every extra body is a loss.
+    /// dial. Sized against the storage room rather than against nothing: six hoes at forty-five apiece
+    /// can outrun a shallow store, so a big run makes the room matter instead of vanishing into it. It
+    /// also has to clear what flying her costs, or every extra body is a loss.
     /// </summary>
-    public int HoeCarryCapacity { get; set; } = 30;
+    public int HoeCarryCapacity { get; set; } = 45;
     public int MaxHoesPerRun { get; set; } = 6;
 
     /// <summary>
@@ -1854,6 +1850,7 @@ public sealed class ProductProductionOptions
     public int CostPerTurn { get; set; }
     public int UnitsMin { get; set; }
     public int UnitsMax { get; set; }
+    public int MinWorkshopLevel { get; set; } = 1;
 }
 
 /// <summary>

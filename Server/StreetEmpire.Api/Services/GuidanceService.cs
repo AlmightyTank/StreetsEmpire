@@ -73,7 +73,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
 
         if (heat > _options.Hideout.HeatBustFloor
             && (player.Hideout?.LookoutLevel ?? 0) == 0
-            && hideouts.NextUpgrade(player.Hideout, "lookout") is { TierLocked: false } watch
+            && hideouts.NextUpgrade(player.Hideout, "lookout") is { Locked: false } watch
             && funds >= watch.Cost)
         {
             Add(15, "Post a lookout",
@@ -100,7 +100,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         // Then what would pay. The first lab is the single best purchase in the early game and the one
         // nothing in the old panel ever mentioned.
         if ((player.Hideout?.WeedLabLevel ?? 0) == 0
-            && hideouts.NextUpgrade(player.Hideout, "weedlab") is { TierLocked: false } lab
+            && hideouts.NextUpgrade(player.Hideout, "weedlab") is { Locked: false } lab
             && funds >= lab.Cost)
         {
             Add(30, "Build the weed lab",
@@ -225,7 +225,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         ];
 
         foreach (var (room, label, why) in rooms)
-            if (hideouts.NextUpgrade(player.Hideout, room) is { TierLocked: false } next && funds >= next.Cost)
+            if (hideouts.NextUpgrade(player.Hideout, room) is { Locked: false } next && funds >= next.Cost)
                 return (label, why, next.Cost);
 
         return null;

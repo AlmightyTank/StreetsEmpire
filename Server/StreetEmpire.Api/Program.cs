@@ -1,8 +1,11 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
@@ -115,12 +118,75 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             }
         };
     });
+// Rate limiting.
+//
+// The game is played by polling: a client asks for missions every five seconds, chat every eight, and
+// fires roughly seven calls to refresh after every action. Steady play is twenty to ninety requests a
+// minute per open tab, so the ceiling has to clear that comfortably or the limiter becomes a bug that
+// only appears when somebody is playing well.
+//
+// Partitioned by player rather than by address, because a household or an office behind one address
+// is several players, and throttling them together would punish them for their router. Anonymous
+// traffic has no player to name and falls back to the address.
+const int requestsPerMinute = 300;
+const int signInAttemptsPerMinute = 10;
+
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var player = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var partition = player ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partition, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = requestsPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        });
+    });
+
+    // Signing in is the one place where a low ceiling is the point rather than a safety margin: it is
+    // what turns a stolen password list from a script into a wait. Keyed on the address, because the
+    // whole problem is a caller who has not proved who they are.
+    limiter.AddPolicy("sign-in", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = signInAttemptsPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    limiter.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        // Say when to come back rather than only that they cannot. Without this a client has no way
+        // to behave well, and the only strategy left to it is to keep trying.
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Too many requests. Slow down and try again shortly." }, token);
+    };
+});
+
 builder.Services.AddAuthorization();
 
+// The allowed origins are configuration, not a constant.
+//
+// This named one port, 5173, which stopped being the port the client runs on the moment the dev
+// server was allowed to pick its own. Nothing broke, because the Vite proxy makes the browser's calls
+// same-origin and CORS never gets a say - which is precisely why it went unnoticed and would have
+// stayed unnoticed until the day the client was served from its own origin and every request failed.
+//
+// Credentials are allowed, so this can never become AllowAnyOrigin: the two are mutually exclusive by
+// spec, and the session cookie is the whole reason the policy exists.
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:3000"];
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy => policy
-        .WithOrigins("http://localhost:5173")
+        .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials());
@@ -133,6 +199,41 @@ using (var startupScope = app.Services.CreateScope())
 {
     var startupDb = startupScope.ServiceProvider.GetRequiredService<GameDbContext>();
     var startupOverrides = startupScope.ServiceProvider.GetRequiredService<GameOptionOverrides>();
+
+    // Pending migrations are applied before anything reads a table.
+    //
+    // This existed nowhere until now, which meant a schema change only reached a database when
+    // somebody remembered to run `dotnet ef database update` by hand. That is exactly how the
+    // workshop queue shipped against a table that happened to already be there - the migration had
+    // been applied out of band, and nothing in the application would have noticed if it had not.
+    //
+    // The honest caveat: this races if two instances start at once, because both would try to
+    // migrate. That is a real problem for a rolling deploy and not one this game has yet - it runs
+    // as a single process, and the background bot service already assumes that. When a second
+    // instance becomes possible, this moves to a deploy step and the bot service needs a lock;
+    // until then, a schema that arrives on its own beats a schema that arrives when remembered.
+    if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
+    {
+        try
+        {
+            var pending = (await startupDb.Database.GetPendingMigrationsAsync()).ToList();
+            if (pending.Count > 0)
+            {
+                app.Logger.LogInformation(
+                    "Applying {Count} pending migration(s): {Migrations}",
+                    pending.Count, string.Join(", ", pending));
+                await startupDb.Database.MigrateAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Loud and fatal. A server that keeps running against a schema it cannot read will fail
+            // one endpoint at a time, in ways that look like unrelated bugs.
+            app.Logger.LogCritical(ex, "Could not apply database migrations. Refusing to start.");
+            throw;
+        }
+    }
+
     try
     {
         var stored = await startupDb.GameSettings
@@ -165,6 +266,8 @@ using (var startupScope = app.Services.CreateScope())
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+// After authentication, so a request can be counted against the player who made it.
+app.UseRateLimiter();
 
 // Maintenance gate. Written as middleware rather than a per-endpoint check so a new gameplay endpoint
 // cannot forget it. Reads stay open so a locked-out player still sees their empire and the notice.
@@ -205,7 +308,7 @@ app.Use(async (context, next) =>
     }, context.RequestAborted);
 });
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.6" }));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.6" })).DisableRateLimiting();
 
 app.MapAuthEndpoints();
 app.MapGameEndpoints();

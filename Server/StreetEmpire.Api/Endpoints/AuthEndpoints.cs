@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Data;
@@ -116,7 +117,7 @@ internal static class AuthEndpoints
 
             await SignInAsync(http, account);
             return Results.Ok(new AuthResponse(player.Id, player.Name, account.Username));
-        });
+        }).RequireRateLimiting("sign-in");
 
 
         app.MapPost("/api/auth/login", async (
@@ -140,7 +141,7 @@ internal static class AuthEndpoints
 
             await SignInAsync(http, account);
             return Results.Ok(new AuthResponse(account.Player!.Id, account.Player.Name, account.Username));
-        });
+        }).RequireRateLimiting("sign-in");
 
 
         app.MapPost("/api/auth/logout", async (HttpContext http) =>

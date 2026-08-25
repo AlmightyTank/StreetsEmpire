@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.2.5 (in progress)
+## 0.2.6 (in progress)
+
+## 0.2.5
 
 ### Fixed
 - **The list of your conversations threw rather than arriving, every single time it was asked for.**

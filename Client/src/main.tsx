@@ -1223,7 +1223,7 @@ function App() {
       <div className="nav-brand d-grid gap-1 border-bottom p-1 pb-3">
         <span className="d-grid place-items-center text-dark bg-primary fw-bolder rounded">SE</span>
         <strong className="">Street Empire</strong>
-        <small className="text-body-tertiary">0.2.5</small>
+        <small className="text-body-tertiary">0.2.6</small>
       </div>
       <nav className="d-grid gap-1 align-content-start">
         {visiblePages.map(page => <button

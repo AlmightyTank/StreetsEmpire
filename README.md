@@ -1,10 +1,33 @@
-# Street Empire 0.2.5
+# Street Empire 0.2.6
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
 
+## What changed in 0.2.6
+
+0.2.6 is in progress.
+
 ## What changed in 0.2.5
 
-0.2.5 is in progress, and is about the early game.
+0.2.5 was about the early game, and grew past it.
+
+The opening hours got what they never had: an opening ladder that says what to do next and why, a
+walkthrough that shows the page rather than describing it, a first bank that is actually spendable,
+and turns that taper rather than running out at the wall five clicks in. The dead zone in the first
+hideout tier is filled.
+
+Past that it turned into a release about other people. Crews are people who have agreed not to rob
+each other, with ranks, dues, a shared pool and a door that is one setting with three states. Chat
+grew a window that survives changing pages and conversations that hold any number of people. Three
+more towns went on the map, each with a leaderboard of its own, and the towns started wanting things:
+buyers with deadlines, fillable in instalments.
+
+The fights got sharper. Guns split into tiers worth choosing between, one rack holds them all, and
+five ways to hit somebody each cost something to try - infesting a house was free and is not any
+more. A strike now says no before the click rather than after it, out of one function that answers
+both the note and the refusal.
+
+Late in the version the interface moved onto Bootstrap 5.3.8 and then took its own palette back, the
+alerts became a bell, the workshop went on a clock, and nine top-level pages folded into five.
 
 ### The free attack
 
@@ -1059,7 +1082,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.5`.
+It should report version `0.2.6`.
 
 ### 4. Run the browser client
 

@@ -3,6 +3,18 @@
 ## 0.2.6 (in progress)
 
 ### Added
+- **Transfers, pacts and assist calls have tests.** Nine of them, and they are the first in this suite
+  that run against a database - because the failure that matters here is stock arriving without leaving
+  or leaving without arriving, and that is a fact about two rows after a save rather than anything a
+  pure function can hold. SQLite in memory, built from the same model the real database gets, thrown
+  away with the connection. It proves the rules; the query-translation half is what the existing
+  against-the-real-provider test already covers.
+- The conservation ones were checked by breaking the code on purpose: drop the sender's subtraction and
+  the total moves by exactly the amount that was duplicated, which is what a test of arithmetic is for.
+  Dropping the same-crew check and letting a pending pact count as a truce are both caught too.
+- **A failing test says what actually went wrong now.** The harness printed only the outermost message,
+  and EF's outermost message is "an error occurred while saving the entity changes, see the inner
+  exception for details" - followed by not showing it. It walks the chain and prints the lot.
 - **A crew can hand things around.** Members of the same crew can send each other cash, thugs, or
   anything on the trade list. A crew that takes dues into a shared treasury but cannot pass a member a
   gun is a crew in name only. Every send is checked against what the sender actually has free - thugs

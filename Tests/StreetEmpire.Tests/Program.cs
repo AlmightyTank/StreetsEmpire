@@ -108,6 +108,15 @@ var tests = new (string Name, Action Test)[]
     ("defence alerts count only what is unread", DefenceAlertsCountUnread),
     ("combat power keeps a defender edge without killing attacks", CombatPowerBalanceTarget),
     ("a fully buffed territory garrison can hold the attacker cap", BuffedTerritoryGarrisonCanHoldTheAttackerCap),
+    ("a transfer moves goods without inventing or destroying any", ATransferMovesGoodsWithoutInventingAny),
+    ("a transfer refuses what the sender cannot spare", ATransferRefusesWhatTheSenderCannotSpare),
+    ("goods only move between people in the same crew", GoodsOnlyMoveInsideACrew),
+    ("a pact is asked for once and answered once", APactIsAskedForOnceAndAnsweredOnce),
+    ("only the crew being asked can answer, and either can walk away", OnlyTheCrewBeingAskedCanAnswer),
+    ("an active pact is a truce both ways round", AnActivePactIsATruceBothWaysRound),
+    ("a raid on a crew calls everybody they have a pact with", ARaidOnACrewCallsTheirAllies),
+    ("help that arrives is help that left somewhere", HelpThatArrivesIsHelpThatLeftSomewhere),
+    ("a fight nobody is having takes no more help", AFightNobodyIsHavingTakesNoMoreHelp),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
@@ -186,7 +195,13 @@ foreach (var (name, test) in tests)
     catch (Exception ex)
     {
         failed++;
-        Console.Error.WriteLine($"FAIL {name}: {ex.Message}");
+        // Down to the cause. EF in particular reports "an error occurred while saving the entity
+        // changes, see the inner exception" and then does not show it, which is a failure that tells
+        // you only that there was one.
+        var reasons = new List<string>();
+        for (var cause = ex; cause is not null; cause = cause.InnerException)
+            reasons.Add(cause.Message);
+        Console.Error.WriteLine($"FAIL {name}: {string.Join(" -> ", reasons)}");
     }
 }
 
@@ -2405,6 +2420,376 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
     AssertTrue(!AdminService.AdjustableResources.Contains("weapons"), "nor is it an adjustable resource");
     AssertTrue(!Regex.IsMatch(client, @"resource: 'weapons'|<option value=""weapons"">|useState\('weapons'\)"),
         "the client should not name 'weapons' as a key anywhere");
+}
+
+// ---- The crew board: transfers, pacts, and calls for help --------------------------------------
+//
+// These are the first tests in this suite that run against a database, because they are the first
+// things worth testing that cannot be answered without one. Everything here moves goods, thugs or guns
+// from one player to another, and the only failure that matters - stock arriving without leaving, or
+// leaving without arriving - is a fact about two rows after a save. A pure function cannot hold it.
+//
+// SQLite in memory rather than Postgres: the schema is built from the same model the real database
+// gets, every test starts from an empty one, and nothing outlives the connection. It is not Postgres,
+// so it proves the rules rather than the SQL - the query-translation half is what
+// WorthExpressionsTranslateToSql already covers, against the real provider.
+
+/// <summary>Builds a world here, where the option helpers are in scope, and hands it its parts.</summary>
+static CrewWorld NewCrewWorld()
+{
+    var options = Resolve(null);
+    return new CrewWorld(options, Snapshot(options), CreateEconomy(options), CreateHideouts(options));
+}
+
+static void ATransferMovesGoodsWithoutInventingAny()
+{
+    // The one thing a transfer must never do. Everything else here is a rule; this is arithmetic, and
+    // it is the arithmetic that quietly duplicates a crew's stock if a subtraction is ever missed.
+    using var world = NewCrewWorld();
+    var crew = world.Crew("The Eastside Table");
+    var giver = world.Member("Giver", crew, thugs: 10, cash: 5_000, condoms: 40);
+    var taker = world.Member("Taker", crew);
+
+    foreach (var (item, amount) in new[] { ("cash", 1_500), ("thugs", 4), ("condoms", 25) })
+    {
+        var before = Holdings(giver) + Holdings(taker);
+        world.Alliances.SendResourceAsync(giver, taker.Id, item, amount, DateTime.UtcNow, default)
+            .GetAwaiter().GetResult();
+        world.Db.SaveChanges();
+
+        AssertEqual(before, Holdings(giver) + Holdings(taker));
+    }
+
+    // And each side moved by exactly the amount, in the right direction.
+    AssertEqual(3_500L, giver.Cash);
+    AssertEqual(1_500L, taker.Cash);
+    AssertEqual(6, giver.Thugs);
+    AssertEqual(4, taker.Thugs);
+    AssertEqual(15, giver.Condoms);
+    AssertEqual(25, taker.Condoms);
+
+    // Written down, because a shared treasury with an untraceable side channel is not shared.
+    AssertEqual(3, world.Db.AllianceTransfers.Count());
+    AssertTrue(world.Db.AllianceTransfers.All(x => x.FromPlayerId == giver.Id && x.ToPlayerId == taker.Id),
+        "every transfer should record who gave and who got");
+
+    static long Holdings(Player p) => p.Cash + p.Thugs + p.Condoms;
+}
+
+static void ATransferRefusesWhatTheSenderCannotSpare()
+{
+    using var world = NewCrewWorld();
+    var crew = world.Crew("The Eastside Table");
+    var giver = world.Member("Giver", crew, thugs: 10, cash: 100, condoms: 5);
+    var taker = world.Member("Taker", crew);
+
+    // More than is held, of each kind.
+    AssertRuleError(() => Send(giver, taker, "cash", 101), "sending cash that is not there");
+    AssertRuleError(() => Send(giver, taker, "condoms", 6), "sending goods that are not there");
+    AssertRuleError(() => Send(giver, taker, "thugs", 11), "sending thugs that are not there");
+    // And nothing that is not a thing.
+    AssertRuleError(() => Send(giver, taker, "wishes", 1), "sending something the game does not have");
+    AssertRuleError(() => Send(giver, taker, "cash", 0), "sending nothing at all");
+
+    // Thugs standing on ground are not standing free, even though the player still owns them. Without
+    // this a crew could garrison a territory and hand the same thugs to somebody else.
+    var held = new Territory { City = "Detroit", Name = "The Docks", HolderId = giver.Id, GarrisonThugs = 8 };
+    world.Db.Territories.Add(held);
+    world.Db.SaveChanges();
+    AssertRuleError(() => Send(giver, taker, "thugs", 5), "sending thugs that are out holding ground");
+    // Two of the ten are still at home, and those may go.
+    Send(giver, taker, "thugs", 2);
+    world.Db.SaveChanges();
+    AssertEqual(8, giver.Thugs);
+    AssertEqual(2, taker.Thugs);
+
+    void Send(Player from, Player to, string item, int quantity)
+        => world.Alliances.SendResourceAsync(from, to.Id, item, quantity, DateTime.UtcNow, default)
+            .GetAwaiter().GetResult();
+}
+
+static void GoodsOnlyMoveInsideACrew()
+{
+    // A transfer is a thing a crew does. Somebody outside it is a stranger, and a stranger with an
+    // account id is not a route into your storage.
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var member = world.Member("Member", mine, cash: 1_000);
+    var rival = world.Member("Rival", theirs);
+    var loner = world.Member("Loner", null);
+
+    AssertRuleError(() => Send(member, rival), "sending to another crew");
+    AssertRuleError(() => Send(member, loner), "sending to somebody with no crew");
+    AssertRuleError(() => Send(member, member), "sending to yourself");
+    AssertRuleError(() => world.Alliances
+        .SendResourceAsync(loner, member.Id, "cash", 1, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "sending while in no crew");
+
+    AssertEqual(1_000L, member.Cash);
+    AssertEqual(0, world.Db.AllianceTransfers.Count());
+
+    void Send(Player from, Player to)
+        => world.Alliances.SendResourceAsync(from, to.Id, "cash", 100, DateTime.UtcNow, default)
+            .GetAwaiter().GetResult();
+}
+
+static void APactIsAskedForOnceAndAnsweredOnce()
+{
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var boss = world.Member("Boss", mine);
+    var theirBoss = world.Member("Their Boss", theirs);
+
+    var pact = world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(AlliancePactStatuses.Pending, pact.Status);
+
+    // One request per pair, from either direction. Otherwise a crew can bury another in requests.
+    AssertRuleError(() => world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "asking the same crew twice");
+    AssertRuleError(() => world.Alliances.RequestPactAsync(theirBoss, mine.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "asking back while a request is already open");
+    AssertRuleError(() => world.Alliances.RequestPactAsync(boss, mine.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "asking your own crew");
+
+    world.Alliances.AnswerPactAsync(theirBoss, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(AlliancePactStatuses.Active, pact.Status);
+    AssertEqual(theirBoss.Id, pact.AnsweredById);
+
+    // Answered once. A second answer would let a crew flip a truce on and off at will.
+    AssertRuleError(() => world.Alliances.AnswerPactAsync(theirBoss, pact.Id, accept: false, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering a pact twice");
+    AssertEqual(1, world.Db.AlliancePacts.Count());
+}
+
+static void OnlyTheCrewBeingAskedCanAnswer()
+{
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var elsewhere = world.Crew("The Northside Table");
+    var boss = world.Member("Boss", mine);
+    var theirBoss = world.Member("Their Boss", theirs);
+    var stranger = world.Member("Stranger", elsewhere);
+
+    var pact = world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // Not the crew that asked, and not a crew with nothing to do with it.
+    AssertRuleError(() => world.Alliances.AnswerPactAsync(boss, pact.Id, true, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering your own request");
+    AssertRuleError(() => world.Alliances.AnswerPactAsync(stranger, pact.Id, true, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering somebody else's pact");
+    AssertRuleError(() => world.Alliances.CancelPactAsync(stranger, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "cancelling somebody else's pact");
+
+    // Either side of it can walk away, which is what makes it an agreement rather than a trap.
+    world.Alliances.CancelPactAsync(boss, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(AlliancePactStatuses.Canceled, pact.Status);
+    AssertRuleError(() => world.Alliances.CancelPactAsync(theirBoss, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "cancelling a pact that is already closed");
+}
+
+static void AnActivePactIsATruceBothWaysRound()
+{
+    // What the pact is actually for. The endpoints ask this one question before letting a fight start,
+    // so if it answers wrong in either direction the truce is decoration.
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var boss = world.Member("Boss", mine);
+    var theirBoss = world.Member("Their Boss", theirs);
+    var loner = world.Member("Loner", null);
+
+    AssertTrue(!Allied(boss, theirBoss), "two crews with no pact are not allied");
+
+    var pact = world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    // Pending is not yet a truce - asking for one must not buy the protection of having one.
+    AssertTrue(!Allied(boss, theirBoss), "a pact nobody has answered is not a truce");
+
+    world.Alliances.AnswerPactAsync(theirBoss, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertTrue(Allied(boss, theirBoss), "an active pact protects the crew that asked");
+    AssertTrue(Allied(theirBoss, boss), "and the crew that was asked, which is the same truce");
+
+    // Somebody with no crew is nobody's ally, however many pacts are flying about.
+    AssertTrue(!Allied(boss, loner), "a pact cannot cover somebody in no crew");
+
+    world.Alliances.CancelPactAsync(boss, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertTrue(!Allied(boss, theirBoss), "walking away from a pact ends the truce");
+
+    bool Allied(Player one, Player other)
+        => world.Alliances.AreAlliedAsync(one, other, default).GetAwaiter().GetResult();
+}
+
+static void ARaidOnACrewCallsTheirAllies()
+{
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var otherAllies = world.Crew("The Northside Table");
+    var strangers = world.Crew("The Southside Table");
+
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+    var otherAlly = world.Member("Other Ally", otherAllies, thugs: 10);
+    world.Member("Stranger", strangers);
+
+    Pact(defender, allies.Id, ally);
+    Pact(defender, otherAllies.Id, otherAlly);
+
+    var mission = Mission(world, attacker, defender);
+    var calls = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // One call per crew holding a pact, and none for anybody else.
+    AssertEqual(2, calls.Count);
+    AssertTrue(calls.All(x => x.DefenderAllianceId == defenders.Id), "every call should name the crew being hit");
+    AssertTrue(
+        calls.Select(x => x.AllyAllianceId).OrderBy(x => x)
+            .SequenceEqual(new[] { allies.Id, otherAllies.Id }.OrderBy(x => x)),
+        "the calls should go to exactly the crews with a pact");
+    AssertTrue(calls.All(x => x.Status == AllianceAssistStatuses.Open), "a call starts open");
+
+    // Ground is fought over by whoever holds it, and a territory raid is not somebody's house being
+    // kicked in - so it raises nobody.
+    var ground = new Territory { City = "Detroit", Name = "The Docks", HolderId = defender.Id, GarrisonThugs = 3 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+    var groundRaid = Mission(world, attacker, defender);
+    groundRaid.TerritoryId = ground.Id;
+    world.Db.SaveChanges();
+    AssertEqual(0, world.Alliances.CreateAssistCallsForAsync(groundRaid, DateTime.UtcNow, default).GetAwaiter().GetResult().Count);
+
+    // And a player in no crew has nobody to call.
+    var loner = world.Member("Loner", null, thugs: 3);
+    AssertEqual(0, world.Alliances
+        .CreateAssistCallsForAsync(Mission(world, attacker, loner), DateTime.UtcNow, default)
+        .GetAwaiter().GetResult().Count);
+
+    void Pact(Player asker, long targetId, Player answerer)
+    {
+        var pact = world.Alliances.RequestPactAsync(asker, targetId, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        world.Db.SaveChanges();
+        world.Alliances.AnswerPactAsync(answerer, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        world.Db.SaveChanges();
+    }
+}
+
+static void HelpThatArrivesIsHelpThatLeftSomewhere()
+{
+    // The same arithmetic a transfer answers to, in the place it is easiest to get wrong: reinforcements
+    // are counted into a fight, and a fight is not where anybody looks for a missing thug.
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var strangers = world.Crew("The Southside Table");
+
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+    ally.Pistols = 6;
+    world.Db.SaveChanges();
+
+    var pact = world.Alliances.RequestPactAsync(defender, allies.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    world.Alliances.AnswerPactAsync(ally, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult().Single();
+    world.Db.SaveChanges();
+
+    var thugsBefore = ally.Thugs + defender.Thugs;
+    var pistolsBefore = ally.Pistols + defender.Pistols;
+
+    world.Alliances.AnswerAssistCallAsync(ally, call.Id, 4, new Armoury { Pistols = 3 }, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertEqual(thugsBefore, ally.Thugs + defender.Thugs);
+    AssertEqual(pistolsBefore, ally.Pistols + defender.Pistols);
+    AssertEqual(6, ally.Thugs);
+    AssertEqual(9, defender.Thugs);
+    AssertEqual(3, ally.Pistols);
+    AssertEqual(3, defender.Pistols);
+
+    // The call records what turned up, because "help arrived" is not a number anything can fight with.
+    AssertEqual(AllianceAssistStatuses.Answered, call.Status);
+    AssertEqual(4, call.ThugsSent);
+    AssertEqual(3, call.PistolsSent);
+
+    // Answered once, and never for nothing.
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 1, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering a call that is already answered");
+}
+
+static void AFightNobodyIsHavingTakesNoMoreHelp()
+{
+    // Reinforcing a fight that is over is not help, it is bookkeeping - and worse, it is a way to move
+    // thugs to somebody under the cover of a mission that has already been decided.
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var strangers = world.Crew("The Southside Table");
+
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+
+    var pact = world.Alliances.RequestPactAsync(defender, allies.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    world.Alliances.AnswerPactAsync(ally, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult().Single();
+    world.Db.SaveChanges();
+
+    mission.Status = "Complete";
+    world.Db.SaveChanges();
+
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 3, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "sending help to a fight that is over");
+    AssertEqual(10, ally.Thugs);
+    AssertEqual(5, defender.Thugs);
+
+    // An ally cannot send what it does not have standing free either - the same rule a transfer keeps.
+    mission.Status = "Fighting";
+    world.Db.SaveChanges();
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 11, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "sending more thugs than are standing free");
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 0, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering a call with nothing at all");
+}
+
+/// <summary>A raid in flight, which is the only state an assist call is raised against.</summary>
+static CombatMission Mission(CrewWorld world, Player attacker, Player defender)
+{
+    var mission = new CombatMission
+    {
+        AttackerId = attacker.Id,
+        Attacker = attacker,
+        DefenderId = defender.Id,
+        Defender = defender,
+        Status = "Traveling",
+        AssignedThugs = 10,
+        RemainingAttackers = 10,
+    };
+    world.Db.CombatMissions.Add(mission);
+    world.Db.SaveChanges();
+    return mission;
 }
 
 static void EveryTestWrittenIsATestThatRuns()
@@ -6819,6 +7204,67 @@ sealed class ThrowingEmailSender : IEmailSender
     public bool Delivers => true;
     public Task<bool> SendAsync(EmailMessage message, CancellationToken ct)
         => throw new HttpRequestException("the provider is down");
+}
+
+/// <summary>A database of this game's own shape, empty, alive only as long as it is being used.</summary>
+sealed class CrewWorld : IDisposable
+{
+    private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
+
+    internal GameDbContext Db { get; }
+    internal AllianceService Alliances { get; }
+    internal GameOptions Options { get; }
+
+    /// <param name="options">
+    /// Built by the caller: the helpers that resolve game options live as top-level local functions in
+    /// this file, and a type declared here cannot reach them.
+    /// </param>
+    internal CrewWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot, EconomyService economy, HideoutService hideouts)
+    {
+        _connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
+        _connection.Open();
+        Db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>().UseSqlite(_connection).Options);
+        Db.Database.EnsureCreated();
+        Options = options;
+        Alliances = new AllianceService(Db, snapshot, economy, hideouts);
+    }
+
+    /// <summary>A crew with a boss's powers, so a test is about the rule under test and not about rank.</summary>
+    internal Alliance Crew(string name)
+    {
+        var crew = new Alliance { Name = name, FounderId = Guid.Empty, CreatedAtUtc = DateTime.UtcNow };
+        Db.Alliances.Add(crew);
+        Db.SaveChanges();
+        return crew;
+    }
+
+    internal Player Member(string name, Alliance? crew = null, int thugs = 0, long cash = 0, int condoms = 0)
+    {
+        var account = new PlayerAccount { Username = name.ToLowerInvariant(), PasswordHash = "hashed" };
+        var player = new Player
+        {
+            Account = account,
+            Name = name,
+            City = "Detroit",
+            Thugs = thugs,
+            Cash = cash,
+            Condoms = condoms,
+            AllianceId = crew?.Id,
+            AllianceRank = AllianceRank.Boss,
+            LastTurnUpdateUtc = DateTime.UtcNow,
+        };
+        player.Hideout = new Hideout { Player = player };
+        Db.Accounts.Add(account);
+        Db.Players.Add(player);
+        Db.SaveChanges();
+        return player;
+    }
+
+    public void Dispose()
+    {
+        Db.Dispose();
+        _connection.Dispose();
+    }
 }
 
 /// <summary>Stands in for the scoped IOptionsSnapshot the services now take.</summary>

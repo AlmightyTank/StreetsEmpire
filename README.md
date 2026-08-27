@@ -6,6 +6,50 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 0.2.6 is in progress.
 
+### What a crew is for, beyond not being robbed
+
+A crew was a truce and a treasury. Everything else about running with people - lending somebody a gun,
+agreeing terms with another crew, turning up when one of yours is being hit - had nowhere to happen.
+
+**Members can hand each other things.** Cash, thugs, or anything on the trade list. The checks are the
+ones that stop a transfer inventing goods: the sender must have it *free* - thugs standing at home
+rather than out on a raid, guns off the rack rather than in somebody's hands - and the receiver must
+have room to put it. Every send is written down, because a shared treasury with an untraceable side
+channel is not really shared.
+
+**Crews can make pacts.** Requested, answered, cancellable from either side, one per pair. A pact is a
+truce with the same teeth the in-crew one has: members of two allied crews cannot attack each other,
+and the refusal lives at both places a fight can start - the strike endpoint and the raid mission -
+rather than at one of them, which is how a rule ends up being half a rule.
+
+**And a pact is worth something when it is tested.** Launching a raid on somebody in a crew opens an
+assist call to every crew they have a pact with. An ally answers with thugs and guns, tier by tier,
+and the force genuinely moves: it leaves the ally, it is checked against what they have standing free,
+and it lands with the defender in time to fight. The window is the fight itself - travelling or
+fighting, nothing later - because arriving after the shooting stops is not help.
+
+### Holding a whole town
+
+A crew that holds every piece of ground in a city gets extra thugs defending any member attacked at
+home there. Per-city in config, so a town can be worth more than the sum of its plots.
+
+It deliberately does not apply to territory raids. Ground that made ground harder to take would
+compound - the crew that got there first would be the crew that stays - so the reward is on the
+houses instead, which is where a town being yours ought to be felt.
+
+### Two ceilings that were not there
+
+A garrison had no upper bound and neither did a raid. They are 50 and 100 now, with the garrison bonus
+capped at 85%.
+
+The number that matters is the relationship between them rather than either one. A test stands a fully
+buffed garrison on its cap, sends a raid on its cap at it, and insists the garrison holds.
+
+That is a design statement rather than an incidental fact: ground filled to the top and buffed to the
+top is meant to be safe from one maximum raid, so that investing in a garrison buys something real. It
+is also the fragile half of the pair - retune either ceiling, or the garrison bonus, and the two can
+slide past each other without anything failing loudly. The test is what makes that slide loud.
+
 ### One door, and no way to change the lock
 
 An account was a username and a password chosen on the day somebody signed up, and that was the whole

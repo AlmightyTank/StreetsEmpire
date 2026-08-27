@@ -3,6 +3,32 @@
 ## 0.2.6 (in progress)
 
 ### Added
+- **A crew can hand things around.** Members of the same crew can send each other cash, thugs, or
+  anything on the trade list. A crew that takes dues into a shared treasury but cannot pass a member a
+  gun is a crew in name only. Every send is checked against what the sender actually has free - thugs
+  standing at home rather than out on a raid, guns off the rack rather than in somebody's hands - and
+  against whether the receiver has room for it, so nothing is created or destroyed by moving it. Each
+  one is written down, so a boss can see where the crew's stock went.
+- **Crews can make pacts with other crews.** Requested, answered, and cancellable from either side -
+  the same three states a membership request already has, because it is the same kind of agreement one
+  level up. One pact or request per pair, so a crew cannot pile up requests against another.
+- **A pact is a truce, enforced the way the in-crew one is.** Members of two crews with an active pact
+  cannot attack each other, refused at both places a fight can start - the strike endpoint and the
+  raid mission - rather than in one of them.
+- **A crew under attack calls its allies in.** Launching a raid against somebody in a crew opens an
+  assist call to every crew they have a pact with. An ally answers by sending thugs and guns, tier by
+  tier, and the force actually moves - it is checked against what the ally has standing free and it
+  arrives with the defender. Only while the fight is still travelling or being fought: reinforcing a
+  fight that is already over is not help, it is bookkeeping.
+- **Holding a whole city is worth something.** A crew that holds every piece of ground in a town gets
+  extra thugs defending any of its members at home there, set per city in config. It does not apply to
+  territory raids, only to somebody's house - taking a town should make the people in it harder to rob,
+  not make the ground itself circular to attack.
+- **Garrisons and raids have ceilings.** A territory holds at most 50 thugs, a raid can send at most
+  100, and the garrison bonus caps at 85%. A test stands a fully buffed garrison on its cap, sends a
+  raid on its cap at it, and insists the garrison holds - so filling a territory to the top is worth
+  doing, and the two ceilings cannot drift into a state where the attacker's number simply overruns
+  the defender's however much has been invested in it.
 - **Two more ways into an account, and a page to manage all three.** An account was a username and a
   password picked on the first day, with no way to change either and nowhere to look at them. Now an
   optional email address is a second name to sign in under - the login box takes either kind and tells

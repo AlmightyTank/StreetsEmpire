@@ -28,6 +28,26 @@ and the force genuinely moves: it leaves the ally, it is checked against what th
 and it lands with the defender in time to fight. The window is the fight itself - travelling or
 fighting, nothing later - because arriving after the shooting stops is not help.
 
+### Taking the help back
+
+What an ally sends genuinely leaves them, which is the only way the fight can count it - the raid reads
+the defender's own numbers and knows nothing about where they came from. That made sending help a
+one-way gift, which sat oddly next to the crew pool: borrowed pool thugs have always gone home when the
+mission ends.
+
+So once the fight is over, whoever sent help can take back what is still standing. Two caps, and they
+exist for different reasons. **Never more than was sent**, or a recall would be a way to strip a crew
+mate of thugs they always had. **Never more than the defender still has free**, which is the honest
+half - some of what was sent will have died, and what died is not owed back by anybody. A recall that
+gets nothing back is still a recall, and the game says so rather than pretending it failed.
+
+It is something the sender does rather than something that happens, unlike the pool. Pool thugs are the
+crew's; these are one player's, and a crew that wants to leave them where they are as a gift should be
+able to.
+
+A call nobody answers closes itself when the fight ends. Nothing was doing that before, so the page
+went on offering to reinforce raids that had finished days earlier.
+
 ### Holding a whole town
 
 A crew that holds every piece of ground in a city gets extra thugs defending any member attacked at

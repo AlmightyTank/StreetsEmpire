@@ -3,6 +3,27 @@
 ## 0.2.6 (in progress)
 
 ### Added
+- **Help you send to an ally can be taken back.** It was a one-way gift: thugs and guns left the ally,
+  joined the defender's pile, and nothing anywhere could return them - which sat oddly beside the crew
+  pool, which has always sent its borrowed men home when a mission ends. Once the fight is over the
+  sender can take back whatever is still standing. Never more than was sent, and never more than the
+  defender still has free, because some of it will have died in the fight and what died is not owed
+  back by anybody. A recall that gets nothing is still a recall, and says so.
+- Deliberately a thing somebody does rather than something automatic: the pool's thugs belong to the
+  crew, these belong to one player, and a crew that wants to leave them as a gift should be able to.
+- **Assist calls close themselves when the fight ends.** Nothing ever set the closed state, so every
+  call nobody answered stayed open for good - the alliance page went on offering to reinforce raids
+  that finished days earlier, and answered "that fight is no longer taking help" to anybody who tried.
+  Answered calls are left alone, because the ally still has a claim on what they sent.
+- The client filter behind that read `status === 'Open' || missionStatus !== 'Complete'`, where the
+  first clause let exactly those dead calls through. It is an `and` now.
+- **Closed assist calls and old transfers are swept**, alongside the verification codes. Transfers keep
+  far longer than codes - sixty days against seven - because they answer a different question: a code
+  is worthless the moment it is spent, and a transfer is the only account of where a crew's stock went.
+  Pacts are never swept: an active one is a truce being relied on, and a closed one is the record of
+  somebody having broken one.
+- **The crew service explains itself now.** It shipped without a comment in it, in a codebase where
+  every other service says what it is for and what it is guarding against.
 - **Transfers, pacts and assist calls have tests.** Nine of them, and they are the first in this suite
   that run against a database - because the failure that matters here is stock arriving without leaving
   or leaving without arriving, and that is a fact about two rows after a save rather than anything a

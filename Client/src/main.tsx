@@ -4734,7 +4734,7 @@ function AlliancePage(ctx: PageContext) {
 
         <AllianceRequestsPanel board={board} busy={busy} onAct={run} />
 
-        <AllianceAssistPanel board={board} busy={busy} onAct={run} />
+        <AllianceAssistPanel board={board} ownPlayerId={ctx.dashboard.playerId} busy={busy} onAct={run} />
 
         <AlliancePactsPanel board={board} busy={busy} onAct={run} />
 
@@ -4993,28 +4993,44 @@ function AlliancePactRow({ pact, ownAllianceId, busy, onAct }: {
   </div>
 }
 
-function AllianceAssistPanel({ board, busy, onAct }: {
+function AllianceAssistPanel({ board, ownPlayerId, busy, onAct }: {
   board: AllianceBoard
+  /** Passed through to the rows: only whoever sent help is offered the button to take it back. */
+  ownPlayerId: string
   busy: boolean
   onAct: (fn: () => Promise<ActionResult>) => void
 }) {
   if (!board.yours) return null
-  const calls = board.assistCalls.filter(call => call.status === 'Open' || call.missionStatus !== 'Complete')
+  /*
+    An `and`, not an `or`.
+
+    This read `status === 'Open' || missionStatus !== 'Complete'`, and since nothing ever closed a call,
+    an unanswered one on a fight that finished last week passed the first clause and stayed on the page
+    for good - offering to send help to a raid long over, and answering "that fight is no longer taking
+    help" to anybody who tried. The server closes them now, and this stops showing the closed ones.
+  */
+  const calls = board.assistCalls.filter(call => call.status !== 'Closed' && call.missionStatus !== 'Complete')
   if (calls.length === 0) return null
 
   return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     <strong className="d-block mb-1 text-primary small">Assist calls</strong>
-    {calls.map(call => <AllianceAssistRow key={call.id} call={call} ownAllianceId={board.yours?.id ?? 0} busy={busy} onAct={onAct} />)}
+    {calls.map(call => <AllianceAssistRow key={call.id} call={call} ownAllianceId={board.yours?.id ?? 0} ownPlayerId={ownPlayerId} busy={busy} onAct={onAct} />)}
   </div>
 }
 
-function AllianceAssistRow({ call, ownAllianceId, busy, onAct }: {
+function AllianceAssistRow({ call, ownAllianceId, ownPlayerId, busy, onAct }: {
   call: AllianceAssistCall
   ownAllianceId: number
+  /** Taking help back is personal: it goes to whoever sent it, not to whoever is looking at the page. */
+  ownPlayerId: string
   busy: boolean
   onAct: (fn: () => Promise<ActionResult>) => void
 }) {
   const canAnswer = call.status === 'Open' && call.allyAllianceId === ownAllianceId && call.missionStatus !== 'Complete'
+  // Only the person who sent it, and only once the fight it was sent to has finished.
+  const canRecall = call.status === 'Answered'
+    && call.missionStatus === 'Complete'
+    && call.respondedByPlayerId === ownPlayerId
   const [thugs, setThugs] = useState(0)
   const [pistols, setPistols] = useState(0)
   const [shotguns, setShotguns] = useState(0)
@@ -5030,6 +5046,17 @@ function AllianceAssistRow({ call, ownAllianceId, busy, onAct }: {
       </div>
       {call.status !== 'Open' && <em>{call.thugsSent} thugs / {sentWeapons} guns sent</em>}
     </div>
+    {canRecall && <div className="d-flex flex-wrap align-items-center gap-2">
+      <span className="text-body-tertiary small">
+        The fight is over. What you sent still counts as theirs until you take it back, and whatever did
+        not survive it is gone.
+      </span>
+      <button
+        className="btn btn-secondary btn-sm"
+        disabled={busy}
+        onClick={() => onAct(() => api.recallAllianceAssist(call.id))}
+      >Take back what is left</button>
+    </div>}
     {canAnswer && <div className="d-grid gtc-2 gtc-md-fill-120 gap-2">
       <label className="field">Thugs<input className="form-control" type="number" min={0} value={thugs} onChange={event => setThugs(Number(event.target.value))} /></label>
       <label className="field">Pistols<input className="form-control" type="number" min={0} value={pistols} onChange={event => setPistols(Number(event.target.value))} /></label>

@@ -482,6 +482,14 @@ export type AlliancePact = {
 }
 
 export type AllianceAssistCall = {
+  /** What came home when the ally asked for it back. Zero until they do, and possibly zero after. */
+  thugsReturned: number
+  pistolsReturned: number
+  shotgunsReturned: number
+  smgsReturned: number
+  riflesReturned: number
+  /** Whoever sent the help, and the only person who can take it back. */
+  respondedByPlayerId: string | null
   id: number
   combatMissionId: number
   defenderAllianceId: number
@@ -1205,6 +1213,9 @@ export const api = {
     request<ActionResult>('/api/game/alliances/pacts/answer', { method: 'POST', body: JSON.stringify({ pactId, accept }) }),
   cancelAlliancePact: (pactId: number) =>
     request<ActionResult>('/api/game/alliances/pacts/cancel', { method: 'POST', body: JSON.stringify({ pactId, accept: false }) }),
+  /** Takes back whatever is left of what you sent, once the fight it was sent to is over. */
+  recallAllianceAssist: (assistCallId: number) =>
+    request<ActionResult>('/api/game/alliances/assist/recall', { method: 'POST', body: JSON.stringify({ assistCallId }) }),
   answerAllianceAssist: (assistCallId: number, thugs: number, pistols: number, shotguns: number, smgs: number, rifles: number) =>
     request<ActionResult>('/api/game/alliances/assist', { method: 'POST', body: JSON.stringify({ assistCallId, thugs, pistols, shotguns, smgs, rifles }) }),
   buyAllianceThugs: (kind: 'offensive' | 'defensive', quantity: number) =>

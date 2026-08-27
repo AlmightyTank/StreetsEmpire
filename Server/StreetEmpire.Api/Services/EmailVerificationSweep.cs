@@ -1,11 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Data;
+using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
 /// <summary>
-/// Throws away codes that can never be used again.
+/// Throws away rows that can never be used again.
 ///
 /// Nothing deleted from this table until now, so every code ever issued stayed in it - spent secrets
 /// with no reason to exist, in a table that only grows. They are worth a few days ("did a code actually
@@ -61,14 +62,37 @@ public sealed class EmailVerificationSweep(
 
             var days = Math.Max(1, options.Value.CodeRetentionDays);
             var cutoff = DateTime.UtcNow.AddDays(-days);
-            var removed = await db.EmailVerifications
+            var codes = await db.EmailVerifications
                 .Where(x => x.CreatedAtUtc < cutoff)
                 .ExecuteDeleteAsync(ct);
 
+            // Assist calls go the same way and for the same reason: one is raised for every allied crew
+            // every time somebody is raided, and a closed one is a finished conversation about a fight
+            // that finished. Only closed ones - an open or answered call is still somebody's business,
+            // however old the row is, because an answered one is a claim on thugs that have not come
+            // home yet.
+            var calls = await db.AllianceAssistCalls
+                .Where(x => x.CreatedAtUtc < cutoff && x.Status == AllianceAssistStatuses.Closed)
+                .ExecuteDeleteAsync(ct);
+
+            // Transfers are an audit trail rather than working state, so they are kept far longer -
+            // "where did the crew's guns go" is a question asked weeks later. Long enough to answer it,
+            // not for ever.
+            var transferCutoff = DateTime.UtcNow.AddDays(-Math.Max(days, options.Value.TransferRetentionDays));
+            var transfers = await db.AllianceTransfers
+                .Where(x => x.CreatedAtUtc < transferCutoff)
+                .ExecuteDeleteAsync(ct);
+
+            // Pacts are deliberately not swept. A pact is state rather than history: an active one is
+            // a truce being relied on right now, and a closed one is the record of a crew having broken
+            // one, which is exactly the thing somebody will want to look up.
+
             // Only said when it did something. A daily line reporting zero is a line that trains
             // everybody to stop reading the log.
-            if (removed > 0)
-                logger.LogInformation("Swept {Count} verification code(s) older than {Days} day(s).", removed, days);
+            if (codes + calls + transfers > 0)
+                logger.LogInformation(
+                    "Swept {Codes} verification code(s), {Calls} closed assist call(s) and {Transfers} transfer record(s).",
+                    codes, calls, transfers);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -595,6 +595,44 @@ internal static class AllianceEndpoints
         }).RequireAuthorization();
 
 
+        // Taking back what is left of it, once the fight is over. Its own endpoint rather than a flag
+        // on the one above, because it is the opposite direction and answers to different rules.
+        app.MapPost("/api/game/alliances/assist/recall", async (
+            AllianceAssistRecallRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var before = Snapshot(player);
+            try
+            {
+                var now = DateTime.UtcNow;
+                var call = await alliances.RecallAssistAsync(player, request.AssistCallId, now, ct);
+                var guns = new Armoury(call.PistolsReturned, call.ShotgunsReturned, call.SmgsReturned, call.RiflesReturned);
+
+                var came = new List<string>();
+                if (call.ThugsReturned > 0) came.Add($"{call.ThugsReturned:N0} thug(s)");
+                if (guns.Total > 0) came.Add(guns.Describe());
+                // Nothing coming home is a real outcome rather than a failure, and saying so plainly is
+                // the only way somebody learns what sending help actually costs.
+                var summary = came.Count == 0
+                    ? $"Nothing came back from {call.CombatMission.Defender.Name} - what you sent did not survive the fight."
+                    : $"{player.Name} took {string.Join(" and ", came)} back from {call.CombatMission.Defender.Name}.";
+
+                AddLog(db, player, before, "ALLIANCE", 0, summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
         app.MapPost("/api/game/alliances/assist", async (
             AllianceAssistRequest request,
             CurrentPlayerService current,
@@ -702,6 +740,12 @@ internal static class AllianceEndpoints
             call.ShotgunsSent,
             call.SmgsSent,
             call.RiflesSent,
+            call.ThugsReturned,
+            call.PistolsReturned,
+            call.ShotgunsReturned,
+            call.SmgsReturned,
+            call.RiflesReturned,
+            call.RespondedById,
             call.CreatedAtUtc);
 
     private static AllianceTransferResponse ToTransferResponse(AllianceTransfer transfer)

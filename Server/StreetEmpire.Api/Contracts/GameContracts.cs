@@ -95,6 +95,9 @@ public sealed record AlliancePactRequest(long AllianceId);
 public sealed record AnswerAlliancePactRequest(long PactId, bool Accept);
 public sealed record AllianceAssistRequest(long AssistCallId, int Thugs, int Pistols, int Shotguns, int Smgs, int Rifles);
 
+/// <summary>Asking for back whatever is left of the help you sent. The call knows how much that was.</summary>
+public sealed record AllianceAssistRecallRequest(long AssistCallId);
+
 /// <summary>One outstanding ask, from whichever side it came.</summary>
 public sealed record AllianceRequestResponse(
     long Id,
@@ -134,6 +137,13 @@ public sealed record AllianceAssistCallResponse(
     int ShotgunsSent,
     int SmgsSent,
     int RiflesSent,
+    int ThugsReturned,
+    int PistolsReturned,
+    int ShotgunsReturned,
+    int SmgsReturned,
+    int RiflesReturned,
+    /// <summary>Whoever sent the help. Only they are offered the button to take it back.</summary>
+    Guid? RespondedByPlayerId,
     DateTime CreatedAtUtc);
 
 public sealed record AllianceTransferResponse(

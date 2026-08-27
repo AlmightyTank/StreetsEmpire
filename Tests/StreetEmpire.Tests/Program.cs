@@ -117,6 +117,9 @@ var tests = new (string Name, Action Test)[]
     ("a raid on a crew calls everybody they have a pact with", ARaidOnACrewCallsTheirAllies),
     ("help that arrives is help that left somewhere", HelpThatArrivesIsHelpThatLeftSomewhere),
     ("a fight nobody is having takes no more help", AFightNobodyIsHavingTakesNoMoreHelp),
+    ("help comes home when the fight is over, and only then", HelpComesHomeWhenTheFightIsOver),
+    ("what died in the fight is not owed back by anybody", WhatDiedInTheFightIsNotOwedBack),
+    ("a call nobody answered closes itself when the fight ends", ACallNobodyAnsweredClosesItself),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
@@ -2429,10 +2432,15 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
 // from one player to another, and the only failure that matters - stock arriving without leaving, or
 // leaving without arriving - is a fact about two rows after a save. A pure function cannot hold it.
 //
-// SQLite in memory rather than Postgres: the schema is built from the same model the real database
-// gets, every test starts from an empty one, and nothing outlives the connection. It is not Postgres,
-// so it proves the rules rather than the SQL - the query-translation half is what
-// WorthExpressionsTranslateToSql already covers, against the real provider.
+// The in-memory provider rather than Postgres or SQLite. What is under test is arithmetic on entities
+// and the rules around it, and that is exactly what this provider runs faithfully - it is only SQL it
+// cannot do, and the query-translation half is what WorthExpressionsTranslateToSql already covers
+// against the real provider.
+//
+// It was SQLite first, which does execute real SQL and would have been the better of the two. It also
+// drags in a native library that currently ships a high-severity advisory with no patched version
+// compatible with this EF release, and a permanent warning in every build is how people learn to stop
+// reading warnings. Nothing here needed the SQL.
 
 /// <summary>Builds a world here, where the option helpers are in scope, and hands it its parts.</summary>
 static CrewWorld NewCrewWorld()
@@ -2773,6 +2781,159 @@ static void AFightNobodyIsHavingTakesNoMoreHelp()
         .AnswerAssistCallAsync(ally, call.Id, 0, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
         "answering a call with nothing at all");
 }
+
+static void HelpComesHomeWhenTheFightIsOver()
+{
+    // Sending help was a one-way gift: the thugs left the ally, joined the defender's pile, and there
+    // was nothing anywhere that could ever give them back. The pool already sends its borrowed men home
+    // when a mission ends, so a crew's own help going permanently was the odd one out.
+    using var world = NewCrewWorld();
+    var (ally, defender, mission, call) = HelpSent(world, thugs: 4, pistols: 3);
+
+    // Not while it is still being fought. Otherwise an assist is a gesture that can be withdrawn the
+    // instant it looks like costing something, which is worth nothing to the person relying on it.
+    AssertRuleError(() => Recall(world, ally, call), "taking help back mid-fight");
+
+    mission.Status = "Complete";
+    world.Db.SaveChanges();
+
+    var beforeThugs = ally.Thugs + defender.Thugs;
+    var beforePistols = ally.Pistols + defender.Pistols;
+    Recall(world, ally, call);
+    world.Db.SaveChanges();
+
+    // Nothing invented on the way home either.
+    AssertEqual(beforeThugs, ally.Thugs + defender.Thugs);
+    AssertEqual(beforePistols, ally.Pistols + defender.Pistols);
+    AssertEqual(10, ally.Thugs);
+    AssertEqual(5, defender.Thugs);
+    AssertEqual(6, ally.Pistols);
+    AssertEqual(0, defender.Pistols);
+
+    AssertEqual(AllianceAssistStatuses.Closed, call.Status);
+    AssertEqual(4, call.ThugsReturned);
+    AssertEqual(3, call.PistolsReturned);
+
+    // Once. A second recall would be a way to mint thugs out of a fight that already ended.
+    AssertRuleError(() => Recall(world, ally, call), "taking the same help back twice");
+}
+
+static void WhatDiedInTheFightIsNotOwedBack()
+{
+    // The honest half of a recall. A defender who lost most of their crew holding the house cannot hand
+    // back thugs that are dead, and the ally is not owed them by anybody - so a recall takes what is
+    // standing and no more. Getting this wrong the other way would let an ally drain a crew mate down
+    // to nothing on the strength of a loan that was already spent.
+    using var world = NewCrewWorld();
+    var (ally, defender, mission, call) = HelpSent(world, thugs: 4, pistols: 3);
+
+    mission.Status = "Complete";
+    // The fight went badly: the defender is down to one thug and has lost the guns.
+    defender.Thugs = 1;
+    defender.Pistols = 0;
+    world.Db.SaveChanges();
+
+    Recall(world, ally, call);
+    world.Db.SaveChanges();
+
+    AssertEqual(1, call.ThugsReturned);
+    AssertEqual(0, call.PistolsReturned);
+    AssertEqual(7, ally.Thugs);
+    AssertEqual(0, defender.Thugs);
+    AssertEqual(3, ally.Pistols);
+    // Closed even though almost nothing came back. Asking again would ask the same question.
+    AssertEqual(AllianceAssistStatuses.Closed, call.Status);
+
+    // And a recall is personal: a crew mate cannot collect on somebody else's loan.
+    var (otherAlly, _, otherMission, otherCall) = HelpSent(world, thugs: 2, pistols: 0, allyName: "Other Ally");
+    otherMission.Status = "Complete";
+    world.Db.SaveChanges();
+    AssertRuleError(() => Recall(world, ally, otherCall), "collecting on somebody else's loan");
+}
+
+static void ACallNobodyAnsweredClosesItself()
+{
+    // Nothing ever set Closed, so an unanswered call stayed open for good and the alliance page went on
+    // offering to reinforce raids that ended days earlier - each one answering "that fight is no longer
+    // taking help" to anybody who tried.
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var strangers = world.Crew("The Southside Table");
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+    MakePact(world, defender, allies.Id, ally);
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult().Single();
+    world.Db.SaveChanges();
+    AssertEqual(AllianceAssistStatuses.Open, call.Status);
+
+    var closed = world.Alliances.CloseOpenAssistCallsAsync(mission.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertEqual(1, closed);
+    AssertEqual(AllianceAssistStatuses.Closed, call.Status);
+
+    // An answered call is left alone by the same close, because the ally still has a claim on what they
+    // sent and shutting it here would quietly cancel that claim.
+    //
+    // The defender has two allies by this point, so this raid raises two calls and only one of them is
+    // answered - which is exactly the mix worth testing: the unanswered one shuts, the answered one
+    // does not.
+    var (_, _, liveMission, answered) = HelpSent(world, thugs: 3, pistols: 0, allyName: "Second Ally");
+    var live = world.Db.AllianceAssistCalls.Where(x => x.CombatMissionId == liveMission.Id).ToList();
+    AssertEqual(2, live.Count);
+    AssertEqual(1, live.Count(x => x.Status == AllianceAssistStatuses.Answered));
+
+    world.Alliances.CloseOpenAssistCallsAsync(liveMission.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertEqual(AllianceAssistStatuses.Answered, answered.Status);
+    AssertTrue(live.Where(x => x.Id != answered.Id).All(x => x.Status == AllianceAssistStatuses.Closed),
+        "every call nobody answered should have shut");
+}
+
+/// <summary>A crew, an ally, a raid in flight, and help already sent to it.</summary>
+static (Player Ally, Player Defender, CombatMission Mission, AllianceAssistCall Call) HelpSent(
+    CrewWorld world, int thugs, int pistols, string allyName = "Ally")
+{
+    var defenders = world.Db.Alliances.FirstOrDefault(x => x.Name == "The Eastside Table") ?? world.Crew("The Eastside Table");
+    var strangers = world.Db.Alliances.FirstOrDefault(x => x.Name == "The Southside Table") ?? world.Crew("The Southside Table");
+    var allies = world.Crew($"Crew of {allyName}");
+
+    var defender = world.Db.Players.FirstOrDefault(x => x.Name == "Defender")
+        ?? world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Db.Players.FirstOrDefault(x => x.Name == "Attacker")
+        ?? world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member(allyName, allies, thugs: 10);
+    ally.Pistols = 6;
+    world.Db.SaveChanges();
+
+    MakePact(world, defender, allies.Id, ally);
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult().Single(x => x.AllyAllianceId == allies.Id);
+    world.Db.SaveChanges();
+
+    world.Alliances.AnswerAssistCallAsync(ally, call.Id, thugs, new Armoury { Pistols = pistols }, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    return (ally, defender, mission, call);
+}
+
+static void MakePact(CrewWorld world, Player asker, long targetId, Player answerer)
+{
+    var pact = world.Alliances.RequestPactAsync(asker, targetId, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    world.Alliances.AnswerPactAsync(answerer, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+}
+
+static void Recall(CrewWorld world, Player actor, AllianceAssistCall call)
+    => world.Alliances.RecallAssistAsync(actor, call.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
 
 /// <summary>A raid in flight, which is the only state an assist call is raised against.</summary>
 static CombatMission Mission(CrewWorld world, Player attacker, Player defender)
@@ -7209,8 +7370,6 @@ sealed class ThrowingEmailSender : IEmailSender
 /// <summary>A database of this game's own shape, empty, alive only as long as it is being used.</summary>
 sealed class CrewWorld : IDisposable
 {
-    private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
-
     internal GameDbContext Db { get; }
     internal AllianceService Alliances { get; }
     internal GameOptions Options { get; }
@@ -7221,10 +7380,11 @@ sealed class CrewWorld : IDisposable
     /// </param>
     internal CrewWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot, EconomyService economy, HideoutService hideouts)
     {
-        _connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        _connection.Open();
-        Db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>().UseSqlite(_connection).Options);
-        Db.Database.EnsureCreated();
+        // A store of its own per world, so one test can never see another's crews.
+        Db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+            .UseInMemoryDatabase($"crew-{Guid.NewGuid()}")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+            .Options);
         Options = options;
         Alliances = new AllianceService(Db, snapshot, economy, hideouts);
     }
@@ -7260,11 +7420,7 @@ sealed class CrewWorld : IDisposable
         return player;
     }
 
-    public void Dispose()
-    {
-        Db.Dispose();
-        _connection.Dispose();
-    }
+    public void Dispose() => Db.Dispose();
 }
 
 /// <summary>Stands in for the scoped IOptionsSnapshot the services now take.</summary>

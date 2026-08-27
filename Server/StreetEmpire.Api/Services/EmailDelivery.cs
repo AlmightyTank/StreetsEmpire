@@ -73,6 +73,16 @@ public sealed class EmailOptions
     /// </summary>
     public int CodeRetentionDays { get; set; } = 7;
 
+    /// <summary>
+    /// How long a record of one crew member handing another something is kept.
+    ///
+    /// Far longer than a code, because it answers a different kind of question. A code is working state
+    /// and worthless the moment it is spent; a transfer is the only account of where a crew's stock
+    /// went, and "who took the guns" gets asked weeks after the fact. Long enough to answer that, and
+    /// not for ever.
+    /// </summary>
+    public int TransferRetentionDays { get; set; } = 60;
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 }
 

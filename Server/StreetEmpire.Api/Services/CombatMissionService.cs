@@ -220,6 +220,10 @@ public sealed class CombatMissionService(
             if (mission.Status == "Returning" && mission.ReturnsAtUtc <= nowUtc)
             {
                 Complete(mission, nowUtc);
+                // Nobody can help with a fight that is finished, so the calls nobody answered stop
+                // asking. Here rather than inside Complete, which is synchronous and has no business
+                // becoming a database round trip.
+                await alliances.CloseOpenAssistCallsAsync(mission.Id, nowUtc, cancellationToken);
                 updates++;
             }
         }
@@ -275,6 +279,9 @@ public sealed class CombatMissionService(
         // Calling it off sends the crew's men home as well. A cancelled raid that kept them would be a
         // way of holding the pool indefinitely for the price of one cancellation.
         ReturnBorrowedThugs(mission);
+        // The crew's borrowed men go home above; the allies who were asked to send theirs are told the
+        // fight is off, so the call stops standing on the alliance page as something to answer.
+        await alliances.CloseOpenAssistCallsAsync(mission.Id, nowUtc, cancellationToken);
         mission.Status = "Complete";
         mission.Outcome = CanceledOutcome;
         mission.CompletedAtUtc = nowUtc;

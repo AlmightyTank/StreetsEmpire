@@ -71,7 +71,13 @@ public sealed record ChangeEmailRequest(string? Email, string? CurrentPassword);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
 /// <summary>The half of a Discord sign-up the game needs and Discord cannot answer.</summary>
-public sealed record CompleteDiscordSignUpRequest(string? PlayerName, string? City, string? Username);
+/// <param name="Email">
+/// Optional, and asked for here rather than left to the account page, because an account made this way
+/// has no password and no address - Discord is the only way in, and losing it loses the empire. This is
+/// the one moment the player is already filling in a form, so it is the cheapest moment to offer them a
+/// second way back. Confirmed the usual way, by a code, like any other address.
+/// </param>
+public sealed record CompleteDiscordSignUpRequest(string? PlayerName, string? City, string? Username, string? Email = null);
 
 /// <summary>
 /// Handed to the client when a Discord login turns out to belong to nobody yet. Carries the handle so

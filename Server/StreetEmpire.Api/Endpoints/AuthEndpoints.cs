@@ -295,6 +295,7 @@ internal static class AuthEndpoints
             DiscordTickets tickets,
             IOptionsSnapshot<GameOptions> gameOptions,
             PimpRoster pimps,
+            EmailVerificationService verification,
             CancellationToken ct) =>
         {
             var profile = tickets.ReadSignUp(http.Request.Cookies[DiscordTickets.SignUpCookie]);
@@ -310,6 +311,11 @@ internal static class AuthEndpoints
             if (playerName.Length is < 3 or > 32)
                 return Results.BadRequest(new { error = "Player name must be 3-32 characters." });
 
+            // Optional, and the same rules the register form applies, because it is the same column.
+            var email = AccountSetup.NormalizeEmail(request.Email);
+            if (email is not null && !AccountSetup.LooksLikeAnEmail(email))
+                return Results.BadRequest(new { error = "That does not look like an email address." });
+
             var opts = gameOptions.Value;
             opts.Territory.ApplyDefaultsWhereEmpty();
             var cities = opts.Territory.Cities();
@@ -323,6 +329,8 @@ internal static class AuthEndpoints
                 return Results.Conflict(new { error = "That Discord account is already on an empire. Sign in with it instead." });
             if (await db.Accounts.AnyAsync(x => x.Username == username, ct))
                 return Results.Conflict(new { error = "Username is already taken." });
+            if (email is not null && await db.Accounts.AnyAsync(x => x.Email == email, ct))
+                return Results.Conflict(new { error = "That email is already on an account." });
             if (await db.Players.AnyAsync(x => x.Name == playerName, ct))
                 return Results.Conflict(new { error = "Player name is already taken." });
 
@@ -338,12 +346,18 @@ internal static class AuthEndpoints
                 DiscordUsername = profile.DisplayName,
                 DiscordLinkedAtUtc = DateTime.UtcNow,
             };
+            account.SetEmail(email);
             var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? cities.FirstOrDefault() ?? "New York", opts, pimps);
 
             db.Accounts.Add(account);
             db.Players.Add(player);
             db.ActionLogs.Add(log);
             await db.SaveChangesAsync(ct);
+
+            // Same as the register form: the code goes out at the one moment the player is thinking
+            // about the address they just typed.
+            if (email is not null && verification.Options.SendOnSignUp)
+                await verification.SendAsync(account, VerificationPurpose.ConfirmAddress, ct);
 
             http.Response.Cookies.Delete(DiscordTickets.SignUpCookie, SignUpCookieOptions(http));
             await SignInAsync(http, account);

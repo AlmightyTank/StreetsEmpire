@@ -64,6 +64,12 @@
   cannot answer an error for a password that really did change.
 - A test walks every value of the change enum and fails if one has no copy of its own, so the next
   event added cannot quietly ship as "Something on your account changed".
+- **Signing up through Discord asks for an email as well.** An account made that way has no password,
+  so Discord is the only way in and losing it loses the empire - a fact the account page could only
+  point out after the event. The sign-up form now offers an address at the one moment the player is
+  already filling in a form, confirmed by a code like any other, and says plainly what skipping it
+  costs. The Discord button also says which of the two things it is about to do rather than
+  "Continue" under a Create Account tab.
 - **A forgotten password can be reset**, which is what confirming an address was always for. A code
   goes to the confirmed address, and typing it sets a new password and ends every other session on the
   account - whoever took it is signed in right now, and a new password that left them there would have

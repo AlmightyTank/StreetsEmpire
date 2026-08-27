@@ -162,6 +162,7 @@ var tests = new (string Name, Action Test)[]
     ("the committed example holds no secrets and no surprises", TheCommittedExampleHoldsNoSecrets),
     ("a code is only ever good for the thing it was sent for", ACodeIsOnlyGoodForWhatItWasSentFor),
     ("a reset needs an address somebody actually proved", AResetNeedsAProvenAddress),
+    ("an account made through Discord is a whole account", ADiscordSignUpIsAWholeAccount),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -2153,6 +2154,50 @@ static void AResetNeedsAProvenAddress()
             _ => SendCodeResult.Sent,
         };
     }
+}
+
+static void ADiscordSignUpIsAWholeAccount()
+{
+    // The second door into the game, and the one that is easiest to leave half-built: Discord answers
+    // who somebody is and has no opinion about what they want to be called, which town they set up in,
+    // or how they get back in if they lose the Discord. All three are the game's to ask.
+    var options = Resolve(new GameOptions { StartingCash = 5_000, StartingPimps = 1, StartingTurns = 200 });
+
+    var account = new PlayerAccount
+    {
+        Username = "streetking",
+        PasswordHash = string.Empty,
+        DiscordUserId = "555000111222",
+        DiscordUsername = "StreetKing",
+        DiscordLinkedAtUtc = DateTime.UtcNow,
+    };
+    account.SetEmail("street.king@example.com");
+    var (player, log) = AccountSetup.NewPlayer(account, "Street King", "Las Vegas", options, CreateRoster(options));
+
+    // A whole player, not a stub: the same starting hand the register form deals.
+    AssertEqual(options.StartingCash, player.Cash);
+    AssertEqual(options.StartingTurns, player.Turns);
+    AssertEqual("Las Vegas", player.City);
+    AssertTrue(player.Hideout is not null, "a Discord sign-up should get a hideout like anybody else");
+    AssertEqual(options.StartingPimps, player.Crew.Count);
+    AssertEqual("START", log.Action);
+
+    // No password, on purpose - nobody chose one - and an address that is not confirmed yet, because
+    // typing it is not proving it. Both are true of a fresh Discord account and both are what the
+    // account page is then arranged around.
+    AssertTrue(!account.HasPassword, "a Discord sign-up has not chosen a password");
+    AssertTrue(!account.EmailVerified, "an address typed at sign-up is not a proved one");
+
+    // Discord is the only thing holding it, so it cannot be taken away. This is the rule that stops an
+    // account made this way being closed by the one control on the page that would close it.
+    AssertTrue(!account.HasAnotherWayIn(withoutDiscord: true),
+        "Discord must not be removable while it is the only way in");
+
+    // And the address is what makes that recoverable: confirmed, it can be reset from, which is the
+    // whole reason it is asked for at sign-up rather than left to a page nobody visits.
+    account.EmailVerified = true;
+    AssertTrue(account.Email is not null && account.EmailVerified,
+        "a confirmed address is the second way back into a Discord-made account");
 }
 
 static void EveryTestWrittenIsATestThatRuns()

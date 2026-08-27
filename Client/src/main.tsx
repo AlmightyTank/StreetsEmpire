@@ -1118,7 +1118,11 @@ function App() {
     const form = new FormData(event.currentTarget)
     setBusy(true); setError('')
     try {
-      await api.completeDiscordSignUp(String(form.get('username')), String(form.get('playerName')), String(form.get('city')))
+      await api.completeDiscordSignUp(
+        String(form.get('username')),
+        String(form.get('playerName')),
+        String(form.get('city')),
+        String(form.get('email') ?? ''))
       sessionStorage.removeItem(discordPendingKey)
       setDiscordTicket(null)
       await refresh()
@@ -1289,6 +1293,20 @@ function App() {
                 </select>
                 <small className="form-text">Ground is fought over inside a town. This is the map you will be playing on.</small>
               </label>
+              {/*
+                Offered here rather than left to the account page, because an account made this way has
+                no password and no address: Discord is the only way in, and losing the Discord loses the
+                empire. This is the one moment the player is already filling in a form, which makes it
+                the cheapest moment to hand them a second way back.
+              */}
+              <label className="field">
+                Email <span className="text-body-tertiary">(optional)</span>
+                <input className="form-control" name="email" type="email" maxLength={254} />
+                <small className="form-text">
+                  Without one, Discord is the only way into this empire and there is no way back if you
+                  lose it. You can add one later on the Account page.
+                </small>
+              </label>
               {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
               <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Build My Empire'}</button>
               <button className="btn btn-link text-body-secondary" type="button" onClick={abandonDiscordSignUp}>Use a username and password instead</button>
@@ -1359,9 +1377,12 @@ function App() {
               <div className="d-flex align-items-center gap-3 my-3 text-body-tertiary">
                 <hr className="flex-fill my-0" /><small className="eyebrow">or</small><hr className="flex-fill my-0" />
               </div>
+              {/* One button, one round trip, and it works out for itself whether the identity coming
+                  back belongs to somebody. It still says which of the two the player came here to do,
+                  because "Continue" under a Create Account tab reads like it will not make one. */}
               <a className="btn btn-secondary d-flex align-items-center justify-content-center gap-2" href={discordStartUrl()}>
                 <i className="bi bi-discord" aria-hidden="true" />
-                Continue with Discord
+                {authMode === 'login' ? 'Sign in with Discord' : 'Create Account with Discord'}
               </a>
             </>}
           </>}

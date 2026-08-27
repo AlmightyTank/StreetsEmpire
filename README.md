@@ -32,6 +32,13 @@ signed in is the connect button on the account page, and an identity that belong
 nobody signed in is a new player - who then has to answer the half Discord cannot, which is what they
 want to be called and which town they are setting up in.
 
+Signing up this way makes a whole account - the same starting cash, turns, crew and hideout the
+register form deals - and it asks for one thing that form does not have to: an **optional email**. An
+account made through Discord has no password, so Discord is the only way in and losing it loses the
+empire. The one moment a player is already filling in a form is the cheapest moment to offer them a
+second way back, and it is confirmed by a code like any other address. The form says plainly what
+skipping it costs.
+
 What is stored is Discord's snowflake, not the handle. A handle can be changed by its owner at any
 time, and keying on one would hand somebody else's empire over on the next login. The handle is kept
 too, refreshed on every trip through, purely so the settings page can say which Discord this is.

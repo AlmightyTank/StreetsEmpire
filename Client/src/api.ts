@@ -1093,10 +1093,11 @@ export const api = {
 
   discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
   discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),
-  completeDiscordSignUp: (username: string, playerName: string, city: string) =>
+  /** `email` is optional and the only way a Discord-made account gets a second way back in. */
+  completeDiscordSignUp: (username: string, playerName: string, city: string, email?: string) =>
     request('/api/auth/discord/complete', {
       method: 'POST',
-      body: JSON.stringify({ username, playerName, city }),
+      body: JSON.stringify({ username, playerName, city, email: email || null }),
     }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   leaderboard: (city?: string) => request<LeaderboardEntry[]>(

@@ -978,19 +978,108 @@ export type MuleBoard = {
   runs: MuleRun[]
 }
 
+/** Which ways in this server can actually offer. Asked before the login box draws its buttons. */
+export type AuthProviders = { discord: boolean }
+
+/**
+ * The code in flight, described without being given away. Enough to run a clock and count down the
+ * guesses; not one digit of the code itself.
+ */
+export type EmailVerificationState = {
+  /** The address it went to, which is not always the address on the account a minute later. */
+  sentTo: string
+  expiresAtUtc: string
+  attemptsRemaining: number
+  /** When the resend button comes back. Null when it is already pressable. */
+  resendableAtUtc: string | null
+}
+
+/** Everything the account page shows. Note what is missing: the password itself, ever. */
+export type Account = {
+  username: string
+  playerName: string
+  email: string | null
+  /** Unverified, the address cannot be signed in with. That is what the tick is for. */
+  emailVerified: boolean
+  emailVerifiedAtUtc: string | null
+  verification: EmailVerificationState | null
+  /**
+   * False when no email provider is configured and the message goes to the server log instead of the
+   * wire. Surfaced rather than hidden: a code in a log is fine on a laptop and a quiet disaster
+   * anywhere else, so the page says which one is happening.
+   */
+  emailDelivers: boolean
+  hasPassword: boolean
+  discordConnected: boolean
+  discordUsername: string | null
+  discordLinkedAtUtc: string | null
+  /** False when the server has no Discord credentials, which hides the connect button entirely. */
+  discordConfigured: boolean
+  createdAtUtc: string
+}
+
+/** A Discord login that turned out to belong to nobody yet, waiting on a name and a town. */
+export type DiscordSignUpTicket = { suggestedUsername: string, discordUsername: string }
+
+/**
+ * What the server said about the trip through Discord, read off the query string on arrival and then
+ * wiped from the address bar so a reload does not replay the message.
+ */
+export type DiscordOutcome =
+  | 'signed-in' | 'connected' | 'sign-up' | 'cancelled'
+  | 'failed' | 'locked' | 'already-connected' | 'unavailable'
+
+/**
+ * A full-page navigation, not a fetch: the browser has to be handed to Discord and handed back, and
+ * the origin travels with it so the server knows where to put the player down afterwards - in
+ * development that is a port nobody could have written into a config file.
+ */
+export const discordStartUrl = () =>
+  `/api/auth/discord/start?return=${encodeURIComponent(window.location.origin)}`
+
 export const api = {
   cities: () => request<string[]>('/api/auth/cities'),
-  register: (username: string, password: string, playerName: string, city: string) =>
+  providers: () => request<AuthProviders>('/api/auth/providers'),
+  register: (username: string, password: string, playerName: string, city: string, email?: string) =>
     request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, playerName, city }),
+      body: JSON.stringify({ username, password, playerName, city, email: email || null }),
     }),
-  login: (username: string, password: string) =>
+  /** `identifier` is a username or an email address; the server decides which by the @. */
+  login: (identifier: string, password: string) =>
     request('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username: identifier, password }),
     }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
+
+  account: () => request<Account>('/api/account'),
+  /** An empty address removes it. The current password is required unless there is not one yet. */
+  setEmail: (email: string, currentPassword: string) =>
+    request<Account>('/api/account/email', {
+      method: 'PUT',
+      body: JSON.stringify({ email: email || null, currentPassword }),
+    }),
+  setPassword: (currentPassword: string, newPassword: string) =>
+    request<Account>('/api/account/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  disconnectDiscord: () => request<Account>('/api/account/discord', { method: 'DELETE' }),
+  /** Issues a fresh code and retires whatever was outstanding. Refused inside the resend cooldown. */
+  sendEmailCode: () => request<Account>('/api/account/email/verify/send', { method: 'POST' }),
+  confirmEmail: (code: string) =>
+    request<Account>('/api/account/email/verify', { method: 'POST', body: JSON.stringify({ code }) }),
+  /** Ends every session on this account except the one asking. */
+  revokeSessions: () => request<Account>('/api/account/sessions/revoke', { method: 'POST' }),
+
+  discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
+  discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),
+  completeDiscordSignUp: (username: string, playerName: string, city: string) =>
+    request('/api/auth/discord/complete', {
+      method: 'POST',
+      body: JSON.stringify({ username, playerName, city }),
+    }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   leaderboard: (city?: string) => request<LeaderboardEntry[]>(
     city ? `/api/game/leaderboard?city=${encodeURIComponent(city)}` : '/api/game/leaderboard'),

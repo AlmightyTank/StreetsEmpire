@@ -9,6 +9,66 @@ public sealed class PlayerAccount
     public bool IsBot { get; set; }
 
     /// <summary>
+    /// A second name to sign in under, stored folded to lower case so that the unique index is what
+    /// decides whether two people have the same address rather than how they happened to type it.
+    /// Optional, and null rather than empty when absent: Postgres lets any number of rows hold null in
+    /// a unique index, which is what allows every account without an address to coexist.
+    /// </summary>
+    public string? Email { get; set; }
+
+    /// <summary>
+    /// Whether the person holding this account has proved they can read mail at that address.
+    ///
+    /// It is not decoration: an unverified address cannot be signed in with. The unique index still
+    /// holds the address against every other account the moment it is typed, which stops two people
+    /// claiming one - and means somebody who types an address they do not own has blocked it without
+    /// gaining anything, because the door it would have opened stays shut until they prove it.
+    ///
+    /// Reset to false by any change of address. A tick that survived being pointed somewhere new would
+    /// be a tick against an address nobody ever checked.
+    /// </summary>
+    public bool EmailVerified { get; set; }
+
+    public DateTime? EmailVerifiedAtUtc { get; set; }
+
+    /// <summary>Codes issued to this account, newest last. Only ever read one at a time.</summary>
+    public ICollection<EmailVerification> EmailVerifications { get; set; } = [];
+
+    /// <summary>
+    /// Points the account at a new address, or at none, and takes the tick off. One method rather than
+    /// two assignments at four call sites, because the pair coming apart is the whole failure: an
+    /// address that changed while the tick stayed put is a verified address nobody verified.
+    /// </summary>
+    public void SetEmail(string? normalizedEmail)
+    {
+        Email = normalizedEmail;
+        EmailVerified = false;
+        EmailVerifiedAtUtc = null;
+    }
+
+    /// <summary>
+    /// Discord's snowflake for the linked user. This, not the handle, is the identity: a handle can be
+    /// changed by its owner at any time and would hand somebody else's account over on the next login.
+    /// </summary>
+    public string? DiscordUserId { get; set; }
+
+    /// <summary>What to show on the settings page so a player can tell which Discord this is. Display only.</summary>
+    public string? DiscordUsername { get; set; }
+
+    public DateTime? DiscordLinkedAtUtc { get; set; }
+
+    /// <summary>
+    /// An account made through Discord has never chosen a password, and one that has unlinked Discord
+    /// may have nothing else left. Both endpoints that can take a way in away check this first, so an
+    /// account can never end up with no door.
+    /// </summary>
+    public bool HasPassword => !string.IsNullOrEmpty(PasswordHash);
+
+    /// <summary>Whether this account can still be signed into if the named way in were removed.</summary>
+    public bool HasAnotherWayIn(bool withoutPassword = false, bool withoutDiscord = false)
+        => (!withoutPassword && HasPassword) || (!withoutDiscord && DiscordUserId is not null);
+
+    /// <summary>
     /// A paused rival is skipped by the automatic loop and by manual runs, but is otherwise a normal
     /// player: still rankable, still attackable, still holding whatever it had. Useful for freezing one
     /// rival as a fixed target while the rest of the world keeps moving.

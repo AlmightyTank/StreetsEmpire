@@ -2,6 +2,131 @@
 
 ## 0.2.6 (in progress)
 
+### Added
+- **Two more ways into an account, and a page to manage all three.** An account was a username and a
+  password picked on the first day, with no way to change either and nowhere to look at them. Now an
+  optional email address is a second name to sign in under - the login box takes either kind and tells
+  them apart by the @ - and a Discord account signs a player straight in without a password. The new
+  Account page shows the three side by side, sets or changes the email, sets or changes the password,
+  and connects or disconnects Discord.
+- Nothing is ever sent to an email address. There is no mail in this game, no verification and no
+  password reset, so an address is a convenience and never a way back in if the password is gone. The
+  page says so rather than letting an email box on a login screen imply otherwise.
+- Discord is off until it is configured, and half-configured counts as off. The button is drawn only
+  when the server holds both a client id and a secret; an id with no secret would send a player to
+  Discord and fail them on the way back. The shipped appsettings.json carries blanks, and a test reads
+  that file and fails if a secret ever lands in it.
+- The same Discord callback serves all three things the trip can turn out to be - a login, a connect,
+  or a brand new player - because from Discord's side they are one round trip and the only thing that
+  tells them apart is what the server finds when it looks the identity up. What is stored is Discord's
+  snowflake rather than the handle: a handle can be changed by its owner, and keying on one would hand
+  somebody else's empire over on the next login. Only `identify` is asked for; Discord will give up an
+  email address for the asking and the game has no use for one it did not verify itself.
+- **An account can never end up with no way in.** Removing the last door is refused by the server, and
+  the page says which door is the last one standing. Without this a player removes their password on
+  Monday, disconnects Discord on Tuesday, and owns an empire nobody can ever reach again.
+- Changing a password ends every other session on the account and keeps the one that changed it.
+- The starting player - the cash, the hideout, the named crew, the opening line in the log - was pulled
+  out of the register endpoint into one place both doors call, and a test walks the two and insists
+  they put down the same player. Two sign-up paths that each build their own new player is exactly how
+  one of them quietly starts handing out a different amount of money.
+- **Email verification, by six-digit code.** An address now has to be proved before it can be signed in
+  with, which is what stops the tick being decoration: somebody who types an address they do not own
+  has blocked it against every other account and gained nothing, because the door stays shut. A code
+  lives fifteen minutes, takes five wrong guesses before it is burned, and cannot be asked for more than
+  once a minute per address. Six digits is a million possibilities; those three numbers are what make
+  that safe, and a link with a long token is the only thing that could have earned a longer window.
+- Codes come from `RandomNumberGenerator`, uniform across the whole space, and are sealed by the data
+  protection key ring rather than stored as they were sent - six digits falls to any hash in seconds,
+  and sealing means a database read alone is not enough.
+- Verification starts at sign-up and again on every address change, because those are the two moments a
+  player is already thinking about the address they just typed. Changing the address takes the tick with
+  it, and a code in flight when the address changes is voided rather than applied to the new one - it
+  proves control of the address it was sent to and nothing else.
+- **Mail goes over Resend's HTTP API rather than an SMTP server of our own.** Running one means owning
+  deliverability, and the reward for getting it wrong is verification mail in a spam folder. With no API
+  key configured the message is written to the server log instead, which makes the whole flow clickable
+  in development - and the account page says which of the two is happening rather than implying the mail
+  was sent.
+- **Every change to a way in now emails the account.** Password set or changed, Discord connected or
+  disconnected, sessions signed out, address changed or removed. A password quietly changed by somebody
+  holding a borrowed session is otherwise invisible until the day the real owner tries to sign in; a
+  notice makes it visible in a minute, which is the difference between an account that can be saved and
+  one that is gone.
+- **An address change tells the address being left behind**, and names where the account went. That is
+  the one that matters and the easiest to get backwards: moving the address is how somebody who has
+  taken an account keeps it, so telling only the new address would be telling the thief. The new one is
+  not told separately - a verification code is already on its way to it.
+- A notice reports a change and never carries it: no new password, no code, no token. Only confirmed
+  addresses are written to, because an unconfirmed one may belong to a stranger and mailing them is
+  both a nuisance and a spam complaint against the sending domain. And a notice never fails the change
+  it reports - the account is already saved by the time one is attempted, so a provider being down
+  cannot answer an error for a password that really did change.
+- A test walks every value of the change enum and fails if one has no copy of its own, so the next
+  event added cannot quietly ship as "Something on your account changed".
+- **Credentials come from a `.env` file at the repository root.** `.env.example` is the committed
+  template, `.env` is gitignored, and a test fails the build if any key in the example ever carries a
+  value. Names are the appsettings paths with `__` where the JSON nests, which is .NET's own convention
+  for environment variables - so every setting can be overridden this way, not just the secrets.
+- .NET has no notion of a .env file, so rather than writing a configuration source and arguing about
+  where it belongs in the order, the file is read into the process environment before the builder runs
+  and the environment-variable provider that was already in the chain does the rest. A value already
+  set in the real environment is never overwritten, because a platform injecting a secret has to beat a
+  .env that got copied into an image by accident. The server logs which file it read and how many
+  values it left alone, since "the key I put in .env is not being read" is otherwise an unfalsifiable
+  guess.
+- **The account page became a full tab**, split into Profile, Sign-in and Security. Profile separates
+  the two names that were being conflated - a player name the whole city sees, a username only ever used
+  to sign in. Sign-in holds the address, the code, the password and Discord. Security ends every other
+  session on the account, which somebody who left themselves signed in on a machine they no longer have
+  should not have to change their password to do.
+
+### Fixed
+- **Changing your password signed you out of your own password change.** Ending the other sessions is
+  done by writing a watermark and re-issuing this session against it, and the two are compared through
+  the session cookie - which stores the moment it was issued as an RFC1123 string, keeping whole
+  seconds and throwing the fraction away. So the watermark was always a few hundred microseconds ahead
+  of the cookie written in the same breath, and the very first session it threw out was the one that
+  had just changed the password. Found by clicking, not by reading: everything returned 200 and the
+  next request was a 401. Both are floored to the second now.
+
+### Fixed
+- **Changing your email address sent no code at all, if you did it in your first minute.** The resend
+  cooldown was measured per account rather than per address, so an address change inside sixty seconds
+  of the last code was refused by the same rule that exists to stop the resend button being a mail
+  cannon - and the endpoint ignored the refusal, leaving the player on a new address with nothing in the
+  post and no explanation. The cooldown is measured per address now, which is what it was always for:
+  hammering one inbox waits, moving to a new one does not.
+
+### Changed
+- **An unconfirmed address can no longer be signed in with.** It still holds the address against other
+  accounts, so nobody can claim one twice; it just does not open anything until it is proved. The
+  refusal says so plainly rather than answering a blank 401, because it only fires once the password has
+  already been proved - there is nothing left to give away, and a player told only "no" when their
+  password is right has no way to work out what to do about it.
+- The account page counts **two** ways in, not three. An earlier draft of this page listed a confirmed
+  email alongside the password and Discord, which is false in the one direction that matters: an address
+  is a second name for the password door, so a player reading that tile might have closed the only real
+  door they had.
+
+### Security
+- The Discord round trip carries a nonce in the signed state that is also written to a cookie and
+  compared on the way back, so a login somebody else finished cannot be replayed into your session.
+  Both notes - the state and the sign-up ticket - are signed by data protection, expire in minutes,
+  and are opaque to the browser holding them: the Discord identity behind a half-finished sign-up
+  never reaches the client, so the finish form claims nothing about who is filling it in.
+- Where the browser is sent when the trip ends is named by the client, because in development that is
+  a port nobody could have written into a config file. It is checked against the origins CORS already
+  trusts, plus any loopback port in development only, so it cannot become an open redirect.
+- Changing the email address costs the current password, since pointing an account at an address you
+  own is the first half of taking it.
+- Verification codes are sealed, single-use, and counted against before they are compared, so a request
+  that gives up half way through still costs a guess. The send and confirm endpoints sit behind the
+  sign-in rate limiter alongside the per-address cooldown.
+- The verification email escapes the player name before putting it in the HTML body. Nobody but its
+  owner reads that mail today, but the copy is one refactor away from being shown somewhere else and
+  escaping it costs nothing.
+
 ## 0.2.5
 
 ### Fixed

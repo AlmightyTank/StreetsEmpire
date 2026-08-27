@@ -6,6 +6,250 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 0.2.6 is in progress.
 
+### One door, and no way to change the lock
+
+An account was a username and a password chosen on the day somebody signed up, and that was the whole
+of it for ever. There was no second way in, no way to change the password, no way to correct a
+username typed wrong on the first try, and nowhere in the game to go and look at any of it. The only
+page that could see an account at all was the admin panel, looking at somebody else's.
+
+There are three doors now, and a page that shows them side by side.
+
+**An email address** is a second name to sign in under. The login box takes either kind and decides
+which it has by the @ - an address can never be a username, so it is one lookup rather than two
+guesses. Addresses are folded to lower case on the way in, because signing up as `Sam@example.com` and
+coming back as `sam@example.com` is one person and a unique index compares bytes.
+
+It is worth being plain about what an email here is not. Nothing is ever sent to it. There is no
+mail in this game, no verification, and no password reset - so an address is a convenience and never a
+way back in if the password is gone. The page says exactly that rather than implying otherwise by
+being an email box on a login screen, which is a thing that normally means something.
+
+**Discord** signs a player straight in, on any browser, without a password. The round trip is the
+ordinary OAuth one, and the same callback serves all three things it can turn out to be: an identity
+that already belongs to somebody is a login, an identity that belongs to nobody while somebody is
+signed in is the connect button on the account page, and an identity that belongs to nobody with
+nobody signed in is a new player - who then has to answer the half Discord cannot, which is what they
+want to be called and which town they are setting up in.
+
+What is stored is Discord's snowflake, not the handle. A handle can be changed by its owner at any
+time, and keying on one would hand somebody else's empire over on the next login. The handle is kept
+too, refreshed on every trip through, purely so the settings page can say which Discord this is.
+
+Only `identify` is asked for. Discord will hand over an email address for the asking, and the game has
+no use for one it did not verify itself, so it does not ask.
+
+Nothing about it is on by default. The button is drawn only when the server actually holds a client id
+and a secret, because a door that is painted on is worse than no door. Half-configured counts as off:
+an id with no secret would send a player to Discord and fail them on the way back. The shipped
+`appsettings.json` carries the two harmless values and blanks for the two that matter, and a test
+reads that file and fails if a secret ever lands in it.
+
+**The account page** puts them together under three tabs - Profile, Sign-in, Security - and the rule it
+is arranged around is that at least one way in has to stay open. A player who removes their password on Monday and disconnects Discord on
+Tuesday owns an empire nobody can ever reach again. So the page says which door is the last one
+standing, and the server refuses the change regardless of what the page says.
+
+Changing a password ends every other session on the account and keeps the one that changed it, which
+is the only version of that worth having - a password changed while whoever it was changed against is
+still signed in has not changed anything. That took two goes to get right, and the first one signed
+the player out of their own password change: the watermark is compared against the moment the session
+cookie was issued, and a cookie ticket remembers whole seconds and throws the fraction away. An
+unrounded watermark is therefore always a few hundred microseconds ahead of the cookie written in the
+same breath. Both are floored to the second now, and a test says why.
+
+The round trip through somebody else's site cannot keep anything in memory, so the two halves it needs
+are signed blobs the browser carries and the server refuses on the way back unless the signature and
+the clock both agree. The state carries a nonce that is also written to a cookie, so a login somebody
+else finished cannot be replayed into your session. The sign-up ticket carries the Discord identity,
+which means the finish-signing-up form claims nothing about who is filling it in - it sends a name and
+a town, and the server already knows the rest.
+
+The one thing the browser does get to name is where it wants to be put down afterwards, because in
+development that is a port nobody could have written into a config file. An origin the caller names
+and the server obeys is an open redirect, so it is checked against the origins CORS already trusts,
+plus - in development only - any port on this machine.
+
+### Proving the address
+
+An `email_verified` flag that gates nothing is decoration, so this one gates something: **an
+unconfirmed address cannot be signed in with.** The unique index still holds the address against every
+other account from the moment it is typed, which stops two people claiming one - and it means somebody
+who types an address they do not own has blocked it and gained nothing, because the door it would have
+opened stays shut until they prove they can read the mail.
+
+The proof is a **six-digit code**, typed into the account page. A link would have carried a long random
+token and could safely have lived for a day; six digits is a million possibilities, and a million
+possibilities held open for a day is a day to guess in. So the code is given neither time nor tries:
+
+| | |
+|---|---|
+| Lifetime | 15 minutes |
+| Wrong guesses | 5, then the code is burned |
+| Between sends | 60 seconds, per address |
+| Generated by | `RandomNumberGenerator`, uniform across all 10<sup>6</sup> |
+| Stored as | sealed by the data protection key ring, never as it was sent |
+
+All four are configurable under `Auth:Email`, and a test fails the build if the shipped ones drift
+somewhere unsafe. The code is sealed rather than hashed because six digits falls to any hash in
+seconds; sealing means a database read alone is not enough, since the key ring lives outside the
+database.
+
+Verification starts at sign-up (`SendOnSignUp`, on by default) and again whenever the address changes,
+because those are the two moments a player is already thinking about the address they just typed.
+Changing the address takes the tick with it - `PlayerAccount.SetEmail` moves both together, so the pair
+cannot come apart - and a code proves control of *the address it was sent to*, so one still in flight
+when the address changes is void rather than misapplied to the new one.
+
+### Sending it: Resend, not SMTP
+
+Mail goes over Resend's HTTP API. Running a mail server means owning deliverability - reverse DNS, SPF,
+DKIM, DMARC, warming an IP, and a reputation lost faster than it is earned - and the reward for getting
+any of it wrong is verification mail that lands in spam, which is the same as not sending it.
+
+Without an API key, **the message is written to the server log instead of sent**, which makes the whole
+flow clickable on a laptop with no account anywhere. The account page says which of the two is
+happening rather than implying the mail went: a code sitting in a log is exactly right in development
+and a quiet disaster in production.
+
+```
+Auth__Email__ApiKey=re_...
+Auth__Email__FromAddress=Street Empire <no-reply@yourdomain.example>
+```
+
+The from address has to be on a domain verified with Resend. Their sandbox sender,
+`onboarding@resend.dev`, is the shipped default and will only deliver to the Resend account's own
+owner - fine for a first test, useless for players.
+
+### A note on what was asked for
+
+The request named [Better Auth](https://www.better-auth.com/), which is a TypeScript library. This
+server is ASP.NET Core and the client is a static SPA with no Node backend, so adopting it would have
+meant standing up a second service to own accounts and rebuilding the cookie auth, ban enforcement,
+force-logout and Discord linking around it. What it *describes* is framework-agnostic, so that is what
+was built: the `email_verified` flag, the expiring cryptographically random token mapped to a user, the
+send-on-sign-up hook, and a transactional provider rather than a raw SMTP server. One runtime, one
+schema.
+
+The other deviation is the expiry window. 15-24 hours is the right span for a long random token in a
+link; for six digits it is far too generous, so the code lives fifteen minutes and the window is
+configurable for anybody who disagrees.
+
+### Telling somebody their account changed
+
+A password quietly changed by whoever is holding a borrowed session is invisible until the day the
+real owner tries to sign in. A notice makes it visible in a minute, and that minute is the difference
+between an account that can be saved and one that is gone. So every change to a way in now sends one:
+
+| What changed | Where the notice goes |
+|---|---|
+| Password set for the first time | The confirmed address |
+| Password changed | The confirmed address |
+| Signed out everywhere else | The confirmed address |
+| Discord connected | The confirmed address |
+| Discord disconnected | The confirmed address, naming the handle |
+| **Email address changed** | **The address being left behind**, naming where the account went |
+| Email address removed | The address being left behind |
+
+The bolded row is the one that matters most and the easiest to get backwards. Moving the address is
+how somebody who has taken an account keeps it - the owner is cut off and never hears - so the notice
+goes to where the account *used to* point, at the moment it stops pointing there. Telling only the new
+address would be telling the thief. The new address is not told separately, because a verification code
+is already on its way to it.
+
+Three rules run through the copy:
+
+- **A notice reports a change and never carries it.** No new password, no verification code, no token.
+  A mailbox is not a secure channel, and a notice that leaked what it reported would be worse than
+  none.
+- **Only confirmed addresses are written to.** An unconfirmed one may belong to a stranger who was
+  typed in by accident, and mailing them about somebody else's account is both a nuisance and a spam
+  complaint against the sending domain - which would eventually stop the codes arriving for everybody.
+  The cost is that an account with an unconfirmed address gets no notices, which is one more reason the
+  page pushes to confirm.
+- **A notice never fails the change it reports.** The account has already been altered and saved by the
+  time one is attempted, so a provider being down cannot answer an error for a password that really did
+  change. A send that throws is logged and swallowed, and a test holds that line.
+
+A test walks every value of the `AccountChange` enum and fails if one has no copy of its own, so the
+next event added cannot quietly ship as "Something on your account changed".
+
+Turn them off with `Auth__Email__SendSecurityNotices=false`, which exists for load testing against a
+real provider and for nothing else.
+
+### What verification does not do
+
+There is no password reset in this game, so a confirmed address is a way to **sign in** and never a way
+to **get back in**. The account page says so where somebody deciding how much to lean on their email
+will read it, and the security tab counts ways in as two - password and Discord - because an address is
+a second name for the password door and opens nothing once the password is gone.
+
+### Where the credentials live
+
+Nothing secret is committed. Copy the template and fill in what you need:
+
+```bash
+cp .env.example .env
+```
+
+`.env` is gitignored; `.env.example` is the committed copy, and a test fails the build if any key in it
+ever carries a value. The names are the `appsettings.json` paths with `__` (two underscores) wherever
+the JSON nests - `Auth__Email__ApiKey` is `Auth:Email:ApiKey`. That is .NET's own convention for
+environment variables, and using it means anything in `appsettings.json` can be overridden from `.env`,
+not only the secrets.
+
+.NET has no notion of a `.env` file. What it has is an environment-variable configuration provider
+already in the chain that already understands that naming, so [`DotEnv`](Server/StreetEmpire.Api/Support/DotEnv.cs)
+reads the file into the process environment before the builder runs and gets out of the way - rather
+than adding a configuration source and then arguing about where it sits in the order. It walks up from
+the working directory to find the file, so one `.env` at the repository root serves both
+`dotnet run --project Server/...` from the root and `dotnet run` from inside the project.
+
+**A value already set in the real environment is never overwritten.** That is the rule every dotenv
+implementation follows and the one that matters in production: a platform injecting a secret as an
+environment variable has to beat a `.env` that got copied into an image by accident. The server says
+which it read, and how many it left alone, on the first line of its log:
+
+```
+Read 4 setting(s) from D:\Github\StreetsEmpire\.env. 0 were left alone because the environment already set them.
+```
+
+The format is the usual convention rather than a specification: `KEY=VALUE` a line at a time, `#`
+comments, blank lines ignored, an optional `export` in front, quotes stripped when they wrap the whole
+value, and `\n` honoured inside double quotes only. A trailing `# comment` ends an unquoted value and
+is left alone inside quotes, so a secret with a `#` in it survives. A line that is not a setting is
+skipped rather than thrown over - one bad line should never be why a server will not boot.
+
+### Setting Discord up
+
+The game runs without any of this. To turn it on, make an application at
+<https://discord.com/developers/applications>, add `http://localhost:5080/api/auth/discord/callback`
+as a redirect, and put the two values in `.env`:
+
+```
+Auth__Discord__ClientId=...
+Auth__Discord__ClientSecret=...
+```
+
+Both halves matter: Discord compares the redirect **as a string**, so it has to be registered under
+OAuth2 > Redirects *and saved*, with no trailing slash and no `https`. An unregistered or unsaved one
+fails on Discord's own page - the browser never comes back, so there is no request to log and nothing
+on this side to catch. To make that diagnosable rather than a guess, the server prints the exact string
+it will send whenever Discord is configured:
+
+```
+Discord sign-in is on. This exact string must be registered and saved under OAuth2 > Redirects: http://localhost:5080/api/auth/discord/callback
+```
+
+If `Invalid OAuth2 redirect_uri` comes back, put that line and the Discord dashboard side by side.
+
+The redirect points at the API rather than the client on purpose. The client's dev port moves - Vite
+is handed a free one when several sessions run at once - and a moving port cannot be registered with
+Discord. Cookies ignore the port, so a session cookie set on `localhost:5080` is still sent by the
+browser when it is back on the client's port a moment later. In production, set
+`Auth__Discord__RedirectUri` and `Auth__Discord__ReturnUrl` to the real origins, and put the client's
+origin in `Cors__AllowedOrigins__0`.
+
 ## What changed in 0.2.5
 
 0.2.5 was about the early game, and grew past it.

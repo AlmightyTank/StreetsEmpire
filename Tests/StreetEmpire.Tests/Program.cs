@@ -1,11 +1,17 @@
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Configuration;
 using StreetEmpire.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
+using StreetEmpire.Api.Endpoints;
 using StreetEmpire.Api.Services;
+using StreetEmpire.Api.Support;
 using static StreetEmpire.Api.Mapping.ResponseMappers;
 using static StreetEmpire.Api.Support.BotSeeding;
 
@@ -136,7 +142,28 @@ var tests = new (string Name, Action Test)[]
     ("any gun covers a thug, but only the good ones fight", CoverageAndFirepowerComeApart),
     ("a crew carries the best guns and drops the worst", CrewsCarryTheBestAndDropTheWorst),
     ("one shelf holds every gun", OneShelfHoldsEveryGun),
-    ("better guns cost more per point than more thugs", TradingUpIsForWhenTheHouseIsFull)
+    ("better guns cost more per point than more thugs", TradingUpIsForWhenTheHouseIsFull),
+    ("an email is a second name, not a message", AnEmailIsASecondNameNotAMessage),
+    ("both doors put down exactly the same player", BothDoorsPutDownTheSamePlayer),
+    ("an account can never end up with no way in", AnAccountAlwaysKeepsAWayIn),
+    ("a Discord handle always suggests a usable username", ADiscordHandleAlwaysSuggestsAUsableUsername),
+    ("a Discord ticket cannot be read, forged, or replayed elsewhere", ADiscordTicketCannotBeForged),
+    ("Discord is off until it is configured", DiscordIsOffUntilItIsConfigured),
+    ("the browser only ever comes back somewhere already trusted", ReturnUrlsAreOnlyEverOnesAlreadyTrusted),
+    ("a session watermark is measured in whole seconds, like the cookie it judges", SessionWatermarksAreMeasuredInWholeSeconds),
+    ("an address and its tick always move together", AnAddressAndItsTickMoveTogether),
+    ("a verification code lives minutes, not hours", AVerificationCodeLivesMinutesNotHours),
+    ("mail is off until it is configured, and says so rather than pretending", MailIsOffUntilItIsConfigured),
+    ("the code email carries the code and escapes the name", TheCodeEmailCarriesTheCodeAndEscapesTheName),
+    ("an email is only a second name for the password door", AnEmailIsOnlyASecondNameForThePasswordDoor),
+    ("the resend cooldown guards an inbox, not an account", TheResendCooldownGuardsAnInboxNotAnAccount),
+    ("a .env file reads the way every other one does", ADotEnvFileReadsTheWayEveryOtherOneDoes),
+    ("the real environment always beats the file", TheRealEnvironmentAlwaysBeatsTheFile),
+    ("the committed example holds no secrets and no surprises", TheCommittedExampleHoldsNoSecrets),
+    ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
+    ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
+    ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
+    ("the address being left behind is the one that gets told", TheAddressBeingLeftBehindGetsTold)
 };
 
 var failed = 0;
@@ -1449,6 +1476,596 @@ static void HideoutTierGatesDeeperRooms()
 //
 // Reads this file rather than reflecting over the assembly, because top-level statements compile the
 // manifest into a method body where reflection cannot see it.
+static void AnEmailIsASecondNameNotAMessage()
+{
+    // Folded, trimmed, and blank collapsed to null. Without the fold, signing up as Sam@example.com
+    // and coming back as sam@example.com is two different accounts as far as the unique index cares.
+    AssertEqual("sam@example.com", AccountSetup.NormalizeEmail("  Sam@Example.COM  "));
+    AssertEqual(null, AccountSetup.NormalizeEmail("   "));
+    AssertEqual(null, AccountSetup.NormalizeEmail(null));
+
+    // Loose on purpose - nothing is ever sent here - but strict about the parts that make it a key.
+    foreach (var good in new[] { "a@b.co", "first.last@sub.domain.example", "someone+tag@example.org" })
+        AssertTrue(AccountSetup.LooksLikeAnEmail(good), $"{good} should be usable as a sign-in name");
+    foreach (var bad in new[] { "nobody", "@example.com", "someone@", "someone@localhost", "two @example.com", "a@b@c.com" })
+        AssertTrue(!AccountSetup.LooksLikeAnEmail(bad), $"{bad} should not be usable as a sign-in name");
+
+    // 254 is the cap the column carries, so anything longer would be a truncation rather than a save.
+    AssertTrue(!AccountSetup.LooksLikeAnEmail(new string('a', 250) + "@example.com"), "an over-long address should be refused");
+
+    // The @ is the whole of how the login box tells the two kinds of name apart. A username holding
+    // one would be looked up against the email column for ever and never found, so it is refused at
+    // the point it is chosen rather than becoming an account nobody can sign into.
+    AssertTrue(AccountSetup.LooksLikeAnAttemptAtEmail("sam@example.com"), "an address should read as an address");
+    AssertTrue(AccountSetup.LooksLikeAnAttemptAtEmail("sam@"), "a half-typed address should still read as one");
+    AssertTrue(!AccountSetup.LooksLikeAnAttemptAtEmail("sam"), "a plain username should not read as an address");
+}
+
+static void BothDoorsPutDownTheSamePlayer()
+{
+    // The reason the starting player was pulled out of the register endpoint: there are two ways in
+    // now, and the failure this guards against is quiet - a Discord sign-up handing out a different
+    // amount of money, or no hideout, because somebody edited one copy of the setup and not the other.
+    var options = Resolve(new GameOptions
+    {
+        StartingCash = 5_000,
+        StartingBankCash = 100,
+        StartingTurns = 200,
+        StartingPimps = 1,
+        StartingHoes = 3,
+        StartingThugs = 1,
+        StartingCondoms = 17,
+        StartingBeer = 10,
+        StartingWeapons = 1,
+        StartingHoeCutPercent = 30,
+    });
+
+    var withPassword = new PlayerAccount { Username = "sam", PasswordHash = "hashed" };
+    var withDiscord = new PlayerAccount { Username = "alex", DiscordUserId = "1234567890" };
+    var (one, oneLog) = AccountSetup.NewPlayer(withPassword, "Sam", "Chicago", options, CreateRoster(options));
+    var (two, _) = AccountSetup.NewPlayer(withDiscord, "Alex", "Chicago", options, CreateRoster(options));
+
+    AssertEqual(one.Cash, two.Cash);
+    AssertEqual(one.BankCash, two.BankCash);
+    AssertEqual(one.Turns, two.Turns);
+    AssertEqual(one.Pimps, two.Pimps);
+    AssertEqual(one.Hoes, two.Hoes);
+    AssertEqual(one.Thugs, two.Thugs);
+    AssertEqual(one.Condoms, two.Condoms);
+    AssertEqual(one.Beer, two.Beer);
+    AssertEqual(one.Pistols, two.Pistols);
+    AssertEqual(one.HoeCutPercent, two.HoeCutPercent);
+    AssertEqual(one.City, two.City);
+
+    // The three things a new player is useless without, and the one line that says they arrived.
+    AssertTrue(one.Hideout is not null, "a new player should have a hideout");
+    AssertEqual(options.StartingPimps, one.Crew.Count);
+    AssertEqual("START", oneLog.Action);
+    AssertTrue(oneLog.Summary.Contains("Chicago"), "the opening line should name the town");
+}
+
+static void AnAccountAlwaysKeepsAWayIn()
+{
+    // The whole point of the check the account endpoints run before taking a door away. Get this
+    // wrong and a player removes their password on Monday, unlinks Discord on Tuesday, and owns an
+    // empire that can never be reached again.
+    var passwordOnly = new PlayerAccount { PasswordHash = "hashed" };
+    var discordOnly = new PlayerAccount { DiscordUserId = "1234567890" };
+    var both = new PlayerAccount { PasswordHash = "hashed", DiscordUserId = "1234567890" };
+
+    AssertTrue(passwordOnly.HasPassword, "a hash should count as a password");
+    AssertTrue(!discordOnly.HasPassword, "an empty hash should never count as a password");
+
+    // Unlinking Discord: allowed when a password is left behind, refused when it is the only door.
+    AssertTrue(both.HasAnotherWayIn(withoutDiscord: true), "an account with a password can drop Discord");
+    AssertTrue(!discordOnly.HasAnotherWayIn(withoutDiscord: true), "Discord alone cannot be dropped");
+
+    // And the same question the other way round, which is what a password endpoint would ask.
+    AssertTrue(both.HasAnotherWayIn(withoutPassword: true), "an account with Discord can drop its password");
+    AssertTrue(!passwordOnly.HasAnotherWayIn(withoutPassword: true), "a password alone cannot be dropped");
+}
+
+static void ADiscordHandleAlwaysSuggestsAUsableUsername()
+{
+    // Only a suggestion - the finish form lets it be typed over - but a suggestion that the register
+    // rules would refuse is worse than none, because it fails on submit and reads as the game's fault.
+    foreach (var handle in new[] { "sam", "Sam.Smith", "sam_smith_99", "\u2728\u2728", "", "x", new string('a', 60) })
+    {
+        var suggested = AccountSetup.SuggestUsername(handle);
+        AssertTrue(suggested.Length is >= 3 and <= 32, $"'{handle}' suggested '{suggested}', which the register rules would refuse");
+        AssertTrue(!AccountSetup.LooksLikeAnAttemptAtEmail(suggested), $"'{suggested}' should not read as an address");
+    }
+
+    AssertEqual("SamSmith", AccountSetup.SuggestUsername("Sam.Smith"));
+}
+
+static void ADiscordTicketCannotBeForged()
+{
+    var tickets = new DiscordTickets(DataProtectionProvider.Create("StreetEmpire.Tests"));
+    var profile = new DiscordProfile("1234567890", "sam", "Sam");
+
+    // What goes round the loop comes back unchanged, which is the only reason a signed cookie can
+    // stand in for the server remembering anything across a trip through somebody else's site.
+    var ticket = tickets.ProtectSignUp(profile);
+    var read = tickets.ReadSignUp(ticket);
+    AssertTrue(read is not null, "a ticket this server wrote should be readable by it");
+    AssertEqual(profile.Id, read!.Id);
+    AssertEqual("Sam", read.DisplayName);
+
+    // The identity is not in the browser's hands: a ticket is opaque, and one bad character voids it.
+    AssertTrue(!ticket.Contains("1234567890"), "the Discord id should not be sitting in the cookie in the clear");
+    AssertEqual(null, tickets.ReadSignUp(ticket[..^4] + "AAAA"));
+    AssertEqual(null, tickets.ReadSignUp("not a ticket at all"));
+    AssertEqual(null, tickets.ReadSignUp(null));
+
+    // A different server cannot read this one's notes, which is what stops a ticket minted anywhere
+    // else from being spent here.
+    var elsewhere = new DiscordTickets(DataProtectionProvider.Create("SomebodyElse"));
+    AssertEqual(null, elsewhere.ReadSignUp(ticket));
+
+    // The state note carries the nonce that proves the round trip started in this same browser.
+    var state = tickets.ProtectState("cafef00d", "http://localhost:5173/");
+    var readState = tickets.ReadState(state);
+    AssertTrue(readState is not null, "a state note this server wrote should be readable by it");
+    AssertEqual("cafef00d", readState!.Value.Nonce);
+    AssertEqual("http://localhost:5173/", readState.Value.ReturnUrl);
+    AssertEqual(null, tickets.ReadState(state[..^4] + "AAAA"));
+
+    // Two nonces are never the same one, or the check they exist for proves nothing.
+    AssertTrue(DiscordTickets.NewNonce() != DiscordTickets.NewNonce(), "nonces should not repeat");
+}
+
+static void DiscordIsOffUntilItIsConfigured()
+{
+    // Half-configured is off. A button that appears because somebody set an id and forgot the secret
+    // is a button that sends the player to Discord and fails on the way back.
+    AssertTrue(!new DiscordOptions().IsConfigured, "an empty configuration should not offer Discord");
+    AssertTrue(!new DiscordOptions { ClientId = "an-id" }.IsConfigured, "an id with no secret should not offer Discord");
+    AssertTrue(!new DiscordOptions { ClientSecret = "a-secret" }.IsConfigured, "a secret with no id should not offer Discord");
+    AssertTrue(new DiscordOptions { ClientId = "an-id", ClientSecret = "a-secret" }.IsConfigured, "both should offer Discord");
+
+    // And the shipped file must never carry either of them, because the shipped file is public.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+    var options = new DiscordOptions();
+    shipped.GetSection("Auth:Discord").Bind(options);
+    AssertTrue(!options.IsConfigured, "appsettings.json should never carry a Discord client secret");
+    AssertTrue(!string.IsNullOrWhiteSpace(options.RedirectUri), "the shipped file should still say where Discord sends the browser back to");
+}
+
+static void ReturnUrlsAreOnlyEverOnesAlreadyTrusted()
+{
+    // The client names the origin it wants to be returned to, because in development that origin is
+    // on a port nobody could have written into a config file. An origin the caller names and the
+    // server obeys is an open redirect unless it is checked, so this is the check.
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
+            ["Cors:AllowedOrigins:1"] = "https://play.example.com",
+        })
+        .Build();
+    var options = new OptionsSnapshotStub<DiscordOptions>(new DiscordOptions { ReturnUrl = "http://localhost:5173/" });
+
+    var live = new DiscordReturnUrls(configuration, new HostingStub("Production"), options);
+    AssertEqual("https://play.example.com/", live.Resolve("https://play.example.com/anywhere"));
+    AssertEqual("http://localhost:5173/", live.Resolve("https://evil.example.net/"));
+    AssertEqual("http://localhost:5173/", live.Resolve("javascript:alert(1)"));
+    AssertEqual("http://localhost:5173/", live.Resolve("//evil.example.net"));
+    AssertEqual("http://localhost:5173/", live.Resolve(null));
+    // Not in the allowlist, and a live server has no reason to send anybody to a machine-local port.
+    AssertEqual("http://localhost:5173/", live.Resolve("http://localhost:61234/"));
+
+    // In development it does, because that is exactly where the dev server ends up.
+    var dev = new DiscordReturnUrls(configuration, new HostingStub("Development"), options);
+    AssertEqual("http://localhost:61234/", dev.Resolve("http://localhost:61234/"));
+    AssertEqual("http://localhost:5173/", dev.Resolve("https://evil.example.net/"));
+}
+
+static void SessionWatermarksAreMeasuredInWholeSeconds()
+{
+    // Changing a password ends every other session by writing a watermark and re-issuing this one.
+    // The two are compared through a cookie ticket, which keeps whole seconds and throws the fraction
+    // away - so an unrounded watermark sits a few hundred microseconds ahead of the cookie written in
+    // the same breath, and the first session it signs out is the one that just changed the password.
+    // That is not a hypothetical: it is what happened, and it is what this floor is for.
+    var fractional = new DateTime(2026, 8, 26, 13, 24, 18, 390, DateTimeKind.Utc).AddTicks(5_490);
+    var floored = AuthEndpoints.ToSessionMoment(fractional);
+
+    AssertEqual(new DateTime(2026, 8, 26, 13, 24, 18, DateTimeKind.Utc), floored);
+    AssertEqual(DateTimeKind.Utc, floored.Kind);
+    AssertTrue(floored <= fractional, "flooring should never move a moment forwards");
+    // Running it twice changes nothing, so a watermark read back and rewritten stays put.
+    AssertEqual(floored, AuthEndpoints.ToSessionMoment(floored));
+
+    // The mechanism itself, rather than a restatement of the flooring. A cookie ticket writes its
+    // issued-at through the RFC1123 round-trip format, and whatever survives that trip is what the
+    // watermark is later compared against.
+    static DateTime ThroughACookieTicket(DateTime issued) => DateTime.ParseExact(
+        new DateTimeOffset(issued, TimeSpan.Zero).ToString("r", System.Globalization.CultureInfo.InvariantCulture),
+        "r",
+        System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal);
+
+    // Write the watermark from an unrounded clock and issue the cookie at the same instant, and the
+    // cookie comes back from that trip fractionally earlier than the watermark. That is the whole bug:
+    // the session that just changed its own password is the first one the watermark throws out.
+    AssertTrue(ThroughACookieTicket(fractional) < fractional,
+        "a cookie ticket should lose the fraction, which is what made an unrounded watermark a trap");
+    // Floor both and the same trip is survivable, which is the fix.
+    AssertTrue(!(ThroughACookieTicket(floored) < floored),
+        "a session issued at the floored moment must survive the watermark written at it");
+}
+
+static void AnAddressAndItsTickMoveTogether()
+{
+    // The one failure worth a test of its own: an address that changed while the tick stayed put is a
+    // verified address nobody verified, and it would let whoever typed it sign in as somebody else.
+    var account = new PlayerAccount { Username = "sam" };
+    account.SetEmail("sam@example.com");
+    account.EmailVerified = true;
+    account.EmailVerifiedAtUtc = new DateTime(2026, 8, 26, 0, 0, 0, DateTimeKind.Utc);
+
+    account.SetEmail("someone.else@example.com");
+    AssertEqual("someone.else@example.com", account.Email);
+    AssertTrue(!account.EmailVerified, "changing the address must take the tick with it");
+    AssertEqual(null, account.EmailVerifiedAtUtc);
+
+    // Clearing it is the same move, and must not leave a tick behind either.
+    account.EmailVerified = true;
+    account.SetEmail(null);
+    AssertEqual(null, account.Email);
+    AssertTrue(!account.EmailVerified, "removing the address must take the tick with it");
+}
+
+static void AVerificationCodeLivesMinutesNotHours()
+{
+    // Six digits is a million possibilities. That is only safe because of the three numbers around it,
+    // so those numbers are the test: a short window, a hard attempt cap, and a wait between sends.
+    var options = new EmailOptions();
+    AssertTrue(options.CodeLifetimeMinutes is > 0 and <= 30,
+        $"a six-digit code held open for {options.CodeLifetimeMinutes} minutes is a long time to guess a million numbers in");
+    AssertTrue(options.MaxAttempts is > 0 and <= 10, "a code needs a hard cap on guesses");
+    AssertTrue(options.ResendCooldownSeconds >= 30, "without a cooldown the resend button is a mail cannon");
+
+    var now = new DateTime(2026, 8, 26, 12, 0, 0, DateTimeKind.Utc);
+    var code = new EmailVerification
+    {
+        ExpiresAtUtc = now.AddMinutes(options.CodeLifetimeMinutes),
+        Attempts = 0,
+    };
+
+    AssertTrue(code.IsLive(now, options.MaxAttempts), "a fresh code should be worth typing");
+    // Out of time.
+    AssertTrue(!code.IsLive(code.ExpiresAtUtc.AddSeconds(1), options.MaxAttempts), "an expired code is dead");
+    // Out of guesses, with time to spare - which is the case the clock alone would have missed.
+    code.Attempts = options.MaxAttempts;
+    AssertTrue(!code.IsLive(now, options.MaxAttempts), "a code guessed at too many times is dead");
+    // Already spent. A code that worked once must never work twice.
+    code.Attempts = 0;
+    code.ConsumedAtUtc = now;
+    AssertTrue(!code.IsLive(now, options.MaxAttempts), "a spent code is dead");
+}
+
+static void MailIsOffUntilItIsConfigured()
+{
+    AssertTrue(!new EmailOptions().IsConfigured, "no key should mean no delivery");
+    AssertTrue(new EmailOptions { ApiKey = "re_something" }.IsConfigured, "a key should mean delivery");
+
+    // The shipped file must carry no key, for the same reason it carries no Discord secret: it is
+    // public. And it must still carry the numbers, because those are the safety and not the secret.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+    var options = new EmailOptions();
+    shipped.GetSection("Auth:Email").Bind(options);
+
+    AssertTrue(!options.IsConfigured, "appsettings.json should never carry an email API key");
+    AssertTrue(options.CodeLifetimeMinutes is > 0 and <= 30, "the shipped code window should still be short");
+    AssertTrue(options.MaxAttempts is > 0 and <= 10, "the shipped attempt cap should still be a cap");
+    AssertTrue(options.ResendCooldownSeconds >= 30, "the shipped cooldown should still be a cooldown");
+    AssertTrue(!string.IsNullOrWhiteSpace(options.FromAddress), "the shipped file should still name a sender");
+}
+
+static void TheCodeEmailCarriesTheCodeAndEscapesTheName()
+{
+    // A player name is chosen by the player, so it reaches the HTML body as markup unless something
+    // stops it. Nobody reading their own mail is the victim here - but the same copy is one refactor
+    // away from being shown somewhere else, and escaping it costs nothing.
+    var message = VerificationEmail.Build("sam@example.com", "<script>alert(1)</script>", "042137", 15, "Street Empire");
+
+    AssertEqual("sam@example.com", message.To);
+    AssertTrue(message.Subject.Contains("042137"), "the subject should carry the code, so it reads from a notification");
+    AssertTrue(message.Text.Contains("042137"), "the text part should carry the code");
+    AssertTrue(message.Html.Contains("042137"), "the html part should carry the code");
+    AssertTrue(message.Text.Contains("15 minutes"), "the mail should say how long the code is good for");
+    AssertTrue(!message.Html.Contains("<script>"), "a player name must never reach the body as markup");
+    AssertTrue(message.Html.Contains("&lt;script&gt;"), "the name should still be shown, escaped");
+}
+
+static void AnEmailIsOnlyASecondNameForThePasswordDoor()
+{
+    // A confirmed address is a name you can type, not a key. It is the password beside it that opens
+    // anything - so an account with an address and no password has no way in, and the check that
+    // guards the last door must not be fooled into counting the address as one.
+    var addressOnly = new PlayerAccount { Username = "sam", EmailVerified = true };
+    addressOnly.Email = "sam@example.com";
+
+    AssertTrue(!addressOnly.HasPassword, "an address is not a password");
+    AssertTrue(!addressOnly.HasAnotherWayIn(), "an address alone is not a way in");
+
+    // With a password it is a second name for the same door - and dropping the password drops both.
+    var withPassword = new PlayerAccount { Username = "sam", PasswordHash = "hashed", EmailVerified = true };
+    withPassword.Email = "sam@example.com";
+    AssertTrue(withPassword.HasAnotherWayIn(), "a password is a way in");
+    AssertTrue(!withPassword.HasAnotherWayIn(withoutPassword: true),
+        "an address must not stand in for the password it is typed beside");
+}
+
+static void TheResendCooldownGuardsAnInboxNotAnAccount()
+{
+    // The cooldown exists to stop one inbox being hammered, so it is measured against the address the
+    // code would go to. Measured against the account instead, a player who changed their address inside
+    // the first minute was silently refused a code - left holding an address they had no way to confirm
+    // and no explanation of why. That is the bug this is here for.
+    var now = new DateTime(2026, 8, 26, 12, 0, 0, DateTimeKind.Utc);
+    var sent = new EmailVerification { Email = "sam@example.com", CreatedAtUtc = now };
+    const int cooldown = 60;
+
+    // Same inbox, seconds later: wait.
+    AssertTrue(EmailVerificationService.IsTooSoon(sent, "sam@example.com", now.AddSeconds(5), cooldown),
+        "asking again for the same address inside the cooldown should wait");
+    // Same inbox, after the minute: go.
+    AssertTrue(!EmailVerificationService.IsTooSoon(sent, "sam@example.com", now.AddSeconds(61), cooldown),
+        "the cooldown should end");
+    // A different inbox is not the one being protected, whatever the clock says.
+    AssertTrue(!EmailVerificationService.IsTooSoon(sent, "moved@example.com", now.AddSeconds(5), cooldown),
+        "changing address should not be held up by a code sent somewhere else");
+    // And nothing sent yet is never too soon.
+    AssertTrue(!EmailVerificationService.IsTooSoon(null, "sam@example.com", now, cooldown),
+        "a first code should never be held up");
+}
+
+static void ADotEnvFileReadsTheWayEveryOtherOneDoes()
+{
+    // The format is a convention rather than a specification, so what it accepts is worth pinning down:
+    // somebody will paste a line out of a shell script or a password manager and expect it to work.
+    var parsed = DotEnv.Parse([
+        "# a comment",
+        "",
+        "   ",
+        "Auth__Email__ApiKey=re_plain",
+        "  Auth__Discord__ClientId = 12345  ",
+        "export Auth__Discord__ClientSecret=exported",
+        "Quoted=\"a value\"",
+        "Single='literal'",
+        "WithHash=before # after",
+        "HashInsideQuotes=\"keeps#this\"",
+        "Escaped=\"one\\ntwo\"",
+        "Empty=",
+        "Colon:Style:Key=works",
+        "novalueline",
+        "=novalue",
+    ]).ToDictionary(x => x.Key, x => x.Value);
+
+    AssertEqual("re_plain", parsed["Auth__Email__ApiKey"]);
+    // Whitespace around both halves goes, because a lined-up file is a normal thing to write.
+    AssertEqual("12345", parsed["Auth__Discord__ClientId"]);
+    AssertEqual("exported", parsed["Auth__Discord__ClientSecret"]);
+    AssertEqual("a value", parsed["Quoted"]);
+    AssertEqual("literal", parsed["Single"]);
+    // A trailing comment ends an unquoted value, and does not touch a quoted one - which is what lets
+    // a secret with a # in it survive being written down.
+    AssertEqual("before", parsed["WithHash"]);
+    AssertEqual("keeps#this", parsed["HashInsideQuotes"]);
+    AssertEqual("one\ntwo", parsed["Escaped"]);
+    AssertEqual("", parsed["Empty"]);
+    AssertEqual("works", parsed["Colon:Style:Key"]);
+
+    // A line that is not a setting is skipped rather than thrown over. One bad line in a config file
+    // must never be the reason a server will not boot.
+    AssertTrue(!parsed.ContainsKey("novalueline"), "a line with no = is not a setting");
+    AssertTrue(!parsed.ContainsKey(""), "a line with no name is not a setting");
+    AssertEqual(10, parsed.Count);
+}
+
+static void TheRealEnvironmentAlwaysBeatsTheFile()
+{
+    // The rule that matters in production: a platform injecting a secret as an environment variable
+    // must win over a .env that found its way into an image. Every dotenv implementation works this
+    // way round, and getting it backwards would be a silent downgrade to whatever was committed.
+    var directory = Directory.CreateTempSubdirectory("street-empire-dotenv");
+    var alreadySet = "STREET_EMPIRE_TEST_ALREADY_SET";
+    var fromFile = "STREET_EMPIRE_TEST_FROM_FILE";
+    try
+    {
+        File.WriteAllLines(Path.Combine(directory.FullName, ".env"),
+        [
+            $"{alreadySet}=from-the-file",
+            $"{fromFile}=from-the-file",
+        ]);
+
+        Environment.SetEnvironmentVariable(alreadySet, "from-the-environment");
+        Environment.SetEnvironmentVariable(fromFile, null);
+
+        var previous = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(directory.FullName);
+            var result = DotEnv.Load();
+
+            AssertTrue(result.Found, "a .env in the working directory should be found");
+            AssertEqual(1, result.Applied);
+            AssertEqual(1, result.SkippedBecauseAlreadySet);
+            AssertEqual("from-the-environment", Environment.GetEnvironmentVariable(alreadySet));
+            AssertEqual("from-the-file", Environment.GetEnvironmentVariable(fromFile));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previous);
+        }
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(alreadySet, null);
+        Environment.SetEnvironmentVariable(fromFile, null);
+        directory.Delete(recursive: true);
+    }
+}
+
+static void TheCommittedExampleHoldsNoSecrets()
+{
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    // .env is where the secrets go, so it must never be committable. This is the one line standing
+    // between a working setup and a published API key.
+    var ignore = File.ReadAllLines(Path.Combine(root!.FullName, ".gitignore")).Select(x => x.Trim());
+    AssertTrue(ignore.Contains(".env"), ".gitignore must ignore .env");
+
+    var examplePath = Path.Combine(root.FullName, ".env.example");
+    AssertTrue(File.Exists(examplePath), ".env.example should be committed so there is something to copy");
+
+    // Every key the example sets a value for must be empty. A template that ships a filled-in secret
+    // is the exact failure the template exists to prevent, and it would be copied into every .env.
+    foreach (var (key, value) in DotEnv.Parse(File.ReadAllLines(examplePath)))
+        AssertTrue(value.Length == 0, $".env.example should leave {key} empty, not carry '{value}'");
+
+    // And the names in it have to be real, or somebody fills the file in and nothing happens. Checked
+    // against the options themselves rather than a list written out twice.
+    var text = File.ReadAllText(examplePath);
+    foreach (var expected in new[]
+    {
+        $"Auth__Discord__{nameof(DiscordOptions.ClientId)}",
+        $"Auth__Discord__{nameof(DiscordOptions.ClientSecret)}",
+        $"Auth__Discord__{nameof(DiscordOptions.RedirectUri)}",
+        $"Auth__Email__{nameof(EmailOptions.ApiKey)}",
+        $"Auth__Email__{nameof(EmailOptions.FromAddress)}",
+        $"Auth__Email__{nameof(EmailOptions.CodeLifetimeMinutes)}",
+    })
+        AssertTrue(text.Contains(expected), $".env.example should name {expected}");
+}
+
+static void EveryAccountChangeHasCopyOfItsOwn()
+{
+    // The guard for the next one somebody adds. A new enum value with no arm written for it falls
+    // through to "Something on your account changed", which is a notice that tells the reader nothing
+    // and would ship without anybody noticing.
+    var subjects = new List<string>();
+    foreach (var change in Enum.GetValues<AccountChange>())
+    {
+        var message = AccountNoticeEmail.Build("sam@example.com", "Sam", change, null, DateTime.UtcNow, "Street Empire");
+
+        AssertTrue(!message.Subject.Contains("your account changed"),
+            $"{change} has no copy of its own and fell through to the generic subject");
+        AssertTrue(!message.Text.Contains("Something on your account changed"),
+            $"{change} has no copy of its own and fell through to the generic sentence");
+        AssertTrue(message.Subject.StartsWith("Street Empire:", StringComparison.Ordinal),
+            $"{change} should say who is writing");
+        subjects.Add(message.Subject);
+    }
+
+    // Distinct, because two changes sharing a subject line is two changes one of them cannot be told
+    // apart from in an inbox.
+    AssertEqual(subjects.Count, subjects.Distinct().Count());
+    AssertTrue(subjects.Count >= 7, "every way in should have a notice behind it");
+}
+
+static void ANoticeSaysWhatHappenedAndNeverWhatItWas()
+{
+    // The rule the whole file is written to. A mailbox is not a secure channel, so a notice reports a
+    // change and never carries the change: no new password, no verification code, no token. A notice
+    // that leaked what it reported would be worse than no notice.
+    var message = AccountNoticeEmail.Build(
+        "sam@example.com", "Sam", AccountChange.PasswordChanged, null,
+        new DateTime(2026, 8, 26, 14, 5, 0, DateTimeKind.Utc), "Street Empire");
+
+    AssertTrue(message.Text.Contains("14:05 UTC"), "a notice should say when, or it cannot be checked against memory");
+    AssertTrue(message.Text.Contains("Every other session was signed out."), "it should say what else the change did");
+    AssertTrue(message.Text.Contains("Account page"), "it should say what to do if it was not them");
+
+    // The detail is somebody else's text - a Discord handle is chosen by its owner - so it never
+    // reaches the body as markup.
+    var hostile = AccountNoticeEmail.Build(
+        "sam@example.com", "Sam", AccountChange.DiscordConnected, "<script>alert(1)</script>",
+        DateTime.UtcNow, "Street Empire");
+
+    AssertTrue(hostile.Text.Contains("<script>"), "the text part is not markup and needs no escaping");
+    AssertTrue(!hostile.Html.Contains("<script>"), "a handle must never reach the html body as markup");
+    AssertTrue(hostile.Html.Contains("&lt;script&gt;"), "the handle should still be shown, escaped");
+
+    // Naming the address it moved to is the point of that notice: it is how somebody sees where their
+    // account went.
+    var moved = AccountNoticeEmail.Build(
+        "old@example.com", "Sam", AccountChange.EmailChanged, "new@example.com", DateTime.UtcNow, "Street Empire");
+    AssertTrue(moved.Text.Contains("new@example.com"), "the notice should name where the account moved to");
+}
+
+static void NoticesOnlyGoToProvenAddresses()
+{
+    // An unconfirmed address may belong to a stranger who was typed in by mistake or on purpose.
+    // Mailing them about somebody else's account is a nuisance to them and a spam complaint against
+    // the sending domain - which would eventually stop verification codes arriving for everybody.
+    var sent = new RecordingEmailSender();
+    var notices = new AccountNotices(sent, Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
+
+    var unconfirmed = new PlayerAccount { Username = "sam" };
+    unconfirmed.SetEmail("sam@example.com");
+    notices.TellAccountAsync(unconfirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(0, sent.Messages.Count);
+
+    var noAddress = new PlayerAccount { Username = "sam" };
+    notices.TellAccountAsync(noAddress, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(0, sent.Messages.Count);
+
+    var confirmed = new PlayerAccount { Username = "sam", EmailVerified = true };
+    confirmed.Email = "sam@example.com";
+    notices.TellAccountAsync(confirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(1, sent.Messages.Count);
+    AssertEqual("sam@example.com", sent.Messages[0].To);
+
+    // The switch exists for a load test against a real provider, not for ordinary use.
+    var quiet = new AccountNotices(sent, Options(new EmailOptions { SendSecurityNotices = false }), NullLogger<AccountNotices>.Instance);
+    quiet.TellAccountAsync(confirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(1, sent.Messages.Count);
+}
+
+static void TheAddressBeingLeftBehindGetsTold()
+{
+    // The most important notice in the set, and the one easiest to get backwards. Changing the address
+    // is how somebody who has taken an account keeps it: the owner is cut off and never hears. Telling
+    // only the new address would be telling the thief.
+    var sent = new RecordingEmailSender();
+    var notices = new AccountNotices(sent, Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
+
+    notices.TellFormerAddressAsync("old@example.com", "Sam", AccountChange.EmailChanged, "new@example.com", default)
+        .GetAwaiter().GetResult();
+
+    AssertEqual(1, sent.Messages.Count);
+    AssertEqual("old@example.com", sent.Messages[0].To);
+    AssertTrue(sent.Messages[0].Text.Contains("new@example.com"), "it should name where the account went");
+
+    // A send that fails must never throw, because the change it reports has already happened and been
+    // saved - a provider being down cannot be allowed to answer an error for a password that really did
+    // change.
+    var broken = new AccountNotices(new ThrowingEmailSender(), Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
+    broken.TellFormerAddressAsync("old@example.com", "Sam", AccountChange.EmailRemoved, null, default)
+        .GetAwaiter().GetResult();
+}
+
 static void EveryTestWrittenIsATestThatRuns()
 {
     var root = new DirectoryInfo(AppContext.BaseDirectory);
@@ -5747,6 +6364,8 @@ static GameOptions StorageCapOptions(int condoms)
 
 static IOptionsSnapshot<GameOptions> Snapshot(GameOptions options) => new OptionsSnapshotStub<GameOptions>(options);
 
+static IOptions<T> Options<T>(T value) where T : class => new OptionsSnapshotStub<T>(value);
+
 static void AssertRuleError(Action action, string expectation)
 {
     try
@@ -5793,6 +6412,41 @@ static void AssertTrue(bool value, string message)
 {
     if (!value)
         throw new InvalidOperationException(message);
+}
+
+/// <summary>
+/// Just enough of a hosting environment to answer IsDevelopment(), which is the one question the
+/// return-url guard asks it.
+/// </summary>
+sealed class HostingStub(string environmentName) : IWebHostEnvironment
+{
+    public string EnvironmentName { get; set; } = environmentName;
+    public string ApplicationName { get; set; } = "StreetEmpire.Tests";
+    public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+    public string WebRootPath { get; set; } = AppContext.BaseDirectory;
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+}
+
+/// <summary>Keeps what it was given instead of sending it.</summary>
+sealed class RecordingEmailSender : IEmailSender
+{
+    public List<EmailMessage> Messages { get; } = [];
+    public bool Delivers => true;
+
+    public Task<bool> SendAsync(EmailMessage message, CancellationToken ct)
+    {
+        Messages.Add(message);
+        return Task.FromResult(true);
+    }
+}
+
+/// <summary>A provider having a bad day, which must never become the caller's problem.</summary>
+sealed class ThrowingEmailSender : IEmailSender
+{
+    public bool Delivers => true;
+    public Task<bool> SendAsync(EmailMessage message, CancellationToken ct)
+        => throw new HttpRequestException("the provider is down");
 }
 
 /// <summary>Stands in for the scoped IOptionsSnapshot the services now take.</summary>

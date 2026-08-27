@@ -14,11 +14,17 @@ using StreetEmpire.Api.Endpoints;
 using StreetEmpire.Api.Models;
 using StreetEmpire.Api.Services;
 using static StreetEmpire.Api.Mapping.ResponseMappers;
+using StreetEmpire.Api.Support;
 using static StreetEmpire.Api.Support.ActionLogging;
 using static StreetEmpire.Api.Support.BotSeeding;
 using static StreetEmpire.Api.Support.Formatting;
 using static StreetEmpire.Api.Support.LiveOpsStore;
 using static StreetEmpire.Api.Support.PlayerRanking;
+
+// Before anything else, because CreateBuilder reads the environment as it goes and a value that
+// arrives afterwards arrives too late. Values already in the real environment are left alone; see
+// DotEnv for why that way round.
+var dotEnv = DotEnv.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,6 +75,31 @@ builder.Services.AddSingleton<BotAutomationState>();
 builder.Services.AddHostedService<BotAutomationService>();
 builder.Services.AddSingleton<IGameRandom, GameRandom>();
 builder.Services.AddScoped<IPasswordHasher<PlayerAccount>, PasswordHasher<PlayerAccount>>();
+
+// Discord sign-in. Registered unconditionally so the endpoints exist and can say "not set up" for
+// themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
+// false until a client id and secret arrive from user-secrets or the environment.
+builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection("Auth:Discord"));
+builder.Services.AddHttpClient<DiscordAuthService>(client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<DiscordTickets>();
+builder.Services.AddScoped<DiscordReturnUrls>();
+
+// Transactional email, for confirming an address.
+//
+// The sender is chosen once, here, by whether a Resend key exists. With one, mail goes over Resend's
+// HTTP API - not SMTP of our own, because running a mail server means owning deliverability and the
+// reward for getting it wrong is verification mail that lands in spam. Without one, the message is
+// written to the log instead, which keeps the whole flow clickable on a laptop with no account
+// anywhere. The account page is told which of the two is running rather than left to imply the mail
+// was sent.
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Auth:Email"));
+builder.Services.AddHttpClient<ResendEmailSender>(client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<IEmailSender>(services =>
+    services.GetRequiredService<IOptions<EmailOptions>>().Value.IsConfigured
+        ? services.GetRequiredService<ResendEmailSender>()
+        : ActivatorUtilities.CreateInstance<LoggedEmailSender>(services));
+builder.Services.AddScoped<EmailVerificationService>();
+builder.Services.AddScoped<AccountNotices>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -194,6 +225,28 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Said now rather than at load time, because at load time there was no logger. Worth a line either
+// way: "the key I put in .env is not being read" is otherwise a silent, unfalsifiable guess.
+if (dotEnv.Found)
+    app.Logger.LogInformation(
+        "Read {Applied} setting(s) from {Path}. {Skipped} were left alone because the environment already set them.",
+        dotEnv.Applied, dotEnv.Path, dotEnv.SkippedBecauseAlreadySet);
+else
+    app.Logger.LogInformation("No .env file found. Configuration is coming from appsettings and the environment.");
+
+// Said at startup because the alternative is finding out from Discord.
+//
+// A redirect that is not registered on the Discord application - or registered and not saved - fails
+// on Discord's own page, which means the browser never comes back and nothing on this side ever runs.
+// There is no error for the server to catch and nothing in its log to read. Printing the exact string
+// that has to be in the Discord dashboard turns "Invalid OAuth2 redirect_uri" from a guess into a
+// comparison of two lines of text.
+var discordAtStartup = app.Services.GetRequiredService<IOptions<DiscordOptions>>().Value;
+if (discordAtStartup.IsConfigured)
+    app.Logger.LogInformation(
+        "Discord sign-in is on. This exact string must be registered and saved under OAuth2 > Redirects: {RedirectUri}",
+        discordAtStartup.RedirectUri);
+
 // Overrides live in the database, so they have to be in memory before the first request binds options.
 using (var startupScope = app.Services.CreateScope())
 {
@@ -311,6 +364,7 @@ app.Use(async (context, next) =>
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.6" })).DisableRateLimiting();
 
 app.MapAuthEndpoints();
+app.MapAccountEndpoints();
 app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();

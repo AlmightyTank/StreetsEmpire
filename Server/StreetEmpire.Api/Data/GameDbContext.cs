@@ -6,6 +6,7 @@ namespace StreetEmpire.Api.Data;
 public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbContext(options)
 {
     public DbSet<PlayerAccount> Accounts => Set<PlayerAccount>();
+    public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GameActionLog> ActionLogs => Set<GameActionLog>();
     public DbSet<CombatLog> CombatLogs => Set<CombatLog>();
@@ -34,9 +35,30 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             entity.HasIndex(x => x.Username).IsUnique();
             entity.Property(x => x.Username).HasMaxLength(32);
+            // Both of the other ways in are unique for the same reason the username is: they are things
+            // you sign in as, so two accounts holding one would make the lookup ambiguous and the answer
+            // to "whose account is this" a matter of row order.
+            entity.HasIndex(x => x.Email).IsUnique();
+            entity.Property(x => x.Email).HasMaxLength(254);
+            entity.HasIndex(x => x.DiscordUserId).IsUnique();
+            entity.Property(x => x.DiscordUserId).HasMaxLength(32);
+            entity.Property(x => x.DiscordUsername).HasMaxLength(64);
+            entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)
                 .HasForeignKey<Player>(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmailVerification>(entity =>
+        {
+            // Every read is "the newest code for this account", so that is the index.
+            entity.HasIndex(x => new { x.AccountId, x.CreatedAtUtc });
+            entity.Property(x => x.Email).HasMaxLength(254);
+            entity.Property(x => x.SealedCode).HasMaxLength(512);
+            entity.HasOne(x => x.Account)
+                .WithMany(x => x.EmailVerifications)
+                .HasForeignKey(x => x.AccountId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

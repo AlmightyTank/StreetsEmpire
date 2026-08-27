@@ -427,6 +427,8 @@ internal static class CombatEndpoints
             PlayerClock clock,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            AllianceService alliances,
+            TerritoryService territories,
             StreetStrikeService strikes,
             CancellationToken ct) =>
         {
@@ -447,6 +449,9 @@ internal static class CombatEndpoints
             {
                 if (AttackMethods.IsStrike(request.Method))
                 {
+                    if (await alliances.AreAlliedAsync(attacker, defender, ct))
+                        throw new GameRuleException($"{defender.Name} is allied with your crew.");
+
                     // Whoever the defender still has at home, and what they still have to hold. Crew
                     // already out attacking someone else cannot also be guarding the garage - and
                     // neither can the guns that went with them, which is what makes striking a player
@@ -458,8 +463,11 @@ internal static class CombatEndpoints
                     var away = committed.Aggregate(
                         Armoury.Empty,
                         (rack, x) => rack + new Armoury(x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles));
+                    var cityControlDefenders = defender.AllianceId is { } defenderAllianceId
+                        ? await territories.CityControlThugsForAllianceInCityAsync(defenderAllianceId, defender.City, ct)
+                        : 0;
                     var defence = new StrikeDefence(
-                        Math.Max(0, defender.Thugs - committed.Sum(x => x.RemainingAttackers)),
+                        Math.Max(0, defender.Thugs - committed.Sum(x => x.RemainingAttackers)) + cityControlDefenders,
                         defender.Armoury - away);
 
                     var strike = strikes.Resolve(attacker, defender, request, defence, now);
@@ -470,6 +478,7 @@ internal static class CombatEndpoints
                 }
 
                 var mission = await combatMissions.LaunchAsync(attacker, defender, request, now, ct);
+                var calls = await alliances.CreateAssistCallsForAsync(mission, now, ct);
                 AddLog(db, attacker, before, "ATTACK", mission.TurnsSpent, mission.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new ActionResultResponse(mission.Summary, attacker.Turns, new Dictionary<string, object?>
@@ -480,6 +489,7 @@ internal static class CombatEndpoints
                     ["assignedPimps"] = mission.AssignedPimps,
                     ["assignedThugs"] = mission.AssignedThugs,
                     ["assignedWeapons"] = mission.AssignedWeapons,
+                    ["assistCalls"] = calls.Count,
                     ["arrivesAtUtc"] = mission.ArrivesAtUtc
                 }));
             }

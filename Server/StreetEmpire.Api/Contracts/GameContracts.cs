@@ -90,6 +90,13 @@ public sealed record HandOverAllianceRequest(Guid MemberId);
 public sealed record InvitePlayerRequest(Guid PlayerId, string? Note);
 public sealed record ApplyToAllianceRequest(long AllianceId, string? Note);
 public sealed record AnswerAllianceRequest(long RequestId, bool Accept);
+public sealed record AllianceTransferRequest(Guid MemberId, string? Item, int Quantity);
+public sealed record AlliancePactRequest(long AllianceId);
+public sealed record AnswerAlliancePactRequest(long PactId, bool Accept);
+public sealed record AllianceAssistRequest(long AssistCallId, int Thugs, int Pistols, int Shotguns, int Smgs, int Rifles);
+
+/// <summary>Asking for back whatever is left of the help you sent. The call knows how much that was.</summary>
+public sealed record AllianceAssistRecallRequest(long AssistCallId);
 
 /// <summary>One outstanding ask, from whichever side it came.</summary>
 public sealed record AllianceRequestResponse(
@@ -102,6 +109,50 @@ public sealed record AllianceRequestResponse(
     string? Note,
     /// <summary>Whether this viewer is the one who has to answer it.</summary>
     bool YoursToAnswer,
+    DateTime CreatedAtUtc);
+
+public sealed record AlliancePactResponse(
+    long Id,
+    long RequestingAllianceId,
+    string RequestingAllianceName,
+    long TargetAllianceId,
+    string TargetAllianceName,
+    string Status,
+    bool YoursToAnswer,
+    DateTime CreatedAtUtc);
+
+public sealed record AllianceAssistCallResponse(
+    long Id,
+    long CombatMissionId,
+    long DefenderAllianceId,
+    long AllyAllianceId,
+    string AttackerName,
+    string DefenderName,
+    string DefenderAllianceName,
+    string AllyAllianceName,
+    string MissionStatus,
+    string Status,
+    int ThugsSent,
+    int PistolsSent,
+    int ShotgunsSent,
+    int SmgsSent,
+    int RiflesSent,
+    int ThugsReturned,
+    int PistolsReturned,
+    int ShotgunsReturned,
+    int SmgsReturned,
+    int RiflesReturned,
+    /// <summary>Whoever sent the help. Only they are offered the button to take it back.</summary>
+    Guid? RespondedByPlayerId,
+    DateTime CreatedAtUtc);
+
+public sealed record AllianceTransferResponse(
+    long Id,
+    string FromPlayerName,
+    string ToPlayerName,
+    string Item,
+    string Label,
+    int Quantity,
     DateTime CreatedAtUtc);
 
 /// <summary>One of the three ways a crew can take people on.</summary>
@@ -145,7 +196,11 @@ public sealed record AllianceSummaryResponse(
     string DoorDetail,
     bool Yours,
     bool YouFounded,
+    int CityControlThugs,
+    IReadOnlyList<AllianceCityControlResponse> ControlledCities,
     int Rank = 0);
+
+public sealed record AllianceCityControlResponse(string City, int Territories, int BonusThugs);
 
 /// <summary>One member, as their own crew sees them.</summary>
 public sealed record AllianceMemberResponse(
@@ -186,6 +241,9 @@ public sealed record AllianceBoardResponse(
     IReadOnlyList<AllianceDoorResponse> Doors,
     /// <summary>Asks waiting on somebody: invitations to the viewer, applications to their crew.</summary>
     IReadOnlyList<AllianceRequestResponse> Requests,
+    IReadOnlyList<AlliancePactResponse> Pacts,
+    IReadOnlyList<AllianceAssistCallResponse> AssistCalls,
+    IReadOnlyList<AllianceTransferResponse> Transfers,
     IReadOnlyList<AllianceSummaryResponse> Board);
 
 /// <summary>
@@ -314,9 +372,12 @@ public sealed record TerritoryBoardResponse(
     int Held,
     int HoldingCap,
     int MinimumGarrison,
+    int MaxGarrisonThugs,
+    int MaxRaidThugs,
     int ClaimTurnCost,
     int FreeThugs,
     TerritoryEffectsResponse Effects,
+    AllianceCityControlResponse? AllianceCityControl,
     IReadOnlyList<TerritoryResponse> Territories);
 
 public sealed record TerritoryEffectsResponse(
@@ -1087,10 +1148,23 @@ public sealed record AdminSetAdminRequest(bool IsAdmin, string? Reason);
 public sealed record AdminRenameRequest(string? Name, string? Reason);
 public sealed record AdminReasonRequest(string? Reason);
 
+/// <param name="Email">
+/// The address on the account, and whether anybody proved it. A moderator looking at a returning
+/// player wants to know what identity they came back on, and until this was here the panel could see a
+/// username and nothing else - which is the one field a ban evader changes first.
+/// </param>
+/// <param name="DiscordUserId">
+/// The snowflake rather than the handle. A handle is renamed in a second; the snowflake is the thing
+/// that is actually the same person, and it is what a second account would have to reuse.
+/// </param>
 public sealed record AdminPlayerSummaryResponse(
     Guid PlayerId,
     string Name,
     string Username,
+    string? Email,
+    bool EmailVerified,
+    string? DiscordUsername,
+    string? DiscordUserId,
     string City,
     bool IsBot,
     bool IsAdmin,

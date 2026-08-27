@@ -6,6 +6,7 @@ namespace StreetEmpire.Api.Data;
 public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbContext(options)
 {
     public DbSet<PlayerAccount> Accounts => Set<PlayerAccount>();
+    public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GameActionLog> ActionLogs => Set<GameActionLog>();
     public DbSet<CombatLog> CombatLogs => Set<CombatLog>();
@@ -23,6 +24,9 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
+    public DbSet<AlliancePact> AlliancePacts => Set<AlliancePact>();
+    public DbSet<AllianceAssistCall> AllianceAssistCalls => Set<AllianceAssistCall>();
+    public DbSet<AllianceTransfer> AllianceTransfers => Set<AllianceTransfer>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<PlayerBlock> PlayerBlocks => Set<PlayerBlock>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -34,9 +38,35 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             entity.HasIndex(x => x.Username).IsUnique();
             entity.Property(x => x.Username).HasMaxLength(32);
+            // Both of the other ways in are unique for the same reason the username is: they are things
+            // you sign in as, so two accounts holding one would make the lookup ambiguous and the answer
+            // to "whose account is this" a matter of row order.
+            entity.HasIndex(x => x.Email).IsUnique();
+            entity.Property(x => x.Email).HasMaxLength(254);
+            entity.HasIndex(x => x.DiscordUserId).IsUnique();
+            entity.Property(x => x.DiscordUserId).HasMaxLength(32);
+            entity.Property(x => x.DiscordUsername).HasMaxLength(64);
+            entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)
                 .HasForeignKey<Player>(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmailVerification>(entity =>
+        {
+            // Every read is "the newest code of this kind for this account", so that is the index.
+            entity.HasIndex(x => new { x.AccountId, x.Purpose, x.CreatedAtUtc });
+            // Swept by age, so the sweep gets an index of its own rather than a table scan a day.
+            entity.HasIndex(x => x.CreatedAtUtc);
+            entity.Property(x => x.Email).HasMaxLength(254);
+            // Stored as its name. An integer here would mean reading the source to find out what a row
+            // in the table is for, and this is a table somebody reads while something is going wrong.
+            entity.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(24);
+            entity.Property(x => x.SealedCode).HasMaxLength(512);
+            entity.HasOne(x => x.Account)
+                .WithMany(x => x.EmailVerifications)
+                .HasForeignKey(x => x.AccountId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -80,6 +110,72 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AlliancePact>(entity =>
+        {
+            entity.HasIndex(x => new { x.RequestingAllianceId, x.TargetAllianceId, x.Status });
+            entity.HasIndex(x => new { x.TargetAllianceId, x.Status });
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.HasOne(x => x.RequestingAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.RequestingAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TargetAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.TargetAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.RequestedBy)
+                .WithMany()
+                .HasForeignKey(x => x.RequestedById)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.AnsweredBy)
+                .WithMany()
+                .HasForeignKey(x => x.AnsweredById)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AllianceAssistCall>(entity =>
+        {
+            entity.HasIndex(x => new { x.AllyAllianceId, x.Status });
+            entity.HasIndex(x => new { x.DefenderAllianceId, x.Status });
+            entity.HasIndex(x => new { x.CombatMissionId, x.AllyAllianceId }).IsUnique();
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.HasOne(x => x.CombatMission)
+                .WithMany()
+                .HasForeignKey(x => x.CombatMissionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.DefenderAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.DefenderAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.AllyAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.AllyAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.RespondedBy)
+                .WithMany()
+                .HasForeignKey(x => x.RespondedById)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AllianceTransfer>(entity =>
+        {
+            entity.HasIndex(x => new { x.AllianceId, x.CreatedAtUtc });
+            entity.HasIndex(x => x.ToPlayerId);
+            entity.Property(x => x.Item).HasMaxLength(16);
+            entity.HasOne(x => x.Alliance)
+                .WithMany()
+                .HasForeignKey(x => x.AllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.FromPlayer)
+                .WithMany()
+                .HasForeignKey(x => x.FromPlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ToPlayer)
+                .WithMany()
+                .HasForeignKey(x => x.ToPlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Hideout>(entity =>

@@ -1,8 +1,8 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { adminApi, api, cheapestWeapon, configApi, opsApi, RequestError } from './api'
-import type { BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
+import type { Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -33,7 +33,7 @@ window.bootstrap = bootstrap
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'alliance' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'alliance' | 'account' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -46,7 +46,9 @@ const adjustPresets: { label: string, resource: string, delta: number }[] = [
   { label: '+10 thugs', resource: 'thugs', delta: 10 },
   { label: '+100 condoms', resource: 'condoms', delta: 100 },
   { label: '+100 beer', resource: 'beer', delta: 100 },
-  { label: '+10 weapons', resource: 'weapons', delta: 10 },
+  // Pistols rather than "weapons": the adjust endpoint takes a tier, and there has been no such column
+  // since guns split into four. The button answered 400 to every press.
+  { label: '+10 pistols', resource: 'pistols', delta: 10 },
   { label: '+250 weed', resource: 'weed', delta: 250 },
   { label: '+100 coke', resource: 'coke', delta: 100 },
 ]
@@ -66,6 +68,7 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   market: { label: 'Business', short: 'BZ', kicker: 'Shop, rooms, craft, runs' },
   recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
   alliance: { label: 'Alliance', short: 'AL', kicker: 'Who you run with' },
+  account: { label: 'Account', short: 'AC', kicker: 'How you get in' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control centre' },
 }
 
@@ -163,6 +166,27 @@ function MobileNav({ pages, active, onPick, onLogout }: {
  * thing lives on - being taken there is the lesson.
  */
 const tourSeenKey = 'street-empire.walkthrough.seen'
+
+/**
+ * A half-finished Discord sign-up has to survive a reload, and a reload takes the query string with
+ * it. This remembers that one is in flight; the identity behind it never leaves the server, so the
+ * worst a tampered flag can do is ask for a ticket that is not there and be told so.
+ */
+const discordPendingKey = 'street-empire.discord.pending'
+
+/**
+ * What came back from the round trip. Discord hands the browser back as an ordinary page load, so one
+ * word in the query string is the whole of what the server can say - these are the sentences it means.
+ * Signing in needs no line of its own: the dashboard appearing is the message.
+ */
+const discordOutcomes: Partial<Record<DiscordOutcome, { text: string, bad?: boolean }>> = {
+  connected: { text: 'Discord connected.' },
+  'already-connected': { text: 'This account already has a Discord connected. Disconnect that one first.', bad: true },
+  cancelled: { text: 'Discord sign-in was cancelled.' },
+  failed: { text: 'Discord could not finish signing you in. Try again.', bad: true },
+  locked: { text: 'That account is banned or suspended.', bad: true },
+  unavailable: { text: 'Discord sign-in is not set up on this server.', bad: true },
+}
 
 const tourSteps: { page: AppPage, target: string, title: string, body: string }[] = [
   {
@@ -900,6 +924,20 @@ function App() {
   // could never be offered as somewhere to set up.
   const [cities, setCities] = useState<string[]>([])
   useEffect(() => { void api.cities().then(setCities).catch(() => setCities([])) }, [])
+  // Which doors this server can actually open. A button for a provider with no credentials behind it
+  // is a button that fails, so it is never drawn.
+  const [providers, setProviders] = useState<AuthProviders>({ discord: false })
+  useEffect(() => { void api.providers().then(setProviders).catch(() => setProviders({ discord: false })) }, [])
+  // A Discord login that turned out to belong to nobody yet, waiting on a name and a town.
+  const [discordTicket, setDiscordTicket] = useState<DiscordSignUpTicket | null>(null)
+  /*
+    Where the sign-in card is in the reset flow, if it is in it at all. Two steps rather than one
+    screen, because the second needs a code that does not exist until the first has run - and the
+    identifier is carried between them rather than re-typed, since it is the thing the server matches
+    the code against.
+  */
+  const [resetStep, setResetStep] = useState<'off' | 'asking' | 'confirming'>('off')
+  const [resetIdentifier, setResetIdentifier] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [lastBreakdown, setLastBreakdown] = useState<Record<string, unknown> | null>(null)
@@ -977,6 +1015,34 @@ function App() {
 
   useEffect(() => { void refresh() }, [])
   useEffect(() => {
+    /*
+      The far end of the Discord round trip.
+
+      It arrives as an ordinary page load with one word in the query string, because that is all that
+      survives being handed to somebody else's site and handed back. Read it, say what it means, and
+      take it straight back out of the address bar - left there, every reload would replay the message
+      and a shared link would carry somebody else's outcome.
+    */
+    const params = new URLSearchParams(window.location.search)
+    const outcome = params.get('discord') as DiscordOutcome | null
+    if (outcome) {
+      params.delete('discord')
+      const query = params.toString()
+      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : ''))
+      if (outcome === 'sign-up') sessionStorage.setItem(discordPendingKey, '1')
+      const said = discordOutcomes[outcome]
+      if (said?.bad) setError(said.text)
+      else if (said) setNotice(said.text)
+      // Connecting is something you were doing on the account page, so that is where you come back to.
+      if (outcome === 'connected' || outcome === 'already-connected') setActivePage('account')
+    }
+
+    if (sessionStorage.getItem(discordPendingKey) === null) return
+    void api.discordTicket()
+      .then(setDiscordTicket)
+      .catch(() => { sessionStorage.removeItem(discordPendingKey); setDiscordTicket(null) })
+  }, [])
+  useEffect(() => {
     // Once per arrival, and never from refresh(): reading the digest advances the server's watermark,
     // so calling it after every action would consume the news before it could be shown.
     if (!dashboard || catchUpFetched.current) return
@@ -1038,12 +1104,71 @@ function App() {
     setBusy(true); setError('')
     try {
       if (authMode === 'register')
-        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('playerName')), String(form.get('city')))
+        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('playerName')), String(form.get('city')), String(form.get('email') ?? ''))
       else
         await api.login(String(form.get('username')), String(form.get('password')))
       await refresh()
     } catch (e) { setError((e as Error).message) }
     finally { setBusy(false) }
+  }
+
+  // The half of a Discord sign-up Discord cannot answer. The identity is already sitting in a signed
+  // cookie on the server, so this form carries only the two things the game needs and no claim at all
+  // about who is filling it in.
+  const finishDiscordSignUp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setBusy(true); setError('')
+    try {
+      await api.completeDiscordSignUp(
+        String(form.get('username')),
+        String(form.get('playerName')),
+        String(form.get('city')),
+        String(form.get('email') ?? ''))
+      sessionStorage.removeItem(discordPendingKey)
+      setDiscordTicket(null)
+      await refresh()
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const startReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const identifier = String(new FormData(event.currentTarget).get('identifier') ?? '').trim()
+    setBusy(true); setError('')
+    try {
+      // The answer is the same sentence whether or not that account exists, so there is nothing here
+      // to branch on - which is the point. The step advances either way.
+      const answer = await api.startPasswordReset(identifier)
+      setResetIdentifier(identifier)
+      setResetStep('confirming')
+      setNotice(answer.message)
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const finishReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const next = String(form.get('newPassword') ?? '')
+    if (next !== String(form.get('confirmPassword') ?? '')) { setError('The two passwords do not match.'); return }
+    setBusy(true); setError('')
+    try {
+      await api.confirmPasswordReset(resetIdentifier, String(form.get('code') ?? ''), next)
+      setResetStep('off'); setResetIdentifier(''); setNotice('')
+      await refresh()
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const leaveReset = () => { setResetStep('off'); setResetIdentifier(''); setError(''); setNotice('') }
+
+  const abandonDiscordSignUp = () => {
+    sessionStorage.removeItem(discordPendingKey)
+    setDiscordTicket(null)
+    setError('')
+    // Best effort. The ticket expires on its own in twenty minutes either way.
+    void api.discardDiscordTicket().catch(() => {})
   }
 
   const act = async (fn: () => Promise<ActionResult | unknown>) => {
@@ -1088,49 +1213,195 @@ function App() {
   }
 
   if (!dashboard) {
+    /*
+      One shell, two things it can be showing.
+
+      A Discord login that belongs to nobody yet cannot become a player on its own: Discord knows who
+      you are and has no opinion about what you want to be called or which town you are setting up in.
+      So the sign-in card steps aside for a shorter form that asks only those two, and the identity
+      behind it stays where it was put - in a signed cookie the browser cannot read or forge.
+    */
     return <main className="auth-shell d-grid place-items-center p-4">
       <section className="auth-card card p-4">
         <div className="brand-mark d-grid place-items-center border border-primary text-primary fw-bolder mb-3">SE</div>
         <h1>Street Empire</h1>
-        <p className="text-body-secondary">Old-school browser strategy, rebuilt.</p>
-        {/*
-          Bootstrap's pill nav rather than the hand-rolled pair of buttons. It is the same two
-          controls, and it brings the roles and the active state with it.
-        */}
-        <ul className="nav nav-pills gap-2 my-4" role="tablist">
-          <li className="nav-item" role="presentation">
-            <button
-              className={`nav-link px-3 py-2 ${authMode === 'login' ? 'active' : ''}`}
-              type="button"
-              role="tab"
-              aria-selected={authMode === 'login'}
-              onClick={() => setAuthMode('login')}
-            >Login</button>
-          </li>
-          <li className="nav-item" role="presentation">
-            <button
-              className={`nav-link px-3 py-2 ${authMode === 'register' ? 'active' : ''}`}
-              type="button"
-              role="tab"
-              aria-selected={authMode === 'register'}
-              onClick={() => setAuthMode('register')}
-            >Create Account</button>
-          </li>
-        </ul>
-        <form className="d-grid gap-3" onSubmit={auth}>
-          <label className="field">Username<input className="form-control" name="username" minLength={3} maxLength={32} required /></label>
-          {authMode === 'register' && <label className="field">Player Name<input className="form-control" name="playerName" minLength={3} maxLength={32} required /></label>}
-          {authMode === 'register' && <label className="field">
-            Town
-            <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
-              {cities.map(city => <option key={city} value={city}>{city}</option>)}
-            </select>
-            <small className="form-text">Ground is fought over inside a town. This is the map you will be playing on.</small>
-          </label>}
-          <label className="field">Password<input className="form-control" name="password" type="password" minLength={8} required /></label>
-          {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-          <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
-        </form>
+
+        {resetStep !== 'off'
+          ? <>
+            <p className="text-body-secondary">
+              {resetStep === 'asking'
+                ? 'A code goes to the confirmed email address on the account. Without one there is no way back in - which is what confirming an address is for.'
+                : 'Type the code from that email and pick a new password. Every other session on the account will be signed out.'}
+            </p>
+            {resetStep === 'asking'
+              ? <form className="d-grid gap-3 mt-4" onSubmit={startReset}>
+                <label className="field">
+                  Username or Email
+                  <input className="form-control" name="identifier" maxLength={254} required autoFocus />
+                </label>
+                {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Send Me a Code'}</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
+              </form>
+              : <form className="d-grid gap-3 mt-4" onSubmit={finishReset}>
+                <label className="field">
+                  Code
+                  <input
+                    className="form-control tnum fs-4 text-center"
+                    style={{ letterSpacing: '.4em' }}
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    placeholder="000000"
+                    required
+                    autoFocus
+                  />
+                </label>
+                <label className="field">
+                  New password
+                  <input className="form-control" name="newPassword" type="password" autoComplete="new-password" minLength={8} required />
+                  <small className="form-text">Eight characters at the very least.</small>
+                </label>
+                <label className="field">
+                  New password again
+                  <input className="form-control" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required />
+                </label>
+                {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
+                {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Set My Password'}</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={() => setResetStep('asking')}>Send another code</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
+              </form>}
+          </>
+          : discordTicket
+          ? <>
+            <p className="text-body-secondary">
+              Signed in as <strong className="text-primary">{discordTicket.discordUsername}</strong> on Discord.
+              Two things left before you have an empire.
+            </p>
+            <form className="d-grid gap-3 mt-4" onSubmit={finishDiscordSignUp}>
+              <label className="field">
+                Username
+                <input className="form-control" name="username" defaultValue={discordTicket.suggestedUsername} minLength={3} maxLength={32} required />
+                <small className="form-text">What you would sign in as if you ever set a password.</small>
+              </label>
+              <label className="field">Player Name<input className="form-control" name="playerName" minLength={3} maxLength={32} required /></label>
+              <label className="field">
+                Town
+                <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
+                  {cities.map(city => <option key={city} value={city}>{city}</option>)}
+                </select>
+                <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
+              </label>
+              {/*
+                Offered here rather than left to the account page, because an account made this way has
+                no password and no address: Discord is the only way in, and losing the Discord loses the
+                empire. This is the one moment the player is already filling in a form, which makes it
+                the cheapest moment to hand them a second way back.
+              */}
+              <label className="field">
+                Email <span className="text-body-tertiary">(optional)</span>
+                <input className="form-control" name="email" type="email" maxLength={254} />
+                <small className="form-text">
+                  Without one, Discord is the only way into this empire and there is no way back if you
+                  lose it. You can add one later on the Account page.
+                </small>
+              </label>
+              {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+              <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Build My Empire'}</button>
+              <button className="btn btn-link text-body-secondary" type="button" onClick={abandonDiscordSignUp}>Use a username and password instead</button>
+            </form>
+          </>
+          : <>
+            <p className="text-body-secondary">Old-school browser strategy, rebuilt.</p>
+            {/*
+              Bootstrap's pill nav rather than the hand-rolled pair of buttons. It is the same two
+              controls, and it brings the roles and the active state with it.
+            */}
+            <ul className="nav nav-pills gap-2 my-4" role="tablist">
+              <li className="nav-item" role="presentation">
+                <button
+                  className={`nav-link px-3 py-2 ${authMode === 'login' ? 'active' : ''}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === 'login'}
+                  onClick={() => setAuthMode('login')}
+                >Login</button>
+              </li>
+              <li className="nav-item" role="presentation">
+                <button
+                  className={`nav-link px-3 py-2 ${authMode === 'register' ? 'active' : ''}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === 'register'}
+                  onClick={() => setAuthMode('register')}
+                >Create Account</button>
+              </li>
+            </ul>
+            <form className="d-grid gap-3" onSubmit={auth}>
+              {/* One box either way. Which kind of name is in it gets decided by the @, server-side. */}
+              <label className="field">
+                {authMode === 'login' ? 'Username or Email' : 'Username'}
+                <input className="form-control" name="username" minLength={3} maxLength={254} required />
+              </label>
+              {authMode === 'register' && <label className="field">Player Name<input className="form-control" name="playerName" minLength={3} maxLength={32} required /></label>}
+              {/*
+                Required on this door, and the helper says why rather than just marking it with a star.
+                An account made here has one way in and one way back, and the way back is a code to this
+                address - without it, one forgotten password ends the empire.
+
+                The old copy here said "nothing is ever sent to it", which was true the day it was
+                written and stopped being true the day codes started going out.
+              */}
+              {authMode === 'register' && <label className="field">
+                Email
+                <input className="form-control" name="email" type="email" maxLength={254} required />
+                <small className="form-text">
+                  A second name to sign in under, and the way back in if the password goes. A code comes
+                  to confirm it, and a note lands there if a way in ever changes.
+                </small>
+              </label>}
+              {authMode === 'register' && <label className="field">
+                Town
+                <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
+                  {cities.map(city => <option key={city} value={city}>{city}</option>)}
+                </select>
+                <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
+              </label>}
+              <label className="field">Password<input className="form-control" name="password" type="password" minLength={8} required /></label>
+              {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+              {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
+              <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
+              {/* Only on the login side. Offering it while somebody is creating an account is offering
+                  to reset a password they have not chosen yet. */}
+              {authMode === 'login' && <button
+                className="btn btn-link text-body-secondary"
+                type="button"
+                onClick={() => { setResetStep('asking'); setError(''); setNotice('') }}
+              >Forgotten your password?</button>}
+            </form>
+            {/*
+              A real link rather than a button, because this is a full-page navigation to somebody
+              else's site and back. A fetch cannot make that trip; the browser has to carry it.
+            */}
+            {providers.discord && <>
+              <div className="d-flex align-items-center gap-3 my-3 text-body-tertiary">
+                <hr className="flex-fill my-0" /><small className="eyebrow">or</small><hr className="flex-fill my-0" />
+              </div>
+              {/* One button, one round trip, and it works out for itself whether the identity coming
+                  back belongs to somebody. It still says which of the two the player came here to do,
+                  because "Continue" under a Create Account tab reads like it will not make one. */}
+              <a className="btn btn-secondary d-flex align-items-center justify-content-center gap-2" href={discordStartUrl()}>
+                <i className="bi bi-discord" aria-hidden="true" />
+                {authMode === 'login' ? 'Sign in with Discord' : 'Create Account with Discord'}
+              </a>
+              {authMode === 'register' && <small className="form-text mt-2">
+                Signing up with Discord does not need an email - the Discord account is your way back in.
+              </small>}
+            </>}
+          </>}
       </section>
     </main>
   }
@@ -1223,7 +1494,7 @@ function App() {
       <div className="nav-brand d-grid gap-1 border-bottom p-1 pb-3">
         <span className="d-grid place-items-center text-dark bg-primary fw-bolder rounded">SE</span>
         <strong className="">Street Empire</strong>
-        <small className="text-body-tertiary">0.2.5</small>
+        <small className="text-body-tertiary">0.2.6</small>
       </div>
       <nav className="d-grid gap-1 align-content-start">
         {visiblePages.map(page => <button
@@ -1347,6 +1618,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
     case 'market': return <MarketPage {...ctx} />
     case 'recon': return <CombatPage {...ctx} />
     case 'alliance': return <AlliancePage {...ctx} />
+    case 'account': return <AccountPage {...ctx} />
     case 'admin': return ctx.adminOverview
       ? <AdminPage {...ctx} overview={ctx.adminOverview} />
       : <OverviewPage {...ctx} />
@@ -1712,7 +1984,7 @@ function MulePage(ctx: PageContext) {
     return () => { stale = true }
   }, [city, good, hoes, cash])
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card p-3 gcol-full">
+  if (!board) return <div className="d-grid gtc-1 gap-3 align-items-start"><section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Mules</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
@@ -1729,7 +2001,7 @@ function MulePage(ctx: PageContext) {
     await load()
   }
 
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>Mule Runs</h2>
@@ -2347,13 +2619,13 @@ function TerritoryPage(ctx: PageContext) {
     await load()
   }
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card p-3 gcol-full">
+  if (!board) return <div className="d-grid gtc-1 gap-3 align-items-start"><section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Territory</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
 
   const effects = board.effects
-  const anyEffect = effects.streetIncomePercent || effects.productionYieldPercent || effects.moraleRecoveryPercent || effects.lootPercent
+  const anyEffect = effects.streetIncomePercent || effects.productionYieldPercent || effects.moraleRecoveryPercent || effects.lootPercent || board.allianceCityControl
   const force = (id: number) => thugs[id] ?? board.minimumGarrison
   const chosen = (id: number) => pimpFor[id] ?? null
   // Only pimps who are actually free. Anyone out commanding a raid, or already running other ground,
@@ -2361,7 +2633,7 @@ function TerritoryPage(ctx: PageContext) {
   const freePimps = (id: number) => dashboard.crew.filter(p => !p.isCommanding
     && !board.territories.some(t => t.id !== id && t.heldByYou && t.garrisonPimpName === p.name))
 
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>{board.city}</h2>
@@ -2370,6 +2642,7 @@ function TerritoryPage(ctx: PageContext) {
       <p>
         This is {board.city}, and it is the only map you fight over.
         Holding ground takes {board.minimumGarrison} thugs standing on it, and they are not at home while they do.
+        Each piece holds up to {board.maxGarrisonThugs}, and a raid can send up to {board.maxRaidThugs}.
         You have <strong>{number.format(board.freeThugs)}</strong> free of {number.format(dashboard.thugs)}.
         Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
       </p>
@@ -2379,6 +2652,7 @@ function TerritoryPage(ctx: PageContext) {
           {effects.productionYieldPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.productionYieldPercent}% production</span>}
           {effects.moraleRecoveryPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.moraleRecoveryPercent}% morale recovery</span>}
           {effects.lootPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.lootPercent}% haul</span>}
+          {board.allianceCityControl && <span className="badge rounded-pill text-bg-primary">+{board.allianceCityControl.bonusThugs} alliance thugs</span>}
         </div>
         : <p className="text-body-tertiary small mt-3">You hold no ground yet, so nothing out there is working for you.</p>}
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
@@ -2411,6 +2685,7 @@ function TerritoryPage(ctx: PageContext) {
             <label className="field">Thugs<input className="form-control"
               type="number"
               min={t.heldByYou ? 0 : board.minimumGarrison}
+              max={t.canRaid ? board.maxRaidThugs : board.maxGarrisonThugs}
               value={force(t.id)}
               onChange={e => setThugs(v => ({ ...v, [t.id]: Number(e.target.value) }))}
             /></label>
@@ -2424,11 +2699,11 @@ function TerritoryPage(ctx: PageContext) {
               </option>)}
             </select></label>}
             {t.heldByYou && <>
-              <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
+              <button className="btn btn-secondary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
               <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</button>
             </>}
-            {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
-            {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
+            {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
+            {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxRaidThugs} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
           </div>
         </div>)}
       </div>
@@ -2444,7 +2719,17 @@ function TradingPanel(ctx: PageContext) {
   const { dashboard, busy, act } = ctx
   const [board, setBoard] = useState<MarketBoard | null>(null)
   const [error, setError] = useState('')
-  const [item, setItem] = useState('weapons')
+  // Empty until the board says what it sells.
+  //
+  // This used to start at 'weapons', a key that stopped existing the day guns split into tiers - the
+  // board serves pistols, shotguns, smgs and rifles now. Nothing complained: a select whose value
+  // matches no option shows the first one, so the panel looked fine and was not. `good` was undefined,
+  // the price never seeded off the reference, the button sat disabled saying "List for $0", and the
+  // line telling you what the game pays simply did not render. The only way to use the panel was to
+  // change the dropdown to something and back.
+  //
+  // Naming a key here at all was the mistake, so this names none and takes what the board offers.
+  const [item, setItem] = useState('')
   const [qty, setQty] = useState(1)
   const [price, setPrice] = useState(0)
   const [buyQty, setBuyQty] = useState<Record<number, number>>({})
@@ -2457,6 +2742,13 @@ function TradingPanel(ctx: PageContext) {
 
   const run = async (fn: () => Promise<unknown>) => { await act(fn); await load() }
   const good = board?.goods.find(g => g.item === item)
+  // Whatever the board leads with, preferring something the player actually holds - a panel that opens
+  // on a good you have none of is a panel that opens disabled.
+  useEffect(() => {
+    if (!board || good) return
+    const opening = board.goods.find(g => g.held > 0) ?? board.goods[0]
+    if (opening) { setItem(opening.item); setPrice(opening.referencePrice) }
+  }, [board, good])
   // Seeded from what the game itself pays, so the first listing is not a guess in the dark.
   useEffect(() => { if (good && price === 0) setPrice(good.referencePrice) }, [good?.item])
 
@@ -2471,30 +2763,42 @@ function TradingPanel(ctx: PageContext) {
         <h2>Player Market</h2>
         <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
       </div>
-      <p>
-        Sell to other players instead of the game. Stock leaves your storage the moment you list it and
-        comes back if you pull the listing. What the game pays is shown for reference, not as a limit.
-      </p>
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
-      <div className="control-row">
-        <label className="field">Good<select className="form-select" value={item} onChange={e => { setItem(e.target.value); setPrice(board.goods.find(g => g.item === e.target.value)?.referencePrice ?? 0) }}>
-          {board.goods.map(g => <option key={g.item} value={g.item}>{g.label} ({number.format(g.held)} held)</option>)}
-        </select></label>
-        <label className="field">Quantity<input className="form-control" type="number" min={1} max={good?.held ?? 1} value={qty} onChange={e => setQty(Number(e.target.value))} /></label>
-        <label className="field">Price each<input className="form-control" type="number" min={1} value={price} onChange={e => setPrice(Number(e.target.value))} /></label>
-        <button
-          className="btn btn-primary btn-sm"
-          disabled={busy || !good || qty < 1 || qty > (good?.held ?? 0) || price < 1}
-          onClick={() => void run(() => api.listOnMarket(item, qty, price))}
-        >
-          List for {money.format(qty * price)}
-        </button>
+      {/*
+        Two columns, because this card spans the page and nothing in it was using the width. Paragraphs
+        are capped at 68ch for legibility and the form fields are fixed widths, so a full-width card
+        held a 590px paragraph above a 600px row of controls with half the card empty to the right of
+        both. Side by side they fill it, and the explanation sits next to the thing it explains.
+      */}
+      <div className="d-grid gtc-1 gtc-lg-2 gap-3 align-items-start">
+        <div className="d-grid gap-2 align-content-start">
+          <p className="mb-0">
+            Sell to other players instead of the game. Stock leaves your storage the moment you list it
+            and comes back if you pull the listing. What the game pays is shown for reference, not as a
+            limit.
+          </p>
+          {good && <p className="text-body-tertiary small mb-0">
+            The game pays {money.format(good.referencePrice)} for {good.label.toLowerCase()}.
+            {good.bestPrice ? ` Cheapest on the board right now is ${money.format(good.bestPrice)}.` : ' Nothing listed yet.'}
+            {' '}You hold {number.format(good.held)} with room for {number.format(good.room)} more.
+          </p>}
+        </div>
+        <div className="control-row">
+          {/* Grows, because "Moonshine (1,240 held)" does not fit the 132px a number field wants. */}
+          <label className="field grow">Good<select className="form-select" value={item} onChange={e => { setItem(e.target.value); setPrice(board.goods.find(g => g.item === e.target.value)?.referencePrice ?? 0) }}>
+            {board.goods.map(g => <option key={g.item} value={g.item}>{g.label} ({number.format(g.held)} held)</option>)}
+          </select></label>
+          <label className="field">Quantity<input className="form-control" type="number" min={1} max={good?.held ?? 1} value={qty} onChange={e => setQty(Number(e.target.value))} /></label>
+          <label className="field">Price each<input className="form-control" type="number" min={1} value={price} onChange={e => setPrice(Number(e.target.value))} /></label>
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={busy || !good || qty < 1 || qty > (good?.held ?? 0) || price < 1}
+            onClick={() => void run(() => api.listOnMarket(item, qty, price))}
+          >
+            List for {money.format(qty * price)}
+          </button>
+        </div>
       </div>
-      {good && <p className="text-body-tertiary small mt-3">
-        The game pays {money.format(good.referencePrice)} for {good.label.toLowerCase()}.
-        {good.bestPrice ? ` Cheapest on the board right now is ${money.format(good.bestPrice)}.` : ' Nothing listed yet.'}
-        {' '}You hold {number.format(good.held)} with room for {number.format(good.room)} more.
-      </p>}
     </section>
 
     <section className="card p-3 gcol-full">
@@ -2640,7 +2944,7 @@ function MarketCorePage(ctx: PageContext) {
       </div>
     </section>
 
-    <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" />
+    <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" wide />
   </div>
 }
 
@@ -2773,7 +3077,8 @@ function ReconPage(ctx: PageContext) {
     />
     <CombatMissionsPanel ctx={ctx} />
     <CombatHistoryPanel entries={ctx.combatLogs} currentPlayerId={ctx.dashboard.playerId} />
-    <section className="card p-3">
+    {/* Fifty rows of ladder, last on the page with nothing beside it. */}
+    <section className="card p-3 gcol-full">
       <StandingsPanel dashboard={ctx.dashboard} leaders={ctx.leaders} cityLeaders={ctx.cityLeaders} limit={50} />
     </section>
   </div>
@@ -2883,7 +3188,20 @@ const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
  */
 function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
   const [tab, setTab] = useState<AdminTab>('overview')
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
+  /*
+    One column, said once.
+
+    This read `gtc-1 gtc-md-2 ... gtc-md-1` - somebody wanting a single column and appending gtc-md-1
+    to force it. Utilities are generated from a map in value order, so .gtc-md-2 is written to the
+    stylesheet after .gtc-md-1; both carry !important and the same specificity, so the later one wins
+    whatever order the class attribute lists them in. The override never did anything, on any of the
+    five elements that had it.
+
+    Here it showed: the tab strip and every panel under it sat in the first of two columns, 619px of a
+    1278px page, with the second column empty and the six tabs folded into three columns of two rows
+    with their descriptions wrapping.
+  */
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
     <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
       {ADMIN_TABS.map(name => <button
         key={name}
@@ -3271,7 +3589,12 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           onClick={() => void open(player.playerId)}
         >
           <strong>{player.name}</strong>
-          <small>{player.username}{player.isBot ? ' / AI' : ''}{player.isAdmin ? ' / admin' : ''}</small>
+          <small>
+            {player.username}{player.isBot ? ' / AI' : ''}{player.isAdmin ? ' / admin' : ''}
+            {/* Marked in the list, so a search that matched on identity shows why without a click. */}
+            {player.discordUsername && ` / ${player.discordUsername}`}
+            {player.emailVerified && ' / ✉'}
+          </small>
           <em>{enforcementLabel(player)}</em>
           <b>{money.format(player.netWorth)}</b>
         </button>)}
@@ -3294,6 +3617,24 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           <AdminMetric label="Morale" value={`${detail.hoeHappiness.toFixed(0)}% / ${detail.thugHappiness.toFixed(0)}%`} />
           <AdminMetric label="Hideout" value={`${detail.hideout.tierName} S${detail.hideout.storageLevel}/V${detail.hideout.safeLevel}`} />
           <AdminMetric label="Joined" value={new Date(target.createdAtUtc).toLocaleDateString()} />
+        </div>
+
+        {/*
+          Who this account actually is, rather than what it owns.
+
+          A moderator handling a returning ban evader is asking one question - is this the same person -
+          and the panel could not previously answer it at all. A username is the first thing somebody
+          changes on the way to a second account; a Discord snowflake is the last, which is why it is
+          shown as well as the handle and why both are searchable.
+        */}
+        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
+          <AdminMetric
+            label="Email"
+            value={target.email ?? '—'}
+            sub={target.email ? (target.emailVerified ? 'Confirmed' : 'Not confirmed') : 'None set'}
+          />
+          <AdminMetric label="Discord" value={target.discordUsername ?? '—'} sub={target.discordUsername ? 'Connected' : 'Not connected'} />
+          <AdminMetric label="Discord ID" value={target.discordUserId ?? '—'} sub="Survives a rename" />
         </div>
 
         <label className="field">Reason (recorded in the audit trail)
@@ -4254,9 +4595,13 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
 
   const enough = board.held >= board.quantity
   const generous = offered >= board.generousQuantity
-  return <section className="card p-3">
+  // Spans, and splits inside. Alone in the first row of the crew page's grid, this left the best part
+  // of 700px empty beside a paragraph and one number box. Side by side they fill the row, which is the
+  // same shape the player market card ended up in for the same reason.
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>The Pimp Gods</h2><span>Once a week</span></div>
-    <p className="text-info-emphasis">
+    <div className="d-grid gtc-1 gtc-lg-2 gap-3 align-items-center">
+    <p className="text-info-emphasis mb-0">
       They want <strong>{number.format(board.quantity)} {board.label}</strong> this week. You hold{' '}
       {number.format(board.held)}. What comes back is never money: they deal in what the law has on you,
       how the house feels, and whether your pimps still believe in you.
@@ -4286,6 +4631,7 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
             : `${number.format(board.generousQuantity)} would count as generous.`)}
       </span>
     </div>
+    </div>
   </section>
 }
 
@@ -4309,7 +4655,9 @@ function TitleBoardPanel({ currentPlayerId }: { currentPlayerId: string }) {
     return () => { live = false }
   }, [])
 
-  return <section className="card p-3">
+  // Spans: the panel beside it on the recon page spans too, so this was sitting in a two-column grid
+  // with the second column held open for nothing.
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Today's Names</h2><span>Last 24 hours</span></div>
     {titles.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody has done enough today to be called anything.</p>}
     <div className="tnum d-grid gap-1">
@@ -4365,11 +4713,12 @@ function AlliancePage(ctx: PageContext) {
           Nobody on this list can attack you and you cannot attack them, by any method. That is what the{' '}
           {yours.duesPercent}% off every shift is buying.
         </p>
-        <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
+        <div className="tnum d-grid gtc-1 gtc-md-3 gtc-xl-5 gap-2 mb-3">
           <AdminMetric label="Crew worth" value={money.format(yours.netWorth)} />
           <AdminMetric label="Treasury" value={money.format(board.treasury)} />
           <AdminMetric label="Dues" value={`${yours.duesPercent}%`} />
           <AdminMetric label="Pool" value={`${yours.offensiveThugs} off / ${yours.defensiveThugs} def`} />
+          <AdminMetric label="City control" value={yours.cityControlThugs > 0 ? `+${yours.cityControlThugs}` : 'None'} />
           <AdminMetric label="You are" value={board.yourRank} />
         </div>
 
@@ -4385,7 +4734,13 @@ function AlliancePage(ctx: PageContext) {
 
         <AllianceRequestsPanel board={board} busy={busy} onAct={run} />
 
+        <AllianceAssistPanel board={board} ownPlayerId={ctx.dashboard.playerId} busy={busy} onAct={run} />
+
+        <AlliancePactsPanel board={board} busy={busy} onAct={run} />
+
         <AlliancePoolPanel board={board} crew={yours} busy={busy} onAct={run} />
+
+        <AllianceTransfersPanel transfers={board.transfers} />
 
         {board.yourRank === 'Boss' && <AllianceSettingsPanel crew={yours} board={board} maxDues={board.maxDuesPercent} busy={busy} onSave={run} />}
 
@@ -4397,9 +4752,21 @@ function AlliancePage(ctx: PageContext) {
       </section>
       : <section className="card p-3 gcol-full">
         <div className="panel-title"><h2>Start a Crew</h2><span>{money.format(board.foundingCost)}</span></div>
+        {/*
+          Three sentences rather than one, and one of them says what the money is for.
+
+          "A crew is people who" works as a heading and grates as the opening of a paragraph - a
+          singular subject with a plural after it. The rest ran on through two "and"s and finished on
+          "a share into a shared pot", which repeats itself in five words and still leaves a player
+          deciding whether to spend the founding fee with no idea what the pot does.
+
+          The truce sentence is now word for word the one the in-crew panel already uses, since it is
+          the same promise and there is no reason for the game to phrase it twice.
+        */}
         <p>
-          A crew is people who have agreed not to rob each other. Members cannot attack you by any method
-          and you cannot attack them, and every shift any of you works pays a share into a shared pot.
+          A crew is an agreement not to rob each other. Nobody in one can attack you and you cannot
+          attack them, by any method. It costs a cut of every shift any of you works, and that fills a
+          treasury the crew spends on thugs to send along on a raid or post at a member's house.
         </p>
         <div className="control-row">
           <label className="field">Name<input className="form-control" value={name} maxLength={32} onChange={event => setName(event.target.value)} /></label>
@@ -4412,15 +4779,26 @@ function AlliancePage(ctx: PageContext) {
         </div>
       </section>}
 
-    <section className="card p-3">
+    {/* Spans, because the alliance page has exactly two children and the other one spans too - the
+        second column of this grid was being held open for something that never renders. */}
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The Board</h2><span>{board.board.length} crews</span></div>
       {board.board.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody is running with anybody yet.</p>}
       <div className="tnum d-grid gap-1 my-3">
         {board.board.map(crew => <div className={`alliance-row d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${crew.yours ? 'border-primary' : ''}`} key={crew.id}>
           <span>#{crew.rank}</span>
-          <div>
+          {/*
+            A stack, not two inline elements in a row. Both of these are inline and JSX eats the
+            newline between them, so they rendered welded together - "The Eastside TableOpen to
+            anyone". The name goes above the things attached to it, which is what the row's own
+            comment in the stylesheet says a crew is.
+          */}
+          <div className="d-grid">
             <strong>{crew.name}</strong>
-            <small>{crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues</small>
+            <small className="text-body-secondary">
+              {crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues
+              {crew.cityControlThugs > 0 ? ` / +${crew.cityControlThugs} city thugs` : ''}
+            </small>
           </div>
           <b>{money.format(crew.netWorth)}</b>
           {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
@@ -4437,10 +4815,22 @@ function AlliancePage(ctx: PageContext) {
             onClick={() => run(() => api.applyToAlliance(crew.id))}
           >Ask</button>}
           {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
+          {yours && !crew.yours && !hasPactWith(board, crew.id) && <button
+            className="btn btn-secondary btn-sm"
+            disabled={busy}
+            onClick={() => run(() => api.requestAlliancePact(crew.id))}
+          >Ally</button>}
         </div>)}
       </div>
     </section>
   </div>
+}
+
+function hasPactWith(board: AllianceBoard, allianceId: number) {
+  return board.pacts.some(pact =>
+    pact.status !== 'Canceled'
+    && pact.status !== 'Declined'
+    && (pact.requestingAllianceId === allianceId || pact.targetAllianceId === allianceId))
 }
 
 /**
@@ -4458,17 +4848,20 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
 }) {
   const canExpel = board.powers.find(x => x.power === 'Expel')?.youHaveIt ?? false
   const isBoss = board.yourRank === 'Boss'
+  const [item, setItem] = useState('cash')
+  const [quantity, setQuantity] = useState(1)
+  const [sendOpen, setSendOpen] = useState(false)
   // Promotable ranks stop below the top: handing the crew over is its own move because it is the one
   // that gives yours away.
   const promotable = board.ranks.filter(x => x !== 'Boss')
 
   return <div className={`alliance-member d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${member.isYou ? 'border-primary' : ''}`}>
-    <div>
-      <strong>{member.name}</strong>
-      <small>{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
+    <div className="min-w-0">
+      <strong className="d-block text-truncate">{member.name}</strong>
+      <small className="d-block text-body-secondary">{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
     </div>
-    <b>{money.format(member.netWorth)}</b>
-    {!member.isYou && <div className="d-flex align-items-center gap-1">
+    <b className="tnum">{money.format(member.netWorth)}</b>
+    {!member.isYou && <div className="alliance-member-actions d-flex flex-wrap align-items-center gap-1">
       {isBoss && <select className="form-select"
         value={member.rank === 'Boss' ? '' : member.rank}
         disabled={busy || member.rank === 'Boss'}
@@ -4487,9 +4880,43 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
         disabled={busy}
         onClick={() => onAct(() => api.expelMember(member.playerId))}
       >Throw out</button>}
+      <button
+        className="btn btn-secondary btn-sm"
+        disabled={busy}
+        onClick={() => setSendOpen(value => !value)}
+      >Send</button>
+    </div>}
+    {!member.isYou && sendOpen && <div className="alliance-transfer-controls d-flex flex-wrap align-items-end gap-1">
+      <label className="field mb-0">Send
+        <select className="form-select" value={item} disabled={busy} onChange={event => setItem(event.target.value)}>
+          {allianceSendItems.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+        </select>
+      </label>
+      <label className="field mb-0">Qty<input className="form-control" type="number" min={1} value={quantity} onChange={event => setQuantity(Number(event.target.value))} /></label>
+      <button
+        className="btn btn-secondary btn-sm"
+        disabled={busy || quantity < 1}
+        onClick={() => onAct(() => api.sendAllianceResource(member.playerId, item, quantity))}
+      >Confirm</button>
     </div>}
   </div>
 }
+
+const allianceSendItems = [
+  { key: 'cash', label: 'Cash' },
+  { key: 'thugs', label: 'Thugs' },
+  { key: 'weed', label: 'Weed' },
+  { key: 'coke', label: 'Coke' },
+  { key: 'beer', label: 'Beer' },
+  { key: 'medicine', label: 'Medicine' },
+  { key: 'poison', label: 'Poison' },
+  { key: 'moonshine', label: 'Moonshine' },
+  { key: 'cut', label: 'Cut' },
+  { key: 'pistols', label: 'Pistols' },
+  { key: 'shotguns', label: 'Shotguns' },
+  { key: 'smgs', label: 'SMGs' },
+  { key: 'rifles', label: 'Rifles' },
+]
 
 /**
  * Who is waiting on somebody. Invitations to this player and applications to their crew sit in one
@@ -4510,24 +4937,151 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
     {sent.length > 0 && <>
       <strong className="d-block mb-1 text-primary small">Asked, waiting to hear</strong>
       {sent.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
-        <div>
-          <strong>{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
-          <small>{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
+        <div className="min-w-0">
+          <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
+          <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
         </div>
         {ask.kind === 'Invitation'
           ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.withdrawAllianceRequest(ask.id))}>Take it back</button>
-          : <em>Waiting on somebody who can open the door</em>}
-        <span />
+          : <small className="text-body-secondary text-sm-end">Waiting on the crew</small>}
       </div>)}
     </>}
     {answerable.length > 0 && <strong className="d-block mb-1 text-primary small">Waiting on you</strong>}
     {answerable.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
-      <div>
-        <strong>{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
-        <small>{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
+      <div className="min-w-0">
+        <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
+        <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
       </div>
       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</button>
       <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</button>
+    </div>)}
+  </div>
+}
+
+function AlliancePactsPanel({ board, busy, onAct }: {
+  board: AllianceBoard
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  if (!board.yours || board.pacts.length === 0) return null
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Allied crews</strong>
+    {board.pacts.map(pact => <AlliancePactRow key={pact.id} pact={pact} ownAllianceId={board.yours?.id ?? 0} busy={busy} onAct={onAct} />)}
+  </div>
+}
+
+function AlliancePactRow({ pact, ownAllianceId, busy, onAct }: {
+  pact: AlliancePact
+  ownAllianceId: number
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const other = pact.requestingAllianceId === ownAllianceId ? pact.targetAllianceName : pact.requestingAllianceName
+  return <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2">
+    <div className="min-w-0">
+      <strong className="d-block text-truncate">{other}</strong>
+      <small className="d-block text-body-secondary">{pact.status === 'Active' ? 'active pact' : 'waiting on an answer'}</small>
+    </div>
+    {pact.yoursToAnswer
+      ? <>
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAlliancePact(pact.id, true))}>Accept</button>
+        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAlliancePact(pact.id, false))}>Refuse</button>
+      </>
+      : <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.cancelAlliancePact(pact.id))}>
+        {pact.status === 'Active' ? 'Break pact' : 'Take it back'}
+      </button>}
+  </div>
+}
+
+function AllianceAssistPanel({ board, ownPlayerId, busy, onAct }: {
+  board: AllianceBoard
+  /** Passed through to the rows: only whoever sent help is offered the button to take it back. */
+  ownPlayerId: string
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  if (!board.yours) return null
+  /*
+    An `and`, not an `or`.
+
+    This read `status === 'Open' || missionStatus !== 'Complete'`, and since nothing ever closed a call,
+    an unanswered one on a fight that finished last week passed the first clause and stayed on the page
+    for good - offering to send help to a raid long over, and answering "that fight is no longer taking
+    help" to anybody who tried. The server closes them now, and this stops showing the closed ones.
+  */
+  const calls = board.assistCalls.filter(call => call.status !== 'Closed' && call.missionStatus !== 'Complete')
+  if (calls.length === 0) return null
+
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Assist calls</strong>
+    {calls.map(call => <AllianceAssistRow key={call.id} call={call} ownAllianceId={board.yours?.id ?? 0} ownPlayerId={ownPlayerId} busy={busy} onAct={onAct} />)}
+  </div>
+}
+
+function AllianceAssistRow({ call, ownAllianceId, ownPlayerId, busy, onAct }: {
+  call: AllianceAssistCall
+  ownAllianceId: number
+  /** Taking help back is personal: it goes to whoever sent it, not to whoever is looking at the page. */
+  ownPlayerId: string
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const canAnswer = call.status === 'Open' && call.allyAllianceId === ownAllianceId && call.missionStatus !== 'Complete'
+  // Only the person who sent it, and only once the fight it was sent to has finished.
+  const canRecall = call.status === 'Answered'
+    && call.missionStatus === 'Complete'
+    && call.respondedByPlayerId === ownPlayerId
+  const [thugs, setThugs] = useState(0)
+  const [pistols, setPistols] = useState(0)
+  const [shotguns, setShotguns] = useState(0)
+  const [smgs, setSmgs] = useState(0)
+  const [rifles, setRifles] = useState(0)
+  const sentWeapons = call.pistolsSent + call.shotgunsSent + call.smgsSent + call.riflesSent
+
+  return <div className="d-grid gap-2 border-top py-2">
+    <div className="d-flex flex-wrap justify-content-between gap-2">
+      <div>
+        <strong>{call.defenderName} vs {call.attackerName}</strong>
+        <small>{call.defenderAllianceName} called {call.allyAllianceName} / {call.missionStatus}</small>
+      </div>
+      {call.status !== 'Open' && <em>{call.thugsSent} thugs / {sentWeapons} guns sent</em>}
+    </div>
+    {canRecall && <div className="d-flex flex-wrap align-items-center gap-2">
+      <span className="text-body-tertiary small">
+        The fight is over. What you sent still counts as theirs until you take it back, and whatever did
+        not survive it is gone.
+      </span>
+      <button
+        className="btn btn-secondary btn-sm"
+        disabled={busy}
+        onClick={() => onAct(() => api.recallAllianceAssist(call.id))}
+      >Take back what is left</button>
+    </div>}
+    {canAnswer && <div className="d-grid gtc-2 gtc-md-fill-120 gap-2">
+      <label className="field">Thugs<input className="form-control" type="number" min={0} value={thugs} onChange={event => setThugs(Number(event.target.value))} /></label>
+      <label className="field">Pistols<input className="form-control" type="number" min={0} value={pistols} onChange={event => setPistols(Number(event.target.value))} /></label>
+      <label className="field">Shotguns<input className="form-control" type="number" min={0} value={shotguns} onChange={event => setShotguns(Number(event.target.value))} /></label>
+      <label className="field">SMGs<input className="form-control" type="number" min={0} value={smgs} onChange={event => setSmgs(Number(event.target.value))} /></label>
+      <label className="field">Rifles<input className="form-control" type="number" min={0} value={rifles} onChange={event => setRifles(Number(event.target.value))} /></label>
+      <button
+        className="btn btn-primary btn-sm align-self-end"
+        disabled={busy || thugs + pistols + shotguns + smgs + rifles < 1}
+        onClick={() => onAct(() => api.answerAllianceAssist(call.id, thugs, pistols, shotguns, smgs, rifles))}
+      >Send help</button>
+    </div>}
+  </div>
+}
+
+function AllianceTransfersPanel({ transfers }: { transfers: AllianceTransfer[] }) {
+  if (transfers.length === 0) return null
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Recent sends</strong>
+    {transfers.slice(0, 6).map(transfer => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={transfer.id}>
+      <div>
+        <strong>{transfer.fromPlayerName} to {transfer.toPlayerName}</strong>
+        <small>{transfer.quantity.toLocaleString()} {transfer.label.toLowerCase()}</small>
+      </div>
+      <em>{new Date(transfer.createdAtUtc).toLocaleString()}</em>
     </div>)}
   </div>
 }
@@ -4548,9 +5102,11 @@ function AlliancePoolPanel({ board, crew, busy, onAct }: {
   const [buy, setBuy] = useState(1)
   const [post, setPost] = useState(1)
   const room = Math.max(0, board.borrowLimit - board.yourDefenders)
+  const cities = crew.controlledCities.map(city => `${city.city} +${city.bonusThugs}`).join(' / ')
 
   return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     <StatusRow label="Pool" value={`${crew.offensiveThugs} offensive / ${crew.defensiveThugs} defensive`} />
+    {crew.cityControlThugs > 0 && <StatusRow label="City control" value={`+${crew.cityControlThugs} thugs (${cities})`} />}
     <StatusRow
       label="You may borrow"
       value={board.borrowLimit === 0 ? 'Nothing until you have thugs of your own' : `${board.borrowLimit} (${board.yourDefenders} standing here)`}
@@ -4642,21 +5198,31 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
   </div>
 }
 
-function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className }: {
+function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className, wide }: {
   dashboard: Dashboard
   busy: boolean
   bankAmount: number
   setBankAmount: (amount: number) => void
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
   className?: string
+  /**
+   * Whether this one is standing on its own.
+   *
+   * The same panel appears twice: beside the activity list on the street page, where half a row is
+   * exactly right, and at the foot of the business page, where nothing sits next to it and the row
+   * held 727px open for nothing. Told which it is, rather than guessing from a width it cannot see.
+   */
+  wide?: boolean
 }) {
-  return <section className={`card p-3 ${className ?? ''}`}>
+  return <section className={`card p-3 ${wide ? 'gcol-full' : ''} ${className ?? ''}`}>
     <div className="panel-title"><h2>Bank</h2><span>Cash handling</span></div>
-    <p>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
-    <div className="control-row">
-      <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
-      <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
-      <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+    <div className={wide ? 'd-grid gtc-1 gtc-lg-2 gap-3 align-items-center' : ''}>
+      <p className={wide ? 'mb-0' : ''}>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+      <div className="control-row">
+        <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
+        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
+        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+      </div>
     </div>
   </section>
 }
@@ -4757,7 +5323,10 @@ function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
         </select></label>}
       {action === 'buy' &&
         <label className="field">Item<select className="form-select" value={item} onChange={e => setItem(e.target.value)}>
-          <option value="condoms">Condoms</option><option value="beer">Beer</option><option value="weapons">Weapons</option>
+          {/* The store sells guns by tier, so this offers them by tier. "weapons" was refused. */}
+          <option value="condoms">Condoms</option><option value="beer">Beer</option><option value="medicine">Medicine</option>
+          <option value="pistols">Pistols</option><option value="shotguns">Shotguns</option>
+          <option value="smgs">SMGs</option><option value="rifles">Rifles</option>
         </select></label>}
       {(action === 'hire' || action === 'fire') &&
         <label className="field">Role<select className="form-select" value={role} onChange={e => setRole(e.target.value)}>
@@ -5036,10 +5605,12 @@ function ActivityList({ entries }: { entries: { id: number, action: string, crea
   </div>
 }
 
-function AdminMetric({ label, value }: { label: string, value: string }) {
+/** `sub` is for a tile whose number needs a word under it - confirmed, connected, none set. */
+function AdminMetric({ label, value, sub }: { label: string, value: string, sub?: string }) {
   return <div className="d-grid gap-1 border rounded bg-body-secondary px-3 py-2">
     <span className="eyebrow">{label}</span>
     <strong className="min-w-0 fs-5 text-break">{value}</strong>
+    {sub && <small className="small text-body-tertiary">{sub}</small>}
   </div>
 }
 
@@ -5177,6 +5748,546 @@ function formatBreakdownValue(key: string, value: unknown) {
     return Number.isInteger(value) ? number.format(value) : value.toFixed(2)
   }
   return String(value)
+}
+
+const ACCOUNT_TABS = ['profile', 'signin', 'security'] as const
+type AccountTab = typeof ACCOUNT_TABS[number]
+
+const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = {
+  profile: { label: 'Profile', kicker: 'Who you are here' },
+  signin: { label: 'Sign-in', kicker: 'Email, password, Discord' },
+  security: { label: 'Security', kicker: 'Sessions and last doors' },
+}
+
+/**
+ * A clock that ticks while something is counting down, and stops when nothing is.
+ *
+ * The verification panel has three deadlines running at once - the code expiring, the resend
+ * cooldown, and neither - and a component that re-renders once a second forever to show a countdown
+ * that is not there is a component quietly burning a laptop battery on a settings page.
+ */
+function useSecondsTicker(active: boolean) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return now
+}
+
+/** Whole seconds between now and a deadline, floored at zero. */
+function secondsUntil(iso: string | null | undefined, now: number) {
+  if (!iso) return 0
+  return Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000))
+}
+
+function countdown(seconds: number) {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+/**
+ * The account tab.
+ *
+ * Everything a player owns hangs off one account, and until recently the only thing holding that
+ * account was a username and a password chosen on the day they signed up, with no way to change
+ * either and nowhere to look at them. This is that place.
+ *
+ * The rule the whole tab is arranged around is that at least one way in has to stay open. A player
+ * who removes their password and then disconnects Discord owns an empire nobody can reach, so the
+ * page says which is the last one standing and the server refuses the change regardless of what the
+ * page says - this is the explanation, not the enforcement.
+ *
+ * It keeps its own state rather than going through the shared act(), because none of it is a game
+ * action: nothing here spends a turn, moves a number, or belongs in the activity log, and running it
+ * through the dashboard refresh would only throw away the one sentence worth reading.
+ */
+function AccountPage(ctx: PageContext) {
+  const [tab, setTab] = useState<AccountTab>('profile')
+  const [account, setAccount] = useState<Account | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [email, setEmail] = useState('')
+
+  const load = async () => {
+    try {
+      const loaded = await api.account()
+      setAccount(loaded)
+      setEmail(loaded.email ?? '')
+    } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [])
+
+  /** Every control on the tab does the same three things, so they say so once. */
+  const run = async (fn: () => Promise<Account | void>, said: string, form?: HTMLFormElement) => {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const updated = await fn()
+      if (updated) { setAccount(updated); setEmail(updated.email ?? '') }
+      setNotice(said)
+      // Passwords typed into a form have no business surviving the submit that used them.
+      form?.querySelectorAll('input[type=password]').forEach(input => { (input as HTMLInputElement).value = '' })
+    } catch (e) {
+      setError((e as Error).message)
+      // A refused attempt still burned one, and the count only comes back on a fresh read.
+      await load()
+    }
+    finally { setBusy(false) }
+  }
+
+  if (!account) return <div className="d-grid gap-3">
+    <section className="card p-3"><p className="text-body-tertiary small mb-0">Reading your account.</p></section>
+    {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+  </div>
+
+  // Only what the panels take. Spreading the whole component state would let a panel quietly start
+  // depending on something it has no business touching.
+  const panel: AccountPanel = { account, busy, run, fail: setError }
+
+  /*
+    Accounts made before signing up required one of the two exist, and nothing was ever going to tell
+    them. They keep working - it is a rule about signing up, not about carrying on playing - but an
+    account with no way back is one forgotten password from being gone, and the owner should hear that
+    from the page rather than from the day it happens.
+  */
+  const strandable = waysBackIn(account).length === 0
+
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
+    <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
+      {ACCOUNT_TABS.map(name => <button
+        key={name}
+        type="button"
+        className={`admin-tab btn d-grid gap-1 text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
+        aria-current={tab === name ? 'page' : undefined}
+        onClick={() => setTab(name)}
+      >
+        <strong>{ACCOUNT_TAB_META[name].label}</strong>
+        <span className="small opacity-75">{ACCOUNT_TAB_META[name].kicker}</span>
+      </button>)}
+    </nav>
+
+    {(error || notice) && <div className="d-grid gap-2">
+      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+      {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
+    </div>}
+
+    {/* Not dismissible, and on every tab. It is true until it is fixed, and hiding it would be doing
+        the player a favour they did not ask for. */}
+    {strandable && <div className="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-3 mb-0">
+      <span>
+        <strong>There is no way back into this account.</strong> Forget your password and it is gone -
+        confirm an email address or connect Discord, and there is a way back.
+      </span>
+      {tab !== 'signin' && <button className="btn btn-warning flex-shrink-0" type="button" onClick={() => setTab('signin')}>
+        Fix this
+      </button>}
+    </div>}
+
+    <div className="d-grid gtc-1 gtc-xl-2 gap-3 align-items-start">
+      {tab === 'profile' && <AccountProfilePanel account={account} dashboard={ctx.dashboard} onTab={setTab} />}
+      {tab === 'signin' && <>
+        <AccountEmailPanel {...panel} email={email} setEmail={setEmail} />
+        <AccountPasswordPanel {...panel} />
+        <AccountDiscordPanel {...panel} />
+      </>}
+      {tab === 'security' && <AccountSecurityPanel {...panel} onTab={setTab} />}
+    </div>
+  </div>
+}
+
+/** What the panels below all take. Bundled because every one of them takes all of it. */
+type AccountPanel = {
+  account: Account
+  busy: boolean
+  run: (fn: () => Promise<Account | void>, said: string, form?: HTMLFormElement) => Promise<void>
+  /** For a refusal the page can make on its own, without troubling the server about it. */
+  fail: (message: string) => void
+}
+
+function AccountProfilePanel({ account, dashboard, onTab }: { account: Account, dashboard: Dashboard, onTab: (tab: AccountTab) => void }) {
+  // Two names, and they are not the same thing, which is worth saying plainly on the page where both
+  // appear: one is how you sign in and nobody else sees it, the other is what the whole city calls you.
+  const open = waysIn(account)
+  return <>
+    <section className="card p-3 gcol-xl-full">
+      <div className="panel-title"><h2>{account.playerName}</h2><span>{dashboard.city} / Rank #{dashboard.rank}</span></div>
+      <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
+        <AdminMetric label="Player name" value={account.playerName} />
+        <AdminMetric label="Username" value={account.username} />
+        <AdminMetric label="Ways in" value={`${open.length} of 2`} />
+        <AdminMetric label="Since" value={new Date(account.createdAtUtc).toLocaleDateString()} />
+      </div>
+      <p className="mb-0">
+        Your <strong className="text-primary">player name</strong> is what the city sees - the ladder, the
+        news, the wanted list. Your <strong className="text-primary">username</strong> is only ever how you
+        sign in, and nobody else is shown it. Neither of them changes.
+      </p>
+    </section>
+
+    {/*
+      Two panels rather than one, because a name and a way in are not the same kind of thing and putting
+      them in one list of "ways in" says something false. An email address is a second name for the
+      password door - it opens nothing on its own, and the day the password goes it is worth nothing.
+      A player reading a tile that said otherwise might close the only door they had.
+    */}
+    <section className="card p-3">
+      <div className="panel-title"><h2>Ways In</h2><span>{open.length} of 2</span></div>
+      <p>
+        Two things can actually let you in, and you need to keep at least one. The game will not let you
+        close the last one.
+      </p>
+      <div className="d-grid gtc-1 gtc-md-2 gap-2">
+        <WayInTile label="Password" open={account.hasPassword} detail={account.hasPassword ? 'Set' : 'Never set'} />
+        <WayInTile label="Discord" open={account.discordConnected} detail={account.discordUsername ?? 'Not connected'} />
+      </div>
+      <button className="btn btn-secondary mt-3" type="button" onClick={() => onTab('signin')}>Manage sign-in</button>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Names You Can Type</h2><span>{signInNames(account).length} of 2</span></div>
+      <p>
+        Either of these goes in the box on the sign-in screen, with your password. They are names, not
+        keys - neither of them opens anything without the password beside it.
+      </p>
+      <div className="d-grid gtc-1 gtc-md-2 gap-2">
+        <WayInTile label="Username" open detail={account.username} />
+        <WayInTile
+          label="Email"
+          open={account.emailVerified}
+          detail={account.email
+            ? account.emailVerified ? account.email : `${account.email} - not confirmed`
+            : 'None set'}
+        />
+      </div>
+    </section>
+  </>
+}
+
+/**
+ * The things that would actually let somebody in.
+ *
+ * An email address is deliberately not one of them. It is a second name for the password door, so
+ * counting it here would tell a player with a password and an address that they have two ways in and
+ * can safely drop one - and dropping the password takes the address with it.
+ */
+function waysIn(account: Account) {
+  return [
+    account.hasPassword && 'password',
+    account.discordConnected && 'discord',
+  ].filter(Boolean)
+}
+
+/** The names the sign-in box will accept. Only a confirmed address is one. */
+function signInNames(account: Account) {
+  return ['username', account.emailVerified && 'email'].filter(Boolean)
+}
+
+/**
+ * The things that could get somebody back in, which is a different list from the things that let them
+ * in. A password is a way in and is not a way back: forget it and there is nothing left to prove the
+ * account was ever yours. Only a confirmed address and a Discord answer this one.
+ */
+function waysBackIn(account: Account) {
+  return [
+    account.emailVerified && 'email',
+    account.discordConnected && 'discord',
+  ].filter(Boolean)
+}
+
+function WayInTile({ label, open, detail }: { label: string, open: boolean, detail: string }) {
+  return <div className={`stat d-grid gap-1 border rounded bg-body-secondary p-3 ${open ? 'border-primary' : ''}`}>
+    <span className="eyebrow">{label}</span>
+    <strong className={`min-w-0 fs-6 lh-1 text-truncate ${open ? 'text-primary' : 'text-body-tertiary'}`}>
+      {open ? 'Open' : 'Closed'}
+    </strong>
+    <small className="small text-truncate" title={detail}>{detail}</small>
+  </div>
+}
+
+function AccountEmailPanel({ account, busy, run, email, setEmail }: AccountPanel & { email: string, setEmail: (value: string) => void }) {
+  const pending = account.verification
+  const now = useSecondsTicker(pending !== null)
+  const expiresIn = secondsUntil(pending?.expiresAtUtc, now)
+  const resendIn = secondsUntil(pending?.resendableAtUtc, now)
+  const emailChanged = (account.email ?? '') !== email.trim()
+  // Emptying the box is a removal, and a removal is only allowed while something else could still get
+  // them back in. Changing it to a different address is always fine - one is still there to confirm.
+  const removingLastWayBack = email.trim().length === 0 && account.email !== null && !account.discordConnected
+
+  const saveEmail = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const current = new FormData(form).get('currentPassword')
+    void run(
+      () => api.setEmail(email.trim(), String(current ?? '')),
+      email.trim() ? 'Email saved. Confirm it to sign in with it.' : 'Email removed.',
+      form)
+  }
+
+  const confirm = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    void run(() => api.confirmEmail(String(new FormData(form).get('code') ?? '')), 'Address confirmed.', form)
+      .then(() => { form.reset() })
+  }
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      <h2>Email</h2>
+      <span className={account.emailVerified ? 'text-primary' : ''}>
+        {!account.email ? 'None' : account.emailVerified ? 'Confirmed' : 'Not confirmed'}
+      </span>
+    </div>
+    <p>
+      A second name to sign in under, with the same password. It only becomes a way in once you have
+      confirmed it, so an address typed by somebody who cannot read the mail opens nothing.
+    </p>
+
+    {/*
+      Said out loud rather than hidden. Mail written to a server log is exactly right on a laptop and
+      exactly wrong anywhere else, and a player who never gets a code deserves to know which it is.
+    */}
+    {!account.emailDelivers && <div className="alert alert-warning">
+      No email provider is configured on this server, so codes are written to the server log instead of
+      being sent. Fine for development; nobody will receive anything.
+    </div>}
+
+    {account.email && !account.emailVerified && <div className="border border-primary rounded p-3 mb-3 d-grid gap-3">
+      <div>
+        <span className="eyebrow d-block">Confirm this address</span>
+        <p className="mb-0 mt-1">
+          {pending
+            ? <>A six-digit code went to <strong className="text-primary">{pending.sentTo}</strong>.
+              It is good for another <strong className="tnum">{countdown(expiresIn)}</strong>, and you have{' '}
+              <strong className="tnum">{pending.attemptsRemaining}</strong> {pending.attemptsRemaining === 1 ? 'try' : 'tries'} left.</>
+            : <>Nothing is waiting. Ask for a code and it will arrive at{' '}
+              <strong className="text-primary">{account.email}</strong>.</>}
+        </p>
+      </div>
+
+      {pending && expiresIn > 0 && <form className="d-flex flex-wrap align-items-end gap-2" onSubmit={confirm}>
+        <label className="field flex-fill min-w-0">
+          Code
+          {/*
+            One box rather than six. Six boxes look the part and then fight the player over pasting,
+            backspacing and autofill, all to save typing that nobody was struggling with.
+          */}
+          <input
+            className="form-control tnum fs-4 text-center"
+            style={{ letterSpacing: '.4em' }}
+            name="code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]*"
+            maxLength={6}
+            placeholder="000000"
+            required
+          />
+        </label>
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Confirm'}</button>
+      </form>}
+
+      <button
+        className="btn btn-secondary"
+        type="button"
+        disabled={busy || resendIn > 0}
+        onClick={() => void run(() => api.sendEmailCode(), 'A new code is on its way.')}
+      >
+        {resendIn > 0
+          ? `Send another in ${countdown(resendIn)}`
+          : pending ? 'Send a new code' : 'Send a code'}
+      </button>
+    </div>}
+
+    {account.emailVerified && account.emailVerifiedAtUtc && <p className="text-body-tertiary small">
+      Confirmed on {new Date(account.emailVerifiedAtUtc).toLocaleDateString()}.
+    </p>}
+
+    <form className="d-grid gap-3" onSubmit={saveEmail}>
+      <label className="field">
+        Address
+        <input
+          className="form-control"
+          type="email"
+          maxLength={254}
+          value={email}
+          placeholder="nobody@example.com"
+          onChange={event => setEmail(event.target.value)}
+        />
+        <small className="form-text">Empty removes it. Changing it starts the confirmation again.</small>
+      </label>
+      {account.hasPassword && <label className="field">
+        Current password
+        <input className="form-control" name="currentPassword" type="password" autoComplete="current-password" required />
+        <small className="form-text">Changing where a sign-in can come from costs the password.</small>
+      </label>}
+      {/*
+        Removing the last way back in is refused by the server whatever this button says, so the button
+        says it first. A refusal a player could have seen coming is a worse refusal than one that
+        explains itself before they click.
+      */}
+      {removingLastWayBack && <div className="alert alert-warning mb-0">
+        This address is the only way back into your account if you forget your password. Connect Discord
+        on this page and you can remove it.
+      </div>}
+      <button className="btn btn-primary" disabled={busy || !emailChanged || removingLastWayBack}>
+        {busy ? 'Working...' : email.trim() ? 'Save Email' : 'Remove Email'}
+      </button>
+    </form>
+  </section>
+}
+
+function AccountPasswordPanel({ account, busy, run, fail }: AccountPanel) {
+  const savePassword = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const data = new FormData(form)
+    const next = String(data.get('newPassword') ?? '')
+    // Caught here rather than sent: the server has no way to know what was typed in the second box,
+    // and a round trip to be told something the page already knew is a round trip wasted.
+    if (next !== String(data.get('confirmPassword') ?? '')) { fail('The two new passwords do not match.'); return }
+    void run(
+      () => api.setPassword(String(data.get('currentPassword') ?? ''), next),
+      account.hasPassword ? 'Password changed. Every other session has been signed out.' : 'Password set.',
+      form)
+  }
+
+  return <section className="card p-3">
+    <div className="panel-title"><h2>Password</h2><span>{account.hasPassword ? 'Set' : 'None'}</span></div>
+    <p>
+      {account.hasPassword
+        ? 'Changing it signs out every other session on this account, and keeps this one.'
+        : 'You signed up through Discord and have never set one. Set a password and you can sign in with your username as well.'}
+    </p>
+    <form className="d-grid gap-3" onSubmit={savePassword}>
+      {account.hasPassword && <label className="field">
+        Current password
+        <input className="form-control" name="currentPassword" type="password" autoComplete="current-password" required />
+      </label>}
+      <label className="field">
+        New password
+        <input className="form-control" name="newPassword" type="password" autoComplete="new-password" minLength={8} required />
+        <small className="form-text">Eight characters at the very least.</small>
+      </label>
+      <label className="field">
+        New password again
+        <input className="form-control" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required />
+      </label>
+      <button className="btn btn-primary" disabled={busy}>
+        {busy ? 'Working...' : account.hasPassword ? 'Change Password' : 'Set Password'}
+      </button>
+    </form>
+  </section>
+}
+
+function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
+  // Two separate reasons the connection might be stuck, and they are not the same reason - one is
+  // about getting in at all, the other about getting back in after forgetting the password.
+  const discordIsTheOnlyWayIn = account.discordConnected && !account.hasPassword
+  const discordIsTheOnlyWayBackIn = account.discordConnected && !account.emailVerified
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      <h2>Discord</h2><span>{account.discordConnected ? 'Connected' : 'Not connected'}</span>
+    </div>
+    {account.discordConnected
+      ? <>
+        <p>
+          Connected to <strong className="text-primary">{account.discordUsername}</strong>
+          {account.discordLinkedAtUtc && <> since {new Date(account.discordLinkedAtUtc).toLocaleDateString()}</>}.
+          That Discord account signs straight in, on any browser, without a password.
+        </p>
+        {discordIsTheOnlyWayIn
+          ? <div className="alert alert-warning mb-0">
+            This is the only way into your empire. Set a password before disconnecting it.
+          </div>
+          : discordIsTheOnlyWayBackIn
+          ? <div className="alert alert-warning mb-0">
+            This is the only way back into your empire if you forget your password. Confirm an email
+            address before disconnecting it.
+          </div>
+          : <button
+            className="btn btn-outline-danger"
+            type="button"
+            disabled={busy}
+            onClick={() => void run(() => api.disconnectDiscord(), 'Discord disconnected.')}
+          >Disconnect Discord</button>}
+      </>
+      : account.discordConfigured
+        ? <>
+          <p>
+            Connect one and it becomes a way in: one button on the sign-in screen, no password typed.
+            You keep your username and password either way.
+          </p>
+          {/*
+            A link, not a button. Connecting is the same round trip through Discord that signing in is,
+            and the only difference is that this one starts with a session already in hand - which is
+            what tells the callback to attach rather than to sign somebody in.
+          */}
+          <a className="btn btn-secondary d-inline-flex align-items-center justify-content-center gap-2" href={discordStartUrl()}>
+            <i className="bi bi-discord" aria-hidden="true" />
+            Connect Discord
+          </a>
+        </>
+        : <p className="mb-0 text-body-tertiary">
+          This server has no Discord credentials set, so there is nothing to connect to yet.
+        </p>}
+  </section>
+}
+
+function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { onTab: (tab: AccountTab) => void }) {
+  const open = waysIn(account)
+  const back = waysBackIn(account)
+  const enoughOfBoth = open.length > 1 && back.length > 1
+  return <>
+    <section className="card p-3">
+      <div className="panel-title"><h2>Sessions</h2><span>Signed in for 14 days</span></div>
+      <p>
+        A sign-in lasts a fortnight and renews itself while you play, which is convenient right up until
+        you leave yourself signed in on a machine you no longer have. This ends every session but this
+        one, everywhere, immediately.
+      </p>
+      <button
+        className="btn btn-outline-danger"
+        type="button"
+        disabled={busy}
+        onClick={() => void run(() => api.revokeSessions(), 'Every other session has been signed out.')}
+      >{busy ? 'Working...' : 'Sign out everywhere else'}</button>
+    </section>
+
+    {/*
+      Two counters rather than one, because the panel used to answer one question and imply the other.
+      It said "you can close either one and still get back in", which stopped being true the day a way
+      *in* and a way *back in* came apart - closing Discord with no confirmed address leaves a player
+      signed in and unrecoverable, which is exactly the state the counts exist to show.
+    */}
+    <section className="card p-3">
+      <div className="panel-title">
+        <h2>The Last Door</h2><span>{open.length} in / {back.length} back</span>
+      </div>
+      <p>
+        Two different questions, and the pair above answers both. <strong className="text-primary">In</strong> is
+        what signs you in: a password, or a connected Discord. <strong className="text-primary">Back</strong> is
+        what could still prove the account was yours once the password is gone: a confirmed email
+        address, or that same Discord.
+      </p>
+      <p>
+        A password answers the first and never the second - forget it and it proves nothing - which is
+        why the two are rarely the same number.
+      </p>
+      <p className={enoughOfBoth ? 'mb-0' : ''}>
+        {enoughOfBoth
+          ? 'You have a spare of each, so nothing here is load-bearing. Close any one of them and you can still get in, and still get back.'
+          : 'The game refuses to let you close a last one of either. That is a poor substitute for having a spare of each.'}
+      </p>
+      {!enoughOfBoth && <button className="btn btn-primary" type="button" onClick={() => onTab('signin')}>
+        Add another
+      </button>}
+    </section>
+  </>
 }
 
 function DismissibleMessage({ className, children, onClose }: { className: string, children: ReactNode, onClose: () => void }) {

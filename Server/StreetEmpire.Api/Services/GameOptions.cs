@@ -683,7 +683,7 @@ public sealed class PimpOptions
     /// cap: a garrison is a handful of thugs, so the same percentage is worth far less in absolute
     /// terms, and holding ground should be worth putting a good pimp on.
     /// </summary>
-    public int MaxGarrisonBonusPercent { get; set; } = 30;
+    public int MaxGarrisonBonusPercent { get; set; } = 85;
 }
 
 /// <summary>
@@ -1069,6 +1069,12 @@ public sealed class TerritoryOptions
     /// <summary>Thugs needed to hold anything at all. Below this the ground is given up.</summary>
     public int MinimumGarrison { get; set; } = 5;
 
+    /// <summary>Most thugs one piece of ground can hold.</summary>
+    public int MaxGarrisonThugs { get; set; } = 50;
+
+    /// <summary>Most thugs one territory raid can send at a garrison.</summary>
+    public int MaxRaidThugs { get; set; } = 100;
+
     /// <summary>Turns spent claiming ground nobody holds. Taking it off somebody costs a mission.</summary>
     public int ClaimTurnCost { get; set; } = 5;
 
@@ -1083,6 +1089,7 @@ public sealed class TerritoryOptions
     public List<TerritoryTierCapOptions> TierCaps { get; set; } = [];
 
     public List<TerritoryTypeOptions> Types { get; set; } = [];
+    public List<TerritoryCityControlOptions> CityControl { get; set; } = [];
     public List<TerritorySeedOptions> Map { get; set; } = [];
 
     public void ApplyDefaultsWhereEmpty()
@@ -1106,6 +1113,19 @@ public sealed class TerritoryOptions
                 new TerritoryTypeOptions { Type = "dock", Label = "Docks", ProductionYieldPercent = 20 },
                 new TerritoryTypeOptions { Type = "club", Label = "Club", MoraleRecoveryPercent = 50 },
                 new TerritoryTypeOptions { Type = "stash", Label = "Stash House", LootPercent = 20 }
+            ];
+
+        if (CityControl.Count == 0)
+            CityControl =
+            [
+                new TerritoryCityControlOptions { City = "Detroit", BonusThugs = 10 },
+                new TerritoryCityControlOptions { City = "Atlanta", BonusThugs = 12 },
+                new TerritoryCityControlOptions { City = "Houston", BonusThugs = 14 },
+                new TerritoryCityControlOptions { City = "Chicago", BonusThugs = 16 },
+                new TerritoryCityControlOptions { City = "Miami", BonusThugs = 18 },
+                new TerritoryCityControlOptions { City = "Los Angeles", BonusThugs = 20 },
+                new TerritoryCityControlOptions { City = "Las Vegas", BonusThugs = 22 },
+                new TerritoryCityControlOptions { City = "New York", BonusThugs = 24 }
             ];
 
         // Six pieces per city, and every city carries all four types so nowhere is starved of an
@@ -1196,6 +1216,12 @@ public sealed class TerritoryTypeOptions
     /// how the hideout bugs happened. Loot rides on the multiplier the mission already carries.
     /// </summary>
     public int LootPercent { get; set; }
+}
+
+public sealed class TerritoryCityControlOptions
+{
+    public string City { get; set; } = string.Empty;
+    public int BonusThugs { get; set; }
 }
 
 public sealed class TerritorySeedOptions

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260827024441_PasswordResetCodes")]
+    partial class PasswordResetCodes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -132,128 +135,6 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("Alliances");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceAssistCall", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("AllyAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("CombatMissionId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("DefenderAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("PistolsReturned")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("PistolsSent")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("RecalledAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("RespondedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("RespondedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("RiflesReturned")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RiflesSent")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ShotgunsReturned")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ShotgunsSent")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SmgsReturned")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SmgsSent")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<int>("ThugsReturned")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ThugsSent")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RespondedById");
-
-                    b.HasIndex("AllyAllianceId", "Status");
-
-                    b.HasIndex("CombatMissionId", "AllyAllianceId")
-                        .IsUnique();
-
-                    b.HasIndex("DefenderAllianceId", "Status");
-
-                    b.ToTable("AllianceAssistCalls");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.AlliancePact", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime?>("AnsweredAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("AnsweredById")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("RequestedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("RequestingAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<long>("TargetAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AnsweredById");
-
-                    b.HasIndex("RequestedById");
-
-                    b.HasIndex("TargetAllianceId", "Status");
-
-                    b.HasIndex("RequestingAllianceId", "TargetAllianceId", "Status");
-
-                    b.ToTable("AlliancePacts");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.AllianceRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -288,45 +169,6 @@ namespace StreetEmpire.Api.Migrations
                     b.HasIndex("PlayerId", "Kind");
 
                     b.ToTable("AllianceRequests");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceTransfer", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("AllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("FromPlayerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Item")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ToPlayerId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FromPlayerId");
-
-                    b.HasIndex("ToPlayerId");
-
-                    b.HasIndex("AllianceId", "CreatedAtUtc");
-
-                    b.ToTable("AllianceTransfers");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>
@@ -1684,74 +1526,6 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("WorkshopCrafts");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceAssistCall", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "AllyAlliance")
-                        .WithMany()
-                        .HasForeignKey("AllyAllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.CombatMission", "CombatMission")
-                        .WithMany()
-                        .HasForeignKey("CombatMissionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "DefenderAlliance")
-                        .WithMany()
-                        .HasForeignKey("DefenderAllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Player", "RespondedBy")
-                        .WithMany()
-                        .HasForeignKey("RespondedById")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AllyAlliance");
-
-                    b.Navigation("CombatMission");
-
-                    b.Navigation("DefenderAlliance");
-
-                    b.Navigation("RespondedBy");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.AlliancePact", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Player", "AnsweredBy")
-                        .WithMany()
-                        .HasForeignKey("AnsweredById")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("StreetEmpire.Api.Models.Player", "RequestedBy")
-                        .WithMany()
-                        .HasForeignKey("RequestedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "RequestingAlliance")
-                        .WithMany()
-                        .HasForeignKey("RequestingAllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "TargetAlliance")
-                        .WithMany()
-                        .HasForeignKey("TargetAllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AnsweredBy");
-
-                    b.Navigation("RequestedBy");
-
-                    b.Navigation("RequestingAlliance");
-
-                    b.Navigation("TargetAlliance");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.AllianceRequest", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.Alliance", "Alliance")
@@ -1769,33 +1543,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Alliance");
 
                     b.Navigation("Player");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceTransfer", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "Alliance")
-                        .WithMany()
-                        .HasForeignKey("AllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Player", "FromPlayer")
-                        .WithMany()
-                        .HasForeignKey("FromPlayerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Player", "ToPlayer")
-                        .WithMany()
-                        .HasForeignKey("ToPlayerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Alliance");
-
-                    b.Navigation("FromPlayer");
-
-                    b.Navigation("ToPlayer");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>

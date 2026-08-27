@@ -45,12 +45,18 @@ internal static class TerritoryEndpoints
             var cap = territories.HoldingCapFor(player.Hideout);
             var free = await territories.FreeThugsAsync(player, ct);
             var effects = territories.EffectsFor(mine);
+            var cityControl = player.AllianceId is { } allianceId
+                ? (await territories.ControlledCitiesForAllianceAsync(allianceId, ct))
+                    .FirstOrDefault(x => string.Equals(x.City, player.City, StringComparison.OrdinalIgnoreCase))
+                : null;
 
             return Results.Ok(new TerritoryBoardResponse(
                 player.City,
                 mine.Count,
                 cap,
                 config.MinimumGarrison,
+                config.MaxGarrisonThugs,
+                config.MaxRaidThugs,
                 config.ClaimTurnCost,
                 free,
                 new TerritoryEffectsResponse(
@@ -58,6 +64,9 @@ internal static class TerritoryEndpoints
                     effects.ProductionYieldPercent,
                     effects.MoraleRecoveryPercent,
                     effects.LootPercent),
+                cityControl is null
+                    ? null
+                    : new AllianceCityControlResponse(cityControl.City, cityControl.Territories, cityControl.BonusThugs),
                 all.Select(x => Describe(x, player, territories, pimps, now, mine.Count, cap, free, config)).ToList()));
         }).RequireAuthorization();
 

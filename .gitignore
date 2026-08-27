@@ -6,6 +6,12 @@
 .vs/
 .idea/
 .env
+
+# Database dumps. Every one of them is a complete copy of every account, address and hashed password
+# in the game, so committing one would be worse than committing the .env above.
+/backups/
+*.dump
+*.dump.partial
 *.user
 *.suo
 /.pnpm-store

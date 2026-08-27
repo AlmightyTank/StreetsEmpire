@@ -367,6 +367,16 @@ input:focus-visible, textarea:focus-visible {
 .alliance-member { grid-template-columns: minmax(0, 1fr) auto auto; }
 .alliance-row    { grid-template-columns: 42px minmax(0, 1fr) auto auto; }
 .alliance-ask    { grid-template-columns: minmax(0, 1fr) auto auto; }
+.alliance-member > b,
+.alliance-member-actions {
+  justify-self: end;
+}
+.alliance-transfer-controls {
+  grid-column: 1 / -1;
+  justify-content: end;
+  padding-top: .5rem;
+  border-top: 1px solid var(--bs-border-color);
+}
 
 // These rows kept desktop column counts long after the phone layout was last
 // revisited, and crushed a member's name and town into 35px. A member is a name
@@ -374,6 +384,9 @@ input:focus-visible, textarea:focus-visible {
 // under it.
 @include media-breakpoint-down(md) {
   .alliance-member, .alliance-ask { grid-template-columns: minmax(0, 1fr); }
+  .alliance-member > b,
+  .alliance-member-actions,
+  .alliance-transfer-controls { justify-self: stretch; justify-content: start; }
   .alliance-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
   .alliance-row em { grid-column: 2 / -1; }
 }

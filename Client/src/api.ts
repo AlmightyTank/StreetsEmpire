@@ -418,7 +418,15 @@ export type AllianceSummary = {
   doorDetail: string
   yours: boolean
   youFounded: boolean
+  cityControlThugs: number
+  controlledCities: AllianceCityControl[]
   rank: number
+}
+
+export type AllianceCityControl = {
+  city: string
+  territories: number
+  bonusThugs: number
 }
 
 /** Just enough of the crew for the pages that are not about the crew. */
@@ -462,6 +470,54 @@ export type AllianceRequest = {
   createdAtUtc: string
 }
 
+export type AlliancePact = {
+  id: number
+  requestingAllianceId: number
+  requestingAllianceName: string
+  targetAllianceId: number
+  targetAllianceName: string
+  status: 'Pending' | 'Active' | 'Declined' | 'Canceled'
+  yoursToAnswer: boolean
+  createdAtUtc: string
+}
+
+export type AllianceAssistCall = {
+  /** What came home when the ally asked for it back. Zero until they do, and possibly zero after. */
+  thugsReturned: number
+  pistolsReturned: number
+  shotgunsReturned: number
+  smgsReturned: number
+  riflesReturned: number
+  /** Whoever sent the help, and the only person who can take it back. */
+  respondedByPlayerId: string | null
+  id: number
+  combatMissionId: number
+  defenderAllianceId: number
+  allyAllianceId: number
+  attackerName: string
+  defenderName: string
+  defenderAllianceName: string
+  allyAllianceName: string
+  missionStatus: string
+  status: 'Open' | 'Answered' | 'Closed'
+  thugsSent: number
+  pistolsSent: number
+  shotgunsSent: number
+  smgsSent: number
+  riflesSent: number
+  createdAtUtc: string
+}
+
+export type AllianceTransfer = {
+  id: number
+  fromPlayerName: string
+  toPlayerName: string
+  item: string
+  label: string
+  quantity: number
+  createdAtUtc: string
+}
+
 export type AllianceDoorKey = 'Open' | 'Application' | 'InviteOnly'
 
 /** One of the three ways a crew can take people on. */
@@ -495,6 +551,9 @@ export type AllianceBoard = {
   ranks: string[]
   doors: AllianceDoor[]
   requests: AllianceRequest[]
+  pacts: AlliancePact[]
+  assistCalls: AllianceAssistCall[]
+  transfers: AllianceTransfer[]
   board: AllianceSummary[]
 }
 
@@ -978,19 +1037,127 @@ export type MuleBoard = {
   runs: MuleRun[]
 }
 
+/** Which ways in this server can actually offer. Asked before the login box draws its buttons. */
+export type AuthProviders = { discord: boolean }
+
+/**
+ * The code in flight, described without being given away. Enough to run a clock and count down the
+ * guesses; not one digit of the code itself.
+ */
+export type EmailVerificationState = {
+  /** The address it went to, which is not always the address on the account a minute later. */
+  sentTo: string
+  expiresAtUtc: string
+  attemptsRemaining: number
+  /** When the resend button comes back. Null when it is already pressable. */
+  resendableAtUtc: string | null
+}
+
+/** Everything the account page shows. Note what is missing: the password itself, ever. */
+export type Account = {
+  username: string
+  playerName: string
+  email: string | null
+  /** Unverified, the address cannot be signed in with. That is what the tick is for. */
+  emailVerified: boolean
+  emailVerifiedAtUtc: string | null
+  verification: EmailVerificationState | null
+  /**
+   * False when no email provider is configured and the message goes to the server log instead of the
+   * wire. Surfaced rather than hidden: a code in a log is fine on a laptop and a quiet disaster
+   * anywhere else, so the page says which one is happening.
+   */
+  emailDelivers: boolean
+  hasPassword: boolean
+  discordConnected: boolean
+  discordUsername: string | null
+  discordLinkedAtUtc: string | null
+  /** False when the server has no Discord credentials, which hides the connect button entirely. */
+  discordConfigured: boolean
+  createdAtUtc: string
+}
+
+/** A Discord login that turned out to belong to nobody yet, waiting on a name and a town. */
+export type DiscordSignUpTicket = { suggestedUsername: string, discordUsername: string }
+
+/**
+ * What the server said about the trip through Discord, read off the query string on arrival and then
+ * wiped from the address bar so a reload does not replay the message.
+ */
+export type DiscordOutcome =
+  | 'signed-in' | 'connected' | 'sign-up' | 'cancelled'
+  | 'failed' | 'locked' | 'already-connected' | 'unavailable'
+
+/**
+ * A full-page navigation, not a fetch: the browser has to be handed to Discord and handed back, and
+ * the origin travels with it so the server knows where to put the player down afterwards - in
+ * development that is a port nobody could have written into a config file.
+ */
+export const discordStartUrl = () =>
+  `/api/auth/discord/start?return=${encodeURIComponent(window.location.origin)}`
+
 export const api = {
   cities: () => request<string[]>('/api/auth/cities'),
-  register: (username: string, password: string, playerName: string, city: string) =>
+  providers: () => request<AuthProviders>('/api/auth/providers'),
+  register: (username: string, password: string, playerName: string, city: string, email?: string) =>
     request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, playerName, city }),
+      body: JSON.stringify({ username, password, playerName, city, email: email || null }),
     }),
-  login: (username: string, password: string) =>
+  /** `identifier` is a username or an email address; the server decides which by the @. */
+  login: (identifier: string, password: string) =>
     request('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username: identifier, password }),
     }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
+
+  /*
+    Getting back in without the password.
+
+    Both legs answer the same way whether or not the account exists, so nothing the client does with
+    the result can be used to find out - which is the point, and why there is no "we could not find
+    that account" to render.
+  */
+  startPasswordReset: (identifier: string) =>
+    request<{ message: string }>('/api/auth/reset/start', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    }),
+  confirmPasswordReset: (identifier: string, code: string, newPassword: string) =>
+    request('/api/auth/reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, code, newPassword }),
+    }),
+
+  account: () => request<Account>('/api/account'),
+  /** An empty address removes it. The current password is required unless there is not one yet. */
+  setEmail: (email: string, currentPassword: string) =>
+    request<Account>('/api/account/email', {
+      method: 'PUT',
+      body: JSON.stringify({ email: email || null, currentPassword }),
+    }),
+  setPassword: (currentPassword: string, newPassword: string) =>
+    request<Account>('/api/account/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  disconnectDiscord: () => request<Account>('/api/account/discord', { method: 'DELETE' }),
+  /** Issues a fresh code and retires whatever was outstanding. Refused inside the resend cooldown. */
+  sendEmailCode: () => request<Account>('/api/account/email/verify/send', { method: 'POST' }),
+  confirmEmail: (code: string) =>
+    request<Account>('/api/account/email/verify', { method: 'POST', body: JSON.stringify({ code }) }),
+  /** Ends every session on this account except the one asking. */
+  revokeSessions: () => request<Account>('/api/account/sessions/revoke', { method: 'POST' }),
+
+  discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
+  discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),
+  /** `email` is optional and the only way a Discord-made account gets a second way back in. */
+  completeDiscordSignUp: (username: string, playerName: string, city: string, email?: string) =>
+    request('/api/auth/discord/complete', {
+      method: 'POST',
+      body: JSON.stringify({ username, playerName, city, email: email || null }),
+    }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   leaderboard: (city?: string) => request<LeaderboardEntry[]>(
     city ? `/api/game/leaderboard?city=${encodeURIComponent(city)}` : '/api/game/leaderboard'),
@@ -1038,6 +1205,19 @@ export const api = {
     request<ActionResult>('/api/game/alliances/answer', { method: 'POST', body: JSON.stringify({ requestId, accept }) }),
   withdrawAllianceRequest: (requestId: number) =>
     request<ActionResult>('/api/game/alliances/withdraw', { method: 'POST', body: JSON.stringify({ requestId, accept: false }) }),
+  sendAllianceResource: (memberId: string, item: string, quantity: number) =>
+    request<ActionResult>('/api/game/alliances/transfer', { method: 'POST', body: JSON.stringify({ memberId, item, quantity }) }),
+  requestAlliancePact: (allianceId: number) =>
+    request<ActionResult>('/api/game/alliances/pacts', { method: 'POST', body: JSON.stringify({ allianceId }) }),
+  answerAlliancePact: (pactId: number, accept: boolean) =>
+    request<ActionResult>('/api/game/alliances/pacts/answer', { method: 'POST', body: JSON.stringify({ pactId, accept }) }),
+  cancelAlliancePact: (pactId: number) =>
+    request<ActionResult>('/api/game/alliances/pacts/cancel', { method: 'POST', body: JSON.stringify({ pactId, accept: false }) }),
+  /** Takes back whatever is left of what you sent, once the fight it was sent to is over. */
+  recallAllianceAssist: (assistCallId: number) =>
+    request<ActionResult>('/api/game/alliances/assist/recall', { method: 'POST', body: JSON.stringify({ assistCallId }) }),
+  answerAllianceAssist: (assistCallId: number, thugs: number, pistols: number, shotguns: number, smgs: number, rifles: number) =>
+    request<ActionResult>('/api/game/alliances/assist', { method: 'POST', body: JSON.stringify({ assistCallId, thugs, pistols, shotguns, smgs, rifles }) }),
   buyAllianceThugs: (kind: 'offensive' | 'defensive', quantity: number) =>
     request<ActionResult>('/api/game/alliances/thugs', { method: 'POST', body: JSON.stringify({ kind, quantity }) }),
   // Negative sends them back to the pool.
@@ -1170,6 +1350,12 @@ export type AdminPlayerSummary = {
   playerId: string
   name: string
   username: string
+  /** What a moderator needs to connect a returning account to the one they banned. */
+  email: string | null
+  emailVerified: boolean
+  discordUsername: string | null
+  /** The snowflake, not the handle: a handle is renamed in a second, this is not. */
+  discordUserId: string | null
   city: string
   isBot: boolean
   isAdmin: boolean
@@ -1351,6 +1537,8 @@ export type TerritoryBoard = {
   held: number
   holdingCap: number
   minimumGarrison: number
+  maxGarrisonThugs: number
+  maxRaidThugs: number
   claimTurnCost: number
   freeThugs: number
   effects: {
@@ -1359,6 +1547,7 @@ export type TerritoryBoard = {
     moraleRecoveryPercent: number
     lootPercent: number
   }
+  allianceCityControl?: AllianceCityControl | null
   territories: Territory[]
 }
 

@@ -1,10 +1,578 @@
-# Street Empire 0.2.5
+# Street Empire 0.2.6
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
 
+## What changed in 0.2.6
+
+0.2.6 is in progress.
+
+### What a crew is for, beyond not being robbed
+
+A crew was a truce and a treasury. Everything else about running with people - lending somebody a gun,
+agreeing terms with another crew, turning up when one of yours is being hit - had nowhere to happen.
+
+**Members can hand each other things.** Cash, thugs, or anything on the trade list. The checks are the
+ones that stop a transfer inventing goods: the sender must have it *free* - thugs standing at home
+rather than out on a raid, guns off the rack rather than in somebody's hands - and the receiver must
+have room to put it. Every send is written down, because a shared treasury with an untraceable side
+channel is not really shared.
+
+**Crews can make pacts.** Requested, answered, cancellable from either side, one per pair. A pact is a
+truce with the same teeth the in-crew one has: members of two allied crews cannot attack each other,
+and the refusal lives at both places a fight can start - the strike endpoint and the raid mission -
+rather than at one of them, which is how a rule ends up being half a rule.
+
+**And a pact is worth something when it is tested.** Launching a raid on somebody in a crew opens an
+assist call to every crew they have a pact with. An ally answers with thugs and guns, tier by tier,
+and the force genuinely moves: it leaves the ally, it is checked against what they have standing free,
+and it lands with the defender in time to fight. The window is the fight itself - travelling or
+fighting, nothing later - because arriving after the shooting stops is not help.
+
+### Taking the help back
+
+What an ally sends genuinely leaves them, which is the only way the fight can count it - the raid reads
+the defender's own numbers and knows nothing about where they came from. That made sending help a
+one-way gift, which sat oddly next to the crew pool: borrowed pool thugs have always gone home when the
+mission ends.
+
+So once the fight is over, whoever sent help can take back what is still standing. Two caps, and they
+exist for different reasons. **Never more than was sent**, or a recall would be a way to strip a crew
+mate of thugs they always had. **Never more than the defender still has free**, which is the honest
+half - some of what was sent will have died, and what died is not owed back by anybody. A recall that
+gets nothing back is still a recall, and the game says so rather than pretending it failed.
+
+It is something the sender does rather than something that happens, unlike the pool. Pool thugs are the
+crew's; these are one player's, and a crew that wants to leave them where they are as a gift should be
+able to.
+
+A call nobody answers closes itself when the fight ends. Nothing was doing that before, so the page
+went on offering to reinforce raids that had finished days earlier.
+
+### Holding a whole town
+
+A crew that holds every piece of ground in a city gets extra thugs defending any member attacked at
+home there. Per-city in config, so a town can be worth more than the sum of its plots.
+
+It deliberately does not apply to territory raids. Ground that made ground harder to take would
+compound - the crew that got there first would be the crew that stays - so the reward is on the
+houses instead, which is where a town being yours ought to be felt.
+
+### Two ceilings that were not there
+
+A garrison had no upper bound and neither did a raid. They are 50 and 100 now, with the garrison bonus
+capped at 85%.
+
+The number that matters is the relationship between them rather than either one. A test stands a fully
+buffed garrison on its cap, sends a raid on its cap at it, and insists the garrison holds.
+
+That is a design statement rather than an incidental fact: ground filled to the top and buffed to the
+top is meant to be safe from one maximum raid, so that investing in a garrison buys something real. It
+is also the fragile half of the pair - retune either ceiling, or the garrison bonus, and the two can
+slide past each other without anything failing loudly. The test is what makes that slide loud.
+
+### One door, and no way to change the lock
+
+An account was a username and a password chosen on the day somebody signed up, and that was the whole
+of it for ever. There was no second way in, no way to change the password, no way to correct a
+username typed wrong on the first try, and nowhere in the game to go and look at any of it. The only
+page that could see an account at all was the admin panel, looking at somebody else's.
+
+There are three doors now, and a page that shows them side by side.
+
+**Signing up needs one of the two.** The username-and-password door demands an email address; the
+Discord door does not, because a Discord account is itself a way back in. The rule underneath is that
+nobody may make an empire they have no means of recovering: a password on its own cannot be recovered
+from, since forgetting it leaves nothing to prove ownership with.
+
+It holds afterwards too, or it would not be a rule. Removing an address is refused unless Discord is
+connected, and disconnecting Discord is refused unless there is a confirmed address - because closing
+only one of those two moves the hole rather than filling it:
+
+> sign up with an address and a password &rarr; connect Discord &rarr; remove the address, because
+> Discord covers it &rarr; disconnect Discord, because the password covers it
+
+and out the far end comes an account with a password and no way to recover it, one allowed step at a
+time. Each step passed the rule it was checked against; no step was checked against this one.
+
+Two different questions are being asked, which is why there are two methods on the account rather than
+one. `HasAnotherWayIn` counts what lets somebody in - a password or a Discord. `HasAnotherWayBackIn`
+counts what could prove the account was theirs after the password is gone - a **confirmed** address or
+a Discord. A password answers the first and never the second, and an account can be perfectly reachable
+and completely unrecoverable. That state is the one being outlawed.
+
+Changing an address is always allowed: one is still there to confirm, and a code is already going to it.
+
+Accounts that predate the rule keep working with neither. It is a rule about signing up and about not
+undoing it, not a condition of continuing to play.
+
+**An email address** is a second name to sign in under. The login box takes either kind and decides
+which it has by the @ - an address can never be a username, so it is one lookup rather than two
+guesses. Addresses are folded to lower case on the way in, because signing up as `Sam@example.com` and
+coming back as `sam@example.com` is one person and a unique index compares bytes.
+
+That paragraph used to carry a warning that the rest of this release spent itself undoing: nothing is
+ever sent, no verification, no reset, so an address is a convenience and never a way back. All three
+stopped being true further down this page. An address is confirmed by a code, it can be sent a reset,
+and it is the thing that makes an account recoverable at all - which is why signing up now requires
+either one of these or a Discord.
+
+**Discord** signs a player straight in, on any browser, without a password. The round trip is the
+ordinary OAuth one, and the same callback serves all three things it can turn out to be: an identity
+that already belongs to somebody is a login, an identity that belongs to nobody while somebody is
+signed in is the connect button on the account page, and an identity that belongs to nobody with
+nobody signed in is a new player - who then has to answer the half Discord cannot, which is what they
+want to be called and which town they are setting up in.
+
+Signing up this way makes a whole account - the same starting cash, turns, crew and hideout the
+register form deals - and it asks for one thing that form does not have to: an **optional email**. An
+account made through Discord has no password, so Discord is the only way in and losing it loses the
+empire. The one moment a player is already filling in a form is the cheapest moment to offer them a
+second way back, and it is confirmed by a code like any other address. The form says plainly what
+skipping it costs.
+
+What is stored is Discord's snowflake, not the handle. A handle can be changed by its owner at any
+time, and keying on one would hand somebody else's empire over on the next login. The handle is kept
+too, refreshed on every trip through, purely so the settings page can say which Discord this is.
+
+Only `identify` is asked for. Discord will hand over an email address for the asking, and the game has
+no use for one it did not verify itself, so it does not ask.
+
+Nothing about it is on by default. The button is drawn only when the server actually holds a client id
+and a secret, because a door that is painted on is worse than no door. Half-configured counts as off:
+an id with no secret would send a player to Discord and fail them on the way back. The shipped
+`appsettings.json` carries the two harmless values and blanks for the two that matter, and a test
+reads that file and fails if a secret ever lands in it.
+
+**The account page** puts them together under three tabs - Profile, Sign-in, Security - and the rule it
+is arranged around is that at least one way in has to stay open. A player who removes their password on Monday and disconnects Discord on
+Tuesday owns an empire nobody can ever reach again. So the page says which door is the last one
+standing, and the server refuses the change regardless of what the page says.
+
+Changing a password ends every other session on the account and keeps the one that changed it, which
+is the only version of that worth having - a password changed while whoever it was changed against is
+still signed in has not changed anything. That took two goes to get right, and the first one signed
+the player out of their own password change: the watermark is compared against the moment the session
+cookie was issued, and a cookie ticket remembers whole seconds and throws the fraction away. An
+unrounded watermark is therefore always a few hundred microseconds ahead of the cookie written in the
+same breath. Both are floored to the second now, and a test says why.
+
+The round trip through somebody else's site cannot keep anything in memory, so the two halves it needs
+are signed blobs the browser carries and the server refuses on the way back unless the signature and
+the clock both agree. The state carries a nonce that is also written to a cookie, so a login somebody
+else finished cannot be replayed into your session. The sign-up ticket carries the Discord identity,
+which means the finish-signing-up form claims nothing about who is filling it in - it sends a name and
+a town, and the server already knows the rest.
+
+The one thing the browser does get to name is where it wants to be put down afterwards, because in
+development that is a port nobody could have written into a config file. An origin the caller names
+and the server obeys is an open redirect, so it is checked against the origins CORS already trusts,
+plus - in development only - any port on this machine.
+
+### Proving the address
+
+An `email_verified` flag that gates nothing is decoration, so this one gates something: **an
+unconfirmed address cannot be signed in with.** The unique index still holds the address against every
+other account from the moment it is typed, which stops two people claiming one - and it means somebody
+who types an address they do not own has blocked it and gained nothing, because the door it would have
+opened stays shut until they prove they can read the mail.
+
+The proof is a **six-digit code**, typed into the account page. A link would have carried a long random
+token and could safely have lived for a day; six digits is a million possibilities, and a million
+possibilities held open for a day is a day to guess in. So the code is given neither time nor tries:
+
+| | |
+|---|---|
+| Lifetime | 15 minutes |
+| Wrong guesses | 5, then the code is burned |
+| Between sends | 60 seconds, per address |
+| Generated by | `RandomNumberGenerator`, uniform across all 10<sup>6</sup> |
+| Stored as | sealed by the data protection key ring, never as it was sent |
+
+All four are configurable under `Auth:Email`, and a test fails the build if the shipped ones drift
+somewhere unsafe. The code is sealed rather than hashed because six digits falls to any hash in
+seconds; sealing means a database read alone is not enough, since the key ring lives outside the
+database.
+
+Verification starts at sign-up (`SendOnSignUp`, on by default) and again whenever the address changes,
+because those are the two moments a player is already thinking about the address they just typed.
+Changing the address takes the tick with it - `PlayerAccount.SetEmail` moves both together, so the pair
+cannot come apart - and a code proves control of *the address it was sent to*, so one still in flight
+when the address changes is void rather than misapplied to the new one.
+
+### Sending it: Resend, not SMTP
+
+Mail goes over Resend's HTTP API. Running a mail server means owning deliverability - reverse DNS, SPF,
+DKIM, DMARC, warming an IP, and a reputation lost faster than it is earned - and the reward for getting
+any of it wrong is verification mail that lands in spam, which is the same as not sending it.
+
+Without an API key, **the message is written to the server log instead of sent**, which makes the whole
+flow clickable on a laptop with no account anywhere. The account page says which of the two is
+happening rather than implying the mail went: a code sitting in a log is exactly right in development
+and a quiet disaster in production.
+
+```
+Auth__Email__ApiKey=re_...
+Auth__Email__FromAddress=Street Empire <no-reply@yourdomain.example>
+```
+
+The from address has to be on a domain verified with Resend. Their sandbox sender,
+`onboarding@resend.dev`, is the shipped default and will only deliver to the Resend account's own
+owner - fine for a first test, useless for players.
+
+### A note on what was asked for
+
+The request named [Better Auth](https://www.better-auth.com/), which is a TypeScript library. This
+server is ASP.NET Core and the client is a static SPA with no Node backend, so adopting it would have
+meant standing up a second service to own accounts and rebuilding the cookie auth, ban enforcement,
+force-logout and Discord linking around it. What it *describes* is framework-agnostic, so that is what
+was built: the `email_verified` flag, the expiring cryptographically random token mapped to a user, the
+send-on-sign-up hook, and a transactional provider rather than a raw SMTP server. One runtime, one
+schema.
+
+The other deviation is the expiry window. 15-24 hours is the right span for a long random token in a
+link; for six digits it is far too generous, so the code lives fifteen minutes and the window is
+configurable for anybody who disagrees.
+
+### Telling somebody their account changed
+
+A password quietly changed by whoever is holding a borrowed session is invisible until the day the
+real owner tries to sign in. A notice makes it visible in a minute, and that minute is the difference
+between an account that can be saved and one that is gone. So every change to a way in now sends one:
+
+| What changed | Where the notice goes |
+|---|---|
+| Password set for the first time | The confirmed address |
+| Password changed | The confirmed address |
+| Signed out everywhere else | The confirmed address |
+| Discord connected | The confirmed address |
+| Discord disconnected | The confirmed address, naming the handle |
+| **Email address changed** | **The address being left behind**, naming where the account went |
+| Email address removed | The address being left behind |
+
+The bolded row is the one that matters most and the easiest to get backwards. Moving the address is
+how somebody who has taken an account keeps it - the owner is cut off and never hears - so the notice
+goes to where the account *used to* point, at the moment it stops pointing there. Telling only the new
+address would be telling the thief. The new address is not told separately, because a verification code
+is already on its way to it.
+
+Three rules run through the copy:
+
+- **A notice reports a change and never carries it.** No new password, no verification code, no token.
+  A mailbox is not a secure channel, and a notice that leaked what it reported would be worse than
+  none.
+- **Only confirmed addresses are written to.** An unconfirmed one may belong to a stranger who was
+  typed in by accident, and mailing them about somebody else's account is both a nuisance and a spam
+  complaint against the sending domain - which would eventually stop the codes arriving for everybody.
+  The cost is that an account with an unconfirmed address gets no notices, which is one more reason the
+  page pushes to confirm.
+- **A notice never fails the change it reports.** The account has already been altered and saved by the
+  time one is attempted, so a provider being down cannot answer an error for a password that really did
+  change. A send that throws is logged and swallowed, and a test holds that line.
+
+A test walks every value of the `AccountChange` enum and fails if one has no copy of its own, so the
+next event added cannot quietly ship as "Something on your account changed".
+
+Turn them off with `Auth__Email__SendSecurityNotices=false`, which exists for load testing against a
+real provider and for nothing else.
+
+One notice is not about a setting at all: **a Discord account signing in**. A connected Discord signs
+in without a password, so nothing else would ever tell somebody that another person is in their
+account. It is noisier than the rest by design.
+
+### When mail goes nowhere
+
+With no provider key the message is written to the server log instead of sent. On a laptop that is the
+point. Anywhere else it is a quiet disaster - nobody can confirm an address, nobody can reset a
+password, and the only hint is one line on a settings page - so the server now says which of the three
+situations it is in, at startup:
+
+```
+Email is on, sending as Street Empire <no-reply@yourdomain.example>.
+No email provider is configured. Verification codes and account notices will be written to this log instead of sent.
+NO EMAIL PROVIDER IS CONFIGURED and this is not a development environment. ...
+```
+
+The third is a warning rather than a refusal to start. A server with no mail is degraded, not broken:
+existing players keep playing.
+
+### Getting back in without the password
+
+This is what confirming an address was always for. A confirmed address can be handed a reset code, and
+that code sets a new password - so the address is now both a way to sign in and a way back in.
+
+The flow is two legs, and the shape of both is decided by one fact: it is the only unauthenticated
+flow in the game, so **every answer it gives is an answer to a stranger.**
+
+- **It never says whether an account exists.** Starting a reset returns the same sentence, byte for
+  byte, for a real username, a real address, a typo and a fishing expedition. Otherwise the form is a
+  way to test whether somebody plays this game, and then a way to test which of a leaked address list
+  does.
+- **A missing account and a wrong code are the same refusal.** Both cost an attempt against the sign-in
+  limiter, so the confirm leg cannot become the enumeration oracle the start leg refuses to be.
+- **An unconfirmed address is not found at all.** Mailing a reset code to an address nobody proved would
+  hand the account to whoever typed the address in.
+- **Success ends every other session.** Whoever took the account is signed in right now; a new password
+  that left them there would have changed nothing. The same watermark machinery a password change uses.
+
+Codes for the two flows share a table and are told apart by a `Purpose` column. Without it, a code
+mailed to confirm an address - which the mail correctly describes as harmless - could be typed into the
+reset form and become a new password. The two mails say plainly which they are, and the reset one tells
+a reader who did not ask for it that nothing has happened yet.
+
+### What a reset still cannot do
+
+An account with no confirmed address has no way back in, and that is not an oversight - there is
+nothing to prove ownership *with*. The account page says so, and the security tab counts ways in as two
+(password and Discord) rather than three, because an address is a second name for the password door
+rather than a door of its own.
+
+### The ceiling under the rate
+
+Starting a password reset needs no account and no password, so the sixty-second cooldown only sets a
+*rate* - and a rate with no ceiling is unbounded. Anybody who knew an address could aim a message a
+minute at it for as long as they liked: sixty an hour, somebody else's inbox ruined, and a pile of spam
+complaints against the one domain every code goes out from.
+
+`Auth__Email__MaxCodesPerDay` (10) is the ceiling, counted per address across both flows. Far above what
+a real person needs - a confirmation, a couple of resends, a forgotten password or two - and far below a
+nuisance. It answers differently from the cooldown on purpose, because "wait a minute" is useless advice
+to somebody who has used the day up.
+
+### When two people want the same name
+
+Every place that takes a name checks whether it is free and then saves, and those are two moments with a
+gap between them. Two registrations in that gap both pass the check, and the second hits the unique
+index - which is the thing that actually decides, and which used to arrive as an uncaught
+`DbUpdateException`: a 500, with a stack trace in the body in development. Four simultaneous identical
+registrations reproduced it every time.
+
+The check stays, because it produces a decent message almost always. The index is now caught too, and
+says which of the names was taken. Outside development anything still uncaught gets one sentence in the
+same shape as every other error here, with the detail in the log where it belongs, rather than whatever
+the framework felt like putting in the body.
+
+### Keeping the table honest
+
+Spent and expired codes are swept daily, five minutes after startup, once they are older than
+`Auth__Email__CodeRetentionDays` (7 by default). They are worth a few days - "did a code actually go out
+on Tuesday" is a real question when a player says they never got one - and worth nothing after that.
+
+Age is the only test, deliberately, rather than "spent or expired": a row younger than the window is
+left alone whatever state it is in, so the sweep can never race a flow that is using one.
+
+### What a moderator can see
+
+The admin panel could see a username and nothing else about who an account belongs to, which is the
+one field somebody changes first on the way to a second account. It now shows the email address and
+whether anybody proved it, the Discord handle, and the Discord snowflake - and searches all three.
+
+The snowflake is shown next to the handle rather than instead of it because a handle is renamed in a
+second and the snowflake is not. For the question a moderator is actually asking - is this the same
+person who was banned last week - it is the only one of the two worth anything.
+
+### Putting it on a server
+
+Two containers: the app, and a database it reaches over a private network. The app image carries the
+built client inside it, so one origin serves both.
+
+```bash
+git clone <your-repo> streetsempire && cd streetsempire
+cp .env.example .env    # fill in PUBLIC_URL, POSTGRES_PASSWORD, and the keys you have
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+That is the whole of it. The app migrates the database on the way up - a fresh server applies all 58
+migrations before it serves a request - so there is no separate step and no `dotnet ef` on the box.
+
+**One image, not two.** The client is a bundle of static files rather than a service, so it ships inside
+the API image and is served from the same origin. That is worth more than the tidiness: CORS has
+nothing to do, cookies are plainly first-party, and there is exactly one address to register with
+Discord instead of one that moves. Requests under `/api` are the API's; a path that is neither an API
+route nor a file on disk gets the client shell and is resolved in the browser. A mistyped API route
+still answers 404 rather than a page of HTML, which is the difference between a five-minute bug and an
+afternoon.
+
+**Only Caddy faces the internet.** It terminates TLS, gets a Let's Encrypt certificate on first boot
+and renews it on its own - no certbot, no cron, no renewal that quietly stops - and redirects plain
+HTTP to HTTPS. Neither the app nor the database publishes a host port; both are reachable over the
+compose network and nowhere else. A 5432 open to the internet is found by a scanner within the hour.
+
+TLS here is not tidiness. The session cookie *is* the login - fourteen days, sliding - so anybody who
+reads one in transit becomes that player without a password, and none of the account work in this
+release can tell them apart from the real owner. Passwords and reset codes travel in request bodies
+besides, which makes a six-digit code guarded by a fifteen-minute window pointless if it is readable on
+the wire.
+
+**The app trusts `X-Forwarded-*`, and has to.** Behind TLS termination it otherwise sees a plain HTTP
+request from a container, and two things break silently: the session cookie is issued with
+`SameAsRequest`, so it would lose its `Secure` flag while the browser is on HTTPS, and the sign-in rate
+limiter partitions anonymous callers by address, which behind a proxy is the proxy for everybody -
+turning ten attempts a minute *each* into ten a minute *for the whole game*. Both were confirmed fixed
+by testing rather than by reading: the cookie comes back marked `secure`, and eleven attempts from one
+address throttle while a twelfth from a different one still gets through.
+
+The known-proxy list is cleared rather than enumerated, because the proxy's address on a Docker bridge
+is not knowable in advance. That is safe only while nothing can reach the app except through Caddy,
+which is exactly why it publishes no host port - and why the switch is off by default.
+
+**The key ring is on a volume, and this is the part that is easy to miss.** Data protection seals
+session cookies, verification codes, reset codes and half-finished Discord sign-ups. Unconfigured, its
+keys live inside the container and go when the container does - so every redeploy would silently sign
+out every player and quietly void every code in flight. Nothing errors; it simply stops working, once,
+at deploy time. `DataProtection__KeyPath` points at a mounted volume, which was tested by replacing the
+container and confirming an existing session still worked.
+
+Set `PUBLIC_URL` to the address players actually type - `https://yourdomain` - and point that domain's
+DNS at the VPS before starting, because Caddy proves ownership over port 80 to get the certificate.
+One variable drives all of it: the certificate Caddy asks for, the CORS entry, the Discord callback and
+the Discord return address. Then register `$PUBLIC_URL/api/auth/discord/callback` with the Discord
+application; the server prints the exact string it expects at startup.
+
+Discord will not accept an `http://` callback for anything but localhost, so TLS is what makes Discord
+sign-in possible at all rather than merely advisable.
+
+### Backups
+
+A third container takes a dump of the database, checks it, and prunes the old ones. It runs from the
+same `postgres:17` image the server does, which is not incidental: `pg_dump` refuses to dump a server
+newer than itself, so a backup pinned to a different major version stops working the day the database
+is upgraded - and stops working quietly, because nobody looks at a job that has been fine for a year.
+
+Three things about it matter more than the dump.
+
+- **It dumps once immediately on startup.** A backup misconfigured at deploy time otherwise announces
+  itself a day later, which is a day of believing there are backups.
+- **It writes to a temporary name and renames on success.** A rename inside a directory is atomic, so
+  an interrupted dump can never sit there looking like a good one.
+- **It reads every archive back with `pg_restore --list` before keeping it.** A file existing and a
+  file being restorable are different claims, and only the second is worth anything.
+
+Dumps land in `./backups` on the host rather than in a Docker volume, deliberately: a backup that only
+exists on the machine it is backing up is not a backup of that machine. Copy them somewhere else -
+`rsync`, object storage, anything off the box. They are gitignored, because each one is a complete copy
+of every account, address and hashed password in the game.
+
+### Restoring
+
+The dumps are the custom format, so you can put back one table without touching the rest - which is
+usually what you want, since the thing being undone is one bad migration or one bad afternoon.
+
+```bash
+# What is in it
+docker compose -f docker-compose.prod.yml exec backup \
+  pg_restore --list /backups/street_empire-20260827-140346.dump
+
+# One table back, with the app stopped so nothing writes underneath it
+docker compose -f docker-compose.prod.yml stop api
+docker compose -f docker-compose.prod.yml exec backup \
+  pg_restore --host=postgres --username=street_empire --dbname=street_empire \
+             --data-only --table=Accounts --disable-triggers \
+             /backups/street_empire-20260827-140346.dump
+docker compose -f docker-compose.prod.yml start api
+```
+
+No password flag: the container carries `PGPASSWORD`, so anything run inside it inherits it. Restoring
+should not also be a password hunt.
+
+This whole loop was tested rather than described - a dump taken, an account deleted, the dump restored,
+the account back.
+
+### Updating it
+
+```bash
+git pull && docker compose -f docker-compose.prod.yml up -d --build
+```
+
+New migrations apply on the way up. The database volume, and the key ring, are left alone.
+
+### Where the credentials live
+
+Nothing secret is committed. Copy the template and fill in what you need:
+
+```bash
+cp .env.example .env
+```
+
+`.env` is gitignored; `.env.example` is the committed copy, and a test fails the build if any key in it
+ever carries a value. The names are the `appsettings.json` paths with `__` (two underscores) wherever
+the JSON nests - `Auth__Email__ApiKey` is `Auth:Email:ApiKey`. That is .NET's own convention for
+environment variables, and using it means anything in `appsettings.json` can be overridden from `.env`,
+not only the secrets.
+
+.NET has no notion of a `.env` file. What it has is an environment-variable configuration provider
+already in the chain that already understands that naming, so [`DotEnv`](Server/StreetEmpire.Api/Support/DotEnv.cs)
+reads the file into the process environment before the builder runs and gets out of the way - rather
+than adding a configuration source and then arguing about where it sits in the order. It walks up from
+the working directory to find the file, so one `.env` at the repository root serves both
+`dotnet run --project Server/...` from the root and `dotnet run` from inside the project.
+
+**A value already set in the real environment is never overwritten.** That is the rule every dotenv
+implementation follows and the one that matters in production: a platform injecting a secret as an
+environment variable has to beat a `.env` that got copied into an image by accident. The server says
+which it read, and how many it left alone, on the first line of its log:
+
+```
+Read 4 setting(s) from D:\Github\StreetsEmpire\.env. 0 were left alone because the environment already set them.
+```
+
+The format is the usual convention rather than a specification: `KEY=VALUE` a line at a time, `#`
+comments, blank lines ignored, an optional `export` in front, quotes stripped when they wrap the whole
+value, and `\n` honoured inside double quotes only. A trailing `# comment` ends an unquoted value and
+is left alone inside quotes, so a secret with a `#` in it survives. A line that is not a setting is
+skipped rather than thrown over - one bad line should never be why a server will not boot.
+
+### Setting Discord up
+
+The game runs without any of this. To turn it on, make an application at
+<https://discord.com/developers/applications>, add `http://localhost:5080/api/auth/discord/callback`
+as a redirect, and put the two values in `.env`:
+
+```
+Auth__Discord__ClientId=...
+Auth__Discord__ClientSecret=...
+```
+
+Both halves matter: Discord compares the redirect **as a string**, so it has to be registered under
+OAuth2 > Redirects *and saved*, with no trailing slash and no `https`. An unregistered or unsaved one
+fails on Discord's own page - the browser never comes back, so there is no request to log and nothing
+on this side to catch. To make that diagnosable rather than a guess, the server prints the exact string
+it will send whenever Discord is configured:
+
+```
+Discord sign-in is on. This exact string must be registered and saved under OAuth2 > Redirects: http://localhost:5080/api/auth/discord/callback
+```
+
+If `Invalid OAuth2 redirect_uri` comes back, put that line and the Discord dashboard side by side.
+
+The redirect points at the API rather than the client on purpose. The client's dev port moves - Vite
+is handed a free one when several sessions run at once - and a moving port cannot be registered with
+Discord. Cookies ignore the port, so a session cookie set on `localhost:5080` is still sent by the
+browser when it is back on the client's port a moment later. In production, set
+`Auth__Discord__RedirectUri` and `Auth__Discord__ReturnUrl` to the real origins, and put the client's
+origin in `Cors__AllowedOrigins__0`.
+
 ## What changed in 0.2.5
 
-0.2.5 is in progress, and is about the early game.
+0.2.5 was about the early game, and grew past it.
+
+The opening hours got what they never had: an opening ladder that says what to do next and why, a
+walkthrough that shows the page rather than describing it, a first bank that is actually spendable,
+and turns that taper rather than running out at the wall five clicks in. The dead zone in the first
+hideout tier is filled.
+
+Past that it turned into a release about other people. Crews are people who have agreed not to rob
+each other, with ranks, dues, a shared pool and a door that is one setting with three states. Chat
+grew a window that survives changing pages and conversations that hold any number of people. Three
+more towns went on the map, each with a leaderboard of its own, and the towns started wanting things:
+buyers with deadlines, fillable in instalments.
+
+The fights got sharper. Guns split into tiers worth choosing between, one rack holds them all, and
+five ways to hit somebody each cost something to try - infesting a house was free and is not any
+more. A strike now says no before the click rather than after it, out of one function that answers
+both the note and the refusal.
+
+Late in the version the interface moved onto Bootstrap 5.3.8 and then took its own palette back, the
+alerts became a bell, the workshop went on a clock, and nine top-level pages folded into five.
 
 ### The free attack
 
@@ -1059,7 +1627,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.5`.
+It should report version `0.2.6`.
 
 ### 4. Run the browser client
 

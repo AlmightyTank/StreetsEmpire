@@ -53,9 +53,15 @@ public sealed class AdminService(
 
         // ILIKE keeps admin search case-insensitive; the escape keeps typed wildcards literal.
         var pattern = $"%{trimmed.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%";
+        // The address, the handle and the snowflake are searchable for one reason: they are how a
+        // moderator connects a returning account to the one they banned. A username is the first thing
+        // somebody changes; a Discord snowflake is the last.
         return players.Where(x =>
             EF.Functions.ILike(x.Name, pattern, "\\")
             || EF.Functions.ILike(x.Account.Username, pattern, "\\")
+            || (x.Account.Email != null && EF.Functions.ILike(x.Account.Email, pattern, "\\"))
+            || (x.Account.DiscordUsername != null && EF.Functions.ILike(x.Account.DiscordUsername, pattern, "\\"))
+            || (x.Account.DiscordUserId != null && EF.Functions.ILike(x.Account.DiscordUserId, pattern, "\\"))
             || EF.Functions.ILike(x.City, pattern, "\\"));
     }
 

@@ -1,0 +1,76 @@
+# Continuous integration.
+#
+# There are 126 tests in this repository and, until this file existed, they ran when somebody
+# remembered to run them. That is not a test suite, it is a collection of scripts - and the one class
+# of fault it exists to catch is precisely the one nobody thinks to check for before pushing.
+#
+# Three jobs rather than one, so a failure names itself: a red "server" is not a red "client", and
+# reading which box went red should not require opening the log.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # So a broken main can be re-checked without an empty commit.
+  workflow_dispatch:
+
+# A second push to the same branch makes the first one's answer worthless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore StreetEmpire.sln
+      - name: Build
+        # Warnings are worth seeing but are not yet worth failing on: the build is clean today, and
+        # the day it is not, the person who dirtied it should be told rather than blocked.
+        run: dotnet build StreetEmpire.sln --no-restore --configuration Release
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      # No database service here on purpose. The suite never opens a connection: the one place it
+      # builds a DbContext points at a database that does not exist, because what it is checking is
+      # that a LINQ query translates to SQL, not what the SQL returns. A Postgres container would be
+      # thirty seconds of nothing.
+      - name: Run the suite
+        run: dotnet run --project Tests/StreetEmpire.Tests/StreetEmpire.Tests.csproj --configuration Release
+
+  client:
+    name: Client build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Client/package-lock.json
+      - name: Install
+        run: npm ci
+      # `npm run build` is `tsc -b && vite build`, so this covers both the type check and the bundle,
+      # including the Sass compile that the whole interface now depends on.
+      - name: Typecheck and build
+        run: npm run build

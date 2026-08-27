@@ -1,0 +1,27 @@
+# TLS in front of the game.
+#
+# The site address is PUBLIC_URL verbatim - Caddy accepts a full URL as a site address, so there is one
+# variable rather than a domain and a URL that have to be kept in step and eventually will not be.
+#
+# With an https:// address and a real domain, Caddy gets a Let's Encrypt certificate on first boot and
+# renews it on its own: no certbot, no cron, no renewal that quietly stops. With http://localhost it
+# skips ACME entirely, which is what makes this file testable on a laptop.
+{$PUBLIC_URL} {
+	# Compression is free here and nowhere else - the client bundle is around half a megabyte of
+	# JavaScript, and it is the one thing every player downloads before they can do anything.
+	encode zstd gzip
+
+	# The app is on the compose network under its service name and publishes no host port, so this is
+	# the only way in. X-Forwarded-Proto and X-Forwarded-For are set by Caddy automatically; the app
+	# reads them because Proxy__TrustForwardedHeaders is on, which is what keeps the session cookie
+	# marked Secure and the rate limiter counting real callers instead of counting Caddy.
+	reverse_proxy api:8080
+
+	# Requests that took a while, and anything that failed. Not every request: an access log of a game
+	# that polls every five seconds is a log nobody reads and a disk that fills.
+	log {
+		output stderr
+		format console
+		level WARN
+	}
+}

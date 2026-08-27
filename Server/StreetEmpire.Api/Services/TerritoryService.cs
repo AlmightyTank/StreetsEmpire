@@ -68,6 +68,50 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     public async Task<List<Territory>> HeldByAsync(Guid playerId, CancellationToken ct = default)
         => await db.Territories.AsNoTracking().Where(x => x.HolderId == playerId).ToListAsync(ct);
 
+    public async Task<IReadOnlyDictionary<long, IReadOnlyList<AllianceCityControl>>> ControlledCitiesByAllianceAsync(CancellationToken ct = default)
+    {
+        var territories = await db.Territories.AsNoTracking()
+            .Include(x => x.Holder)
+            .ToListAsync(ct);
+
+        return territories
+            .GroupBy(x => x.City, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var allianceIds = group.Select(x => x.Holder?.AllianceId).Distinct().ToList();
+                var allianceId = allianceIds.Count == 1 ? allianceIds[0] : null;
+                if (allianceId is null || group.Any(x => x.HolderId is null || x.Holder?.AllianceId != allianceId))
+                    return null;
+                var city = group.First().City;
+                var bonus = CityControlBonusThugs(city);
+                return bonus <= 0 ? null : new AllianceCityControl(allianceId.Value, city, group.Count(), bonus);
+            })
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .GroupBy(x => x.AllianceId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<AllianceCityControl>)group.OrderBy(x => x.City, StringComparer.Ordinal).ToList());
+    }
+
+    public async Task<IReadOnlyList<AllianceCityControl>> ControlledCitiesForAllianceAsync(long allianceId, CancellationToken ct = default)
+        => (await ControlledCitiesByAllianceAsync(ct)).TryGetValue(allianceId, out var controls) ? controls : [];
+
+    public async Task<int> CityControlThugsForAllianceInCityAsync(long allianceId, string? city, CancellationToken ct = default)
+    {
+        var wanted = city?.Trim();
+        if (string.IsNullOrWhiteSpace(wanted))
+            return 0;
+
+        var controls = await ControlledCitiesForAllianceAsync(allianceId, ct);
+        return controls.FirstOrDefault(x => string.Equals(x.City, wanted, StringComparison.OrdinalIgnoreCase))?.BonusThugs ?? 0;
+    }
+
+    public int CityControlBonusThugs(string? city)
+        => Math.Max(0, _options.Territory.CityControl
+            .FirstOrDefault(x => string.Equals(x.City, city?.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?.BonusThugs ?? 0);
+
     /// <summary>
     /// Ground is contested inside a town only. Checked in the service rather than the endpoint so the
     /// claim path, the raid path, and the rivals all answer to the same rule.
@@ -110,6 +154,8 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
 
         if (thugs < config.MinimumGarrison)
             throw new GameRuleException($"It takes {config.MinimumGarrison} thugs to hold ground.");
+        if (thugs > config.MaxGarrisonThugs)
+            throw new GameRuleException($"One piece of ground can hold {config.MaxGarrisonThugs:N0} defender(s).");
         if (player.Turns < config.ClaimTurnCost)
             throw new GameRuleException($"Claiming ground takes {config.ClaimTurnCost} turns.");
 
@@ -149,6 +195,8 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
             territory.HeldSinceUtc = null;
             return (territory, true);
         }
+        if (thugs > config.MaxGarrisonThugs)
+            throw new GameRuleException($"One piece of ground can hold {config.MaxGarrisonThugs:N0} defender(s).");
 
         var free = await FreeThugsAsync(player, ct) + territory.GarrisonThugs;
         if (thugs > free)
@@ -221,7 +269,9 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         territory.HolderId = newHolderId;
         // The beaten pimp does not stay on to run it for the winner.
         territory.GarrisonPimpId = null;
-        territory.GarrisonThugs = Math.Max(_options.Territory.MinimumGarrison, garrison);
+        territory.GarrisonThugs = Math.Min(
+            Math.Max(_options.Territory.MinimumGarrison, garrison),
+            Math.Max(_options.Territory.MinimumGarrison, _options.Territory.MaxGarrisonThugs));
         territory.HeldSinceUtc = nowUtc;
         territory.ProtectedUntilUtc = nowUtc.AddMinutes(_options.Territory.HoldCooldownMinutes);
     }
@@ -245,3 +295,5 @@ public sealed record TerritoryEffects(
 
     public bool Any => StreetIncomePercent > 0 || ProductionYieldPercent > 0 || MoraleRecoveryPercent > 0 || LootPercent > 0;
 }
+
+public sealed record AllianceCityControl(long AllianceId, string City, int Territories, int BonusThugs);

@@ -50,6 +50,8 @@ public sealed class CombatMissionService(
         var laneReadyAt = await LaneReadyAtUtcAsync(attacker.Id, nowUtc, cancellationToken);
 
         ValidateLaunch(attacker, defender, request, ground, nowUtc, committed, combat, laneReadyAt);
+        if (await alliances.AreAlliedAsync(attacker, defender, cancellationToken))
+            throw new GameRuleException($"{defender.Name} is allied with your crew.");
 
         if (ground is not null)
         {
@@ -218,6 +220,10 @@ public sealed class CombatMissionService(
             if (mission.Status == "Returning" && mission.ReturnsAtUtc <= nowUtc)
             {
                 Complete(mission, nowUtc);
+                // Nobody can help with a fight that is finished, so the calls nobody answered stop
+                // asking. Here rather than inside Complete, which is synchronous and has no business
+                // becoming a database round trip.
+                await alliances.CloseOpenAssistCallsAsync(mission.Id, nowUtc, cancellationToken);
                 updates++;
             }
         }
@@ -273,6 +279,9 @@ public sealed class CombatMissionService(
         // Calling it off sends the crew's men home as well. A cancelled raid that kept them would be a
         // way of holding the pool indefinitely for the price of one cancellation.
         ReturnBorrowedThugs(mission);
+        // The crew's borrowed men go home above; the allies who were asked to send theirs are told the
+        // fight is off, so the call stops standing on the alliance page as something to answer.
+        await alliances.CloseOpenAssistCallsAsync(mission.Id, nowUtc, cancellationToken);
         mission.Status = "Complete";
         mission.Outcome = CanceledOutcome;
         mission.CompletedAtUtc = nowUtc;
@@ -410,6 +419,8 @@ public sealed class CombatMissionService(
             throw new GameRuleException("You need a free pimp to command the attack.");
         if (request.Thugs > committed.AvailableThugs)
             throw new GameRuleException($"You have {committed.AvailableThugs:N0} thugs standing free.");
+        if (ground is not null && request.Thugs > Math.Max(1, _options.Territory.MaxRaidThugs))
+            throw new GameRuleException($"A territory raid can send {Math.Max(1, _options.Territory.MaxRaidThugs):N0} attacker(s).");
         if (request.Weapons > committed.AvailableWeapons)
             throw new GameRuleException($"You have {committed.AvailableWeapons:N0} guns off the rack.");
         // House protection shields a player from being robbed. Ground is contested rather than robbed,
@@ -451,7 +462,10 @@ public sealed class CombatMissionService(
         var defenderHomePimps = Math.Max(0, mission.Defender.Pimps - defenderCommitted.Sum(x => x.AssignedPimps));
         // Whatever the crew has posted to this house stands in it too, and is armed the same way.
         var postedDefenders = Math.Max(0, mission.Defender.AllianceDefenders);
-        var defenderHomeThugs = Math.Max(0, mission.Defender.Thugs - defenderCommitted.Sum(x => x.RemainingAttackers)) + postedDefenders;
+        var cityControlDefenders = mission is { TerritoryId: null, Defender.AllianceId: { } defenderAllianceId }
+            ? await territories.CityControlThugsForAllianceInCityAsync(defenderAllianceId, mission.Defender.City, cancellationToken)
+            : 0;
+        var defenderHomeThugs = Math.Max(0, mission.Defender.Thugs - defenderCommitted.Sum(x => x.RemainingAttackers)) + postedDefenders + cityControlDefenders;
         var defenderHomeWeapons = Math.Max(0, mission.Defender.Weapons - defenderCommitted.Sum(x => x.RemainingWeapons));
         // The guns still in the house are whatever the defender's own raiding parties did not take.
         var defenderHomeRack = mission.Defender.Armoury - defenderCommitted.Aggregate(
@@ -487,8 +501,8 @@ public sealed class CombatMissionService(
                 defenderHomePimps,
                 defenderHomeThugs,
                 new Firepower(
-                    Guns(defenderHomeRack, Math.Max(0, defenderHomeThugs - postedDefenders)).InPistols
-                    + postedDefenders * Math.Max(0, _options.Alliances.ThugFirepower)),
+                    Guns(defenderHomeRack, Math.Max(0, defenderHomeThugs - postedDefenders - cityControlDefenders)).InPistols
+                    + (postedDefenders + cityControlDefenders) * Math.Max(0, _options.Alliances.ThugFirepower)),
                 mission.DefenderMorale,
                 pimps.DefenceBonusPercent(mission.Defender, defenderAway));
         var attackRoll = ApplyPowerVariance(attackerPower, combat.PowerRandomnessPercent);

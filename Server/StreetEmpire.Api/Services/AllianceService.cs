@@ -14,7 +14,12 @@ namespace StreetEmpire.Api.Services;
 /// founder is a member like anyone else. Written out per endpoint, founding would forget a check that
 /// joining remembered.
 /// </summary>
-public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptions> options, EconomyService economy)
+public sealed class AllianceService(
+    GameDbContext db,
+    IOptionsSnapshot<GameOptions> options,
+    EconomyService economy,
+    HideoutService? hideouts = null,
+    TerritoryService? territories = null)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -25,6 +30,260 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
     /// </summary>
     public static bool AreAllied(Player one, Player other)
         => one.AllianceId is { } crew && other.AllianceId == crew;
+
+    /// <summary>
+    /// Whether two players are covered by a truce, in either direction.
+    ///
+    /// The question every fight asks before it is allowed to start, so it has to answer the same way
+    /// round both ways: a pact is one row naming two crews, and which of them happens to be stored as
+    /// the requester is an accident of who asked first.
+    ///
+    /// Only an active pact counts. A pending one is a crew that has been asked, not a crew that has
+    /// agreed, and treating the asking as the agreement would let anybody buy an afternoon's immunity
+    /// by requesting a pact with whoever is about to hit them.
+    /// </summary>
+    public async Task<bool> AreAlliedAsync(Player one, Player other, CancellationToken cancellationToken)
+    {
+        if (AreAllied(one, other))
+            return true;
+        if (one.AllianceId is not { } mine || other.AllianceId is not { } theirs)
+            return false;
+
+        return await db.AlliancePacts.AsNoTracking()
+            .AnyAsync(x => x.Status == AlliancePactStatuses.Active
+                           && ((x.RequestingAllianceId == mine && x.TargetAllianceId == theirs)
+                               || (x.RequestingAllianceId == theirs && x.TargetAllianceId == mine)),
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Hands something of yours to somebody in your crew.
+    ///
+    /// The rule underneath every check here is that a transfer moves goods and never makes them. What
+    /// leaves the sender is exactly what reaches the receiver, so the sender must genuinely hold it -
+    /// thugs standing at home rather than out on a raid or holding ground - and the receiver must have
+    /// somewhere to put it, or the overflow would simply vanish.
+    ///
+    /// Recorded rather than done silently: once stock is in somebody else's pile it is indistinguishable
+    /// from their own, and this row is the only account of where a crew's things went.
+    /// </summary>
+    public async Task<AllianceTransfer> SendResourceAsync(Player sender, Guid receiverId, string? item, int quantity, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        TravelGate.EnsureLanded(sender);
+        if (sender.AllianceId is not { } allianceId)
+            throw new GameRuleException("You are not running with a crew.");
+        if (receiverId == sender.Id)
+            throw new GameRuleException("You already have that.");
+        if (quantity < 1)
+            throw new GameRuleException("Send at least one.");
+
+        var receiver = await db.Players
+            .Include(x => x.Hideout)
+            .SingleOrDefaultAsync(x => x.Id == receiverId, cancellationToken)
+            ?? throw new GameRuleException("No such player.");
+        if (receiver.AllianceId != allianceId)
+            throw new GameRuleException($"{receiver.Name} is not in your crew.");
+
+        var key = NormaliseResource(item);
+        await MoveResourceAsync(sender, receiver, key, quantity, enforceReceiverRoom: true, cancellationToken);
+
+        var transfer = new AllianceTransfer
+        {
+            AllianceId = allianceId,
+            FromPlayerId = sender.Id,
+            FromPlayer = sender,
+            ToPlayerId = receiver.Id,
+            ToPlayer = receiver,
+            Item = key,
+            Quantity = quantity,
+            CreatedAtUtc = nowUtc
+        };
+        db.AllianceTransfers.Add(transfer);
+        return transfer;
+    }
+
+    /// <summary>
+    /// Asks another crew for a truce. Nothing is agreed until they answer.
+    ///
+    /// One live pact or request per pair, checked in both directions - without it a crew could bury
+    /// another under requests, and two crews could end up holding two separate truces with each other
+    /// that cancel independently.
+    /// </summary>
+    public async Task<AlliancePact> RequestPactAsync(Player actor, long targetAllianceId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.Invite);
+        if (targetAllianceId == alliance.Id)
+            throw new GameRuleException("You are already that crew.");
+
+        var target = await db.Alliances.SingleOrDefaultAsync(x => x.Id == targetAllianceId, cancellationToken)
+            ?? throw new GameRuleException("That crew does not exist.");
+
+        if (await AnyLivePactAsync(alliance.Id, target.Id, cancellationToken))
+            throw new GameRuleException($"{target.Name} already has a pact or a pact request with you.");
+
+        var pact = new AlliancePact
+        {
+            RequestingAllianceId = alliance.Id,
+            RequestingAlliance = alliance,
+            TargetAllianceId = target.Id,
+            TargetAlliance = target,
+            RequestedById = actor.Id,
+            RequestedBy = actor,
+            Status = AlliancePactStatuses.Pending,
+            CreatedAtUtc = nowUtc
+        };
+        db.AlliancePacts.Add(pact);
+        return pact;
+    }
+
+    /// <summary>
+    /// Says yes or no to a truce, and only the crew that was asked may.
+    ///
+    /// Answered once. A pact that could be answered repeatedly would be a switch, and a truce anybody
+    /// can flick on the moment a raid launches is not a truce.
+    /// </summary>
+    public async Task<AlliancePact> AnswerPactAsync(Player actor, long pactId, bool accept, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.Invite);
+
+        var pact = await db.AlliancePacts
+            .Include(x => x.RequestingAlliance)
+            .Include(x => x.TargetAlliance)
+            .SingleOrDefaultAsync(x => x.Id == pactId, cancellationToken)
+            ?? throw new GameRuleException("That pact request is gone.");
+        if (pact.TargetAllianceId != alliance.Id)
+            throw new GameRuleException("That pact request is not for your crew.");
+        if (pact.Status != AlliancePactStatuses.Pending)
+            throw new GameRuleException("That pact request has already been answered.");
+
+        pact.Status = accept ? AlliancePactStatuses.Active : AlliancePactStatuses.Declined;
+        pact.AnsweredById = actor.Id;
+        pact.AnsweredBy = actor;
+        pact.AnsweredAtUtc = nowUtc;
+        return pact;
+    }
+
+    /// <summary>
+    /// Walks away from a truce, or withdraws the offer of one.
+    ///
+    /// Either side, which is what keeps it an agreement rather than a trap: a crew that could be held
+    /// to a pact it no longer wants would be a crew that cannot defend itself against an ally.
+    /// </summary>
+    public async Task<AlliancePact> CancelPactAsync(Player actor, long pactId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.Invite);
+
+        var pact = await db.AlliancePacts
+            .Include(x => x.RequestingAlliance)
+            .Include(x => x.TargetAlliance)
+            .SingleOrDefaultAsync(x => x.Id == pactId, cancellationToken)
+            ?? throw new GameRuleException("That pact is gone.");
+        if (pact.RequestingAllianceId != alliance.Id && pact.TargetAllianceId != alliance.Id)
+            throw new GameRuleException("That pact is not yours.");
+        if (pact.Status != AlliancePactStatuses.Pending && pact.Status != AlliancePactStatuses.Active)
+            throw new GameRuleException("That pact is already closed.");
+
+        pact.Status = AlliancePactStatuses.Canceled;
+        pact.AnsweredById = actor.Id;
+        pact.AnsweredBy = actor;
+        pact.AnsweredAtUtc = nowUtc;
+        return pact;
+    }
+
+    /// <summary>
+    /// Raises a call for help with every crew the defender has a truce with, when a raid launches.
+    ///
+    /// Automatic rather than something the defender does, because a player being raided is frequently
+    /// not at the screen - a call that had to be sent by hand would mostly never be sent.
+    ///
+    /// Not for territory raids. Ground is contested by whoever holds it, and the thing this exists to
+    /// answer is somebody's house being kicked in.
+    /// </summary>
+    public async Task<IReadOnlyList<AllianceAssistCall>> CreateAssistCallsForAsync(CombatMission mission, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        if (mission.TerritoryId is not null || mission.Defender.AllianceId is not { } defenderAllianceId)
+            return [];
+
+        var allyIds = await db.AlliancePacts.AsNoTracking()
+            .Where(x => x.Status == AlliancePactStatuses.Active
+                        && (x.RequestingAllianceId == defenderAllianceId || x.TargetAllianceId == defenderAllianceId))
+            .Select(x => x.RequestingAllianceId == defenderAllianceId ? x.TargetAllianceId : x.RequestingAllianceId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (allyIds.Count == 0)
+            return [];
+
+        var calls = new List<AllianceAssistCall>();
+        foreach (var allyId in allyIds)
+        {
+            var call = new AllianceAssistCall
+            {
+                CombatMission = mission,
+                DefenderAllianceId = defenderAllianceId,
+                AllyAllianceId = allyId,
+                Status = AllianceAssistStatuses.Open,
+                CreatedAtUtc = nowUtc
+            };
+            db.AllianceAssistCalls.Add(call);
+            calls.Add(call);
+        }
+
+        return calls;
+    }
+
+    /// <summary>
+    /// Sends thugs and guns to a crew mate's ally who is being raided.
+    ///
+    /// The force genuinely moves rather than being counted twice: the fight reads the defender's own
+    /// numbers and knows nothing about where they came from, so help that stayed with the ally would
+    /// not be help at all. What that costs the ally is real, and taking it back afterwards is a
+    /// separate act - see RecallAssistAsync.
+    ///
+    /// Only while the fight is travelling or being fought. Arriving after the shooting is not help, and
+    /// allowing it would make a finished mission a quiet channel for moving thugs about.
+    /// </summary>
+    public async Task<AllianceAssistCall> AnswerAssistCallAsync(Player actor, long assistCallId, int thugs, Armoury weapons, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        TravelGate.EnsureLanded(actor);
+        if (actor.AllianceId is null)
+            throw new GameRuleException("You are not running with a crew.");
+        if (thugs < 0 || weapons.Pistols < 0 || weapons.Shotguns < 0 || weapons.Smgs < 0 || weapons.Rifles < 0)
+            throw new GameRuleException("Send zero or more of each resource.");
+        if (thugs == 0 && weapons.Total == 0)
+            throw new GameRuleException("Send thugs, guns, or both.");
+
+        var call = await db.AllianceAssistCalls
+            .Include(x => x.AllyAlliance)
+            .Include(x => x.DefenderAlliance)
+            .Include(x => x.CombatMission).ThenInclude(x => x.Attacker)
+            .Include(x => x.CombatMission).ThenInclude(x => x.Defender).ThenInclude(x => x.Hideout)
+            .SingleOrDefaultAsync(x => x.Id == assistCallId, cancellationToken)
+            ?? throw new GameRuleException("That call is gone.");
+
+        if (actor.AllianceId != call.AllyAllianceId)
+            throw new GameRuleException("That call is for another crew.");
+        if (call.Status != AllianceAssistStatuses.Open)
+            throw new GameRuleException("That call has already been answered.");
+        if (call.CombatMission.Status != "Traveling" && call.CombatMission.Status != "Fighting")
+            throw new GameRuleException("That fight is no longer taking help.");
+
+        var defender = call.CombatMission.Defender;
+        await MoveAssistResourcesAsync(actor, defender, thugs, weapons, cancellationToken);
+
+        call.ThugsSent = thugs;
+        call.PistolsSent = weapons.Pistols;
+        call.ShotgunsSent = weapons.Shotguns;
+        call.SmgsSent = weapons.Smgs;
+        call.RiflesSent = weapons.Rifles;
+        call.RespondedById = actor.Id;
+        call.RespondedBy = actor;
+        call.RespondedAtUtc = nowUtc;
+        call.Status = AllianceAssistStatuses.Answered;
+        return call;
+    }
 
     public async Task<Alliance> FoundAsync(Player founder, string? name, string? motto, DateTime nowUtc, CancellationToken cancellationToken)
     {
@@ -260,6 +519,9 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
         var totals = standings
             .GroupBy(x => x.AllianceId!.Value)
             .ToDictionary(g => g.Key, g => new { NetWorth = g.Sum(x => x.NetWorth), Members = g.Count() });
+        var controlled = territories is null
+            ? new Dictionary<long, IReadOnlyList<AllianceCityControl>>()
+            : await territories.ControlledCitiesByAllianceAsync(cancellationToken);
 
         var crews = await db.Alliances.AsNoTracking().ToListAsync(cancellationToken);
 
@@ -267,6 +529,10 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
             .Select(x =>
             {
                 var tally = totals.GetValueOrDefault(x.Id);
+                var cityControl = controlled.GetValueOrDefault(x.Id) ?? [];
+                var cityControlResponses = cityControl
+                    .Select(city => new AllianceCityControlResponse(city.City, city.Territories, city.BonusThugs))
+                    .ToList();
                 return new AllianceSummaryResponse(
                     x.Id,
                     x.Name,
@@ -281,7 +547,9 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
                     AllianceDoors.Label(x.Door),
                     AllianceDoors.Describe(x.Door),
                     x.Id == viewer.AllianceId,
-                    x.FounderId == viewer.Id);
+                    x.FounderId == viewer.Id,
+                    cityControl.Sum(city => city.BonusThugs),
+                    cityControlResponses);
             })
             .OrderByDescending(x => x.NetWorth)
             .ThenBy(x => x.Name, StringComparer.Ordinal)
@@ -439,6 +707,203 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
     }
 
     public int MaxMembers => Math.Max(2, _options.Alliances.MaxMembers);
+
+    private async Task<bool> AnyLivePactAsync(long one, long two, CancellationToken cancellationToken)
+        => await db.AlliancePacts.AnyAsync(x =>
+            x.Status != AlliancePactStatuses.Canceled
+            && x.Status != AlliancePactStatuses.Declined
+            && ((x.RequestingAllianceId == one && x.TargetAllianceId == two)
+                || (x.RequestingAllianceId == two && x.TargetAllianceId == one)),
+            cancellationToken);
+
+    private static string NormaliseResource(string? item)
+    {
+        var key = TradeGoods.Normalise(item);
+        if (key is "cash" or "thugs")
+            return key;
+        if (TradeGoods.IsTradeable(key))
+            return key;
+        throw new GameRuleException($"You can send cash, thugs, or {string.Join(", ", TradeGoods.Keys)}.");
+    }
+
+    private async Task MoveResourceAsync(Player sender, Player receiver, string key, int quantity, bool enforceReceiverRoom, CancellationToken cancellationToken)
+    {
+        if (key == "cash")
+        {
+            if (sender.Cash < quantity)
+                throw new GameRuleException($"You have {sender.Cash:C0} on hand.");
+            sender.Cash -= quantity;
+            receiver.Cash += quantity;
+            return;
+        }
+
+        if (key == "thugs")
+        {
+            var free = await FreeThugsAsync(sender, cancellationToken);
+            if (free < quantity)
+                throw new GameRuleException($"You have {free:N0} thug(s) standing free.");
+            if (enforceReceiverRoom && hideouts?.CrewRoom(receiver, "thugs") < quantity)
+                throw new GameRuleException($"{receiver.Name} does not have room for that many thugs.");
+            sender.Thugs -= quantity;
+            receiver.Thugs += quantity;
+            return;
+        }
+
+        var held = TradeGoods.Held(sender, key);
+        if (held < quantity)
+            throw new GameRuleException($"You only have {held:N0} {TradeGoods.Label(key).ToLowerInvariant()}.");
+        if (enforceReceiverRoom && hideouts is not null)
+        {
+            var room = TradeGoods.Room(receiver, hideouts.CapacityFor(receiver.Hideout), key);
+            if (room < quantity)
+                throw new GameRuleException($"{receiver.Name} has room for {room:N0} more {TradeGoods.Label(key).ToLowerInvariant()}.");
+        }
+
+        TradeGoods.Add(sender, key, -quantity);
+        TradeGoods.Add(receiver, key, quantity);
+    }
+
+    /// <summary>
+    /// Takes back what is left of the help an ally sent, once the fight it was sent to is over.
+    ///
+    /// Deliberately a thing somebody does rather than something that happens. The alliance pool already
+    /// sends its borrowed thugs home by itself when a mission ends, and this could have followed it -
+    /// but pool thugs are the crew's and these are one player's, and a crew that wants to leave them
+    /// where they are as a gift should be able to. So the ally asks, and gets back whatever is still
+    /// standing.
+    ///
+    /// Never more than was sent, and never more than the defender has free right now. Both caps matter
+    /// and for different reasons: the first stops a recall being a way to strip a crew mate of thugs
+    /// they always had, and the second is the honest half - some of what was sent will have died in the
+    /// fight, and what died is not owed back by anybody.
+    /// </summary>
+    public async Task<AllianceAssistCall> RecallAssistAsync(Player actor, long assistCallId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        TravelGate.EnsureLanded(actor);
+        if (actor.AllianceId is null)
+            throw new GameRuleException("You are not running with a crew.");
+
+        var call = await db.AllianceAssistCalls
+            .Include(x => x.CombatMission).ThenInclude(x => x.Defender).ThenInclude(x => x.Hideout)
+            .SingleOrDefaultAsync(x => x.Id == assistCallId, cancellationToken)
+            ?? throw new GameRuleException("That call is gone.");
+
+        if (actor.AllianceId != call.AllyAllianceId)
+            throw new GameRuleException("That call is for another crew.");
+        // Whoever sent it is who gets it back. A crew mate cannot collect on somebody else's loan.
+        if (call.RespondedById != actor.Id)
+            throw new GameRuleException("That help was not yours to send, so it is not yours to take back.");
+        if (call.Status != AllianceAssistStatuses.Answered)
+            throw new GameRuleException("There is nothing of yours in that fight.");
+        // The whole point of sending help is that it is there for the fight. Pulling it out mid-raid
+        // would make an assist a gesture somebody can withdraw the moment it costs them.
+        if (call.CombatMission.Status != "Complete")
+            throw new GameRuleException("That fight is still going. Ask again when it is over.");
+
+        var defender = call.CombatMission.Defender;
+        var freeThugs = await FreeThugsAsync(defender, cancellationToken);
+        var freeRack = defender.Armoury - await CarriedWeaponsAsync(defender.Id, cancellationToken);
+
+        var thugs = Math.Max(0, Math.Min(call.ThugsSent, freeThugs));
+        var guns = new Armoury
+        {
+            Pistols = Math.Max(0, Math.Min(call.PistolsSent, freeRack.Pistols)),
+            Shotguns = Math.Max(0, Math.Min(call.ShotgunsSent, freeRack.Shotguns)),
+            Smgs = Math.Max(0, Math.Min(call.SmgsSent, freeRack.Smgs)),
+            Rifles = Math.Max(0, Math.Min(call.RiflesSent, freeRack.Rifles)),
+        };
+
+        defender.Thugs -= thugs;
+        actor.Thugs += thugs;
+        defender.Armoury -= guns;
+        actor.Armoury += guns;
+
+        call.ThugsReturned = thugs;
+        call.PistolsReturned = guns.Pistols;
+        call.ShotgunsReturned = guns.Shotguns;
+        call.SmgsReturned = guns.Smgs;
+        call.RiflesReturned = guns.Rifles;
+        call.RecalledAtUtc = nowUtc;
+        // Closed either way. A recall that got nothing back is still a recall - the answer is that
+        // there was nothing left, and asking again would only ask the same question.
+        call.Status = AllianceAssistStatuses.Closed;
+        return call;
+    }
+
+    /// <summary>
+    /// Shuts every open call raised for a fight that has just finished.
+    ///
+    /// Nothing was doing this, so an unanswered call stayed open for good: the alliance page kept
+    /// offering to send help to raids that ended days earlier, and pressing the button answered that
+    /// the fight was no longer taking any. Answered calls are left alone, because the ally still has a
+    /// claim on what they sent and closing it here would quietly cancel that.
+    /// </summary>
+    public async Task<int> CloseOpenAssistCallsAsync(long missionId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var open = await db.AllianceAssistCalls
+            .Where(x => x.CombatMissionId == missionId && x.Status == AllianceAssistStatuses.Open)
+            .ToListAsync(cancellationToken);
+        foreach (var call in open)
+        {
+            call.Status = AllianceAssistStatuses.Closed;
+            call.RecalledAtUtc = nowUtc;
+        }
+        return open.Count;
+    }
+
+    private async Task MoveAssistResourcesAsync(Player sender, Player receiver, int thugs, Armoury weapons, CancellationToken cancellationToken)
+    {
+        if (thugs > 0)
+        {
+            var freeThugs = await FreeThugsAsync(sender, cancellationToken);
+            if (freeThugs < thugs)
+                throw new GameRuleException($"You have {freeThugs:N0} thug(s) standing free.");
+            sender.Thugs -= thugs;
+            receiver.Thugs += thugs;
+        }
+
+        if (weapons.Total <= 0)
+            return;
+
+        var freeRack = sender.Armoury - await CarriedWeaponsAsync(sender.Id, cancellationToken);
+        foreach (var tier in WeaponTiers.All)
+        {
+            var wanted = weapons.Of(tier);
+            if (wanted <= 0) continue;
+            if (freeRack.Of(tier) < wanted)
+                throw new GameRuleException($"You have {freeRack.Of(tier):N0} {WeaponTiers.Label(tier).ToLowerInvariant()} off the rack.");
+        }
+
+        sender.Armoury -= weapons;
+        receiver.Armoury += weapons;
+    }
+
+    /// <summary>
+    /// The thugs a player could actually hand over: what they own, less what is already spoken for.
+    ///
+    /// Owning a thug and having one standing in front of you are different things. Men out on a raid
+    /// or garrisoned on ground still count as the player's, and counting them here would let the same
+    /// thug be sent to a crew mate and be holding a territory at the same time.
+    /// </summary>
+    private async Task<int> FreeThugsAsync(Player player, CancellationToken cancellationToken)
+    {
+        var onMissions = await db.CombatMissions.AsNoTracking()
+            .Where(x => x.AttackerId == player.Id && x.Status != "Complete")
+            .SumAsync(x => (int?)x.RemainingAttackers, cancellationToken) ?? 0;
+        var garrisoned = await db.Territories.AsNoTracking()
+            .Where(x => x.HolderId == player.Id)
+            .SumAsync(x => (int?)x.GarrisonThugs, cancellationToken) ?? 0;
+        return Math.Max(0, player.Thugs - onMissions - garrisoned);
+    }
+
+    private async Task<Armoury> CarriedWeaponsAsync(Guid playerId, CancellationToken cancellationToken)
+    {
+        var carried = await db.CombatMissions.AsNoTracking()
+            .Where(x => x.AttackerId == playerId && x.Status != "Complete")
+            .Select(x => new Armoury(x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles))
+            .ToListAsync(cancellationToken);
+        return carried.Aggregate(Armoury.Empty, (total, rack) => total + rack);
+    }
 
     /// <summary>
     /// How many borrowed thugs this member may field alongside a crew of their own this size.

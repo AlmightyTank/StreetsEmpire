@@ -1,11 +1,17 @@
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Configuration;
 using StreetEmpire.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
+using StreetEmpire.Api.Endpoints;
 using StreetEmpire.Api.Services;
+using StreetEmpire.Api.Support;
 using static StreetEmpire.Api.Mapping.ResponseMappers;
 using static StreetEmpire.Api.Support.BotSeeding;
 
@@ -101,6 +107,19 @@ var tests = new (string Name, Action Test)[]
     ("catch-up reports rank moves and who changed places with you", CatchUpReportsRankAndRivals),
     ("defence alerts count only what is unread", DefenceAlertsCountUnread),
     ("combat power keeps a defender edge without killing attacks", CombatPowerBalanceTarget),
+    ("a fully buffed territory garrison can hold the attacker cap", BuffedTerritoryGarrisonCanHoldTheAttackerCap),
+    ("a transfer moves goods without inventing or destroying any", ATransferMovesGoodsWithoutInventingAny),
+    ("a transfer refuses what the sender cannot spare", ATransferRefusesWhatTheSenderCannotSpare),
+    ("goods only move between people in the same crew", GoodsOnlyMoveInsideACrew),
+    ("a pact is asked for once and answered once", APactIsAskedForOnceAndAnsweredOnce),
+    ("only the crew being asked can answer, and either can walk away", OnlyTheCrewBeingAskedCanAnswer),
+    ("an active pact is a truce both ways round", AnActivePactIsATruceBothWaysRound),
+    ("a raid on a crew calls everybody they have a pact with", ARaidOnACrewCallsTheirAllies),
+    ("help that arrives is help that left somewhere", HelpThatArrivesIsHelpThatLeftSomewhere),
+    ("a fight nobody is having takes no more help", AFightNobodyIsHavingTakesNoMoreHelp),
+    ("help comes home when the fight is over, and only then", HelpComesHomeWhenTheFightIsOver),
+    ("what died in the fight is not owed back by anybody", WhatDiedInTheFightIsNotOwedBack),
+    ("a call nobody answered closes itself when the fight ends", ACallNobodyAnsweredClosesItself),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
@@ -136,7 +155,36 @@ var tests = new (string Name, Action Test)[]
     ("any gun covers a thug, but only the good ones fight", CoverageAndFirepowerComeApart),
     ("a crew carries the best guns and drops the worst", CrewsCarryTheBestAndDropTheWorst),
     ("one shelf holds every gun", OneShelfHoldsEveryGun),
-    ("better guns cost more per point than more thugs", TradingUpIsForWhenTheHouseIsFull)
+    ("better guns cost more per point than more thugs", TradingUpIsForWhenTheHouseIsFull),
+    ("an email is a second name, not a message", AnEmailIsASecondNameNotAMessage),
+    ("both doors put down exactly the same player", BothDoorsPutDownTheSamePlayer),
+    ("an account can never end up with no way in", AnAccountAlwaysKeepsAWayIn),
+    ("a Discord handle always suggests a usable username", ADiscordHandleAlwaysSuggestsAUsableUsername),
+    ("a Discord ticket cannot be read, forged, or replayed elsewhere", ADiscordTicketCannotBeForged),
+    ("Discord is off until it is configured", DiscordIsOffUntilItIsConfigured),
+    ("the browser only ever comes back somewhere already trusted", ReturnUrlsAreOnlyEverOnesAlreadyTrusted),
+    ("a session watermark is measured in whole seconds, like the cookie it judges", SessionWatermarksAreMeasuredInWholeSeconds),
+    ("an address and its tick always move together", AnAddressAndItsTickMoveTogether),
+    ("a verification code lives minutes, not hours", AVerificationCodeLivesMinutesNotHours),
+    ("mail is off until it is configured, and says so rather than pretending", MailIsOffUntilItIsConfigured),
+    ("the code email carries the code and escapes the name", TheCodeEmailCarriesTheCodeAndEscapesTheName),
+    ("an email is only a second name for the password door", AnEmailIsOnlyASecondNameForThePasswordDoor),
+    ("the resend cooldown guards an inbox, not an account", TheResendCooldownGuardsAnInboxNotAnAccount),
+    ("a .env file reads the way every other one does", ADotEnvFileReadsTheWayEveryOtherOneDoes),
+    ("the real environment always beats the file", TheRealEnvironmentAlwaysBeatsTheFile),
+    ("the committed example holds no secrets and no surprises", TheCommittedExampleHoldsNoSecrets),
+    ("a code is only ever good for the thing it was sent for", ACodeIsOnlyGoodForWhatItWasSentFor),
+    ("a reset needs an address somebody actually proved", AResetNeedsAProvenAddress),
+    ("an account made through Discord is a whole account", ADiscordSignUpIsAWholeAccount),
+    ("every new account arrives with a way back in", EveryNewAccountArrivesWithAWayBackIn),
+    ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
+    ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
+    ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
+    ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
+    ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
+    ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
+    ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
+    ("the address being left behind is the one that gets told", TheAddressBeingLeftBehindGetsTold)
 };
 
 var failed = 0;
@@ -150,7 +198,13 @@ foreach (var (name, test) in tests)
     catch (Exception ex)
     {
         failed++;
-        Console.Error.WriteLine($"FAIL {name}: {ex.Message}");
+        // Down to the cause. EF in particular reports "an error occurred while saving the entity
+        // changes, see the inner exception" and then does not show it, which is a failure that tells
+        // you only that there was one.
+        var reasons = new List<string>();
+        for (var cause = ex; cause is not null; cause = cause.InnerException)
+            reasons.Add(cause.Message);
+        Console.Error.WriteLine($"FAIL {name}: {string.Join(" -> ", reasons)}");
     }
 }
 
@@ -1449,6 +1503,1456 @@ static void HideoutTierGatesDeeperRooms()
 //
 // Reads this file rather than reflecting over the assembly, because top-level statements compile the
 // manifest into a method body where reflection cannot see it.
+static void AnEmailIsASecondNameNotAMessage()
+{
+    // Folded, trimmed, and blank collapsed to null. Without the fold, signing up as Sam@example.com
+    // and coming back as sam@example.com is two different accounts as far as the unique index cares.
+    AssertEqual("sam@example.com", AccountSetup.NormalizeEmail("  Sam@Example.COM  "));
+    AssertEqual(null, AccountSetup.NormalizeEmail("   "));
+    AssertEqual(null, AccountSetup.NormalizeEmail(null));
+
+    // Loose on purpose - nothing is ever sent here - but strict about the parts that make it a key.
+    foreach (var good in new[] { "a@b.co", "first.last@sub.domain.example", "someone+tag@example.org" })
+        AssertTrue(AccountSetup.LooksLikeAnEmail(good), $"{good} should be usable as a sign-in name");
+    foreach (var bad in new[] { "nobody", "@example.com", "someone@", "someone@localhost", "two @example.com", "a@b@c.com" })
+        AssertTrue(!AccountSetup.LooksLikeAnEmail(bad), $"{bad} should not be usable as a sign-in name");
+
+    // 254 is the cap the column carries, so anything longer would be a truncation rather than a save.
+    AssertTrue(!AccountSetup.LooksLikeAnEmail(new string('a', 250) + "@example.com"), "an over-long address should be refused");
+
+    // The @ is the whole of how the login box tells the two kinds of name apart. A username holding
+    // one would be looked up against the email column for ever and never found, so it is refused at
+    // the point it is chosen rather than becoming an account nobody can sign into.
+    AssertTrue(AccountSetup.LooksLikeAnAttemptAtEmail("sam@example.com"), "an address should read as an address");
+    AssertTrue(AccountSetup.LooksLikeAnAttemptAtEmail("sam@"), "a half-typed address should still read as one");
+    AssertTrue(!AccountSetup.LooksLikeAnAttemptAtEmail("sam"), "a plain username should not read as an address");
+}
+
+static void BothDoorsPutDownTheSamePlayer()
+{
+    // The reason the starting player was pulled out of the register endpoint: there are two ways in
+    // now, and the failure this guards against is quiet - a Discord sign-up handing out a different
+    // amount of money, or no hideout, because somebody edited one copy of the setup and not the other.
+    var options = Resolve(new GameOptions
+    {
+        StartingCash = 5_000,
+        StartingBankCash = 100,
+        StartingTurns = 200,
+        StartingPimps = 1,
+        StartingHoes = 3,
+        StartingThugs = 1,
+        StartingCondoms = 17,
+        StartingBeer = 10,
+        StartingWeapons = 1,
+        StartingHoeCutPercent = 30,
+    });
+
+    var withPassword = new PlayerAccount { Username = "sam", PasswordHash = "hashed" };
+    var withDiscord = new PlayerAccount { Username = "alex", DiscordUserId = "1234567890" };
+    var (one, oneLog) = AccountSetup.NewPlayer(withPassword, "Sam", "Chicago", options, CreateRoster(options));
+    var (two, _) = AccountSetup.NewPlayer(withDiscord, "Alex", "Chicago", options, CreateRoster(options));
+
+    AssertEqual(one.Cash, two.Cash);
+    AssertEqual(one.BankCash, two.BankCash);
+    AssertEqual(one.Turns, two.Turns);
+    AssertEqual(one.Pimps, two.Pimps);
+    AssertEqual(one.Hoes, two.Hoes);
+    AssertEqual(one.Thugs, two.Thugs);
+    AssertEqual(one.Condoms, two.Condoms);
+    AssertEqual(one.Beer, two.Beer);
+    AssertEqual(one.Pistols, two.Pistols);
+    AssertEqual(one.HoeCutPercent, two.HoeCutPercent);
+    AssertEqual(one.City, two.City);
+
+    // The three things a new player is useless without, and the one line that says they arrived.
+    AssertTrue(one.Hideout is not null, "a new player should have a hideout");
+    AssertEqual(options.StartingPimps, one.Crew.Count);
+    AssertEqual("START", oneLog.Action);
+    AssertTrue(oneLog.Summary.Contains("Chicago"), "the opening line should name the town");
+}
+
+static void AnAccountAlwaysKeepsAWayIn()
+{
+    // The whole point of the check the account endpoints run before taking a door away. Get this
+    // wrong and a player removes their password on Monday, unlinks Discord on Tuesday, and owns an
+    // empire that can never be reached again.
+    var passwordOnly = new PlayerAccount { PasswordHash = "hashed" };
+    var discordOnly = new PlayerAccount { DiscordUserId = "1234567890" };
+    var both = new PlayerAccount { PasswordHash = "hashed", DiscordUserId = "1234567890" };
+
+    AssertTrue(passwordOnly.HasPassword, "a hash should count as a password");
+    AssertTrue(!discordOnly.HasPassword, "an empty hash should never count as a password");
+
+    // Unlinking Discord: allowed when a password is left behind, refused when it is the only door.
+    AssertTrue(both.HasAnotherWayIn(withoutDiscord: true), "an account with a password can drop Discord");
+    AssertTrue(!discordOnly.HasAnotherWayIn(withoutDiscord: true), "Discord alone cannot be dropped");
+
+    // And the same question the other way round, which is what a password endpoint would ask.
+    AssertTrue(both.HasAnotherWayIn(withoutPassword: true), "an account with Discord can drop its password");
+    AssertTrue(!passwordOnly.HasAnotherWayIn(withoutPassword: true), "a password alone cannot be dropped");
+}
+
+static void ADiscordHandleAlwaysSuggestsAUsableUsername()
+{
+    // Only a suggestion - the finish form lets it be typed over - but a suggestion that the register
+    // rules would refuse is worse than none, because it fails on submit and reads as the game's fault.
+    foreach (var handle in new[] { "sam", "Sam.Smith", "sam_smith_99", "\u2728\u2728", "", "x", new string('a', 60) })
+    {
+        var suggested = AccountSetup.SuggestUsername(handle);
+        AssertTrue(suggested.Length is >= 3 and <= 32, $"'{handle}' suggested '{suggested}', which the register rules would refuse");
+        AssertTrue(!AccountSetup.LooksLikeAnAttemptAtEmail(suggested), $"'{suggested}' should not read as an address");
+    }
+
+    AssertEqual("SamSmith", AccountSetup.SuggestUsername("Sam.Smith"));
+}
+
+static void ADiscordTicketCannotBeForged()
+{
+    var tickets = new DiscordTickets(DataProtectionProvider.Create("StreetEmpire.Tests"));
+    var profile = new DiscordProfile("1234567890", "sam", "Sam");
+
+    // What goes round the loop comes back unchanged, which is the only reason a signed cookie can
+    // stand in for the server remembering anything across a trip through somebody else's site.
+    var ticket = tickets.ProtectSignUp(profile);
+    var read = tickets.ReadSignUp(ticket);
+    AssertTrue(read is not null, "a ticket this server wrote should be readable by it");
+    AssertEqual(profile.Id, read!.Id);
+    AssertEqual("Sam", read.DisplayName);
+
+    // The identity is not in the browser's hands: a ticket is opaque, and one bad character voids it.
+    AssertTrue(!ticket.Contains("1234567890"), "the Discord id should not be sitting in the cookie in the clear");
+    AssertEqual(null, tickets.ReadSignUp(ticket[..^4] + "AAAA"));
+    AssertEqual(null, tickets.ReadSignUp("not a ticket at all"));
+    AssertEqual(null, tickets.ReadSignUp(null));
+
+    // A different server cannot read this one's notes, which is what stops a ticket minted anywhere
+    // else from being spent here.
+    var elsewhere = new DiscordTickets(DataProtectionProvider.Create("SomebodyElse"));
+    AssertEqual(null, elsewhere.ReadSignUp(ticket));
+
+    // The state note carries the nonce that proves the round trip started in this same browser.
+    var state = tickets.ProtectState("cafef00d", "http://localhost:5173/");
+    var readState = tickets.ReadState(state);
+    AssertTrue(readState is not null, "a state note this server wrote should be readable by it");
+    AssertEqual("cafef00d", readState!.Value.Nonce);
+    AssertEqual("http://localhost:5173/", readState.Value.ReturnUrl);
+    AssertEqual(null, tickets.ReadState(state[..^4] + "AAAA"));
+
+    // Two nonces are never the same one, or the check they exist for proves nothing.
+    AssertTrue(DiscordTickets.NewNonce() != DiscordTickets.NewNonce(), "nonces should not repeat");
+}
+
+static void DiscordIsOffUntilItIsConfigured()
+{
+    // Half-configured is off. A button that appears because somebody set an id and forgot the secret
+    // is a button that sends the player to Discord and fails on the way back.
+    AssertTrue(!new DiscordOptions().IsConfigured, "an empty configuration should not offer Discord");
+    AssertTrue(!new DiscordOptions { ClientId = "an-id" }.IsConfigured, "an id with no secret should not offer Discord");
+    AssertTrue(!new DiscordOptions { ClientSecret = "a-secret" }.IsConfigured, "a secret with no id should not offer Discord");
+    AssertTrue(new DiscordOptions { ClientId = "an-id", ClientSecret = "a-secret" }.IsConfigured, "both should offer Discord");
+
+    // And the shipped file must never carry either of them, because the shipped file is public.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+    var options = new DiscordOptions();
+    shipped.GetSection("Auth:Discord").Bind(options);
+    AssertTrue(!options.IsConfigured, "appsettings.json should never carry a Discord client secret");
+    AssertTrue(!string.IsNullOrWhiteSpace(options.RedirectUri), "the shipped file should still say where Discord sends the browser back to");
+}
+
+static void ReturnUrlsAreOnlyEverOnesAlreadyTrusted()
+{
+    // The client names the origin it wants to be returned to, because in development that origin is
+    // on a port nobody could have written into a config file. An origin the caller names and the
+    // server obeys is an open redirect unless it is checked, so this is the check.
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
+            ["Cors:AllowedOrigins:1"] = "https://play.example.com",
+        })
+        .Build();
+    var options = new OptionsSnapshotStub<DiscordOptions>(new DiscordOptions { ReturnUrl = "http://localhost:5173/" });
+
+    var live = new DiscordReturnUrls(configuration, new HostingStub("Production"), options);
+    AssertEqual("https://play.example.com/", live.Resolve("https://play.example.com/anywhere"));
+    AssertEqual("http://localhost:5173/", live.Resolve("https://evil.example.net/"));
+    AssertEqual("http://localhost:5173/", live.Resolve("javascript:alert(1)"));
+    AssertEqual("http://localhost:5173/", live.Resolve("//evil.example.net"));
+    AssertEqual("http://localhost:5173/", live.Resolve(null));
+    // Not in the allowlist, and a live server has no reason to send anybody to a machine-local port.
+    AssertEqual("http://localhost:5173/", live.Resolve("http://localhost:61234/"));
+
+    // In development it does, because that is exactly where the dev server ends up.
+    var dev = new DiscordReturnUrls(configuration, new HostingStub("Development"), options);
+    AssertEqual("http://localhost:61234/", dev.Resolve("http://localhost:61234/"));
+    AssertEqual("http://localhost:5173/", dev.Resolve("https://evil.example.net/"));
+}
+
+static void SessionWatermarksAreMeasuredInWholeSeconds()
+{
+    // Changing a password ends every other session by writing a watermark and re-issuing this one.
+    // The two are compared through a cookie ticket, which keeps whole seconds and throws the fraction
+    // away - so an unrounded watermark sits a few hundred microseconds ahead of the cookie written in
+    // the same breath, and the first session it signs out is the one that just changed the password.
+    // That is not a hypothetical: it is what happened, and it is what this floor is for.
+    var fractional = new DateTime(2026, 8, 26, 13, 24, 18, 390, DateTimeKind.Utc).AddTicks(5_490);
+    var floored = AuthEndpoints.ToSessionMoment(fractional);
+
+    // The current second, floored, plus one.
+    AssertEqual(new DateTime(2026, 8, 26, 13, 24, 19, DateTimeKind.Utc), floored);
+    AssertEqual(DateTimeKind.Utc, floored.Kind);
+    AssertEqual(0, floored.Ticks % TimeSpan.TicksPerSecond);
+
+    // The mechanism itself, rather than a restatement of the flooring. A cookie ticket writes its
+    // issued-at through the RFC1123 round-trip format, and whatever survives that trip is what the
+    // watermark is later compared against.
+    static DateTime ThroughACookieTicket(DateTime issued) => DateTime.ParseExact(
+        new DateTimeOffset(issued, TimeSpan.Zero).ToString("r", System.Globalization.CultureInfo.InvariantCulture),
+        "r",
+        System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal);
+
+    // Write the watermark from an unrounded clock and issue the cookie at the same instant, and the
+    // cookie comes back from that trip fractionally earlier than the watermark. That is the whole bug:
+    // the session that just changed its own password is the first one the watermark throws out.
+    AssertTrue(ThroughACookieTicket(fractional) < fractional,
+        "a cookie ticket should lose the fraction, which is what made an unrounded watermark a trap");
+
+    // The session re-issued alongside the watermark survives it. This is the one that must not break.
+    AssertTrue(!(ThroughACookieTicket(floored) < floored),
+        "the session issued at the watermark must survive it");
+
+    // And every session that already existed does not - including one signed in earlier in the very
+    // same second, which flooring alone let through. Somebody who got in moments before a reset kept
+    // their session, which is precisely who a reset is aimed at.
+    var sameSecond = ThroughACookieTicket(new DateTime(2026, 8, 26, 13, 24, 18, 100, DateTimeKind.Utc));
+    var secondsBefore = ThroughACookieTicket(new DateTime(2026, 8, 26, 13, 24, 11, DateTimeKind.Utc));
+    AssertTrue(sameSecond < floored, "a session from the same second must still be revoked");
+    AssertTrue(secondsBefore < floored, "an older session must be revoked");
+}
+
+static void AnAddressAndItsTickMoveTogether()
+{
+    // The one failure worth a test of its own: an address that changed while the tick stayed put is a
+    // verified address nobody verified, and it would let whoever typed it sign in as somebody else.
+    var account = new PlayerAccount { Username = "sam" };
+    account.SetEmail("sam@example.com");
+    account.EmailVerified = true;
+    account.EmailVerifiedAtUtc = new DateTime(2026, 8, 26, 0, 0, 0, DateTimeKind.Utc);
+
+    account.SetEmail("someone.else@example.com");
+    AssertEqual("someone.else@example.com", account.Email);
+    AssertTrue(!account.EmailVerified, "changing the address must take the tick with it");
+    AssertEqual(null, account.EmailVerifiedAtUtc);
+
+    // Clearing it is the same move, and must not leave a tick behind either.
+    account.EmailVerified = true;
+    account.SetEmail(null);
+    AssertEqual(null, account.Email);
+    AssertTrue(!account.EmailVerified, "removing the address must take the tick with it");
+}
+
+static void AVerificationCodeLivesMinutesNotHours()
+{
+    // Six digits is a million possibilities. That is only safe because of the three numbers around it,
+    // so those numbers are the test: a short window, a hard attempt cap, and a wait between sends.
+    var options = new EmailOptions();
+    AssertTrue(options.CodeLifetimeMinutes is > 0 and <= 30,
+        $"a six-digit code held open for {options.CodeLifetimeMinutes} minutes is a long time to guess a million numbers in");
+    AssertTrue(options.MaxAttempts is > 0 and <= 10, "a code needs a hard cap on guesses");
+    AssertTrue(options.ResendCooldownSeconds >= 30, "without a cooldown the resend button is a mail cannon");
+
+    var now = new DateTime(2026, 8, 26, 12, 0, 0, DateTimeKind.Utc);
+    var code = new EmailVerification
+    {
+        ExpiresAtUtc = now.AddMinutes(options.CodeLifetimeMinutes),
+        Attempts = 0,
+    };
+
+    AssertTrue(code.IsLive(now, options.MaxAttempts), "a fresh code should be worth typing");
+    // Out of time.
+    AssertTrue(!code.IsLive(code.ExpiresAtUtc.AddSeconds(1), options.MaxAttempts), "an expired code is dead");
+    // Out of guesses, with time to spare - which is the case the clock alone would have missed.
+    code.Attempts = options.MaxAttempts;
+    AssertTrue(!code.IsLive(now, options.MaxAttempts), "a code guessed at too many times is dead");
+    // Already spent. A code that worked once must never work twice.
+    code.Attempts = 0;
+    code.ConsumedAtUtc = now;
+    AssertTrue(!code.IsLive(now, options.MaxAttempts), "a spent code is dead");
+}
+
+static void MailIsOffUntilItIsConfigured()
+{
+    AssertTrue(!new EmailOptions().IsConfigured, "no key should mean no delivery");
+    AssertTrue(new EmailOptions { ApiKey = "re_something" }.IsConfigured, "a key should mean delivery");
+
+    // The shipped file must carry no key, for the same reason it carries no Discord secret: it is
+    // public. And it must still carry the numbers, because those are the safety and not the secret.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+    var options = new EmailOptions();
+    shipped.GetSection("Auth:Email").Bind(options);
+
+    AssertTrue(!options.IsConfigured, "appsettings.json should never carry an email API key");
+    AssertTrue(options.CodeLifetimeMinutes is > 0 and <= 30, "the shipped code window should still be short");
+    AssertTrue(options.MaxAttempts is > 0 and <= 10, "the shipped attempt cap should still be a cap");
+    AssertTrue(options.ResendCooldownSeconds >= 30, "the shipped cooldown should still be a cooldown");
+    AssertTrue(!string.IsNullOrWhiteSpace(options.FromAddress), "the shipped file should still name a sender");
+}
+
+static void TheCodeEmailCarriesTheCodeAndEscapesTheName()
+{
+    // A player name is chosen by the player, so it reaches the HTML body as markup unless something
+    // stops it. Nobody reading their own mail is the victim here - but the same copy is one refactor
+    // away from being shown somewhere else, and escaping it costs nothing.
+    var message = CodeEmail.Build(
+        "sam@example.com", "<script>alert(1)</script>", "042137",
+        VerificationPurpose.ConfirmAddress, 15, "Street Empire");
+
+    AssertEqual("sam@example.com", message.To);
+    AssertTrue(message.Subject.Contains("042137"), "the subject should carry the code, so it reads from a notification");
+    AssertTrue(message.Text.Contains("042137"), "the text part should carry the code");
+    AssertTrue(message.Html.Contains("042137"), "the html part should carry the code");
+    AssertTrue(message.Text.Contains("15 minutes"), "the mail should say how long the code is good for");
+    AssertTrue(!message.Html.Contains("<script>"), "a player name must never reach the body as markup");
+    AssertTrue(message.Html.Contains("&lt;script&gt;"), "the name should still be shown, escaped");
+
+    // Both flows use one builder, so both have to end up saying which of the two they are - a reset
+    // mail that reads like a confirmation is a reset nobody realises they did not ask for.
+    var reset = CodeEmail.Build(
+        "sam@example.com", "Sam", "042137", VerificationPurpose.ResetPassword, 15, "Street Empire");
+
+    AssertTrue(reset.Subject != message.Subject, "a reset should not look like a confirmation in an inbox");
+    AssertTrue(reset.Subject.Contains("reset"), "the subject should say what the code is for");
+    AssertTrue(reset.Text.Contains("new password"), "the body should say what the code is for");
+    // The one line that matters to somebody who did not ask: a code alone changes nothing.
+    AssertTrue(reset.Text.Contains("your password has not"), "an unasked-for reset mail should say nothing has happened yet");
+}
+
+static void AnEmailIsOnlyASecondNameForThePasswordDoor()
+{
+    // A confirmed address is a name you can type, not a key. It is the password beside it that opens
+    // anything - so an account with an address and no password has no way in, and the check that
+    // guards the last door must not be fooled into counting the address as one.
+    var addressOnly = new PlayerAccount { Username = "sam", EmailVerified = true };
+    addressOnly.Email = "sam@example.com";
+
+    AssertTrue(!addressOnly.HasPassword, "an address is not a password");
+    AssertTrue(!addressOnly.HasAnotherWayIn(), "an address alone is not a way in");
+
+    // With a password it is a second name for the same door - and dropping the password drops both.
+    var withPassword = new PlayerAccount { Username = "sam", PasswordHash = "hashed", EmailVerified = true };
+    withPassword.Email = "sam@example.com";
+    AssertTrue(withPassword.HasAnotherWayIn(), "a password is a way in");
+    AssertTrue(!withPassword.HasAnotherWayIn(withoutPassword: true),
+        "an address must not stand in for the password it is typed beside");
+}
+
+static void TheResendCooldownGuardsAnInboxNotAnAccount()
+{
+    // The cooldown exists to stop one inbox being hammered, so it is measured against the address the
+    // code would go to. Measured against the account instead, a player who changed their address inside
+    // the first minute was silently refused a code - left holding an address they had no way to confirm
+    // and no explanation of why. That is the bug this is here for.
+    var now = new DateTime(2026, 8, 26, 12, 0, 0, DateTimeKind.Utc);
+    var sent = new EmailVerification { Email = "sam@example.com", CreatedAtUtc = now };
+    const int cooldown = 60;
+
+    // Same inbox, seconds later: wait.
+    AssertTrue(EmailVerificationService.IsTooSoon(sent, "sam@example.com", now.AddSeconds(5), cooldown),
+        "asking again for the same address inside the cooldown should wait");
+    // Same inbox, after the minute: go.
+    AssertTrue(!EmailVerificationService.IsTooSoon(sent, "sam@example.com", now.AddSeconds(61), cooldown),
+        "the cooldown should end");
+    // A different inbox is not the one being protected, whatever the clock says.
+    AssertTrue(!EmailVerificationService.IsTooSoon(sent, "moved@example.com", now.AddSeconds(5), cooldown),
+        "changing address should not be held up by a code sent somewhere else");
+    // And nothing sent yet is never too soon.
+    AssertTrue(!EmailVerificationService.IsTooSoon(null, "sam@example.com", now, cooldown),
+        "a first code should never be held up");
+}
+
+static void ADotEnvFileReadsTheWayEveryOtherOneDoes()
+{
+    // The format is a convention rather than a specification, so what it accepts is worth pinning down:
+    // somebody will paste a line out of a shell script or a password manager and expect it to work.
+    var parsed = DotEnv.Parse([
+        "# a comment",
+        "",
+        "   ",
+        "Auth__Email__ApiKey=re_plain",
+        "  Auth__Discord__ClientId = 12345  ",
+        "export Auth__Discord__ClientSecret=exported",
+        "Quoted=\"a value\"",
+        "Single='literal'",
+        "WithHash=before # after",
+        "HashInsideQuotes=\"keeps#this\"",
+        "Escaped=\"one\\ntwo\"",
+        "Empty=",
+        "Colon:Style:Key=works",
+        "novalueline",
+        "=novalue",
+    ]).ToDictionary(x => x.Key, x => x.Value);
+
+    AssertEqual("re_plain", parsed["Auth__Email__ApiKey"]);
+    // Whitespace around both halves goes, because a lined-up file is a normal thing to write.
+    AssertEqual("12345", parsed["Auth__Discord__ClientId"]);
+    AssertEqual("exported", parsed["Auth__Discord__ClientSecret"]);
+    AssertEqual("a value", parsed["Quoted"]);
+    AssertEqual("literal", parsed["Single"]);
+    // A trailing comment ends an unquoted value, and does not touch a quoted one - which is what lets
+    // a secret with a # in it survive being written down.
+    AssertEqual("before", parsed["WithHash"]);
+    AssertEqual("keeps#this", parsed["HashInsideQuotes"]);
+    AssertEqual("one\ntwo", parsed["Escaped"]);
+    AssertEqual("", parsed["Empty"]);
+    AssertEqual("works", parsed["Colon:Style:Key"]);
+
+    // A line that is not a setting is skipped rather than thrown over. One bad line in a config file
+    // must never be the reason a server will not boot.
+    AssertTrue(!parsed.ContainsKey("novalueline"), "a line with no = is not a setting");
+    AssertTrue(!parsed.ContainsKey(""), "a line with no name is not a setting");
+    AssertEqual(10, parsed.Count);
+}
+
+static void TheRealEnvironmentAlwaysBeatsTheFile()
+{
+    // The rule that matters in production: a platform injecting a secret as an environment variable
+    // must win over a .env that found its way into an image. Every dotenv implementation works this
+    // way round, and getting it backwards would be a silent downgrade to whatever was committed.
+    var directory = Directory.CreateTempSubdirectory("street-empire-dotenv");
+    var alreadySet = "STREET_EMPIRE_TEST_ALREADY_SET";
+    var fromFile = "STREET_EMPIRE_TEST_FROM_FILE";
+    try
+    {
+        File.WriteAllLines(Path.Combine(directory.FullName, ".env"),
+        [
+            $"{alreadySet}=from-the-file",
+            $"{fromFile}=from-the-file",
+        ]);
+
+        Environment.SetEnvironmentVariable(alreadySet, "from-the-environment");
+        Environment.SetEnvironmentVariable(fromFile, null);
+
+        var previous = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(directory.FullName);
+            var result = DotEnv.Load();
+
+            AssertTrue(result.Found, "a .env in the working directory should be found");
+            AssertEqual(1, result.Applied);
+            AssertEqual(1, result.SkippedBecauseAlreadySet);
+            AssertEqual("from-the-environment", Environment.GetEnvironmentVariable(alreadySet));
+            AssertEqual("from-the-file", Environment.GetEnvironmentVariable(fromFile));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previous);
+        }
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(alreadySet, null);
+        Environment.SetEnvironmentVariable(fromFile, null);
+        directory.Delete(recursive: true);
+    }
+}
+
+static void TheCommittedExampleHoldsNoSecrets()
+{
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    // .env is where the secrets go, so it must never be committable. This is the one line standing
+    // between a working setup and a published API key.
+    var ignore = File.ReadAllLines(Path.Combine(root!.FullName, ".gitignore")).Select(x => x.Trim());
+    AssertTrue(ignore.Contains(".env"), ".gitignore must ignore .env");
+
+    var examplePath = Path.Combine(root.FullName, ".env.example");
+    AssertTrue(File.Exists(examplePath), ".env.example should be committed so there is something to copy");
+
+    // Every key the example sets a value for must be empty. A template that ships a filled-in secret
+    // is the exact failure the template exists to prevent, and it would be copied into every .env.
+    foreach (var (key, value) in DotEnv.Parse(File.ReadAllLines(examplePath)))
+        AssertTrue(value.Length == 0, $".env.example should leave {key} empty, not carry '{value}'");
+
+    // And the names in it have to be real, or somebody fills the file in and nothing happens. Checked
+    // against the options themselves rather than a list written out twice.
+    var text = File.ReadAllText(examplePath);
+    foreach (var expected in new[]
+    {
+        $"Auth__Discord__{nameof(DiscordOptions.ClientId)}",
+        $"Auth__Discord__{nameof(DiscordOptions.ClientSecret)}",
+        $"Auth__Discord__{nameof(DiscordOptions.RedirectUri)}",
+        $"Auth__Email__{nameof(EmailOptions.ApiKey)}",
+        $"Auth__Email__{nameof(EmailOptions.FromAddress)}",
+        $"Auth__Email__{nameof(EmailOptions.CodeLifetimeMinutes)}",
+    })
+        AssertTrue(text.Contains(expected), $".env.example should name {expected}");
+}
+
+static void EveryAccountChangeHasCopyOfItsOwn()
+{
+    // The guard for the next one somebody adds. A new enum value with no arm written for it falls
+    // through to "Something on your account changed", which is a notice that tells the reader nothing
+    // and would ship without anybody noticing.
+    var subjects = new List<string>();
+    foreach (var change in Enum.GetValues<AccountChange>())
+    {
+        var message = AccountNoticeEmail.Build("sam@example.com", "Sam", change, null, DateTime.UtcNow, "Street Empire");
+
+        AssertTrue(!message.Subject.Contains("your account changed"),
+            $"{change} has no copy of its own and fell through to the generic subject");
+        AssertTrue(!message.Text.Contains("Something on your account changed"),
+            $"{change} has no copy of its own and fell through to the generic sentence");
+        AssertTrue(message.Subject.StartsWith("Street Empire:", StringComparison.Ordinal),
+            $"{change} should say who is writing");
+        subjects.Add(message.Subject);
+    }
+
+    // Distinct, because two changes sharing a subject line is two changes one of them cannot be told
+    // apart from in an inbox.
+    AssertEqual(subjects.Count, subjects.Distinct().Count());
+    AssertTrue(subjects.Count >= 9, "every way in should have a notice behind it");
+}
+
+static void ANoticeSaysWhatHappenedAndNeverWhatItWas()
+{
+    // The rule the whole file is written to. A mailbox is not a secure channel, so a notice reports a
+    // change and never carries the change: no new password, no verification code, no token. A notice
+    // that leaked what it reported would be worse than no notice.
+    var message = AccountNoticeEmail.Build(
+        "sam@example.com", "Sam", AccountChange.PasswordChanged, null,
+        new DateTime(2026, 8, 26, 14, 5, 0, DateTimeKind.Utc), "Street Empire");
+
+    AssertTrue(message.Text.Contains("14:05 UTC"), "a notice should say when, or it cannot be checked against memory");
+    AssertTrue(message.Text.Contains("Every other session was signed out."), "it should say what else the change did");
+    // The advice has to work for the reader who has already lost the account, which is who most needs
+    // it. "Sign in and change your password" is useless to somebody whose password was just changed
+    // out from under them, so the route named has to be the one that works without it.
+    AssertTrue(message.Text.Contains("reset your password from the sign-in screen"),
+        "the advice should name the route that works when you are already locked out");
+    AssertTrue(message.Text.Contains("Discord connection you do not recognise"),
+        "it should also point at the other way in somebody could have left behind");
+
+    // The detail is somebody else's text - a Discord handle is chosen by its owner - so it never
+    // reaches the body as markup.
+    var hostile = AccountNoticeEmail.Build(
+        "sam@example.com", "Sam", AccountChange.DiscordConnected, "<script>alert(1)</script>",
+        DateTime.UtcNow, "Street Empire");
+
+    AssertTrue(hostile.Text.Contains("<script>"), "the text part is not markup and needs no escaping");
+    AssertTrue(!hostile.Html.Contains("<script>"), "a handle must never reach the html body as markup");
+    AssertTrue(hostile.Html.Contains("&lt;script&gt;"), "the handle should still be shown, escaped");
+
+    // Naming the address it moved to is the point of that notice: it is how somebody sees where their
+    // account went.
+    var moved = AccountNoticeEmail.Build(
+        "old@example.com", "Sam", AccountChange.EmailChanged, "new@example.com", DateTime.UtcNow, "Street Empire");
+    AssertTrue(moved.Text.Contains("new@example.com"), "the notice should name where the account moved to");
+}
+
+static void NoticesOnlyGoToProvenAddresses()
+{
+    // An unconfirmed address may belong to a stranger who was typed in by mistake or on purpose.
+    // Mailing them about somebody else's account is a nuisance to them and a spam complaint against
+    // the sending domain - which would eventually stop verification codes arriving for everybody.
+    var sent = new RecordingEmailSender();
+    var notices = new AccountNotices(sent, Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
+
+    var unconfirmed = new PlayerAccount { Username = "sam" };
+    unconfirmed.SetEmail("sam@example.com");
+    notices.TellAccountAsync(unconfirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(0, sent.Messages.Count);
+
+    var noAddress = new PlayerAccount { Username = "sam" };
+    notices.TellAccountAsync(noAddress, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(0, sent.Messages.Count);
+
+    var confirmed = new PlayerAccount { Username = "sam", EmailVerified = true };
+    confirmed.Email = "sam@example.com";
+    notices.TellAccountAsync(confirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(1, sent.Messages.Count);
+    AssertEqual("sam@example.com", sent.Messages[0].To);
+
+    // The switch exists for a load test against a real provider, not for ordinary use.
+    var quiet = new AccountNotices(sent, Options(new EmailOptions { SendSecurityNotices = false }), NullLogger<AccountNotices>.Instance);
+    quiet.TellAccountAsync(confirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(1, sent.Messages.Count);
+}
+
+static void TheAddressBeingLeftBehindGetsTold()
+{
+    // The most important notice in the set, and the one easiest to get backwards. Changing the address
+    // is how somebody who has taken an account keeps it: the owner is cut off and never hears. Telling
+    // only the new address would be telling the thief.
+    var sent = new RecordingEmailSender();
+    var notices = new AccountNotices(sent, Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
+
+    notices.TellFormerAddressAsync("old@example.com", "Sam", AccountChange.EmailChanged, "new@example.com", default)
+        .GetAwaiter().GetResult();
+
+    AssertEqual(1, sent.Messages.Count);
+    AssertEqual("old@example.com", sent.Messages[0].To);
+    AssertTrue(sent.Messages[0].Text.Contains("new@example.com"), "it should name where the account went");
+
+    // A send that fails must never throw, because the change it reports has already happened and been
+    // saved - a provider being down cannot be allowed to answer an error for a password that really did
+    // change.
+    var broken = new AccountNotices(new ThrowingEmailSender(), Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
+    broken.TellFormerAddressAsync("old@example.com", "Sam", AccountChange.EmailRemoved, null, default)
+        .GetAwaiter().GetResult();
+}
+
+static void ACodeIsOnlyGoodForWhatItWasSentFor()
+{
+    // Confirming an address and resetting a password share a table, and the purpose column is the only
+    // thing keeping them apart. Without it a code mailed to confirm an address - which the mail calls
+    // harmless - could be typed into the reset form and become a new password.
+    AssertEqual(2, Enum.GetValues<VerificationPurpose>().Length);
+
+    var confirm = new EmailVerification { Purpose = VerificationPurpose.ConfirmAddress };
+    var reset = new EmailVerification { Purpose = VerificationPurpose.ResetPassword };
+    AssertTrue(confirm.Purpose != reset.Purpose, "the two purposes must be distinguishable on the row");
+
+    // Existing rows predate the column, and every one of them was a confirmation. The migration has to
+    // say so, because the empty string EF would otherwise write is not a name the enum reads back from.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var migration = Directory
+        .GetFiles(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Migrations"), "*_PasswordResetCodes.cs")
+        .Single(x => !x.EndsWith(".Designer.cs", StringComparison.Ordinal));
+    var text = File.ReadAllText(migration);
+    AssertTrue(text.Contains($"defaultValue: \"{nameof(VerificationPurpose.ConfirmAddress)}\""),
+        "the purpose column must backfill existing rows with a name the enum can be read back from");
+}
+
+static void AResetNeedsAProvenAddress()
+{
+    // The two flows have exactly opposite preconditions, and getting either backwards is a hole:
+    // confirming an address that is already confirmed is pointless, and resetting against an address
+    // nobody proved would mail a way into the account to whoever typed the address in.
+    var unproven = new PlayerAccount { Username = "sam" };
+    unproven.SetEmail("sam@example.com");
+
+    var proven = new PlayerAccount { Username = "sam", EmailVerified = true };
+    proven.Email = "sam@example.com";
+
+    var noAddress = new PlayerAccount { Username = "sam" };
+
+    AssertEqual(SendCodeResult.AddressNotConfirmed, Precondition(unproven, VerificationPurpose.ResetPassword));
+    AssertEqual(SendCodeResult.Sent, Precondition(proven, VerificationPurpose.ResetPassword));
+    AssertEqual(SendCodeResult.Sent, Precondition(unproven, VerificationPurpose.ConfirmAddress));
+    AssertEqual(SendCodeResult.AlreadyVerified, Precondition(proven, VerificationPurpose.ConfirmAddress));
+    AssertEqual(SendCodeResult.NoAddress, Precondition(noAddress, VerificationPurpose.ResetPassword));
+    AssertEqual(SendCodeResult.NoAddress, Precondition(noAddress, VerificationPurpose.ConfirmAddress));
+
+    // Mirrors the gate at the top of SendAsync. Kept here rather than reaching for a database, because
+    // the decision is about the account alone and this suite runs without one.
+    static SendCodeResult Precondition(PlayerAccount account, VerificationPurpose purpose)
+    {
+        if (account.Email is null) return SendCodeResult.NoAddress;
+        return purpose switch
+        {
+            VerificationPurpose.ConfirmAddress when account.EmailVerified => SendCodeResult.AlreadyVerified,
+            VerificationPurpose.ResetPassword when !account.EmailVerified => SendCodeResult.AddressNotConfirmed,
+            _ => SendCodeResult.Sent,
+        };
+    }
+}
+
+static void ADiscordSignUpIsAWholeAccount()
+{
+    // The second door into the game, and the one that is easiest to leave half-built: Discord answers
+    // who somebody is and has no opinion about what they want to be called, which town they set up in,
+    // or how they get back in if they lose the Discord. All three are the game's to ask.
+    var options = Resolve(new GameOptions { StartingCash = 5_000, StartingPimps = 1, StartingTurns = 200 });
+
+    var account = new PlayerAccount
+    {
+        Username = "streetking",
+        PasswordHash = string.Empty,
+        DiscordUserId = "555000111222",
+        DiscordUsername = "StreetKing",
+        DiscordLinkedAtUtc = DateTime.UtcNow,
+    };
+    account.SetEmail("street.king@example.com");
+    var (player, log) = AccountSetup.NewPlayer(account, "Street King", "Las Vegas", options, CreateRoster(options));
+
+    // A whole player, not a stub: the same starting hand the register form deals.
+    AssertEqual(options.StartingCash, player.Cash);
+    AssertEqual(options.StartingTurns, player.Turns);
+    AssertEqual("Las Vegas", player.City);
+    AssertTrue(player.Hideout is not null, "a Discord sign-up should get a hideout like anybody else");
+    AssertEqual(options.StartingPimps, player.Crew.Count);
+    AssertEqual("START", log.Action);
+
+    // No password, on purpose - nobody chose one - and an address that is not confirmed yet, because
+    // typing it is not proving it. Both are true of a fresh Discord account and both are what the
+    // account page is then arranged around.
+    AssertTrue(!account.HasPassword, "a Discord sign-up has not chosen a password");
+    AssertTrue(!account.EmailVerified, "an address typed at sign-up is not a proved one");
+
+    // Discord is the only thing holding it, so it cannot be taken away. This is the rule that stops an
+    // account made this way being closed by the one control on the page that would close it.
+    AssertTrue(!account.HasAnotherWayIn(withoutDiscord: true),
+        "Discord must not be removable while it is the only way in");
+
+    // And the address is what makes that recoverable: confirmed, it can be reset from, which is the
+    // whole reason it is asked for at sign-up rather than left to a page nobody visits.
+    account.EmailVerified = true;
+    AssertTrue(account.Email is not null && account.EmailVerified,
+        "a confirmed address is the second way back into a Discord-made account");
+}
+
+static void EveryNewAccountArrivesWithAWayBackIn()
+{
+    // The rule the two doors are shaped around: nobody may sign up without something that can get them
+    // back in. A username and password alone cannot - forget the password and there is nothing left to
+    // prove ownership with - so that door demands an address. Discord carries its own way back, so
+    // that door asks and does not insist.
+    //
+    // Held here as the predicate both endpoints apply, because the thing worth pinning is the rule
+    // rather than either endpoint's spelling of it.
+    static bool MaySignUp(string? email, bool hasDiscord)
+        => hasDiscord || AccountSetup.NormalizeEmail(email) is not null;
+
+    // The username-and-password door.
+    AssertTrue(!MaySignUp(null, hasDiscord: false), "a password alone must not be enough to sign up");
+    AssertTrue(!MaySignUp("", hasDiscord: false), "an empty address must not count as one");
+    AssertTrue(!MaySignUp("   ", hasDiscord: false), "whitespace must not count as an address");
+    AssertTrue(MaySignUp("sam@example.com", hasDiscord: false), "an address is enough");
+
+    // The Discord door, which is why the rule is "either" rather than "an address, always".
+    AssertTrue(MaySignUp(null, hasDiscord: true), "Discord alone is enough");
+    AssertTrue(MaySignUp("sam@example.com", hasDiscord: true), "both is obviously enough");
+
+    // And whatever got them in, the account that comes out has something to recover with.
+    var byPassword = new PlayerAccount { Username = "sam", PasswordHash = "hashed" };
+    byPassword.SetEmail("sam@example.com");
+    var byDiscord = new PlayerAccount { Username = "alex", DiscordUserId = "555000111222" };
+
+    AssertTrue(byPassword.Email is not null, "the password door leaves an address behind");
+    AssertTrue(byDiscord.DiscordUserId is not null, "the Discord door leaves a Discord behind");
+    AssertTrue(byPassword.Email is not null || byPassword.DiscordUserId is not null, "reachable");
+    AssertTrue(byDiscord.Email is not null || byDiscord.DiscordUserId is not null, "reachable");
+}
+
+static void TheLastWayBackInCannotBeRemoved()
+{
+    // Requiring a way back at sign-up means nothing if it can be taken off a minute later, and closing
+    // only one of the two routes does not close the hole - it moves it. This is the walk that used to
+    // work, one allowed step at a time:
+    //
+    //   sign up with an address and a password  ->  connect Discord  ->  remove the address, because
+    //   Discord covers it  ->  disconnect Discord, because the password covers it
+    //
+    // and out the far end comes an account with a password and no way to recover it. Each step passed
+    // the rule it was checked against; no step was checked against this one.
+    var account = new PlayerAccount { Username = "sam", PasswordHash = "hashed" };
+    account.Email = "sam@example.com";
+    account.EmailVerified = true;
+
+    // Step one: connect Discord. Nothing to refuse - it only adds.
+    account.DiscordUserId = "555000111222";
+    AssertTrue(account.HasAnotherWayBackIn(withoutEmail: true), "with Discord on, the address may go");
+
+    // Step two: drop the address. Allowed, because Discord is still there.
+    account.SetEmail(null);
+    AssertTrue(!account.EmailVerified, "removing the address takes the tick with it");
+
+    // Step three is where the walk used to end. The old guard asked only whether a way *in* survived -
+    // the password - and let this through.
+    AssertTrue(account.HasAnotherWayIn(withoutDiscord: true), "a password is still a way in");
+    AssertTrue(!account.HasAnotherWayBackIn(withoutDiscord: true), "but nothing would be left to recover with");
+
+    // And the same rule read from the other side: an account with no Discord may not drop its address.
+    var addressOnly = new PlayerAccount { Username = "alex", PasswordHash = "hashed", EmailVerified = true };
+    addressOnly.Email = "alex@example.com";
+    AssertTrue(!addressOnly.HasAnotherWayBackIn(withoutEmail: true), "the address is the only way back");
+
+    // An unconfirmed address is not a way back, because a reset cannot be sent to one. Counting it
+    // would be counting a door that does not open.
+    var unconfirmed = new PlayerAccount { Username = "jo", PasswordHash = "hashed" };
+    unconfirmed.SetEmail("jo@example.com");
+    AssertTrue(!unconfirmed.HasAnotherWayBackIn(), "an unproved address is not a way back in");
+
+    // The two questions are genuinely different, which is the reason there are two methods. An account
+    // can be perfectly reachable and completely unrecoverable, and that is the state being outlawed.
+    var passwordOnly = new PlayerAccount { Username = "kim", PasswordHash = "hashed" };
+    AssertTrue(passwordOnly.HasAnotherWayIn(), "a password gets you in");
+    AssertTrue(!passwordOnly.HasAnotherWayBackIn(), "a password never gets you back in");
+}
+
+static void ALostRaceIsAnAnswerNotAStackTrace()
+{
+    // Every place that takes a name checks whether it is free and then saves, and those are two moments
+    // with a gap. Two people registering the same username in that gap both passed the check, the second
+    // save hit the unique index, and nothing caught what came back - a 500, carrying a stack trace to
+    // whoever asked for it. Three registrations fired at once reproduced it every time.
+    //
+    // The names here are the ones EF generates for those indexes. If one is ever renamed this test is
+    // what says so, rather than a 500 nobody sees until it happens in the wild.
+    foreach (var (constraint, expected) in new[]
+    {
+        ("IX_Accounts_Username", "Username is already taken."),
+        ("IX_Accounts_Email", "That email is already on an account."),
+        ("IX_Accounts_DiscordUserId", "That Discord account is already on an empire. Sign in with it instead."),
+        ("IX_Players_Name", "Player name is already taken."),
+    })
+        AssertEqual(expected, DatabaseErrors.DescribeConstraint(constraint));
+
+    // A constraint nobody planned for still gets an answer rather than an exception, because the
+    // alternative is the 500 this exists to stop. Same for one that arrives without a name at all.
+    AssertTrue(DatabaseErrors.DescribeConstraint("IX_Something_Else").Length > 0,
+        "an unrecognised constraint should still be answered");
+    AssertTrue(DatabaseErrors.DescribeConstraint(null).Length > 0,
+        "a nameless constraint should still be answered");
+
+    // And anything that is not a lost race is left alone to be the exception it is. Swallowing those
+    // would turn a real fault into a polite conflict and hide it.
+    AssertEqual(null, DatabaseErrors.DescribeUniqueViolation(new InvalidOperationException("something else")));
+    AssertEqual(null, DatabaseErrors.DescribeUniqueViolation(new DbUpdateException("no inner cause")));
+}
+
+static void OneInboxCanOnlyBeAimedAtSoManyTimes()
+{
+    // Starting a password reset needs no account and no password, so the cooldown alone only sets a
+    // rate - and a rate with no ceiling is unbounded. Anybody who knew an address could aim a message a
+    // minute at it for as long as they liked: sixty an hour, somebody else's inbox ruined, and a pile
+    // of spam complaints against the domain that all the codes go out from.
+    var options = new EmailOptions();
+    AssertTrue(options.MaxCodesPerDay is > 0 and <= 25,
+        $"a ceiling of {options.MaxCodesPerDay} a day is not a ceiling");
+
+    // Comfortably above a real day's use - a confirmation, a couple of resends, a forgotten password
+    // or two - and comfortably below a nuisance.
+    AssertTrue(options.MaxCodesPerDay >= 5, "the ceiling must not get in a real player's way");
+
+    // And the shipped file has to agree, since that is the one that actually runs.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+    var configured = new EmailOptions();
+    shipped.GetSection("Auth:Email").Bind(configured);
+    AssertTrue(configured.MaxCodesPerDay is > 0 and <= 25, "the shipped ceiling should still be a ceiling");
+
+    // The two limits answer different questions, so they are different results - "wait a minute" is
+    // useless advice to somebody who has used the day up.
+    AssertTrue(SendCodeResult.TooSoon != SendCodeResult.TooMany, "the two refusals must be tellable apart");
+}
+
+static void TheClientNeverAsksForAGoodThatDoesNotExist()
+{
+    // The day guns split into four tiers, every "weapons" the client still said became a request for a
+    // key nothing serves. It has now been found four separate times - the street supplies row, the
+    // player market's opening selection, an admin quick-grant, and a bot action dropdown - and every
+    // one of them failed the same quiet way, because a key nobody recognises is a select showing the
+    // wrong option or a filter dropping a row, not an error anybody sees.
+    //
+    // So this reads the client and checks its keys against the ones the server actually answers to.
+    // Crossing the language boundary is the point: no test on either side alone could have caught it.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var client = File.ReadAllText(Path.Combine(root!.FullName, "Client", "src", "main.tsx"));
+
+    // Everything the server will answer to, from the three lists that decide it.
+    var known = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var key in TradeGoods.Keys) known.Add(key);
+    foreach (var key in AdminService.AdjustableResources) known.Add(key);
+    foreach (var key in WeaponTiers.All) known.Add(key);
+    // Things the client legitimately names that are not goods: crew, money, and the two products.
+    foreach (var key in new[] { "cash", "bank", "turns", "pimps", "hoes", "thugs", "weed", "coke", "rides" })
+        known.Add(key);
+
+    // The three shapes the client uses to name one: an adjust preset, a select option, and a piece of
+    // state seeded with a key. Anything matching those has to be a key the server knows.
+    var named = new List<(string Key, string Where)>();
+    foreach (Match m in Regex.Matches(client, @"resource: '([a-z]+)'"))
+        named.Add((m.Groups[1].Value, "an adjust preset"));
+
+    // Only the selects that name a good. The client has plenty of others - which action a rival takes,
+    // which room to build - whose values are verbs and rooms rather than things anybody holds, and
+    // sweeping those in would make this test a list of exceptions instead of a rule.
+    foreach (Match select in Regex.Matches(client, @"<select[^>]*value=\{(item|product|resource|good)\}.*?</select>", RegexOptions.Singleline))
+        foreach (Match option in Regex.Matches(select.Value, @"<option value=""([a-z]+)"">"))
+            named.Add((option.Groups[1].Value, $"a {select.Groups[1].Value} select"));
+
+    AssertTrue(named.Count > 0, "the client should be naming some keys, or this test is reading nothing");
+
+    var strangers = named
+        .Where(x => !known.Contains(x.Key))
+        // Words that are plainly not resources - sort orders, filters, the odd flag.
+        .Where(x => x.Key.Length > 2)
+        .Select(x => $"{x.Key} ({x.Where})")
+        .Distinct()
+        .ToList();
+
+    AssertTrue(strangers.Count == 0,
+        $"the client names key(s) the server does not answer to: {string.Join(", ", strangers)}");
+
+    // And the specific corpse, by name, because it is the one that keeps coming back.
+    AssertTrue(!TradeGoods.Keys.Contains("weapons"), "there has been no 'weapons' key since guns split into tiers");
+    AssertTrue(!AdminService.AdjustableResources.Contains("weapons"), "nor is it an adjustable resource");
+    AssertTrue(!Regex.IsMatch(client, @"resource: 'weapons'|<option value=""weapons"">|useState\('weapons'\)"),
+        "the client should not name 'weapons' as a key anywhere");
+}
+
+// ---- The crew board: transfers, pacts, and calls for help --------------------------------------
+//
+// These are the first tests in this suite that run against a database, because they are the first
+// things worth testing that cannot be answered without one. Everything here moves goods, thugs or guns
+// from one player to another, and the only failure that matters - stock arriving without leaving, or
+// leaving without arriving - is a fact about two rows after a save. A pure function cannot hold it.
+//
+// The in-memory provider rather than Postgres or SQLite. What is under test is arithmetic on entities
+// and the rules around it, and that is exactly what this provider runs faithfully - it is only SQL it
+// cannot do, and the query-translation half is what WorthExpressionsTranslateToSql already covers
+// against the real provider.
+//
+// It was SQLite first, which does execute real SQL and would have been the better of the two. It also
+// drags in a native library that currently ships a high-severity advisory with no patched version
+// compatible with this EF release, and a permanent warning in every build is how people learn to stop
+// reading warnings. Nothing here needed the SQL.
+
+/// <summary>Builds a world here, where the option helpers are in scope, and hands it its parts.</summary>
+static CrewWorld NewCrewWorld()
+{
+    var options = Resolve(null);
+    return new CrewWorld(options, Snapshot(options), CreateEconomy(options), CreateHideouts(options));
+}
+
+static void ATransferMovesGoodsWithoutInventingAny()
+{
+    // The one thing a transfer must never do. Everything else here is a rule; this is arithmetic, and
+    // it is the arithmetic that quietly duplicates a crew's stock if a subtraction is ever missed.
+    using var world = NewCrewWorld();
+    var crew = world.Crew("The Eastside Table");
+    var giver = world.Member("Giver", crew, thugs: 10, cash: 5_000, condoms: 40);
+    var taker = world.Member("Taker", crew);
+
+    foreach (var (item, amount) in new[] { ("cash", 1_500), ("thugs", 4), ("condoms", 25) })
+    {
+        var before = Holdings(giver) + Holdings(taker);
+        world.Alliances.SendResourceAsync(giver, taker.Id, item, amount, DateTime.UtcNow, default)
+            .GetAwaiter().GetResult();
+        world.Db.SaveChanges();
+
+        AssertEqual(before, Holdings(giver) + Holdings(taker));
+    }
+
+    // And each side moved by exactly the amount, in the right direction.
+    AssertEqual(3_500L, giver.Cash);
+    AssertEqual(1_500L, taker.Cash);
+    AssertEqual(6, giver.Thugs);
+    AssertEqual(4, taker.Thugs);
+    AssertEqual(15, giver.Condoms);
+    AssertEqual(25, taker.Condoms);
+
+    // Written down, because a shared treasury with an untraceable side channel is not shared.
+    AssertEqual(3, world.Db.AllianceTransfers.Count());
+    AssertTrue(world.Db.AllianceTransfers.All(x => x.FromPlayerId == giver.Id && x.ToPlayerId == taker.Id),
+        "every transfer should record who gave and who got");
+
+    static long Holdings(Player p) => p.Cash + p.Thugs + p.Condoms;
+}
+
+static void ATransferRefusesWhatTheSenderCannotSpare()
+{
+    using var world = NewCrewWorld();
+    var crew = world.Crew("The Eastside Table");
+    var giver = world.Member("Giver", crew, thugs: 10, cash: 100, condoms: 5);
+    var taker = world.Member("Taker", crew);
+
+    // More than is held, of each kind.
+    AssertRuleError(() => Send(giver, taker, "cash", 101), "sending cash that is not there");
+    AssertRuleError(() => Send(giver, taker, "condoms", 6), "sending goods that are not there");
+    AssertRuleError(() => Send(giver, taker, "thugs", 11), "sending thugs that are not there");
+    // And nothing that is not a thing.
+    AssertRuleError(() => Send(giver, taker, "wishes", 1), "sending something the game does not have");
+    AssertRuleError(() => Send(giver, taker, "cash", 0), "sending nothing at all");
+
+    // Thugs standing on ground are not standing free, even though the player still owns them. Without
+    // this a crew could garrison a territory and hand the same thugs to somebody else.
+    var held = new Territory { City = "Detroit", Name = "The Docks", HolderId = giver.Id, GarrisonThugs = 8 };
+    world.Db.Territories.Add(held);
+    world.Db.SaveChanges();
+    AssertRuleError(() => Send(giver, taker, "thugs", 5), "sending thugs that are out holding ground");
+    // Two of the ten are still at home, and those may go.
+    Send(giver, taker, "thugs", 2);
+    world.Db.SaveChanges();
+    AssertEqual(8, giver.Thugs);
+    AssertEqual(2, taker.Thugs);
+
+    void Send(Player from, Player to, string item, int quantity)
+        => world.Alliances.SendResourceAsync(from, to.Id, item, quantity, DateTime.UtcNow, default)
+            .GetAwaiter().GetResult();
+}
+
+static void GoodsOnlyMoveInsideACrew()
+{
+    // A transfer is a thing a crew does. Somebody outside it is a stranger, and a stranger with an
+    // account id is not a route into your storage.
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var member = world.Member("Member", mine, cash: 1_000);
+    var rival = world.Member("Rival", theirs);
+    var loner = world.Member("Loner", null);
+
+    AssertRuleError(() => Send(member, rival), "sending to another crew");
+    AssertRuleError(() => Send(member, loner), "sending to somebody with no crew");
+    AssertRuleError(() => Send(member, member), "sending to yourself");
+    AssertRuleError(() => world.Alliances
+        .SendResourceAsync(loner, member.Id, "cash", 1, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "sending while in no crew");
+
+    AssertEqual(1_000L, member.Cash);
+    AssertEqual(0, world.Db.AllianceTransfers.Count());
+
+    void Send(Player from, Player to)
+        => world.Alliances.SendResourceAsync(from, to.Id, "cash", 100, DateTime.UtcNow, default)
+            .GetAwaiter().GetResult();
+}
+
+static void APactIsAskedForOnceAndAnsweredOnce()
+{
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var boss = world.Member("Boss", mine);
+    var theirBoss = world.Member("Their Boss", theirs);
+
+    var pact = world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(AlliancePactStatuses.Pending, pact.Status);
+
+    // One request per pair, from either direction. Otherwise a crew can bury another in requests.
+    AssertRuleError(() => world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "asking the same crew twice");
+    AssertRuleError(() => world.Alliances.RequestPactAsync(theirBoss, mine.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "asking back while a request is already open");
+    AssertRuleError(() => world.Alliances.RequestPactAsync(boss, mine.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "asking your own crew");
+
+    world.Alliances.AnswerPactAsync(theirBoss, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(AlliancePactStatuses.Active, pact.Status);
+    AssertEqual(theirBoss.Id, pact.AnsweredById);
+
+    // Answered once. A second answer would let a crew flip a truce on and off at will.
+    AssertRuleError(() => world.Alliances.AnswerPactAsync(theirBoss, pact.Id, accept: false, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering a pact twice");
+    AssertEqual(1, world.Db.AlliancePacts.Count());
+}
+
+static void OnlyTheCrewBeingAskedCanAnswer()
+{
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var elsewhere = world.Crew("The Northside Table");
+    var boss = world.Member("Boss", mine);
+    var theirBoss = world.Member("Their Boss", theirs);
+    var stranger = world.Member("Stranger", elsewhere);
+
+    var pact = world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // Not the crew that asked, and not a crew with nothing to do with it.
+    AssertRuleError(() => world.Alliances.AnswerPactAsync(boss, pact.Id, true, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering your own request");
+    AssertRuleError(() => world.Alliances.AnswerPactAsync(stranger, pact.Id, true, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering somebody else's pact");
+    AssertRuleError(() => world.Alliances.CancelPactAsync(stranger, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "cancelling somebody else's pact");
+
+    // Either side of it can walk away, which is what makes it an agreement rather than a trap.
+    world.Alliances.CancelPactAsync(boss, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(AlliancePactStatuses.Canceled, pact.Status);
+    AssertRuleError(() => world.Alliances.CancelPactAsync(theirBoss, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "cancelling a pact that is already closed");
+}
+
+static void AnActivePactIsATruceBothWaysRound()
+{
+    // What the pact is actually for. The endpoints ask this one question before letting a fight start,
+    // so if it answers wrong in either direction the truce is decoration.
+    using var world = NewCrewWorld();
+    var mine = world.Crew("The Eastside Table");
+    var theirs = world.Crew("The Westside Table");
+    var boss = world.Member("Boss", mine);
+    var theirBoss = world.Member("Their Boss", theirs);
+    var loner = world.Member("Loner", null);
+
+    AssertTrue(!Allied(boss, theirBoss), "two crews with no pact are not allied");
+
+    var pact = world.Alliances.RequestPactAsync(boss, theirs.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    // Pending is not yet a truce - asking for one must not buy the protection of having one.
+    AssertTrue(!Allied(boss, theirBoss), "a pact nobody has answered is not a truce");
+
+    world.Alliances.AnswerPactAsync(theirBoss, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertTrue(Allied(boss, theirBoss), "an active pact protects the crew that asked");
+    AssertTrue(Allied(theirBoss, boss), "and the crew that was asked, which is the same truce");
+
+    // Somebody with no crew is nobody's ally, however many pacts are flying about.
+    AssertTrue(!Allied(boss, loner), "a pact cannot cover somebody in no crew");
+
+    world.Alliances.CancelPactAsync(boss, pact.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertTrue(!Allied(boss, theirBoss), "walking away from a pact ends the truce");
+
+    bool Allied(Player one, Player other)
+        => world.Alliances.AreAlliedAsync(one, other, default).GetAwaiter().GetResult();
+}
+
+static void ARaidOnACrewCallsTheirAllies()
+{
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var otherAllies = world.Crew("The Northside Table");
+    var strangers = world.Crew("The Southside Table");
+
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+    var otherAlly = world.Member("Other Ally", otherAllies, thugs: 10);
+    world.Member("Stranger", strangers);
+
+    Pact(defender, allies.Id, ally);
+    Pact(defender, otherAllies.Id, otherAlly);
+
+    var mission = Mission(world, attacker, defender);
+    var calls = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // One call per crew holding a pact, and none for anybody else.
+    AssertEqual(2, calls.Count);
+    AssertTrue(calls.All(x => x.DefenderAllianceId == defenders.Id), "every call should name the crew being hit");
+    AssertTrue(
+        calls.Select(x => x.AllyAllianceId).OrderBy(x => x)
+            .SequenceEqual(new[] { allies.Id, otherAllies.Id }.OrderBy(x => x)),
+        "the calls should go to exactly the crews with a pact");
+    AssertTrue(calls.All(x => x.Status == AllianceAssistStatuses.Open), "a call starts open");
+
+    // Ground is fought over by whoever holds it, and a territory raid is not somebody's house being
+    // kicked in - so it raises nobody.
+    var ground = new Territory { City = "Detroit", Name = "The Docks", HolderId = defender.Id, GarrisonThugs = 3 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+    var groundRaid = Mission(world, attacker, defender);
+    groundRaid.TerritoryId = ground.Id;
+    world.Db.SaveChanges();
+    AssertEqual(0, world.Alliances.CreateAssistCallsForAsync(groundRaid, DateTime.UtcNow, default).GetAwaiter().GetResult().Count);
+
+    // And a player in no crew has nobody to call.
+    var loner = world.Member("Loner", null, thugs: 3);
+    AssertEqual(0, world.Alliances
+        .CreateAssistCallsForAsync(Mission(world, attacker, loner), DateTime.UtcNow, default)
+        .GetAwaiter().GetResult().Count);
+
+    void Pact(Player asker, long targetId, Player answerer)
+    {
+        var pact = world.Alliances.RequestPactAsync(asker, targetId, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        world.Db.SaveChanges();
+        world.Alliances.AnswerPactAsync(answerer, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        world.Db.SaveChanges();
+    }
+}
+
+static void HelpThatArrivesIsHelpThatLeftSomewhere()
+{
+    // The same arithmetic a transfer answers to, in the place it is easiest to get wrong: reinforcements
+    // are counted into a fight, and a fight is not where anybody looks for a missing thug.
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var strangers = world.Crew("The Southside Table");
+
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+    ally.Pistols = 6;
+    world.Db.SaveChanges();
+
+    var pact = world.Alliances.RequestPactAsync(defender, allies.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    world.Alliances.AnswerPactAsync(ally, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult().Single();
+    world.Db.SaveChanges();
+
+    var thugsBefore = ally.Thugs + defender.Thugs;
+    var pistolsBefore = ally.Pistols + defender.Pistols;
+
+    world.Alliances.AnswerAssistCallAsync(ally, call.Id, 4, new Armoury { Pistols = 3 }, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertEqual(thugsBefore, ally.Thugs + defender.Thugs);
+    AssertEqual(pistolsBefore, ally.Pistols + defender.Pistols);
+    AssertEqual(6, ally.Thugs);
+    AssertEqual(9, defender.Thugs);
+    AssertEqual(3, ally.Pistols);
+    AssertEqual(3, defender.Pistols);
+
+    // The call records what turned up, because "help arrived" is not a number anything can fight with.
+    AssertEqual(AllianceAssistStatuses.Answered, call.Status);
+    AssertEqual(4, call.ThugsSent);
+    AssertEqual(3, call.PistolsSent);
+
+    // Answered once, and never for nothing.
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 1, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering a call that is already answered");
+}
+
+static void AFightNobodyIsHavingTakesNoMoreHelp()
+{
+    // Reinforcing a fight that is over is not help, it is bookkeeping - and worse, it is a way to move
+    // thugs to somebody under the cover of a mission that has already been decided.
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var strangers = world.Crew("The Southside Table");
+
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+
+    var pact = world.Alliances.RequestPactAsync(defender, allies.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    world.Alliances.AnswerPactAsync(ally, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult().Single();
+    world.Db.SaveChanges();
+
+    mission.Status = "Complete";
+    world.Db.SaveChanges();
+
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 3, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "sending help to a fight that is over");
+    AssertEqual(10, ally.Thugs);
+    AssertEqual(5, defender.Thugs);
+
+    // An ally cannot send what it does not have standing free either - the same rule a transfer keeps.
+    mission.Status = "Fighting";
+    world.Db.SaveChanges();
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 11, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "sending more thugs than are standing free");
+    AssertRuleError(() => world.Alliances
+        .AnswerAssistCallAsync(ally, call.Id, 0, new Armoury(), DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "answering a call with nothing at all");
+}
+
+static void HelpComesHomeWhenTheFightIsOver()
+{
+    // Sending help was a one-way gift: the thugs left the ally, joined the defender's pile, and there
+    // was nothing anywhere that could ever give them back. The pool already sends its borrowed men home
+    // when a mission ends, so a crew's own help going permanently was the odd one out.
+    using var world = NewCrewWorld();
+    var (ally, defender, mission, call) = HelpSent(world, thugs: 4, pistols: 3);
+
+    // Not while it is still being fought. Otherwise an assist is a gesture that can be withdrawn the
+    // instant it looks like costing something, which is worth nothing to the person relying on it.
+    AssertRuleError(() => Recall(world, ally, call), "taking help back mid-fight");
+
+    mission.Status = "Complete";
+    world.Db.SaveChanges();
+
+    var beforeThugs = ally.Thugs + defender.Thugs;
+    var beforePistols = ally.Pistols + defender.Pistols;
+    Recall(world, ally, call);
+    world.Db.SaveChanges();
+
+    // Nothing invented on the way home either.
+    AssertEqual(beforeThugs, ally.Thugs + defender.Thugs);
+    AssertEqual(beforePistols, ally.Pistols + defender.Pistols);
+    AssertEqual(10, ally.Thugs);
+    AssertEqual(5, defender.Thugs);
+    AssertEqual(6, ally.Pistols);
+    AssertEqual(0, defender.Pistols);
+
+    AssertEqual(AllianceAssistStatuses.Closed, call.Status);
+    AssertEqual(4, call.ThugsReturned);
+    AssertEqual(3, call.PistolsReturned);
+
+    // Once. A second recall would be a way to mint thugs out of a fight that already ended.
+    AssertRuleError(() => Recall(world, ally, call), "taking the same help back twice");
+}
+
+static void WhatDiedInTheFightIsNotOwedBack()
+{
+    // The honest half of a recall. A defender who lost most of their crew holding the house cannot hand
+    // back thugs that are dead, and the ally is not owed them by anybody - so a recall takes what is
+    // standing and no more. Getting this wrong the other way would let an ally drain a crew mate down
+    // to nothing on the strength of a loan that was already spent.
+    using var world = NewCrewWorld();
+    var (ally, defender, mission, call) = HelpSent(world, thugs: 4, pistols: 3);
+
+    mission.Status = "Complete";
+    // The fight went badly: the defender is down to one thug and has lost the guns.
+    defender.Thugs = 1;
+    defender.Pistols = 0;
+    world.Db.SaveChanges();
+
+    Recall(world, ally, call);
+    world.Db.SaveChanges();
+
+    AssertEqual(1, call.ThugsReturned);
+    AssertEqual(0, call.PistolsReturned);
+    AssertEqual(7, ally.Thugs);
+    AssertEqual(0, defender.Thugs);
+    AssertEqual(3, ally.Pistols);
+    // Closed even though almost nothing came back. Asking again would ask the same question.
+    AssertEqual(AllianceAssistStatuses.Closed, call.Status);
+
+    // And a recall is personal: a crew mate cannot collect on somebody else's loan.
+    var (otherAlly, _, otherMission, otherCall) = HelpSent(world, thugs: 2, pistols: 0, allyName: "Other Ally");
+    otherMission.Status = "Complete";
+    world.Db.SaveChanges();
+    AssertRuleError(() => Recall(world, ally, otherCall), "collecting on somebody else's loan");
+}
+
+static void ACallNobodyAnsweredClosesItself()
+{
+    // Nothing ever set Closed, so an unanswered call stayed open for good and the alliance page went on
+    // offering to reinforce raids that ended days earlier - each one answering "that fight is no longer
+    // taking help" to anybody who tried.
+    using var world = NewCrewWorld();
+    var defenders = world.Crew("The Eastside Table");
+    var allies = world.Crew("The Westside Table");
+    var strangers = world.Crew("The Southside Table");
+    var defender = world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member("Ally", allies, thugs: 10);
+    MakePact(world, defender, allies.Id, ally);
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default).GetAwaiter().GetResult().Single();
+    world.Db.SaveChanges();
+    AssertEqual(AllianceAssistStatuses.Open, call.Status);
+
+    var closed = world.Alliances.CloseOpenAssistCallsAsync(mission.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertEqual(1, closed);
+    AssertEqual(AllianceAssistStatuses.Closed, call.Status);
+
+    // An answered call is left alone by the same close, because the ally still has a claim on what they
+    // sent and shutting it here would quietly cancel that claim.
+    //
+    // The defender has two allies by this point, so this raid raises two calls and only one of them is
+    // answered - which is exactly the mix worth testing: the unanswered one shuts, the answered one
+    // does not.
+    var (_, _, liveMission, answered) = HelpSent(world, thugs: 3, pistols: 0, allyName: "Second Ally");
+    var live = world.Db.AllianceAssistCalls.Where(x => x.CombatMissionId == liveMission.Id).ToList();
+    AssertEqual(2, live.Count);
+    AssertEqual(1, live.Count(x => x.Status == AllianceAssistStatuses.Answered));
+
+    world.Alliances.CloseOpenAssistCallsAsync(liveMission.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertEqual(AllianceAssistStatuses.Answered, answered.Status);
+    AssertTrue(live.Where(x => x.Id != answered.Id).All(x => x.Status == AllianceAssistStatuses.Closed),
+        "every call nobody answered should have shut");
+}
+
+/// <summary>A crew, an ally, a raid in flight, and help already sent to it.</summary>
+static (Player Ally, Player Defender, CombatMission Mission, AllianceAssistCall Call) HelpSent(
+    CrewWorld world, int thugs, int pistols, string allyName = "Ally")
+{
+    var defenders = world.Db.Alliances.FirstOrDefault(x => x.Name == "The Eastside Table") ?? world.Crew("The Eastside Table");
+    var strangers = world.Db.Alliances.FirstOrDefault(x => x.Name == "The Southside Table") ?? world.Crew("The Southside Table");
+    var allies = world.Crew($"Crew of {allyName}");
+
+    var defender = world.Db.Players.FirstOrDefault(x => x.Name == "Defender")
+        ?? world.Member("Defender", defenders, thugs: 5);
+    var attacker = world.Db.Players.FirstOrDefault(x => x.Name == "Attacker")
+        ?? world.Member("Attacker", strangers, thugs: 20);
+    var ally = world.Member(allyName, allies, thugs: 10);
+    ally.Pistols = 6;
+    world.Db.SaveChanges();
+
+    MakePact(world, defender, allies.Id, ally);
+
+    var mission = Mission(world, attacker, defender);
+    var call = world.Alliances.CreateAssistCallsForAsync(mission, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult().Single(x => x.AllyAllianceId == allies.Id);
+    world.Db.SaveChanges();
+
+    world.Alliances.AnswerAssistCallAsync(ally, call.Id, thugs, new Armoury { Pistols = pistols }, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    return (ally, defender, mission, call);
+}
+
+static void MakePact(CrewWorld world, Player asker, long targetId, Player answerer)
+{
+    var pact = world.Alliances.RequestPactAsync(asker, targetId, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    world.Alliances.AnswerPactAsync(answerer, pact.Id, accept: true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+}
+
+static void Recall(CrewWorld world, Player actor, AllianceAssistCall call)
+    => world.Alliances.RecallAssistAsync(actor, call.Id, DateTime.UtcNow, default).GetAwaiter().GetResult();
+
+/// <summary>A raid in flight, which is the only state an assist call is raised against.</summary>
+static CombatMission Mission(CrewWorld world, Player attacker, Player defender)
+{
+    var mission = new CombatMission
+    {
+        AttackerId = attacker.Id,
+        Attacker = attacker,
+        DefenderId = defender.Id,
+        Defender = defender,
+        Status = "Traveling",
+        AssignedThugs = 10,
+        RemainingAttackers = 10,
+    };
+    world.Db.CombatMissions.Add(mission);
+    world.Db.SaveChanges();
+    return mission;
+}
+
 static void EveryTestWrittenIsATestThatRuns()
 {
     var root = new DirectoryInfo(AppContext.BaseDirectory);
@@ -3968,6 +5472,37 @@ static void CombatPowerBalanceTarget()
     AssertTrue(maxedRaid > stretched, "a house with its crew away is exposed");
 }
 
+static void BuffedTerritoryGarrisonCanHoldTheAttackerCap()
+{
+    var options = Resolve(new GameOptions());
+    var territory = options.Territory;
+    var power = options.Combat.Power;
+    const double morale = 100;
+
+    AssertEqual(50, territory.MaxGarrisonThugs);
+    AssertEqual(100, territory.MaxRaidThugs);
+
+    var defenders = territory.MaxGarrisonThugs;
+    var attackers = territory.MaxRaidThugs;
+    var garrisonBonus = options.Pimps.MaxGarrisonBonusPercent;
+    var attack = CombatPower.Attack(
+        CombatMissionService.CommandingPimps,
+        attackers,
+        Firepower.Sidearms(attackers, attackers),
+        morale,
+        power);
+    var defence = CombatPower.Defence(
+        1,
+        defenders,
+        Firepower.Sidearms(defenders, defenders),
+        morale,
+        power,
+        garrisonBonus);
+
+    AssertTrue(defence > attack,
+        $"a fully buffed {defenders}-thug garrison should hold against {attackers} attackers: {defence} defence vs {attack} attack");
+}
+
 static void CombatBlocksSelfAttacks()
 {
     var service = CreateCombat();
@@ -5747,6 +7282,8 @@ static GameOptions StorageCapOptions(int condoms)
 
 static IOptionsSnapshot<GameOptions> Snapshot(GameOptions options) => new OptionsSnapshotStub<GameOptions>(options);
 
+static IOptions<T> Options<T>(T value) where T : class => new OptionsSnapshotStub<T>(value);
+
 static void AssertRuleError(Action action, string expectation)
 {
     try
@@ -5793,6 +7330,97 @@ static void AssertTrue(bool value, string message)
 {
     if (!value)
         throw new InvalidOperationException(message);
+}
+
+/// <summary>
+/// Just enough of a hosting environment to answer IsDevelopment(), which is the one question the
+/// return-url guard asks it.
+/// </summary>
+sealed class HostingStub(string environmentName) : IWebHostEnvironment
+{
+    public string EnvironmentName { get; set; } = environmentName;
+    public string ApplicationName { get; set; } = "StreetEmpire.Tests";
+    public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+    public string WebRootPath { get; set; } = AppContext.BaseDirectory;
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+}
+
+/// <summary>Keeps what it was given instead of sending it.</summary>
+sealed class RecordingEmailSender : IEmailSender
+{
+    public List<EmailMessage> Messages { get; } = [];
+    public bool Delivers => true;
+
+    public Task<bool> SendAsync(EmailMessage message, CancellationToken ct)
+    {
+        Messages.Add(message);
+        return Task.FromResult(true);
+    }
+}
+
+/// <summary>A provider having a bad day, which must never become the caller's problem.</summary>
+sealed class ThrowingEmailSender : IEmailSender
+{
+    public bool Delivers => true;
+    public Task<bool> SendAsync(EmailMessage message, CancellationToken ct)
+        => throw new HttpRequestException("the provider is down");
+}
+
+/// <summary>A database of this game's own shape, empty, alive only as long as it is being used.</summary>
+sealed class CrewWorld : IDisposable
+{
+    internal GameDbContext Db { get; }
+    internal AllianceService Alliances { get; }
+    internal GameOptions Options { get; }
+
+    /// <param name="options">
+    /// Built by the caller: the helpers that resolve game options live as top-level local functions in
+    /// this file, and a type declared here cannot reach them.
+    /// </param>
+    internal CrewWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot, EconomyService economy, HideoutService hideouts)
+    {
+        // A store of its own per world, so one test can never see another's crews.
+        Db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+            .UseInMemoryDatabase($"crew-{Guid.NewGuid()}")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+            .Options);
+        Options = options;
+        Alliances = new AllianceService(Db, snapshot, economy, hideouts);
+    }
+
+    /// <summary>A crew with a boss's powers, so a test is about the rule under test and not about rank.</summary>
+    internal Alliance Crew(string name)
+    {
+        var crew = new Alliance { Name = name, FounderId = Guid.Empty, CreatedAtUtc = DateTime.UtcNow };
+        Db.Alliances.Add(crew);
+        Db.SaveChanges();
+        return crew;
+    }
+
+    internal Player Member(string name, Alliance? crew = null, int thugs = 0, long cash = 0, int condoms = 0)
+    {
+        var account = new PlayerAccount { Username = name.ToLowerInvariant(), PasswordHash = "hashed" };
+        var player = new Player
+        {
+            Account = account,
+            Name = name,
+            City = "Detroit",
+            Thugs = thugs,
+            Cash = cash,
+            Condoms = condoms,
+            AllianceId = crew?.Id,
+            AllianceRank = AllianceRank.Boss,
+            LastTurnUpdateUtc = DateTime.UtcNow,
+        };
+        player.Hideout = new Hideout { Player = player };
+        Db.Accounts.Add(account);
+        Db.Players.Add(player);
+        Db.SaveChanges();
+        return player;
+    }
+
+    public void Dispose() => Db.Dispose();
 }
 
 /// <summary>Stands in for the scoped IOptionsSnapshot the services now take.</summary>

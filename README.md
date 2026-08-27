@@ -4,7 +4,45 @@ A playable browser-game foundation inspired by the turn-based economy and crew-m
 
 ## What changed in 0.2.6
 
-0.2.6 is in progress.
+0.2.6 was about the account, and about the fact that there was nowhere to put the game.
+
+An account was a username and a password chosen on the day somebody signed up, and that was the whole
+of it for ever: no second way in, no way to change either, no way back if the password went, and
+nowhere in the game to go and look. It now has three doors and a page that manages them. An email
+address is a second name to sign in under and the thing an account is recovered by. Discord signs a
+player straight in, and can make one from scratch. An address is proved by a six-digit code, which is
+what makes a forgotten password survivable and what stops a stranger's address opening anything.
+
+Two rules hold that together, and both are refused by the server rather than merely discouraged by the
+page. Nobody can sign up without something an account can be recovered by, and nobody can take away
+the last of those afterwards - not by removing an address, and not by disconnecting the Discord that
+was covering for its absence. A password lets you in and can never get you back, which is why the two
+questions are counted separately everywhere they are asked.
+
+Every change to a way in now writes to the owner, and the one that matters most goes to the address
+being left behind rather than the one arriving: moving the address is how somebody who has taken an
+account keeps it.
+
+The crew work that landed alongside it gave crews something to do besides not robbing each other -
+handing each other goods, agreeing pacts with other crews, and calling those crews in when one of
+their own is raided. Help sent that way genuinely leaves the sender, and can be asked back once the
+fight is over, minus whatever did not survive it.
+
+The rest of the release is that none of it was deployable. There is an image now with the client built
+into it, Postgres beside it, Caddy in front terminating TLS and renewing its own certificates, a
+backup that reads its dumps back before keeping them, and configuration out of a .env file rather than
+out of something somebody committed.
+
+Six faults were found by running things rather than reading them, and they are the honest measure of
+the release: changing a password signed you out of your own password change; a session opened in the
+same second as a reset survived it; two people registering at once got a stack trace; a stranger could
+aim a message a minute at somebody else's inbox for ever; the player market opened on a good that
+stopped existing when guns split into tiers, and so did an admin button and a bot dropdown; and assist
+calls had no way to end, so the page kept offering help to fights that finished days ago.
+
+The suite went from 133 tests to 168 and grew a database for the first time, because the three things
+that move stock between players cannot be checked without one - and a missed subtraction there does
+not throw, it quietly mints condoms.
 
 ### What a crew is for, beyond not being robbed
 

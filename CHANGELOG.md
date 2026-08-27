@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.6 (in progress)
+## 0.2.6
 
 ### Added
 - **Caddy terminates TLS in front of it**, gets a Let's Encrypt certificate on first boot and renews it

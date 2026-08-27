@@ -163,6 +163,7 @@ var tests = new (string Name, Action Test)[]
     ("a code is only ever good for the thing it was sent for", ACodeIsOnlyGoodForWhatItWasSentFor),
     ("a reset needs an address somebody actually proved", AResetNeedsAProvenAddress),
     ("an account made through Discord is a whole account", ADiscordSignUpIsAWholeAccount),
+    ("every new account arrives with a way back in", EveryNewAccountArrivesWithAWayBackIn),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -2198,6 +2199,39 @@ static void ADiscordSignUpIsAWholeAccount()
     account.EmailVerified = true;
     AssertTrue(account.Email is not null && account.EmailVerified,
         "a confirmed address is the second way back into a Discord-made account");
+}
+
+static void EveryNewAccountArrivesWithAWayBackIn()
+{
+    // The rule the two doors are shaped around: nobody may sign up without something that can get them
+    // back in. A username and password alone cannot - forget the password and there is nothing left to
+    // prove ownership with - so that door demands an address. Discord carries its own way back, so
+    // that door asks and does not insist.
+    //
+    // Held here as the predicate both endpoints apply, because the thing worth pinning is the rule
+    // rather than either endpoint's spelling of it.
+    static bool MaySignUp(string? email, bool hasDiscord)
+        => hasDiscord || AccountSetup.NormalizeEmail(email) is not null;
+
+    // The username-and-password door.
+    AssertTrue(!MaySignUp(null, hasDiscord: false), "a password alone must not be enough to sign up");
+    AssertTrue(!MaySignUp("", hasDiscord: false), "an empty address must not count as one");
+    AssertTrue(!MaySignUp("   ", hasDiscord: false), "whitespace must not count as an address");
+    AssertTrue(MaySignUp("sam@example.com", hasDiscord: false), "an address is enough");
+
+    // The Discord door, which is why the rule is "either" rather than "an address, always".
+    AssertTrue(MaySignUp(null, hasDiscord: true), "Discord alone is enough");
+    AssertTrue(MaySignUp("sam@example.com", hasDiscord: true), "both is obviously enough");
+
+    // And whatever got them in, the account that comes out has something to recover with.
+    var byPassword = new PlayerAccount { Username = "sam", PasswordHash = "hashed" };
+    byPassword.SetEmail("sam@example.com");
+    var byDiscord = new PlayerAccount { Username = "alex", DiscordUserId = "555000111222" };
+
+    AssertTrue(byPassword.Email is not null, "the password door leaves an address behind");
+    AssertTrue(byDiscord.DiscordUserId is not null, "the Discord door leaves a Discord behind");
+    AssertTrue(byPassword.Email is not null || byPassword.DiscordUserId is not null, "reachable");
+    AssertTrue(byDiscord.Email is not null || byDiscord.DiscordUserId is not null, "reachable");
 }
 
 static void EveryTestWrittenIsATestThatRuns()

@@ -15,6 +15,14 @@ page that could see an account at all was the admin panel, looking at somebody e
 
 There are three doors now, and a page that shows them side by side.
 
+**Signing up needs one of the two.** The username-and-password door demands an email address; the
+Discord door does not, because a Discord account is itself a way back in. The rule underneath is that
+nobody may make an empire they have no means of recovering: a password on its own cannot be recovered
+from, since forgetting it leaves nothing to prove ownership with.
+
+Accounts that predate the rule keep working with neither. It is a rule about signing up, not a
+condition of continuing to play.
+
 **An email address** is a second name to sign in under. The login box takes either kind and decides
 which it has by the @ - an address can never be a username, so it is one lookup rather than two
 guesses. Addresses are folded to lower case on the way in, because signing up as `Sam@example.com` and

@@ -51,10 +51,19 @@ internal static class AuthEndpoints
             if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 8)
                 return Results.BadRequest(new { error = "Password must be at least 8 characters." });
 
-            // An address is optional, but one that was typed has to be usable as a way in - a username
-            // with an @ in it would be looked up as an address forever and never found.
+            // Required here, and only here.
+            //
+            // An account made on this door has exactly one way in - the password - and one way back if
+            // that goes, which is a code to a confirmed address. Without an address there is no second
+            // thing, and the account is one forgotten password from being unreachable for good. The
+            // other door carries its own way back in, so it asks and does not insist.
             var email = AccountSetup.NormalizeEmail(request.Email);
-            if (email is not null && !AccountSetup.LooksLikeAnEmail(email))
+            if (email is null)
+                return Results.BadRequest(new
+                {
+                    error = "An email address is needed - it is the only way back in if you forget your password. Or sign up with Discord instead."
+                });
+            if (!AccountSetup.LooksLikeAnEmail(email))
                 return Results.BadRequest(new { error = "That does not look like an email address." });
             if (AccountSetup.LooksLikeAnAttemptAtEmail(username))
                 return Results.BadRequest(new { error = "Keep the @ out of your username - the email box is below it." });
@@ -71,7 +80,7 @@ internal static class AuthEndpoints
 
             if (await db.Accounts.AnyAsync(x => x.Username == username, ct))
                 return Results.Conflict(new { error = "Username is already taken." });
-            if (email is not null && await db.Accounts.AnyAsync(x => x.Email == email, ct))
+            if (await db.Accounts.AnyAsync(x => x.Email == email, ct))
                 return Results.Conflict(new { error = "That email is already on an account." });
             if (await db.Players.AnyAsync(x => x.Name == playerName, ct))
                 return Results.Conflict(new { error = "Player name is already taken." });
@@ -92,7 +101,7 @@ internal static class AuthEndpoints
             // moment a player is already thinking about the address they just typed. It is never fatal:
             // an account with an unconfirmed address is a working account that cannot yet be signed
             // into by address, and the account page has the button to finish it.
-            if (email is not null && verification.Options.SendOnSignUp)
+            if (verification.Options.SendOnSignUp)
                 await verification.SendAsync(account, VerificationPurpose.ConfirmAddress, ct);
 
             await SignInAsync(http, account);

@@ -1345,10 +1345,21 @@ function App() {
                 <input className="form-control" name="username" minLength={3} maxLength={254} required />
               </label>
               {authMode === 'register' && <label className="field">Player Name<input className="form-control" name="playerName" minLength={3} maxLength={32} required /></label>}
+              {/*
+                Required on this door, and the helper says why rather than just marking it with a star.
+                An account made here has one way in and one way back, and the way back is a code to this
+                address - without it, one forgotten password ends the empire.
+
+                The old copy here said "nothing is ever sent to it", which was true the day it was
+                written and stopped being true the day codes started going out.
+              */}
               {authMode === 'register' && <label className="field">
-                Email <span className="text-body-tertiary">(optional)</span>
-                <input className="form-control" name="email" type="email" maxLength={254} />
-                <small className="form-text">A second name to sign in under. Nothing is ever sent to it.</small>
+                Email
+                <input className="form-control" name="email" type="email" maxLength={254} required />
+                <small className="form-text">
+                  A second name to sign in under, and the only way back in if you forget your password.
+                  We send a code to confirm it, and a note whenever your sign-in changes. Nothing else.
+                </small>
               </label>}
               {authMode === 'register' && <label className="field">
                 Town
@@ -1384,6 +1395,9 @@ function App() {
                 <i className="bi bi-discord" aria-hidden="true" />
                 {authMode === 'login' ? 'Sign in with Discord' : 'Create Account with Discord'}
               </a>
+              {authMode === 'register' && <small className="form-text mt-2">
+                Signing up with Discord does not need an email - the Discord account is your way back in.
+              </small>}
             </>}
           </>}
       </section>

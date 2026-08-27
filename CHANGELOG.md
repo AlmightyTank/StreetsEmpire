@@ -64,6 +64,14 @@
   cannot answer an error for a password that really did change.
 - A test walks every value of the change enum and fails if one has no copy of its own, so the next
   event added cannot quietly ship as "Something on your account changed".
+- **Signing up now needs either an email address or Discord.** The username-and-password door demands
+  an address; the Discord door does not, because a Discord account is itself a way back in. The rule
+  underneath is that nobody should be able to make an empire they have no means of recovering - a
+  password on its own cannot be recovered from, since forgetting it leaves nothing to prove ownership
+  with. Accounts made before the rule keep working with neither; it governs signing up, not playing.
+- The register form's email helper said "nothing is ever sent to it", which was true the day it was
+  written and stopped being true the day verification codes started going out. It now says what is
+  actually sent and why the address is wanted.
 - **Signing up through Discord asks for an email as well.** An account made that way has no password,
   so Discord is the only way in and losing it loses the empire - a fact the account page could only
   point out after the event. The sign-up form now offers an address at the one moment the player is

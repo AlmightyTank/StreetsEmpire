@@ -5689,6 +5689,18 @@ function signInNames(account: Account) {
   return ['username', account.emailVerified && 'email'].filter(Boolean)
 }
 
+/**
+ * The things that could get somebody back in, which is a different list from the things that let them
+ * in. A password is a way in and is not a way back: forget it and there is nothing left to prove the
+ * account was ever yours. Only a confirmed address and a Discord answer this one.
+ */
+function waysBackIn(account: Account) {
+  return [
+    account.emailVerified && 'email',
+    account.discordConnected && 'discord',
+  ].filter(Boolean)
+}
+
 function WayInTile({ label, open, detail }: { label: string, open: boolean, detail: string }) {
   return <div className={`stat d-grid gap-1 border rounded bg-body-secondary p-3 ${open ? 'border-primary' : ''}`}>
     <span className="eyebrow">{label}</span>
@@ -5705,6 +5717,9 @@ function AccountEmailPanel({ account, busy, run, email, setEmail }: AccountPanel
   const expiresIn = secondsUntil(pending?.expiresAtUtc, now)
   const resendIn = secondsUntil(pending?.resendableAtUtc, now)
   const emailChanged = (account.email ?? '') !== email.trim()
+  // Emptying the box is a removal, and a removal is only allowed while something else could still get
+  // them back in. Changing it to a different address is always fine - one is still there to confirm.
+  const removingLastWayBack = email.trim().length === 0 && account.email !== null && !account.discordConnected
 
   const saveEmail = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -5813,7 +5828,16 @@ function AccountEmailPanel({ account, busy, run, email, setEmail }: AccountPanel
         <input className="form-control" name="currentPassword" type="password" autoComplete="current-password" required />
         <small className="form-text">Changing where a sign-in can come from costs the password.</small>
       </label>}
-      <button className="btn btn-primary" disabled={busy || !emailChanged}>
+      {/*
+        Removing the last way back in is refused by the server whatever this button says, so the button
+        says it first. A refusal a player could have seen coming is a worse refusal than one that
+        explains itself before they click.
+      */}
+      {removingLastWayBack && <div className="alert alert-warning mb-0">
+        This address is the only way back into your account if you forget your password. Connect Discord
+        on this page and you can remove it.
+      </div>}
+      <button className="btn btn-primary" disabled={busy || !emailChanged || removingLastWayBack}>
         {busy ? 'Working...' : email.trim() ? 'Save Email' : 'Remove Email'}
       </button>
     </form>
@@ -5864,8 +5888,10 @@ function AccountPasswordPanel({ account, busy, run, fail }: AccountPanel) {
 }
 
 function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
-  // Named here rather than repeated below: this one fact decides what the panel is allowed to offer.
+  // Two separate reasons the connection might be stuck, and they are not the same reason - one is
+  // about getting in at all, the other about getting back in after forgetting the password.
   const discordIsTheOnlyWayIn = account.discordConnected && !account.hasPassword
+  const discordIsTheOnlyWayBackIn = account.discordConnected && !account.emailVerified
 
   return <section className="card p-3">
     <div className="panel-title">
@@ -5881,6 +5907,11 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
         {discordIsTheOnlyWayIn
           ? <div className="alert alert-warning mb-0">
             This is the only way into your empire. Set a password before disconnecting it.
+          </div>
+          : discordIsTheOnlyWayBackIn
+          ? <div className="alert alert-warning mb-0">
+            This is the only way back into your empire if you forget your password. Confirm an email
+            address before disconnecting it.
           </div>
           : <button
             className="btn btn-outline-danger"
@@ -5930,7 +5961,9 @@ function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { on
     </section>
 
     <section className="card p-3">
-      <div className="panel-title"><h2>The Last Door</h2><span>{open.length} of 2 open</span></div>
+      <div className="panel-title">
+        <h2>The Last Door</h2><span>{open.length} in / {waysBackIn(account).length} back</span>
+      </div>
       <p>
         {open.length > 1
           ? 'A password and a Discord account, so neither is load-bearing. You can close either one and still get back in.'
@@ -5948,8 +5981,9 @@ function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { on
         There is no reset flow, so a confirmed address is a way in and never a way back in.
       */}
       <p className="text-body-tertiary small mb-0 mt-3">
-        There is no password reset in this game. Confirming an address makes it a way to sign in; it does
-        not make it a way to recover an account whose password is gone.
+        A password is a way in and not a way back: forget it and only a confirmed address or a connected
+        Discord can prove the account was yours. That is why the game will not let you remove your last
+        one of those either.
       </p>
     </section>
   </>

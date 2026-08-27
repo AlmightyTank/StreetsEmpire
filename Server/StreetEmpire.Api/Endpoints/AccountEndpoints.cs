@@ -64,6 +64,18 @@ internal static class AccountEndpoints
             if (email is not null && await db.Accounts.AnyAsync(x => x.Email == email && x.Id != current.Id, ct))
                 return Results.Conflict(new { error = "That email is already on an account." });
 
+            // Half of the rule that stops somebody keeping an empire they cannot recover. Signing up
+            // demands an address or a Discord; taking the address off a minute later would put them
+            // straight back where the sign-up rule refused to let them start.
+            //
+            // Only removal is refused. Changing to a new address leaves one there to confirm, and a
+            // code is already on its way to it.
+            if (email is null && !current.HasAnotherWayBackIn(withoutEmail: true))
+                return Results.BadRequest(new
+                {
+                    error = "Connect Discord first - this address is the only way back into your account if you forget your password."
+                });
+
             // Captured before the change, because in a moment the account will not point here any more
             // and this is the one notice that has to reach where it used to point.
             var leaving = current is { EmailVerified: true, Email: not null } ? current.Email : null;
@@ -216,6 +228,16 @@ internal static class AccountEndpoints
                 return Results.BadRequest(new { error = "There is no Discord account connected." });
             if (!current.HasAnotherWayIn(withoutDiscord: true))
                 return Results.BadRequest(new { error = "Set a password first - Discord is the only way into this account." });
+
+            // The other half, and the one that makes the pair a rule rather than a speed bump. Without
+            // it the hole simply moves: connect Discord, drop the address because Discord now covers
+            // it, then drop Discord because the password now covers it - and the account ends up with
+            // a password and no way to recover it, one step at a time, each step allowed.
+            if (!current.HasAnotherWayBackIn(withoutDiscord: true))
+                return Results.BadRequest(new
+                {
+                    error = "Confirm an email address first - Discord is the only way back into this account if you forget your password."
+                });
 
             // Read before it is cleared, so the notice can name which account was taken off.
             var wasConnectedTo = current.DiscordUsername;

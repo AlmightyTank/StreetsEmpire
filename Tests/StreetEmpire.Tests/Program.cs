@@ -164,6 +164,7 @@ var tests = new (string Name, Action Test)[]
     ("a reset needs an address somebody actually proved", AResetNeedsAProvenAddress),
     ("an account made through Discord is a whole account", ADiscordSignUpIsAWholeAccount),
     ("every new account arrives with a way back in", EveryNewAccountArrivesWithAWayBackIn),
+    ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -2232,6 +2233,52 @@ static void EveryNewAccountArrivesWithAWayBackIn()
     AssertTrue(byDiscord.DiscordUserId is not null, "the Discord door leaves a Discord behind");
     AssertTrue(byPassword.Email is not null || byPassword.DiscordUserId is not null, "reachable");
     AssertTrue(byDiscord.Email is not null || byDiscord.DiscordUserId is not null, "reachable");
+}
+
+static void TheLastWayBackInCannotBeRemoved()
+{
+    // Requiring a way back at sign-up means nothing if it can be taken off a minute later, and closing
+    // only one of the two routes does not close the hole - it moves it. This is the walk that used to
+    // work, one allowed step at a time:
+    //
+    //   sign up with an address and a password  ->  connect Discord  ->  remove the address, because
+    //   Discord covers it  ->  disconnect Discord, because the password covers it
+    //
+    // and out the far end comes an account with a password and no way to recover it. Each step passed
+    // the rule it was checked against; no step was checked against this one.
+    var account = new PlayerAccount { Username = "sam", PasswordHash = "hashed" };
+    account.Email = "sam@example.com";
+    account.EmailVerified = true;
+
+    // Step one: connect Discord. Nothing to refuse - it only adds.
+    account.DiscordUserId = "555000111222";
+    AssertTrue(account.HasAnotherWayBackIn(withoutEmail: true), "with Discord on, the address may go");
+
+    // Step two: drop the address. Allowed, because Discord is still there.
+    account.SetEmail(null);
+    AssertTrue(!account.EmailVerified, "removing the address takes the tick with it");
+
+    // Step three is where the walk used to end. The old guard asked only whether a way *in* survived -
+    // the password - and let this through.
+    AssertTrue(account.HasAnotherWayIn(withoutDiscord: true), "a password is still a way in");
+    AssertTrue(!account.HasAnotherWayBackIn(withoutDiscord: true), "but nothing would be left to recover with");
+
+    // And the same rule read from the other side: an account with no Discord may not drop its address.
+    var addressOnly = new PlayerAccount { Username = "alex", PasswordHash = "hashed", EmailVerified = true };
+    addressOnly.Email = "alex@example.com";
+    AssertTrue(!addressOnly.HasAnotherWayBackIn(withoutEmail: true), "the address is the only way back");
+
+    // An unconfirmed address is not a way back, because a reset cannot be sent to one. Counting it
+    // would be counting a door that does not open.
+    var unconfirmed = new PlayerAccount { Username = "jo", PasswordHash = "hashed" };
+    unconfirmed.SetEmail("jo@example.com");
+    AssertTrue(!unconfirmed.HasAnotherWayBackIn(), "an unproved address is not a way back in");
+
+    // The two questions are genuinely different, which is the reason there are two methods. An account
+    // can be perfectly reachable and completely unrecoverable, and that is the state being outlawed.
+    var passwordOnly = new PlayerAccount { Username = "kim", PasswordHash = "hashed" };
+    AssertTrue(passwordOnly.HasAnotherWayIn(), "a password gets you in");
+    AssertTrue(!passwordOnly.HasAnotherWayBackIn(), "a password never gets you back in");
 }
 
 static void EveryTestWrittenIsATestThatRuns()

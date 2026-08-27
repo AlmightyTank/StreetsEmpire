@@ -20,8 +20,26 @@ Discord door does not, because a Discord account is itself a way back in. The ru
 nobody may make an empire they have no means of recovering: a password on its own cannot be recovered
 from, since forgetting it leaves nothing to prove ownership with.
 
-Accounts that predate the rule keep working with neither. It is a rule about signing up, not a
-condition of continuing to play.
+It holds afterwards too, or it would not be a rule. Removing an address is refused unless Discord is
+connected, and disconnecting Discord is refused unless there is a confirmed address - because closing
+only one of those two moves the hole rather than filling it:
+
+> sign up with an address and a password &rarr; connect Discord &rarr; remove the address, because
+> Discord covers it &rarr; disconnect Discord, because the password covers it
+
+and out the far end comes an account with a password and no way to recover it, one allowed step at a
+time. Each step passed the rule it was checked against; no step was checked against this one.
+
+Two different questions are being asked, which is why there are two methods on the account rather than
+one. `HasAnotherWayIn` counts what lets somebody in - a password or a Discord. `HasAnotherWayBackIn`
+counts what could prove the account was theirs after the password is gone - a **confirmed** address or
+a Discord. A password answers the first and never the second, and an account can be perfectly reachable
+and completely unrecoverable. That state is the one being outlawed.
+
+Changing an address is always allowed: one is still there to confirm, and a code is already going to it.
+
+Accounts that predate the rule keep working with neither. It is a rule about signing up and about not
+undoing it, not a condition of continuing to play.
 
 **An email address** is a second name to sign in under. The login box takes either kind and decides
 which it has by the @ - an address can never be a username, so it is one lookup rather than two

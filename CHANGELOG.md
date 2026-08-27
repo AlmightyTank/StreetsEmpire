@@ -64,6 +64,16 @@
   cannot answer an error for a password that really did change.
 - A test walks every value of the change enum and fails if one has no copy of its own, so the next
   event added cannot quietly ship as "Something on your account changed".
+- **And it cannot be undone afterwards.** Removing an address is refused unless Discord is connected,
+  and disconnecting Discord is refused unless there is a confirmed address. Closing only one of the two
+  would have moved the hole rather than filled it: connect Discord, drop the address because Discord
+  covers it, drop Discord because the password covers it - and out comes an account with a password and
+  no way to recover it, one allowed step at a time.
+- The account now answers two questions rather than one. What lets somebody *in* is a password or a
+  Discord; what could get them *back in* is a confirmed address or a Discord. A password answers the
+  first and never the second, so an account can be perfectly reachable and completely unrecoverable -
+  which is the state all of this exists to outlaw. The page says which of the two is stuck and why,
+  before the button is pressed rather than after.
 - **Signing up now needs either an email address or Discord.** The username-and-password door demands
   an address; the Discord door does not, because a Discord account is itself a way back in. The rule
   underneath is that nobody should be able to make an empire they have no means of recovering - a

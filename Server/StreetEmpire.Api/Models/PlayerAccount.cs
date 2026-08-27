@@ -69,6 +69,20 @@ public sealed class PlayerAccount
         => (!withoutPassword && HasPassword) || (!withoutDiscord && DiscordUserId is not null);
 
     /// <summary>
+    /// Whether this account could still be got back into if the named thing were removed.
+    ///
+    /// A different question from <see cref="HasAnotherWayIn"/>, and the difference is the whole point.
+    /// A password is a way in and is not a way back in: forget it and there is nothing left to prove
+    /// the account was ever yours. Only two things answer this one - a confirmed address, which can be
+    /// sent a reset code, and a Discord account, which signs in without needing the password at all.
+    ///
+    /// Unconfirmed does not count. An address nobody has proved cannot be sent a reset, so treating it
+    /// as a way back would be counting a door that does not open.
+    /// </summary>
+    public bool HasAnotherWayBackIn(bool withoutEmail = false, bool withoutDiscord = false)
+        => (!withoutEmail && EmailVerified) || (!withoutDiscord && DiscordUserId is not null);
+
+    /// <summary>
     /// A paused rival is skipped by the automatic loop and by manual runs, but is otherwise a normal
     /// player: still rankable, still attackable, still holding whatever it had. Useful for freezing one
     /// rival as a fixed target while the rest of the world keeps moving.

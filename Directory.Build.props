@@ -1,0 +1,24 @@
+<Project>
+  <!--
+    The version, once, from the file at the root.
+
+    It used to be written out by hand in five places - this file's worth of it, the client's
+    package.json, the README title, the health endpoint and the number in the app's own sidebar. They
+    agreed, which is what five hand-copied numbers do right up until somebody bumps four of them.
+
+    Everything .NET builds now takes it from VERSION, and the health endpoint reads it back off the
+    assembly rather than repeating it. The client does the same thing through vite.config.ts. Bumping a
+    release is editing one line.
+  -->
+  <PropertyGroup>
+    <VersionFile>$(MSBuildThisFileDirectory)VERSION</VersionFile>
+    <StreetEmpireVersion Condition="Exists('$(VersionFile)')">$([System.IO.File]::ReadAllText('$(VersionFile)').Trim())</StreetEmpireVersion>
+
+    <!-- A build that cannot find the file says so in the version rather than failing, because a
+         missing VERSION should never be the reason a developer cannot compile. -->
+    <StreetEmpireVersion Condition="'$(StreetEmpireVersion)' == ''">0.0.0</StreetEmpireVersion>
+
+    <Version>$(StreetEmpireVersion)</Version>
+    <InformationalVersion>$(StreetEmpireVersion)</InformationalVersion>
+  </PropertyGroup>
+</Project>

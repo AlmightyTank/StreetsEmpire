@@ -181,6 +181,7 @@ var tests = new (string Name, Action Test)[]
     ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
+    ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -2951,6 +2952,58 @@ static CombatMission Mission(CrewWorld world, Player attacker, Player defender)
     world.Db.CombatMissions.Add(mission);
     world.Db.SaveChanges();
     return mission;
+}
+
+static void TheVersionIsWrittenDownOnce()
+{
+    // The version used to be typed out by hand in five places. They agreed, which is exactly what five
+    // hand-copied numbers do right up until somebody bumps four of them and the fifth quietly starts
+    // lying - and the two that lie longest are the health endpoint and the number in the corner of the
+    // page, because nobody looks at either until they need to know what is deployed.
+    //
+    // It comes from the VERSION file now: MSBuild reads it into the assembly, vite reads it into the
+    // bundle. This is the wiring test for that, because both halves fail silently - MSBuild would fall
+    // back to 0.0.0 and vite would leave the token in place, and neither stops a build.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var declared = File.ReadAllText(Path.Combine(root!.FullName, "VERSION")).Trim();
+    AssertTrue(declared.Length > 0, "VERSION should say something");
+
+    // The server half. This assembly is built by the same props file the API is, so its version having
+    // arrived is proof the wiring holds.
+    var built = System.Reflection.CustomAttributeExtensions
+        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(TerritoryService).Assembly)
+        ?.InformationalVersion ?? string.Empty;
+    // Informational versions carry the commit after a '+', which is wanted at the health endpoint and
+    // is not part of the number.
+    AssertEqual(declared, built.Split('+')[0]);
+    AssertTrue(built != "0.0.0", "0.0.0 means the props file could not find VERSION");
+
+    // The client half, checked at the source rather than the bundle: the test suite does not build the
+    // client, so what is asserted is that it still asks for the file rather than naming a number.
+    var viteConfig = File.ReadAllText(Path.Combine(root.FullName, "Client", "vite.config.ts"));
+    AssertTrue(viteConfig.Contains("VERSION"), "vite should read the VERSION file");
+    AssertTrue(viteConfig.Contains("__APP_VERSION__"), "vite should define the token the client reads");
+
+    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    AssertTrue(client.Contains("__APP_VERSION__"), "the client should show the token, not a typed number");
+
+    // And nothing should have gone back to writing one down. The changelog and the release notes name
+    // versions on purpose and are history; these four are the ones that have to move together.
+    foreach (var (path, what) in new[]
+    {
+        (Path.Combine("Client", "src", "main.tsx"), "the client"),
+        (Path.Combine("Client", "package.json"), "the client manifest"),
+        (Path.Combine("Server", "StreetEmpire.Api", "Program.cs"), "the server"),
+    })
+    {
+        var text = File.ReadAllText(Path.Combine(root.FullName, path));
+        AssertTrue(!text.Contains($"\"{declared}\"") && !text.Contains($">{declared}<"),
+            $"{what} names the version literally again - it should be reading it from VERSION");
+    }
 }
 
 static void EveryTestWrittenIsATestThatRuns()

@@ -1,4 +1,4 @@
-# Street Empire 0.2.6
+# Street Empire
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
 
@@ -522,6 +522,35 @@ git pull && docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 New migrations apply on the way up. The database volume, and the key ring, are left alone.
+
+### Bumping the version
+
+One line:
+
+```bash
+echo 0.2.7 > VERSION
+```
+
+MSBuild reads that file into the assembly, so `/api/health` reports it without anybody typing it out.
+Vite reads the same file at build time and bakes it into the bundle, so the number in the app's sidebar
+follows too. The client's `package.json` no longer carries a version at all - it is a private package
+and the field was only ever another copy to forget.
+
+It used to be written by hand in five places. They agreed, which is what hand-copied numbers do right
+up until somebody bumps four of them, and the two that would have lied longest are the health endpoint
+and the number in the corner of the page - the two nobody looks at until they need to know what is
+actually deployed.
+
+Both halves of the wiring fail quietly if broken: MSBuild falls back to `0.0.0` and vite leaves its
+token unreplaced, and neither stops a build. So a test reads `VERSION`, checks it against the version
+baked into the assembly, and fails if any of the three files goes back to naming a number itself.
+
+The health endpoint reports the commit alongside it, which is the thing actually worth knowing from a
+server:
+
+```json
+{ "status": "ok", "version": "0.2.6", "build": "0.2.6+15ba6c9105d8..." }
+```
 
 ### Where the credentials live
 

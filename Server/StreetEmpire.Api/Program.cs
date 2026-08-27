@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.RateLimiting;
@@ -481,7 +482,23 @@ app.Use(async (context, next) =>
     }, context.RequestAborted);
 });
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.6" })).DisableRateLimiting();
+// Read off the assembly, which took it from the VERSION file at build time. It used to be a string
+// typed in here, which agreed with the other four copies of the number right up until it would not.
+//
+// The build is reported alongside it because the informational version carries the commit it was built
+// from, and "is the thing I just deployed actually the thing running" is the question a health endpoint
+// is asked from a server more than any other.
+var buildVersion = typeof(Program).Assembly
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+    ?? "unknown";
+var releaseVersion = buildVersion.Split('+')[0];
+
+app.MapGet("/api/health", () => Results.Ok(new
+{
+    status = "ok",
+    version = releaseVersion,
+    build = buildVersion,
+})).DisableRateLimiting();
 
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();

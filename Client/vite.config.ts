@@ -1,7 +1,20 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+/*
+  The version, from the same file the server reads.
+
+  It was typed into five places by hand - here in package.json, in the sidebar below, in the README
+  title, in the health endpoint and in VERSION itself. They agreed, which is what hand-copied numbers
+  do until the day somebody bumps four of them. Baked in at build time rather than fetched, because a
+  number in the corner of the page is not worth a request.
+*/
+const version = readFileSync(fileURLToPath(new URL('../VERSION', import.meta.url)), 'utf8').trim()
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [react()],
   css: {
     preprocessorOptions: {

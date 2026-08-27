@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.7 (in progress)
+
+### Changed
+- **The version is written down once.** It was typed by hand in five places - VERSION, the client's
+  package.json, the README title, the health endpoint and the number in the app's sidebar. They agreed,
+  which is what hand-copied numbers do right up until somebody bumps four of them. MSBuild reads
+  VERSION into the assembly and the health endpoint reports it from there; vite reads the same file and
+  bakes it into the bundle; the client manifest no longer carries one, being a private package where
+  the field was only another copy to forget; and the README title no longer names a release. Bumping is
+  one line.
+- Both halves of that fail silently when broken - MSBuild falls back to 0.0.0 and vite leaves its token
+  in place, and neither stops a build - so a test checks VERSION against what actually reached the
+  assembly, and fails if any of the three files starts naming a number again.
+- **The health endpoint reports the commit** as well as the version, because "is the thing I deployed
+  the thing running" is what a health endpoint gets asked from a server.
+
 ## 0.2.6
 
 ### Added

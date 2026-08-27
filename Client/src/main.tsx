@@ -1291,7 +1291,7 @@ function App() {
                 <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
                   {cities.map(city => <option key={city} value={city}>{city}</option>)}
                 </select>
-                <small className="form-text">Ground is fought over inside a town. This is the map you will be playing on.</small>
+                <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
               </label>
               {/*
                 Offered here rather than left to the account page, because an account made this way has
@@ -1357,8 +1357,8 @@ function App() {
                 Email
                 <input className="form-control" name="email" type="email" maxLength={254} required />
                 <small className="form-text">
-                  A second name to sign in under, and the only way back in if you forget your password.
-                  We send a code to confirm it, and a note whenever your sign-in changes. Nothing else.
+                  A second name to sign in under, and the way back in if the password goes. A code comes
+                  to confirm it, and a note lands there if a way in ever changes.
                 </small>
               </label>}
               {authMode === 'register' && <label className="field">
@@ -1366,7 +1366,7 @@ function App() {
                 <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
                   {cities.map(city => <option key={city} value={city}>{city}</option>)}
                 </select>
-                <small className="form-text">Ground is fought over inside a town. This is the map you will be playing on.</small>
+                <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
               </label>}
               <label className="field">Password<input className="form-control" name="password" type="password" minLength={8} required /></label>
               {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
@@ -5964,6 +5964,8 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
 
 function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { onTab: (tab: AccountTab) => void }) {
   const open = waysIn(account)
+  const back = waysBackIn(account)
+  const enoughOfBoth = open.length > 1 && back.length > 1
   return <>
     <section className="card p-3">
       <div className="panel-title"><h2>Sessions</h2><span>Signed in for 14 days</span></div>
@@ -5980,31 +5982,34 @@ function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { on
       >{busy ? 'Working...' : 'Sign out everywhere else'}</button>
     </section>
 
+    {/*
+      Two counters rather than one, because the panel used to answer one question and imply the other.
+      It said "you can close either one and still get back in", which stopped being true the day a way
+      *in* and a way *back in* came apart - closing Discord with no confirmed address leaves a player
+      signed in and unrecoverable, which is exactly the state the counts exist to show.
+    */}
     <section className="card p-3">
       <div className="panel-title">
-        <h2>The Last Door</h2><span>{open.length} in / {waysBackIn(account).length} back</span>
+        <h2>The Last Door</h2><span>{open.length} in / {back.length} back</span>
       </div>
       <p>
-        {open.length > 1
-          ? 'A password and a Discord account, so neither is load-bearing. You can close either one and still get back in.'
-          : 'One way in. Close it and the empire is unreachable, so the game will refuse to let you - which is a poor substitute for having a second one.'}
+        Two different questions, and the pair above answers both. <strong className="text-primary">In</strong> is
+        what signs you in: a password, or a connected Discord. <strong className="text-primary">Back</strong> is
+        what could still prove the account was yours once the password is gone: a confirmed email
+        address, or that same Discord.
       </p>
-      <p className="text-body-tertiary small">
-        An email address does not count here. It is a second name for the password door, so it opens
-        nothing once the password is gone.
+      <p>
+        A password answers the first and never the second - forget it and it proves nothing - which is
+        why the two are rarely the same number.
       </p>
-      {open.length <= 1 && <button className="btn btn-primary" type="button" onClick={() => onTab('signin')}>
-        Add another way in
+      <p className={enoughOfBoth ? 'mb-0' : ''}>
+        {enoughOfBoth
+          ? 'You have a spare of each, so nothing here is load-bearing. Close any one of them and you can still get in, and still get back.'
+          : 'The game refuses to let you close a last one of either. That is a poor substitute for having a spare of each.'}
+      </p>
+      {!enoughOfBoth && <button className="btn btn-primary" type="button" onClick={() => onTab('signin')}>
+        Add another
       </button>}
-      {/*
-        The honest limit, said where somebody deciding how much to rely on their email will read it.
-        There is no reset flow, so a confirmed address is a way in and never a way back in.
-      */}
-      <p className="text-body-tertiary small mb-0 mt-3">
-        A password is a way in and not a way back: forget it and only a confirmed address or a connected
-        Discord can prove the account was yours. That is why the game will not let you remove your last
-        one of those either.
-      </p>
     </section>
   </>
 }

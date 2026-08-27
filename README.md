@@ -46,10 +46,11 @@ which it has by the @ - an address can never be a username, so it is one lookup 
 guesses. Addresses are folded to lower case on the way in, because signing up as `Sam@example.com` and
 coming back as `sam@example.com` is one person and a unique index compares bytes.
 
-It is worth being plain about what an email here is not. Nothing is ever sent to it. There is no
-mail in this game, no verification, and no password reset - so an address is a convenience and never a
-way back in if the password is gone. The page says exactly that rather than implying otherwise by
-being an email box on a login screen, which is a thing that normally means something.
+That paragraph used to carry a warning that the rest of this release spent itself undoing: nothing is
+ever sent, no verification, no reset, so an address is a convenience and never a way back. All three
+stopped being true further down this page. An address is confirmed by a code, it can be sent a reset,
+and it is the thing that makes an account recoverable at all - which is why signing up now requires
+either one of these or a Discord.
 
 **Discord** signs a player straight in, on any browser, without a password. The round trip is the
 ordinary OAuth one, and the same callback serves all three things it can turn out to be: an identity

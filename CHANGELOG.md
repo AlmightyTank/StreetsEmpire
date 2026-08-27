@@ -83,6 +83,15 @@
   underneath is that nobody should be able to make an empire they have no means of recovering - a
   password on its own cannot be recovered from, since forgetting it leaves nothing to prove ownership
   with. Accounts made before the rule keep working with neither; it governs signing up, not playing.
+- **A copy pass over everything this release touched.** The register form's email helper was the only
+  string in the game that ever said "we" - every other one speaks to the player or about the world,
+  never as a company - and it ran to three sentences where its neighbours get one.
+- **The town picker was telling new players something untrue.** "This is the map you will be playing
+  on" reads as a decision you are stuck with, and it is not: travel moves a player between towns for
+  turns and a flight time. It says where you start and what moving costs now.
+- The Last Door panel had drifted into contradicting itself, promising "you can close either one and
+  still get back in" next to a counter saying otherwise. It explains the two counts instead, since
+  telling a way *in* from a way *back in* is the whole point of showing both.
 - The register form's email helper said "nothing is ever sent to it", which was true the day it was
   written and stopped being true the day verification codes started going out. It now says what is
   actually sent and why the address is wanted.

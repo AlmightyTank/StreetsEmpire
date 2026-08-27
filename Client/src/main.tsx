@@ -4729,9 +4729,21 @@ function AlliancePage(ctx: PageContext) {
       </section>
       : <section className="card p-3 gcol-full">
         <div className="panel-title"><h2>Start a Crew</h2><span>{money.format(board.foundingCost)}</span></div>
+        {/*
+          Three sentences rather than one, and one of them says what the money is for.
+
+          "A crew is people who" works as a heading and grates as the opening of a paragraph - a
+          singular subject with a plural after it. The rest ran on through two "and"s and finished on
+          "a share into a shared pot", which repeats itself in five words and still leaves a player
+          deciding whether to spend the founding fee with no idea what the pot does.
+
+          The truce sentence is now word for word the one the in-crew panel already uses, since it is
+          the same promise and there is no reason for the game to phrase it twice.
+        */}
         <p>
-          A crew is people who have agreed not to rob each other. Members cannot attack you by any method
-          and you cannot attack them, and every shift any of you works pays a share into a shared pot.
+          A crew is an agreement not to rob each other. Nobody in one can attack you and you cannot
+          attack them, by any method. It costs a cut of every shift any of you works, and that fills a
+          treasury the crew spends on thugs to send along on a raid or post at a member's house.
         </p>
         <div className="control-row">
           <label className="field">Name<input className="form-control" value={name} maxLength={32} onChange={event => setName(event.target.value)} /></label>

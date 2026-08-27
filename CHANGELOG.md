@@ -195,6 +195,12 @@
   explanation beside the controls instead of above them, the same shape the market card ended up in.
   The bank is told which of its two homes it is in rather than guessing, since half a row is exactly
   right beside the activity list on the street page.
+- **The founding panel's explanation of a crew was the weakest paragraph on the page.** "A crew is
+  people who" is a singular subject with a plural after it - fine as the heading it started life as,
+  poor as the opening of a sentence - and the rest ran on through two "and"s to finish on "a share into
+  a shared pot", which repeats itself in five words and still leaves somebody deciding whether to spend
+  the founding fee with no idea what the pot is for. It says what the money buys now, and states the
+  truce in exactly the words the in-crew panel already uses, since it is the same promise.
 - **A crew's name ran into its own description**: "The Eastside TableOpen to anyone / 5 of 6 / 8% dues".
   Two inline elements with a newline between them, which JSX eats. The name sits above the things
   attached to it now, which is what that row's own stylesheet comment says a crew is.

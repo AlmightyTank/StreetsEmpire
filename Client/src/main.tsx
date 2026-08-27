@@ -1984,7 +1984,7 @@ function MulePage(ctx: PageContext) {
     return () => { stale = true }
   }, [city, good, hoes, cash])
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card p-3 gcol-full">
+  if (!board) return <div className="d-grid gtc-1 gap-3 align-items-start"><section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Mules</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
@@ -2001,7 +2001,7 @@ function MulePage(ctx: PageContext) {
     await load()
   }
 
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>Mule Runs</h2>
@@ -2619,7 +2619,7 @@ function TerritoryPage(ctx: PageContext) {
     await load()
   }
 
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1"><section className="card p-3 gcol-full">
+  if (!board) return <div className="d-grid gtc-1 gap-3 align-items-start"><section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Territory</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
@@ -2633,7 +2633,7 @@ function TerritoryPage(ctx: PageContext) {
   const freePimps = (id: number) => dashboard.crew.filter(p => !p.isCommanding
     && !board.territories.some(t => t.id !== id && t.heldByYou && t.garrisonPimpName === p.name))
 
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title">
         <h2>{board.city}</h2>
@@ -3185,7 +3185,20 @@ const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
  */
 function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
   const [tab, setTab] = useState<AdminTab>('overview')
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-md-1">
+  /*
+    One column, said once.
+
+    This read `gtc-1 gtc-md-2 ... gtc-md-1` - somebody wanting a single column and appending gtc-md-1
+    to force it. Utilities are generated from a map in value order, so .gtc-md-2 is written to the
+    stylesheet after .gtc-md-1; both carry !important and the same specificity, so the later one wins
+    whatever order the class attribute lists them in. The override never did anything, on any of the
+    five elements that had it.
+
+    Here it showed: the tab strip and every panel under it sat in the first of two columns, 619px of a
+    1278px page, with the second column empty and the six tabs folded into three columns of two rows
+    with their descriptions wrapping.
+  */
+  return <div className="d-grid gtc-1 gap-3 align-items-start">
     <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
       {ADMIN_TABS.map(name => <button
         key={name}

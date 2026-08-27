@@ -187,6 +187,14 @@
   bug has been found four separate times, always by somebody noticing a panel behaving oddly, because
   an unrecognised key is a wrong dropdown or a dropped row rather than an error. Crossing the language
   boundary is the point - no test on either side alone could have caught it.
+- **An override that never overrode anything, on five elements.** They read
+  `gtc-1 gtc-md-2 ... gtc-md-1` - somebody wanting one column and appending `gtc-md-1` to force it.
+  Utilities are generated from a map in value order, so `.gtc-md-2` lands in the stylesheet after
+  `.gtc-md-1`; both carry `!important` and the same specificity, so the later one wins no matter what
+  order the class attribute lists them in. On four of the five nothing showed, because every child
+  spanned anyway. On the admin page the tab strip and every panel under it sat in the first of two
+  columns - 619px of a 1278px page, the other column empty, and six tabs folded into three columns of
+  two rows with their descriptions wrapping. Six across one row now.
 - **Five more cards were using half a page each.** A card sitting alone in a row of a two-column grid
   leaves the other column open for nothing, and five did: The Board (the alliance page renders exactly
   two things and the other one spans), Today's Names and Standings on the raids page, the shrine on the

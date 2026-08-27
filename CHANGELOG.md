@@ -175,6 +175,23 @@
   a password reset needs no account and no password, and the cooldown only set a rate. There is a
   ceiling of ten codes a day per address now, across both flows.
 
+- **The player market opened on a good that does not exist, and nothing said so.** It started on a key
+  called "weapons", which stopped existing the day guns split into four tiers. A select whose value
+  matches no option shows the first one, so the panel looked fine and was not: the price never seeded,
+  the button sat disabled reading "List for $0", and the line saying what the game pays did not render
+  at all. The only way to use it was to change the dropdown and change it back. It takes whatever the
+  board offers now, preferring something you actually hold, and names no key of its own.
+- **Two more of the same corpse.** The admin panel's "+10 weapons" quick-grant answered 400 to every
+  press, and a bot action dropdown offered a store item the store does not sell. Both name tiers now.
+- A test reads the client and checks every good it names against the lists the server answers to. This
+  bug has been found four separate times, always by somebody noticing a panel behaving oddly, because
+  an unrecognised key is a wrong dropdown or a dropped row rather than an error. Crossing the language
+  boundary is the point - no test on either side alone could have caught it.
+- **The player market card was using half its width.** Paragraphs are capped at 68ch for legibility and
+  the form fields are fixed widths, so a card spanning the page held a 590px paragraph above a 600px
+  row of controls with the right-hand half of both empty. They sit side by side now, and the good
+  selector grows, since "Moonshine (1,240 held)" never fit the 132px a number field wants.
+
 ### Changed
 - **An unconfirmed address can no longer be signed in with.** It still holds the address against other
   accounts, so nobody can claim one twice; it just does not open anything until it is proved. The

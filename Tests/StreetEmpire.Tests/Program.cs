@@ -167,6 +167,7 @@ var tests = new (string Name, Action Test)[]
     ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
     ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
+    ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -2344,6 +2345,65 @@ static void OneInboxCanOnlyBeAimedAtSoManyTimes()
     // The two limits answer different questions, so they are different results - "wait a minute" is
     // useless advice to somebody who has used the day up.
     AssertTrue(SendCodeResult.TooSoon != SendCodeResult.TooMany, "the two refusals must be tellable apart");
+}
+
+static void TheClientNeverAsksForAGoodThatDoesNotExist()
+{
+    // The day guns split into four tiers, every "weapons" the client still said became a request for a
+    // key nothing serves. It has now been found four separate times - the street supplies row, the
+    // player market's opening selection, an admin quick-grant, and a bot action dropdown - and every
+    // one of them failed the same quiet way, because a key nobody recognises is a select showing the
+    // wrong option or a filter dropping a row, not an error anybody sees.
+    //
+    // So this reads the client and checks its keys against the ones the server actually answers to.
+    // Crossing the language boundary is the point: no test on either side alone could have caught it.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var client = File.ReadAllText(Path.Combine(root!.FullName, "Client", "src", "main.tsx"));
+
+    // Everything the server will answer to, from the three lists that decide it.
+    var known = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var key in TradeGoods.Keys) known.Add(key);
+    foreach (var key in AdminService.AdjustableResources) known.Add(key);
+    foreach (var key in WeaponTiers.All) known.Add(key);
+    // Things the client legitimately names that are not goods: crew, money, and the two products.
+    foreach (var key in new[] { "cash", "bank", "turns", "pimps", "hoes", "thugs", "weed", "coke", "rides" })
+        known.Add(key);
+
+    // The three shapes the client uses to name one: an adjust preset, a select option, and a piece of
+    // state seeded with a key. Anything matching those has to be a key the server knows.
+    var named = new List<(string Key, string Where)>();
+    foreach (Match m in Regex.Matches(client, @"resource: '([a-z]+)'"))
+        named.Add((m.Groups[1].Value, "an adjust preset"));
+
+    // Only the selects that name a good. The client has plenty of others - which action a rival takes,
+    // which room to build - whose values are verbs and rooms rather than things anybody holds, and
+    // sweeping those in would make this test a list of exceptions instead of a rule.
+    foreach (Match select in Regex.Matches(client, @"<select[^>]*value=\{(item|product|resource|good)\}.*?</select>", RegexOptions.Singleline))
+        foreach (Match option in Regex.Matches(select.Value, @"<option value=""([a-z]+)"">"))
+            named.Add((option.Groups[1].Value, $"a {select.Groups[1].Value} select"));
+
+    AssertTrue(named.Count > 0, "the client should be naming some keys, or this test is reading nothing");
+
+    var strangers = named
+        .Where(x => !known.Contains(x.Key))
+        // Words that are plainly not resources - sort orders, filters, the odd flag.
+        .Where(x => x.Key.Length > 2)
+        .Select(x => $"{x.Key} ({x.Where})")
+        .Distinct()
+        .ToList();
+
+    AssertTrue(strangers.Count == 0,
+        $"the client names key(s) the server does not answer to: {string.Join(", ", strangers)}");
+
+    // And the specific corpse, by name, because it is the one that keeps coming back.
+    AssertTrue(!TradeGoods.Keys.Contains("weapons"), "there has been no 'weapons' key since guns split into tiers");
+    AssertTrue(!AdminService.AdjustableResources.Contains("weapons"), "nor is it an adjustable resource");
+    AssertTrue(!Regex.IsMatch(client, @"resource: 'weapons'|<option value=""weapons"">|useState\('weapons'\)"),
+        "the client should not name 'weapons' as a key anywhere");
 }
 
 static void EveryTestWrittenIsATestThatRuns()

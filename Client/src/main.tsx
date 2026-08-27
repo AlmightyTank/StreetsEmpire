@@ -46,7 +46,9 @@ const adjustPresets: { label: string, resource: string, delta: number }[] = [
   { label: '+10 thugs', resource: 'thugs', delta: 10 },
   { label: '+100 condoms', resource: 'condoms', delta: 100 },
   { label: '+100 beer', resource: 'beer', delta: 100 },
-  { label: '+10 weapons', resource: 'weapons', delta: 10 },
+  // Pistols rather than "weapons": the adjust endpoint takes a tier, and there has been no such column
+  // since guns split into four. The button answered 400 to every press.
+  { label: '+10 pistols', resource: 'pistols', delta: 10 },
   { label: '+250 weed', resource: 'weed', delta: 250 },
   { label: '+100 coke', resource: 'coke', delta: 100 },
 ]
@@ -2714,7 +2716,17 @@ function TradingPanel(ctx: PageContext) {
   const { dashboard, busy, act } = ctx
   const [board, setBoard] = useState<MarketBoard | null>(null)
   const [error, setError] = useState('')
-  const [item, setItem] = useState('weapons')
+  // Empty until the board says what it sells.
+  //
+  // This used to start at 'weapons', a key that stopped existing the day guns split into tiers - the
+  // board serves pistols, shotguns, smgs and rifles now. Nothing complained: a select whose value
+  // matches no option shows the first one, so the panel looked fine and was not. `good` was undefined,
+  // the price never seeded off the reference, the button sat disabled saying "List for $0", and the
+  // line telling you what the game pays simply did not render. The only way to use the panel was to
+  // change the dropdown to something and back.
+  //
+  // Naming a key here at all was the mistake, so this names none and takes what the board offers.
+  const [item, setItem] = useState('')
   const [qty, setQty] = useState(1)
   const [price, setPrice] = useState(0)
   const [buyQty, setBuyQty] = useState<Record<number, number>>({})
@@ -2727,6 +2739,13 @@ function TradingPanel(ctx: PageContext) {
 
   const run = async (fn: () => Promise<unknown>) => { await act(fn); await load() }
   const good = board?.goods.find(g => g.item === item)
+  // Whatever the board leads with, preferring something the player actually holds - a panel that opens
+  // on a good you have none of is a panel that opens disabled.
+  useEffect(() => {
+    if (!board || good) return
+    const opening = board.goods.find(g => g.held > 0) ?? board.goods[0]
+    if (opening) { setItem(opening.item); setPrice(opening.referencePrice) }
+  }, [board, good])
   // Seeded from what the game itself pays, so the first listing is not a guess in the dark.
   useEffect(() => { if (good && price === 0) setPrice(good.referencePrice) }, [good?.item])
 
@@ -2741,30 +2760,42 @@ function TradingPanel(ctx: PageContext) {
         <h2>Player Market</h2>
         <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
       </div>
-      <p>
-        Sell to other players instead of the game. Stock leaves your storage the moment you list it and
-        comes back if you pull the listing. What the game pays is shown for reference, not as a limit.
-      </p>
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
-      <div className="control-row">
-        <label className="field">Good<select className="form-select" value={item} onChange={e => { setItem(e.target.value); setPrice(board.goods.find(g => g.item === e.target.value)?.referencePrice ?? 0) }}>
-          {board.goods.map(g => <option key={g.item} value={g.item}>{g.label} ({number.format(g.held)} held)</option>)}
-        </select></label>
-        <label className="field">Quantity<input className="form-control" type="number" min={1} max={good?.held ?? 1} value={qty} onChange={e => setQty(Number(e.target.value))} /></label>
-        <label className="field">Price each<input className="form-control" type="number" min={1} value={price} onChange={e => setPrice(Number(e.target.value))} /></label>
-        <button
-          className="btn btn-primary btn-sm"
-          disabled={busy || !good || qty < 1 || qty > (good?.held ?? 0) || price < 1}
-          onClick={() => void run(() => api.listOnMarket(item, qty, price))}
-        >
-          List for {money.format(qty * price)}
-        </button>
+      {/*
+        Two columns, because this card spans the page and nothing in it was using the width. Paragraphs
+        are capped at 68ch for legibility and the form fields are fixed widths, so a full-width card
+        held a 590px paragraph above a 600px row of controls with half the card empty to the right of
+        both. Side by side they fill it, and the explanation sits next to the thing it explains.
+      */}
+      <div className="d-grid gtc-1 gtc-lg-2 gap-3 align-items-start">
+        <div className="d-grid gap-2 align-content-start">
+          <p className="mb-0">
+            Sell to other players instead of the game. Stock leaves your storage the moment you list it
+            and comes back if you pull the listing. What the game pays is shown for reference, not as a
+            limit.
+          </p>
+          {good && <p className="text-body-tertiary small mb-0">
+            The game pays {money.format(good.referencePrice)} for {good.label.toLowerCase()}.
+            {good.bestPrice ? ` Cheapest on the board right now is ${money.format(good.bestPrice)}.` : ' Nothing listed yet.'}
+            {' '}You hold {number.format(good.held)} with room for {number.format(good.room)} more.
+          </p>}
+        </div>
+        <div className="control-row">
+          {/* Grows, because "Moonshine (1,240 held)" does not fit the 132px a number field wants. */}
+          <label className="field grow">Good<select className="form-select" value={item} onChange={e => { setItem(e.target.value); setPrice(board.goods.find(g => g.item === e.target.value)?.referencePrice ?? 0) }}>
+            {board.goods.map(g => <option key={g.item} value={g.item}>{g.label} ({number.format(g.held)} held)</option>)}
+          </select></label>
+          <label className="field">Quantity<input className="form-control" type="number" min={1} max={good?.held ?? 1} value={qty} onChange={e => setQty(Number(e.target.value))} /></label>
+          <label className="field">Price each<input className="form-control" type="number" min={1} value={price} onChange={e => setPrice(Number(e.target.value))} /></label>
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={busy || !good || qty < 1 || qty > (good?.held ?? 0) || price < 1}
+            onClick={() => void run(() => api.listOnMarket(item, qty, price))}
+          >
+            List for {money.format(qty * price)}
+          </button>
+        </div>
       </div>
-      {good && <p className="text-body-tertiary small mt-3">
-        The game pays {money.format(good.referencePrice)} for {good.label.toLowerCase()}.
-        {good.bestPrice ? ` Cheapest on the board right now is ${money.format(good.bestPrice)}.` : ' Nothing listed yet.'}
-        {' '}You hold {number.format(good.held)} with room for {number.format(good.room)} more.
-      </p>}
     </section>
 
     <section className="card p-3 gcol-full">
@@ -5050,7 +5081,10 @@ function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
         </select></label>}
       {action === 'buy' &&
         <label className="field">Item<select className="form-select" value={item} onChange={e => setItem(e.target.value)}>
-          <option value="condoms">Condoms</option><option value="beer">Beer</option><option value="weapons">Weapons</option>
+          {/* The store sells guns by tier, so this offers them by tier. "weapons" was refused. */}
+          <option value="condoms">Condoms</option><option value="beer">Beer</option><option value="medicine">Medicine</option>
+          <option value="pistols">Pistols</option><option value="shotguns">Shotguns</option>
+          <option value="smgs">SMGs</option><option value="rifles">Rifles</option>
         </select></label>}
       {(action === 'hire' || action === 'fire') &&
         <label className="field">Role<select className="form-select" value={role} onChange={e => setRole(e.target.value)}>

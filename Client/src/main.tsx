@@ -2941,7 +2941,7 @@ function MarketCorePage(ctx: PageContext) {
       </div>
     </section>
 
-    <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" />
+    <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" wide />
   </div>
 }
 
@@ -3074,7 +3074,8 @@ function ReconPage(ctx: PageContext) {
     />
     <CombatMissionsPanel ctx={ctx} />
     <CombatHistoryPanel entries={ctx.combatLogs} currentPlayerId={ctx.dashboard.playerId} />
-    <section className="card p-3">
+    {/* Fifty rows of ladder, last on the page with nothing beside it. */}
+    <section className="card p-3 gcol-full">
       <StandingsPanel dashboard={ctx.dashboard} leaders={ctx.leaders} cityLeaders={ctx.cityLeaders} limit={50} />
     </section>
   </div>
@@ -4578,9 +4579,13 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
 
   const enough = board.held >= board.quantity
   const generous = offered >= board.generousQuantity
-  return <section className="card p-3">
+  // Spans, and splits inside. Alone in the first row of the crew page's grid, this left the best part
+  // of 700px empty beside a paragraph and one number box. Side by side they fill the row, which is the
+  // same shape the player market card ended up in for the same reason.
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>The Pimp Gods</h2><span>Once a week</span></div>
-    <p className="text-info-emphasis">
+    <div className="d-grid gtc-1 gtc-lg-2 gap-3 align-items-center">
+    <p className="text-info-emphasis mb-0">
       They want <strong>{number.format(board.quantity)} {board.label}</strong> this week. You hold{' '}
       {number.format(board.held)}. What comes back is never money: they deal in what the law has on you,
       how the house feels, and whether your pimps still believe in you.
@@ -4610,6 +4615,7 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
             : `${number.format(board.generousQuantity)} would count as generous.`)}
       </span>
     </div>
+    </div>
   </section>
 }
 
@@ -4633,7 +4639,9 @@ function TitleBoardPanel({ currentPlayerId }: { currentPlayerId: string }) {
     return () => { live = false }
   }, [])
 
-  return <section className="card p-3">
+  // Spans: the panel beside it on the recon page spans too, so this was sitting in a two-column grid
+  // with the second column held open for nothing.
+  return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Today's Names</h2><span>Last 24 hours</span></div>
     {titles.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody has done enough today to be called anything.</p>}
     <div className="tnum d-grid gap-1">
@@ -4736,15 +4744,23 @@ function AlliancePage(ctx: PageContext) {
         </div>
       </section>}
 
-    <section className="card p-3">
+    {/* Spans, because the alliance page has exactly two children and the other one spans too - the
+        second column of this grid was being held open for something that never renders. */}
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The Board</h2><span>{board.board.length} crews</span></div>
       {board.board.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody is running with anybody yet.</p>}
       <div className="tnum d-grid gap-1 my-3">
         {board.board.map(crew => <div className={`alliance-row d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${crew.yours ? 'border-primary' : ''}`} key={crew.id}>
           <span>#{crew.rank}</span>
-          <div>
+          {/*
+            A stack, not two inline elements in a row. Both of these are inline and JSX eats the
+            newline between them, so they rendered welded together - "The Eastside TableOpen to
+            anyone". The name goes above the things attached to it, which is what the row's own
+            comment in the stylesheet says a crew is.
+          */}
+          <div className="d-grid">
             <strong>{crew.name}</strong>
-            <small>{crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues</small>
+            <small className="text-body-secondary">{crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues</small>
           </div>
           <b>{money.format(crew.netWorth)}</b>
           {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
@@ -4966,21 +4982,31 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
   </div>
 }
 
-function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className }: {
+function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className, wide }: {
   dashboard: Dashboard
   busy: boolean
   bankAmount: number
   setBankAmount: (amount: number) => void
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
   className?: string
+  /**
+   * Whether this one is standing on its own.
+   *
+   * The same panel appears twice: beside the activity list on the street page, where half a row is
+   * exactly right, and at the foot of the business page, where nothing sits next to it and the row
+   * held 727px open for nothing. Told which it is, rather than guessing from a width it cannot see.
+   */
+  wide?: boolean
 }) {
-  return <section className={`card p-3 ${className ?? ''}`}>
+  return <section className={`card p-3 ${wide ? 'gcol-full' : ''} ${className ?? ''}`}>
     <div className="panel-title"><h2>Bank</h2><span>Cash handling</span></div>
-    <p>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
-    <div className="control-row">
-      <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
-      <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
-      <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+    <div className={wide ? 'd-grid gtc-1 gtc-lg-2 gap-3 align-items-center' : ''}>
+      <p className={wide ? 'mb-0' : ''}>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+      <div className="control-row">
+        <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
+        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
+        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+      </div>
     </div>
   </section>
 }

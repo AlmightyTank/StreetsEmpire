@@ -187,6 +187,17 @@
   bug has been found four separate times, always by somebody noticing a panel behaving oddly, because
   an unrecognised key is a wrong dropdown or a dropped row rather than an error. Crossing the language
   boundary is the point - no test on either side alone could have caught it.
+- **Five more cards were using half a page each.** A card sitting alone in a row of a two-column grid
+  leaves the other column open for nothing, and five did: The Board (the alliance page renders exactly
+  two things and the other one spans), Today's Names and Standings on the raids page, the shrine on the
+  crew page, and the bank at the foot of the business page - between 479 and 727 pixels of nothing
+  apiece. The lists span now. The two small forms - a paragraph and one number box each - put the
+  explanation beside the controls instead of above them, the same shape the market card ended up in.
+  The bank is told which of its two homes it is in rather than guessing, since half a row is exactly
+  right beside the activity list on the street page.
+- **A crew's name ran into its own description**: "The Eastside TableOpen to anyone / 5 of 6 / 8% dues".
+  Two inline elements with a newline between them, which JSX eats. The name sits above the things
+  attached to it now, which is what that row's own stylesheet comment says a crew is.
 - **The player market card was using half its width.** Paragraphs are capped at 68ch for legibility and
   the form fields are fixed widths, so a card spanning the page held a 590px paragraph above a 600px
   row of controls with the right-hand half of both empty. They sit side by side now, and the good

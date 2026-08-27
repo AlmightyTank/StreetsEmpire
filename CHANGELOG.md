@@ -3,6 +3,18 @@
 ## 0.2.6 (in progress)
 
 ### Added
+- **It deploys.** A Dockerfile and a production compose file: the app in one container, Postgres in
+  another, talking over a private network. The database publishes no port and the app binds to
+  loopback for a reverse proxy to sit in front of. Migrations run on the way up, so a fresh server
+  needs no separate step.
+- The built client ships inside the API image and is served from the same origin, which leaves CORS
+  nothing to do, makes the session cookie plainly first-party, and gives Discord exactly one callback
+  address instead of one that moves. A path that is neither an API route nor a file gets the client
+  shell; a mistyped `/api` route still answers 404 rather than a page of HTML.
+- **The data protection key ring is kept on a volume.** Unconfigured it lives inside the container and
+  dies with it, so every redeploy would have silently signed out every player and voided every
+  verification and reset code in flight - no error, just one quiet failure at deploy time. Tested by
+  replacing the container and checking an existing session still worked.
 - **Help you send to an ally can be taken back.** It was a one-way gift: thugs and guns left the ally,
   joined the defender's pile, and nothing anywhere could return them - which sat oddly beside the crew
   pool, which has always sent its borrowed men home when a mission ends. Once the fight is over the

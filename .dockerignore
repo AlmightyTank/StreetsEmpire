@@ -1,0 +1,32 @@
+# Everything the build does not need, kept out of the context.
+#
+# Two reasons beyond speed. node_modules and bin/obj are built inside the image from the manifests, and
+# copying a host's versions in would mean the image depends on whatever the machine that built it
+# happened to have lying about. And .env holds real secrets: it is gitignored, which stops it reaching
+# the repository and does nothing at all to stop it reaching an image layer.
+
+.env
+.env.*
+!.env.example
+
+**/node_modules/
+**/bin/
+**/obj/
+**/dist/
+**/.vs/
+**/.idea/
+.git/
+.github/
+.claude/
+.pnpm-store/
+.tmp-test-bin/
+
+# The test project is not published into the image; only its .csproj is copied, for the restore.
+Tests/**/bin/
+Tests/**/obj/
+
+*.md
+!README.md
+docker-compose*.yml
+Dockerfile
+start-dev.bat

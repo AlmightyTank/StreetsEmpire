@@ -370,6 +370,51 @@ The snowflake is shown next to the handle rather than instead of it because a ha
 second and the snowflake is not. For the question a moderator is actually asking - is this the same
 person who was banned last week - it is the only one of the two worth anything.
 
+### Putting it on a server
+
+Two containers: the app, and a database it reaches over a private network. The app image carries the
+built client inside it, so one origin serves both.
+
+```bash
+git clone <your-repo> streetsempire && cd streetsempire
+cp .env.example .env    # fill in PUBLIC_URL, POSTGRES_PASSWORD, and the keys you have
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+That is the whole of it. The app migrates the database on the way up - a fresh server applies all 58
+migrations before it serves a request - so there is no separate step and no `dotnet ef` on the box.
+
+**One image, not two.** The client is a bundle of static files rather than a service, so it ships inside
+the API image and is served from the same origin. That is worth more than the tidiness: CORS has
+nothing to do, cookies are plainly first-party, and there is exactly one address to register with
+Discord instead of one that moves. Requests under `/api` are the API's; a path that is neither an API
+route nor a file on disk gets the client shell and is resolved in the browser. A mistyped API route
+still answers 404 rather than a page of HTML, which is the difference between a five-minute bug and an
+afternoon.
+
+**The database publishes no port.** It is reachable from the app over the compose network and from
+nowhere else - a 5432 open to the internet is found by a scanner within the hour. The app binds to
+`127.0.0.1` for the same reason: put a reverse proxy in front of it and terminate TLS there, because a
+game that hands out session cookies over plain HTTP hands them to everybody on the path.
+
+**The key ring is on a volume, and this is the part that is easy to miss.** Data protection seals
+session cookies, verification codes, reset codes and half-finished Discord sign-ups. Unconfigured, its
+keys live inside the container and go when the container does - so every redeploy would silently sign
+out every player and quietly void every code in flight. Nothing errors; it simply stops working, once,
+at deploy time. `DataProtection__KeyPath` points at a mounted volume, which was tested by replacing the
+container and confirming an existing session still worked.
+
+Set `PUBLIC_URL` to the address players actually type, then register `$PUBLIC_URL/api/auth/discord/callback`
+with the Discord application - the server prints the exact string it expects at startup.
+
+### Updating it
+
+```bash
+git pull && docker compose -f docker-compose.prod.yml up -d --build
+```
+
+New migrations apply on the way up. The database volume, and the key ring, are left alone.
+
 ### Where the credentials live
 
 Nothing secret is committed. Copy the template and fill in what you need:

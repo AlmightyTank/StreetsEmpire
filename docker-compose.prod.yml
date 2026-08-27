@@ -1,0 +1,86 @@
+# Street Empire on a server: the app, and a database it talks to over a private network.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Every value that matters comes from a .env file sitting beside this one. There is nothing secret in
+# here, which is what makes it safe to commit; see .env.example for what to put next to it.
+#
+# The plain docker-compose.yml is the development database on its own, and is left alone - running
+# `docker compose up` on a laptop should keep doing what it always did.
+
+# No container_name anywhere below, deliberately. Fixed names collide with the development compose file
+# - which already claims street-empire-postgres - so a laptop running both gets a conflict rather than
+# two stacks. Compose names them from the project instead, and `docker compose -f docker-compose.prod.yml
+# logs -f api` reaches them whatever it called them.
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-street_empire}
+      POSTGRES_USER: ${POSTGRES_USER:-street_empire}
+      # No default. A database that comes up with a password from a public file is a database with no
+      # password, so compose refuses to start rather than choosing one for you.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - street-empire-data:/var/lib/postgresql/data
+    networks:
+      - street-empire
+    # Deliberately no `ports:`. The database is reachable from the app over the private network and
+    # from nowhere else - a published 5432 on a public VPS is found by a scanner within the hour.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-street_empire} -d ${POSTGRES_DB:-street_empire}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: street-empire:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        # Not just "started". The app migrates on boot, and a migration against a database still
+        # opening its files fails the whole startup by design.
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__GameDatabase: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB:-street_empire};Username=${POSTGRES_USER:-street_empire};Password=${POSTGRES_PASSWORD}
+
+      # The key ring, on a volume. Without this every deploy silently signs out every player and voids
+      # every outstanding verification and reset code - see the comment in Program.cs.
+      DataProtection__KeyPath: /keys
+
+      # One origin now that the client is served from here, so this is only still read by the Discord
+      # return-url guard. Set it to the address players actually type.
+      Cors__AllowedOrigins__0: ${PUBLIC_URL:?set PUBLIC_URL in .env, e.g. https://streetsempire.dev}
+
+      Auth__Discord__ClientId: ${DISCORD_CLIENT_ID:-}
+      Auth__Discord__ClientSecret: ${DISCORD_CLIENT_SECRET:-}
+      # Must match the Discord application character for character.
+      Auth__Discord__RedirectUri: ${PUBLIC_URL}/api/auth/discord/callback
+      Auth__Discord__ReturnUrl: ${PUBLIC_URL}/
+
+      Auth__Email__ApiKey: ${RESEND_API_KEY:-}
+      Auth__Email__FromAddress: ${MAIL_FROM:-Street Empire <onboarding@resend.dev>}
+    volumes:
+      - street-empire-keys:/keys
+    networks:
+      - street-empire
+    # Bound to loopback, not to the world. Put a reverse proxy in front for TLS; a game that hands out
+    # session cookies over plain HTTP hands them to anybody on the path.
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+
+volumes:
+  street-empire-data:
+  street-empire-keys:
+
+networks:
+  street-empire:
+    driver: bridge

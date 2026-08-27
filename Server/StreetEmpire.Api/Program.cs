@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
@@ -102,6 +103,27 @@ builder.Services.AddScoped<IEmailSender>(services =>
 builder.Services.AddScoped<EmailVerificationService>();
 builder.Services.AddScoped<AccountNotices>();
 builder.Services.AddHostedService<EmailVerificationSweep>();
+
+// Where the data protection key ring lives.
+//
+// Unset, ASP.NET keeps it somewhere that belongs to the machine and the user, which is fine on a
+// laptop and quietly ruinous in a container: the keys go when the container does. Everything sealed
+// with them stops being readable on the next deploy - every session cookie, so every player is signed
+// out; every outstanding verification and reset code, which simply stop matching; every half-finished
+// Discord sign-up. None of it errors. It all just silently stops working, once, at deploy time.
+//
+// So in a container this points at a mounted volume. Left unset it behaves exactly as before, which is
+// what keeps development unchanged.
+var keyRingPath = builder.Configuration["DataProtection:KeyPath"];
+if (!string.IsNullOrWhiteSpace(keyRingPath))
+{
+    Directory.CreateDirectory(keyRingPath);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath))
+        // Named explicitly, because the default is derived from the content root path - which changes
+        // between a container and a laptop, and would make keys written by one unreadable by the other.
+        .SetApplicationName("StreetEmpire");
+}
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -357,6 +379,24 @@ if (!app.Environment.IsDevelopment())
     }));
 }
 
+// The built client, when there is one beside us.
+//
+// In development the client is served by Vite on its own port and talks here through a proxy. In a
+// container the two ship together and this serves it, which is worth more than the tidiness: one
+// origin means CORS has nothing to do, cookies are plainly first-party, and there is exactly one
+// address to register with Discord as a callback rather than one that moves.
+var clientRoot = app.Environment.WebRootPath;
+var servingClient = !string.IsNullOrWhiteSpace(clientRoot) && File.Exists(Path.Combine(clientRoot, "index.html"));
+if (servingClient)
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
+app.Logger.LogInformation(
+    servingClient ? "Serving the built client from {Root}." : "API only - no built client alongside ({Root}).",
+    clientRoot ?? "(none)");
+
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -418,5 +458,26 @@ app.MapContractEndpoints();
 app.MapChatEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();
+
+// Anything that is not an API route and not a file on disk is the client's own routing to resolve, so
+// it gets the shell and works it out in the browser.
+//
+// API paths are deliberately excluded rather than swept up with everything else: a mistyped endpoint
+// answering 200 and a page of HTML is a much harder thing to debug than one answering 404.
+if (servingClient)
+{
+    app.MapFallback(async context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "No such endpoint." });
+            return;
+        }
+
+        context.Response.ContentType = "text/html";
+        await context.Response.SendFileAsync(Path.Combine(clientRoot!, "index.html"));
+    });
+}
 
 app.Run();

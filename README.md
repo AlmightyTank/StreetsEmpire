@@ -407,6 +407,52 @@ container and confirming an existing session still worked.
 Set `PUBLIC_URL` to the address players actually type, then register `$PUBLIC_URL/api/auth/discord/callback`
 with the Discord application - the server prints the exact string it expects at startup.
 
+### Backups
+
+A third container takes a dump of the database, checks it, and prunes the old ones. It runs from the
+same `postgres:17` image the server does, which is not incidental: `pg_dump` refuses to dump a server
+newer than itself, so a backup pinned to a different major version stops working the day the database
+is upgraded - and stops working quietly, because nobody looks at a job that has been fine for a year.
+
+Three things about it matter more than the dump.
+
+- **It dumps once immediately on startup.** A backup misconfigured at deploy time otherwise announces
+  itself a day later, which is a day of believing there are backups.
+- **It writes to a temporary name and renames on success.** A rename inside a directory is atomic, so
+  an interrupted dump can never sit there looking like a good one.
+- **It reads every archive back with `pg_restore --list` before keeping it.** A file existing and a
+  file being restorable are different claims, and only the second is worth anything.
+
+Dumps land in `./backups` on the host rather than in a Docker volume, deliberately: a backup that only
+exists on the machine it is backing up is not a backup of that machine. Copy them somewhere else -
+`rsync`, object storage, anything off the box. They are gitignored, because each one is a complete copy
+of every account, address and hashed password in the game.
+
+### Restoring
+
+The dumps are the custom format, so you can put back one table without touching the rest - which is
+usually what you want, since the thing being undone is one bad migration or one bad afternoon.
+
+```bash
+# What is in it
+docker compose -f docker-compose.prod.yml exec backup \
+  pg_restore --list /backups/street_empire-20260827-140346.dump
+
+# One table back, with the app stopped so nothing writes underneath it
+docker compose -f docker-compose.prod.yml stop api
+docker compose -f docker-compose.prod.yml exec backup \
+  pg_restore --host=postgres --username=street_empire --dbname=street_empire \
+             --data-only --table=Accounts --disable-triggers \
+             /backups/street_empire-20260827-140346.dump
+docker compose -f docker-compose.prod.yml start api
+```
+
+No password flag: the container carries `PGPASSWORD`, so anything run inside it inherits it. Restoring
+should not also be a password hunt.
+
+This whole loop was tested rather than described - a dump taken, an account deleted, the dump restored,
+the account back.
+
 ### Updating it
 
 ```bash

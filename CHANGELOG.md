@@ -3,6 +3,18 @@
 ## 0.2.6 (in progress)
 
 ### Added
+- **The database is backed up.** A third container dumps it on a schedule, from the same postgres image
+  the server runs - pg_dump refuses to dump a server newer than itself, so a version drift there is a
+  backup that stops working silently. It dumps once immediately on startup, so a misconfigured backup
+  says so at deploy time rather than a day later; it writes to a temporary name and renames only on
+  success, so an interrupted dump cannot sit there looking good; and it reads every archive back with
+  pg_restore before keeping it, because a file existing and a file being restorable are different
+  claims. Old ones are pruned by age.
+- Dumps land on the host rather than in a Docker volume, since a backup that only exists on the machine
+  it is backing up is not a backup of that machine. They are gitignored and dockerignored: each one is
+  a complete copy of every account, address and hashed password in the game.
+- The restore is documented and was tested rather than assumed - a dump taken, an account deleted, the
+  dump restored, the account back.
 - **It deploys.** A Dockerfile and a production compose file: the app in one container, Postgres in
   another, talking over a private network. The database publishes no port and the app binds to
   loopback for a reverse proxy to sit in front of. Migrations run on the way up, so a fresh server

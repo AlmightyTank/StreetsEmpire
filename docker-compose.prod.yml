@@ -77,6 +77,34 @@ services:
     ports:
       - "127.0.0.1:${API_PORT:-8080}:8080"
 
+  # Dumps of the game database, on a schedule, checked and pruned. Same image as the server because
+  # pg_dump refuses to dump a server newer than itself, and a version drift here fails silently.
+  backup:
+    image: postgres:17
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-street_empire}
+      POSTGRES_USER: ${POSTGRES_USER:-street_empire}
+      # On the container rather than only inside the script, so that a pg_restore run by hand through
+      # `docker compose exec backup` inherits it too. Restoring at three in the morning should not also
+      # be a password hunt.
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./ops/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
+      # A bind mount rather than a named volume, on purpose: dumps that live inside Docker are dumps
+      # nobody copies off the machine, and a backup that only exists on the box it is backing up is
+      # not a backup of that box.
+      - ${BACKUP_DIR:-./backups}:/backups
+    networks:
+      - street-empire
+    entrypoint: ["/bin/sh", "/usr/local/bin/pg-backup.sh"]
+
 volumes:
   street-empire-data:
   street-empire-keys:

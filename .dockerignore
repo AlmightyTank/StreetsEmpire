@@ -9,6 +9,10 @@
 .env.*
 !.env.example
 
+# Dumps are whole copies of the database. Into an image layer is the last place they belong.
+backups/
+*.dump
+
 **/node_modules/
 **/bin/
 **/obj/

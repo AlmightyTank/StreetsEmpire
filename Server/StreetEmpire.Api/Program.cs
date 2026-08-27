@@ -5,6 +5,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -225,6 +226,34 @@ builder.Services.AddRateLimiter(limiter =>
     };
 });
 
+// Believing the proxy about who asked, and how.
+//
+// Behind TLS termination the app sees a plain HTTP request from a container on the bridge network, and
+// two things silently go wrong if it takes that at face value.
+//
+// The session cookie is issued with CookieSecurePolicy.SameAsRequest, so it would go out without the
+// Secure flag while the browser is on HTTPS - TLS on the wire and a cookie that would happily be sent
+// over plaintext the first time anything links to http://.
+//
+// And the sign-in rate limiter partitions anonymous traffic by remote address, which behind a proxy is
+// the proxy for everybody. Ten attempts a minute stops being per person and becomes ten a minute for
+// the entire game, so players lock each other out.
+//
+// The known-proxy lists are cleared rather than enumerated because the proxy's address on a Docker
+// bridge is not knowable in advance. That is only safe while nothing can reach this app except through
+// the proxy - the compose file publishes no host port for it, and this switch stays off by default so
+// that a directly exposed instance never trusts a header anybody could set.
+var trustProxyHeaders = builder.Configuration.GetValue("Proxy:TrustForwardedHeaders", false);
+if (trustProxyHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 builder.Services.AddAuthorization();
 
 // The allowed origins are configuration, not a constant.
@@ -379,6 +408,11 @@ if (!app.Environment.IsDevelopment())
     }));
 }
 
+// First in the pipeline, because everything after it asks either what scheme the caller used or where
+// they came from, and both are wrong until this has run.
+if (trustProxyHeaders)
+    app.UseForwardedHeaders();
+
 // The built client, when there is one beside us.
 //
 // In development the client is served by Vite on its own port and talks here through a proxy. In a
@@ -392,6 +426,11 @@ if (servingClient)
     app.UseDefaultFiles();
     app.UseStaticFiles();
 }
+
+app.Logger.LogInformation(
+    trustProxyHeaders
+        ? "Trusting X-Forwarded-* headers: expecting to sit behind a proxy that terminates TLS."
+        : "Not trusting proxy headers: expecting to be reached directly.");
 
 app.Logger.LogInformation(
     servingClient ? "Serving the built client from {Root}." : "API only - no built client alongside ({Root}).",

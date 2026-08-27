@@ -49,6 +49,9 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      # Behind Caddy, so believe it about the caller's scheme and address. Without this the session
+      # cookie loses its Secure flag and every anonymous caller shares one rate-limit bucket.
+      Proxy__TrustForwardedHeaders: "true"
       ConnectionStrings__GameDatabase: >-
         Host=postgres;Port=5432;Database=${POSTGRES_DB:-street_empire};Username=${POSTGRES_USER:-street_empire};Password=${POSTGRES_PASSWORD}
 
@@ -72,10 +75,10 @@ services:
       - street-empire-keys:/keys
     networks:
       - street-empire
-    # Bound to loopback, not to the world. Put a reverse proxy in front for TLS; a game that hands out
-    # session cookies over plain HTTP hands them to anybody on the path.
-    ports:
-      - "127.0.0.1:${API_PORT:-8080}:8080"
+    # No host port at all. Caddy reaches it over the compose network and nothing else can, which is
+    # also the condition that makes trusting X-Forwarded-* safe - see the comment in Program.cs.
+    # To reach it directly while debugging:
+    #   docker compose -f docker-compose.prod.yml exec api curl -s localhost:8080/api/health
 
   # Dumps of the game database, on a schedule, checked and pruned. Same image as the server because
   # pg_dump refuses to dump a server newer than itself, and a version drift here fails silently.
@@ -105,8 +108,33 @@ services:
       - street-empire
     entrypoint: ["/bin/sh", "/usr/local/bin/pg-backup.sh"]
 
+  # TLS, and the only thing on this stack the internet can reach.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env, e.g. https://streetsempire.dev}
+    ports:
+      - "80:80"
+      - "443:443"
+      # QUIC. Harmless if the host firewall drops it; browsers fall back to TCP.
+      - "443:443/udp"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys live here, and this volume is not optional. Without it every
+      # redeploy asks Let's Encrypt for a fresh certificate, and Let's Encrypt permits five per domain
+      # per week - so the fifth deploy of a bad week is the one where the site stops having TLS at all.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - street-empire
+
 volumes:
   street-empire-data:
+  caddy-data:
+  caddy-config:
   street-empire-keys:
 
 networks:

@@ -392,10 +392,28 @@ route nor a file on disk gets the client shell and is resolved in the browser. A
 still answers 404 rather than a page of HTML, which is the difference between a five-minute bug and an
 afternoon.
 
-**The database publishes no port.** It is reachable from the app over the compose network and from
-nowhere else - a 5432 open to the internet is found by a scanner within the hour. The app binds to
-`127.0.0.1` for the same reason: put a reverse proxy in front of it and terminate TLS there, because a
-game that hands out session cookies over plain HTTP hands them to everybody on the path.
+**Only Caddy faces the internet.** It terminates TLS, gets a Let's Encrypt certificate on first boot
+and renews it on its own - no certbot, no cron, no renewal that quietly stops - and redirects plain
+HTTP to HTTPS. Neither the app nor the database publishes a host port; both are reachable over the
+compose network and nowhere else. A 5432 open to the internet is found by a scanner within the hour.
+
+TLS here is not tidiness. The session cookie *is* the login - fourteen days, sliding - so anybody who
+reads one in transit becomes that player without a password, and none of the account work in this
+release can tell them apart from the real owner. Passwords and reset codes travel in request bodies
+besides, which makes a six-digit code guarded by a fifteen-minute window pointless if it is readable on
+the wire.
+
+**The app trusts `X-Forwarded-*`, and has to.** Behind TLS termination it otherwise sees a plain HTTP
+request from a container, and two things break silently: the session cookie is issued with
+`SameAsRequest`, so it would lose its `Secure` flag while the browser is on HTTPS, and the sign-in rate
+limiter partitions anonymous callers by address, which behind a proxy is the proxy for everybody -
+turning ten attempts a minute *each* into ten a minute *for the whole game*. Both were confirmed fixed
+by testing rather than by reading: the cookie comes back marked `secure`, and eleven attempts from one
+address throttle while a twelfth from a different one still gets through.
+
+The known-proxy list is cleared rather than enumerated, because the proxy's address on a Docker bridge
+is not knowable in advance. That is safe only while nothing can reach the app except through Caddy,
+which is exactly why it publishes no host port - and why the switch is off by default.
 
 **The key ring is on a volume, and this is the part that is easy to miss.** Data protection seals
 session cookies, verification codes, reset codes and half-finished Discord sign-ups. Unconfigured, its
@@ -404,8 +422,14 @@ out every player and quietly void every code in flight. Nothing errors; it simpl
 at deploy time. `DataProtection__KeyPath` points at a mounted volume, which was tested by replacing the
 container and confirming an existing session still worked.
 
-Set `PUBLIC_URL` to the address players actually type, then register `$PUBLIC_URL/api/auth/discord/callback`
-with the Discord application - the server prints the exact string it expects at startup.
+Set `PUBLIC_URL` to the address players actually type - `https://yourdomain` - and point that domain's
+DNS at the VPS before starting, because Caddy proves ownership over port 80 to get the certificate.
+One variable drives all of it: the certificate Caddy asks for, the CORS entry, the Discord callback and
+the Discord return address. Then register `$PUBLIC_URL/api/auth/discord/callback` with the Discord
+application; the server prints the exact string it expects at startup.
+
+Discord will not accept an `http://` callback for anything but localhost, so TLS is what makes Discord
+sign-in possible at all rather than merely advisable.
 
 ### Backups
 

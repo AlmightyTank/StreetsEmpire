@@ -3,6 +3,21 @@
 ## 0.2.6 (in progress)
 
 ### Added
+- **Caddy terminates TLS in front of it**, gets a Let's Encrypt certificate on first boot and renews it
+  by itself, and redirects plain HTTP. Neither the app nor the database publishes a host port any more;
+  Caddy is the only thing the internet can reach. Its certificate store is on a volume, because without
+  one every redeploy asks for a fresh certificate and Let's Encrypt allows five a week - so the fifth
+  deploy of a bad week is the one that leaves the site without TLS.
+- **The app trusts X-Forwarded-* when it is told it is behind a proxy**, and two things were quietly
+  broken until it did. The session cookie is issued with `SameAsRequest`, so behind TLS termination it
+  went out *without* the Secure flag while the browser was on HTTPS. And the sign-in limiter partitions
+  anonymous callers by address, which behind a proxy is the proxy for everyone - ten attempts a minute
+  each became ten a minute for the entire game, with players locking each other out. Both were
+  confirmed by test: the cookie comes back `secure`, and eleven attempts from one address throttle
+  while one from another address still gets through.
+- The known-proxy list is cleared rather than enumerated, since a Docker bridge address cannot be known
+  in advance. That is only safe because the app publishes no host port, which is why the switch is off
+  unless configuration turns it on.
 - **The database is backed up.** A third container dumps it on a schedule, from the same postgres image
   the server runs - pg_dump refuses to dump a server newer than itself, so a version drift there is a
   backup that stops working silently. It dumps once immediately on startup, so a misconfigured backup

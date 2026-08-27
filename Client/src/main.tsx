@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
-import type { Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePower, AllianceRequest, AllianceSummary, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -2625,7 +2625,7 @@ function TerritoryPage(ctx: PageContext) {
   </section></div>
 
   const effects = board.effects
-  const anyEffect = effects.streetIncomePercent || effects.productionYieldPercent || effects.moraleRecoveryPercent || effects.lootPercent
+  const anyEffect = effects.streetIncomePercent || effects.productionYieldPercent || effects.moraleRecoveryPercent || effects.lootPercent || board.allianceCityControl
   const force = (id: number) => thugs[id] ?? board.minimumGarrison
   const chosen = (id: number) => pimpFor[id] ?? null
   // Only pimps who are actually free. Anyone out commanding a raid, or already running other ground,
@@ -2642,6 +2642,7 @@ function TerritoryPage(ctx: PageContext) {
       <p>
         This is {board.city}, and it is the only map you fight over.
         Holding ground takes {board.minimumGarrison} thugs standing on it, and they are not at home while they do.
+        Each piece holds up to {board.maxGarrisonThugs}, and a raid can send up to {board.maxRaidThugs}.
         You have <strong>{number.format(board.freeThugs)}</strong> free of {number.format(dashboard.thugs)}.
         Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
       </p>
@@ -2651,6 +2652,7 @@ function TerritoryPage(ctx: PageContext) {
           {effects.productionYieldPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.productionYieldPercent}% production</span>}
           {effects.moraleRecoveryPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.moraleRecoveryPercent}% morale recovery</span>}
           {effects.lootPercent > 0 && <span className="badge rounded-pill text-bg-secondary">+{effects.lootPercent}% haul</span>}
+          {board.allianceCityControl && <span className="badge rounded-pill text-bg-primary">+{board.allianceCityControl.bonusThugs} alliance thugs</span>}
         </div>
         : <p className="text-body-tertiary small mt-3">You hold no ground yet, so nothing out there is working for you.</p>}
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
@@ -2683,6 +2685,7 @@ function TerritoryPage(ctx: PageContext) {
             <label className="field">Thugs<input className="form-control"
               type="number"
               min={t.heldByYou ? 0 : board.minimumGarrison}
+              max={t.canRaid ? board.maxRaidThugs : board.maxGarrisonThugs}
               value={force(t.id)}
               onChange={e => setThugs(v => ({ ...v, [t.id]: Number(e.target.value) }))}
             /></label>
@@ -2696,11 +2699,11 @@ function TerritoryPage(ctx: PageContext) {
               </option>)}
             </select></label>}
             {t.heldByYou && <>
-              <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
+              <button className="btn btn-secondary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
               <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</button>
             </>}
-            {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
-            {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
+            {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
+            {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxRaidThugs} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
           </div>
         </div>)}
       </div>
@@ -4710,11 +4713,12 @@ function AlliancePage(ctx: PageContext) {
           Nobody on this list can attack you and you cannot attack them, by any method. That is what the{' '}
           {yours.duesPercent}% off every shift is buying.
         </p>
-        <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
+        <div className="tnum d-grid gtc-1 gtc-md-3 gtc-xl-5 gap-2 mb-3">
           <AdminMetric label="Crew worth" value={money.format(yours.netWorth)} />
           <AdminMetric label="Treasury" value={money.format(board.treasury)} />
           <AdminMetric label="Dues" value={`${yours.duesPercent}%`} />
           <AdminMetric label="Pool" value={`${yours.offensiveThugs} off / ${yours.defensiveThugs} def`} />
+          <AdminMetric label="City control" value={yours.cityControlThugs > 0 ? `+${yours.cityControlThugs}` : 'None'} />
           <AdminMetric label="You are" value={board.yourRank} />
         </div>
 
@@ -4730,7 +4734,13 @@ function AlliancePage(ctx: PageContext) {
 
         <AllianceRequestsPanel board={board} busy={busy} onAct={run} />
 
+        <AllianceAssistPanel board={board} busy={busy} onAct={run} />
+
+        <AlliancePactsPanel board={board} busy={busy} onAct={run} />
+
         <AlliancePoolPanel board={board} crew={yours} busy={busy} onAct={run} />
+
+        <AllianceTransfersPanel transfers={board.transfers} />
 
         {board.yourRank === 'Boss' && <AllianceSettingsPanel crew={yours} board={board} maxDues={board.maxDuesPercent} busy={busy} onSave={run} />}
 
@@ -4785,7 +4795,10 @@ function AlliancePage(ctx: PageContext) {
           */}
           <div className="d-grid">
             <strong>{crew.name}</strong>
-            <small className="text-body-secondary">{crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues</small>
+            <small className="text-body-secondary">
+              {crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues
+              {crew.cityControlThugs > 0 ? ` / +${crew.cityControlThugs} city thugs` : ''}
+            </small>
           </div>
           <b>{money.format(crew.netWorth)}</b>
           {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
@@ -4802,10 +4815,22 @@ function AlliancePage(ctx: PageContext) {
             onClick={() => run(() => api.applyToAlliance(crew.id))}
           >Ask</button>}
           {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
+          {yours && !crew.yours && !hasPactWith(board, crew.id) && <button
+            className="btn btn-secondary btn-sm"
+            disabled={busy}
+            onClick={() => run(() => api.requestAlliancePact(crew.id))}
+          >Ally</button>}
         </div>)}
       </div>
     </section>
   </div>
+}
+
+function hasPactWith(board: AllianceBoard, allianceId: number) {
+  return board.pacts.some(pact =>
+    pact.status !== 'Canceled'
+    && pact.status !== 'Declined'
+    && (pact.requestingAllianceId === allianceId || pact.targetAllianceId === allianceId))
 }
 
 /**
@@ -4823,17 +4848,20 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
 }) {
   const canExpel = board.powers.find(x => x.power === 'Expel')?.youHaveIt ?? false
   const isBoss = board.yourRank === 'Boss'
+  const [item, setItem] = useState('cash')
+  const [quantity, setQuantity] = useState(1)
+  const [sendOpen, setSendOpen] = useState(false)
   // Promotable ranks stop below the top: handing the crew over is its own move because it is the one
   // that gives yours away.
   const promotable = board.ranks.filter(x => x !== 'Boss')
 
   return <div className={`alliance-member d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${member.isYou ? 'border-primary' : ''}`}>
-    <div>
-      <strong>{member.name}</strong>
-      <small>{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
+    <div className="min-w-0">
+      <strong className="d-block text-truncate">{member.name}</strong>
+      <small className="d-block text-body-secondary">{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
     </div>
-    <b>{money.format(member.netWorth)}</b>
-    {!member.isYou && <div className="d-flex align-items-center gap-1">
+    <b className="tnum">{money.format(member.netWorth)}</b>
+    {!member.isYou && <div className="alliance-member-actions d-flex flex-wrap align-items-center gap-1">
       {isBoss && <select className="form-select"
         value={member.rank === 'Boss' ? '' : member.rank}
         disabled={busy || member.rank === 'Boss'}
@@ -4852,9 +4880,43 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
         disabled={busy}
         onClick={() => onAct(() => api.expelMember(member.playerId))}
       >Throw out</button>}
+      <button
+        className="btn btn-secondary btn-sm"
+        disabled={busy}
+        onClick={() => setSendOpen(value => !value)}
+      >Send</button>
+    </div>}
+    {!member.isYou && sendOpen && <div className="alliance-transfer-controls d-flex flex-wrap align-items-end gap-1">
+      <label className="field mb-0">Send
+        <select className="form-select" value={item} disabled={busy} onChange={event => setItem(event.target.value)}>
+          {allianceSendItems.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+        </select>
+      </label>
+      <label className="field mb-0">Qty<input className="form-control" type="number" min={1} value={quantity} onChange={event => setQuantity(Number(event.target.value))} /></label>
+      <button
+        className="btn btn-secondary btn-sm"
+        disabled={busy || quantity < 1}
+        onClick={() => onAct(() => api.sendAllianceResource(member.playerId, item, quantity))}
+      >Confirm</button>
     </div>}
   </div>
 }
+
+const allianceSendItems = [
+  { key: 'cash', label: 'Cash' },
+  { key: 'thugs', label: 'Thugs' },
+  { key: 'weed', label: 'Weed' },
+  { key: 'coke', label: 'Coke' },
+  { key: 'beer', label: 'Beer' },
+  { key: 'medicine', label: 'Medicine' },
+  { key: 'poison', label: 'Poison' },
+  { key: 'moonshine', label: 'Moonshine' },
+  { key: 'cut', label: 'Cut' },
+  { key: 'pistols', label: 'Pistols' },
+  { key: 'shotguns', label: 'Shotguns' },
+  { key: 'smgs', label: 'SMGs' },
+  { key: 'rifles', label: 'Rifles' },
+]
 
 /**
  * Who is waiting on somebody. Invitations to this player and applications to their crew sit in one
@@ -4875,24 +4937,124 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
     {sent.length > 0 && <>
       <strong className="d-block mb-1 text-primary small">Asked, waiting to hear</strong>
       {sent.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
-        <div>
-          <strong>{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
-          <small>{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
+        <div className="min-w-0">
+          <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
+          <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
         </div>
         {ask.kind === 'Invitation'
           ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.withdrawAllianceRequest(ask.id))}>Take it back</button>
-          : <em>Waiting on somebody who can open the door</em>}
-        <span />
+          : <small className="text-body-secondary text-sm-end">Waiting on the crew</small>}
       </div>)}
     </>}
     {answerable.length > 0 && <strong className="d-block mb-1 text-primary small">Waiting on you</strong>}
     {answerable.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
-      <div>
-        <strong>{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
-        <small>{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
+      <div className="min-w-0">
+        <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
+        <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
       </div>
       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</button>
       <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</button>
+    </div>)}
+  </div>
+}
+
+function AlliancePactsPanel({ board, busy, onAct }: {
+  board: AllianceBoard
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  if (!board.yours || board.pacts.length === 0) return null
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Allied crews</strong>
+    {board.pacts.map(pact => <AlliancePactRow key={pact.id} pact={pact} ownAllianceId={board.yours?.id ?? 0} busy={busy} onAct={onAct} />)}
+  </div>
+}
+
+function AlliancePactRow({ pact, ownAllianceId, busy, onAct }: {
+  pact: AlliancePact
+  ownAllianceId: number
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const other = pact.requestingAllianceId === ownAllianceId ? pact.targetAllianceName : pact.requestingAllianceName
+  return <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2">
+    <div className="min-w-0">
+      <strong className="d-block text-truncate">{other}</strong>
+      <small className="d-block text-body-secondary">{pact.status === 'Active' ? 'active pact' : 'waiting on an answer'}</small>
+    </div>
+    {pact.yoursToAnswer
+      ? <>
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAlliancePact(pact.id, true))}>Accept</button>
+        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAlliancePact(pact.id, false))}>Refuse</button>
+      </>
+      : <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.cancelAlliancePact(pact.id))}>
+        {pact.status === 'Active' ? 'Break pact' : 'Take it back'}
+      </button>}
+  </div>
+}
+
+function AllianceAssistPanel({ board, busy, onAct }: {
+  board: AllianceBoard
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  if (!board.yours) return null
+  const calls = board.assistCalls.filter(call => call.status === 'Open' || call.missionStatus !== 'Complete')
+  if (calls.length === 0) return null
+
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Assist calls</strong>
+    {calls.map(call => <AllianceAssistRow key={call.id} call={call} ownAllianceId={board.yours?.id ?? 0} busy={busy} onAct={onAct} />)}
+  </div>
+}
+
+function AllianceAssistRow({ call, ownAllianceId, busy, onAct }: {
+  call: AllianceAssistCall
+  ownAllianceId: number
+  busy: boolean
+  onAct: (fn: () => Promise<ActionResult>) => void
+}) {
+  const canAnswer = call.status === 'Open' && call.allyAllianceId === ownAllianceId && call.missionStatus !== 'Complete'
+  const [thugs, setThugs] = useState(0)
+  const [pistols, setPistols] = useState(0)
+  const [shotguns, setShotguns] = useState(0)
+  const [smgs, setSmgs] = useState(0)
+  const [rifles, setRifles] = useState(0)
+  const sentWeapons = call.pistolsSent + call.shotgunsSent + call.smgsSent + call.riflesSent
+
+  return <div className="d-grid gap-2 border-top py-2">
+    <div className="d-flex flex-wrap justify-content-between gap-2">
+      <div>
+        <strong>{call.defenderName} vs {call.attackerName}</strong>
+        <small>{call.defenderAllianceName} called {call.allyAllianceName} / {call.missionStatus}</small>
+      </div>
+      {call.status !== 'Open' && <em>{call.thugsSent} thugs / {sentWeapons} guns sent</em>}
+    </div>
+    {canAnswer && <div className="d-grid gtc-2 gtc-md-fill-120 gap-2">
+      <label className="field">Thugs<input className="form-control" type="number" min={0} value={thugs} onChange={event => setThugs(Number(event.target.value))} /></label>
+      <label className="field">Pistols<input className="form-control" type="number" min={0} value={pistols} onChange={event => setPistols(Number(event.target.value))} /></label>
+      <label className="field">Shotguns<input className="form-control" type="number" min={0} value={shotguns} onChange={event => setShotguns(Number(event.target.value))} /></label>
+      <label className="field">SMGs<input className="form-control" type="number" min={0} value={smgs} onChange={event => setSmgs(Number(event.target.value))} /></label>
+      <label className="field">Rifles<input className="form-control" type="number" min={0} value={rifles} onChange={event => setRifles(Number(event.target.value))} /></label>
+      <button
+        className="btn btn-primary btn-sm align-self-end"
+        disabled={busy || thugs + pistols + shotguns + smgs + rifles < 1}
+        onClick={() => onAct(() => api.answerAllianceAssist(call.id, thugs, pistols, shotguns, smgs, rifles))}
+      >Send help</button>
+    </div>}
+  </div>
+}
+
+function AllianceTransfersPanel({ transfers }: { transfers: AllianceTransfer[] }) {
+  if (transfers.length === 0) return null
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-primary small">Recent sends</strong>
+    {transfers.slice(0, 6).map(transfer => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={transfer.id}>
+      <div>
+        <strong>{transfer.fromPlayerName} to {transfer.toPlayerName}</strong>
+        <small>{transfer.quantity.toLocaleString()} {transfer.label.toLowerCase()}</small>
+      </div>
+      <em>{new Date(transfer.createdAtUtc).toLocaleString()}</em>
     </div>)}
   </div>
 }
@@ -4913,9 +5075,11 @@ function AlliancePoolPanel({ board, crew, busy, onAct }: {
   const [buy, setBuy] = useState(1)
   const [post, setPost] = useState(1)
   const room = Math.max(0, board.borrowLimit - board.yourDefenders)
+  const cities = crew.controlledCities.map(city => `${city.city} +${city.bonusThugs}`).join(' / ')
 
   return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     <StatusRow label="Pool" value={`${crew.offensiveThugs} offensive / ${crew.defensiveThugs} defensive`} />
+    {crew.cityControlThugs > 0 && <StatusRow label="City control" value={`+${crew.cityControlThugs} thugs (${cities})`} />}
     <StatusRow
       label="You may borrow"
       value={board.borrowLimit === 0 ? 'Nothing until you have thugs of your own' : `${board.borrowLimit} (${board.yourDefenders} standing here)`}

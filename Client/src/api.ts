@@ -418,7 +418,15 @@ export type AllianceSummary = {
   doorDetail: string
   yours: boolean
   youFounded: boolean
+  cityControlThugs: number
+  controlledCities: AllianceCityControl[]
   rank: number
+}
+
+export type AllianceCityControl = {
+  city: string
+  territories: number
+  bonusThugs: number
 }
 
 /** Just enough of the crew for the pages that are not about the crew. */
@@ -462,6 +470,46 @@ export type AllianceRequest = {
   createdAtUtc: string
 }
 
+export type AlliancePact = {
+  id: number
+  requestingAllianceId: number
+  requestingAllianceName: string
+  targetAllianceId: number
+  targetAllianceName: string
+  status: 'Pending' | 'Active' | 'Declined' | 'Canceled'
+  yoursToAnswer: boolean
+  createdAtUtc: string
+}
+
+export type AllianceAssistCall = {
+  id: number
+  combatMissionId: number
+  defenderAllianceId: number
+  allyAllianceId: number
+  attackerName: string
+  defenderName: string
+  defenderAllianceName: string
+  allyAllianceName: string
+  missionStatus: string
+  status: 'Open' | 'Answered' | 'Closed'
+  thugsSent: number
+  pistolsSent: number
+  shotgunsSent: number
+  smgsSent: number
+  riflesSent: number
+  createdAtUtc: string
+}
+
+export type AllianceTransfer = {
+  id: number
+  fromPlayerName: string
+  toPlayerName: string
+  item: string
+  label: string
+  quantity: number
+  createdAtUtc: string
+}
+
 export type AllianceDoorKey = 'Open' | 'Application' | 'InviteOnly'
 
 /** One of the three ways a crew can take people on. */
@@ -495,6 +543,9 @@ export type AllianceBoard = {
   ranks: string[]
   doors: AllianceDoor[]
   requests: AllianceRequest[]
+  pacts: AlliancePact[]
+  assistCalls: AllianceAssistCall[]
+  transfers: AllianceTransfer[]
   board: AllianceSummary[]
 }
 
@@ -1146,6 +1197,16 @@ export const api = {
     request<ActionResult>('/api/game/alliances/answer', { method: 'POST', body: JSON.stringify({ requestId, accept }) }),
   withdrawAllianceRequest: (requestId: number) =>
     request<ActionResult>('/api/game/alliances/withdraw', { method: 'POST', body: JSON.stringify({ requestId, accept: false }) }),
+  sendAllianceResource: (memberId: string, item: string, quantity: number) =>
+    request<ActionResult>('/api/game/alliances/transfer', { method: 'POST', body: JSON.stringify({ memberId, item, quantity }) }),
+  requestAlliancePact: (allianceId: number) =>
+    request<ActionResult>('/api/game/alliances/pacts', { method: 'POST', body: JSON.stringify({ allianceId }) }),
+  answerAlliancePact: (pactId: number, accept: boolean) =>
+    request<ActionResult>('/api/game/alliances/pacts/answer', { method: 'POST', body: JSON.stringify({ pactId, accept }) }),
+  cancelAlliancePact: (pactId: number) =>
+    request<ActionResult>('/api/game/alliances/pacts/cancel', { method: 'POST', body: JSON.stringify({ pactId, accept: false }) }),
+  answerAllianceAssist: (assistCallId: number, thugs: number, pistols: number, shotguns: number, smgs: number, rifles: number) =>
+    request<ActionResult>('/api/game/alliances/assist', { method: 'POST', body: JSON.stringify({ assistCallId, thugs, pistols, shotguns, smgs, rifles }) }),
   buyAllianceThugs: (kind: 'offensive' | 'defensive', quantity: number) =>
     request<ActionResult>('/api/game/alliances/thugs', { method: 'POST', body: JSON.stringify({ kind, quantity }) }),
   // Negative sends them back to the pool.
@@ -1465,6 +1526,8 @@ export type TerritoryBoard = {
   held: number
   holdingCap: number
   minimumGarrison: number
+  maxGarrisonThugs: number
+  maxRaidThugs: number
   claimTurnCost: number
   freeThugs: number
   effects: {
@@ -1473,6 +1536,7 @@ export type TerritoryBoard = {
     moraleRecoveryPercent: number
     lootPercent: number
   }
+  allianceCityControl?: AllianceCityControl | null
   territories: Territory[]
 }
 

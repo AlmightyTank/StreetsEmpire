@@ -107,6 +107,7 @@ var tests = new (string Name, Action Test)[]
     ("catch-up reports rank moves and who changed places with you", CatchUpReportsRankAndRivals),
     ("defence alerts count only what is unread", DefenceAlertsCountUnread),
     ("combat power keeps a defender edge without killing attacks", CombatPowerBalanceTarget),
+    ("a fully buffed territory garrison can hold the attacker cap", BuffedTerritoryGarrisonCanHoldTheAttackerCap),
     ("combat blocks self attacks", CombatBlocksSelfAttacks),
     ("combat blocks protected defenders", CombatBlocksProtectedDefenders),
     ("combat start creates pending mission", CombatStartCreatesPendingMission),
@@ -4923,6 +4924,37 @@ static void CombatPowerBalanceTarget()
     // And a house with crew out attacking is beatable without any commander bonus at all.
     var stretched = CombatPower.Defence(maxPimps, maxThugs - 5, Firepower.Sidearms(maxThugs - 5, maxThugs - 5), morale, power);
     AssertTrue(maxedRaid > stretched, "a house with its crew away is exposed");
+}
+
+static void BuffedTerritoryGarrisonCanHoldTheAttackerCap()
+{
+    var options = Resolve(new GameOptions());
+    var territory = options.Territory;
+    var power = options.Combat.Power;
+    const double morale = 100;
+
+    AssertEqual(50, territory.MaxGarrisonThugs);
+    AssertEqual(100, territory.MaxRaidThugs);
+
+    var defenders = territory.MaxGarrisonThugs;
+    var attackers = territory.MaxRaidThugs;
+    var garrisonBonus = options.Pimps.MaxGarrisonBonusPercent;
+    var attack = CombatPower.Attack(
+        CombatMissionService.CommandingPimps,
+        attackers,
+        Firepower.Sidearms(attackers, attackers),
+        morale,
+        power);
+    var defence = CombatPower.Defence(
+        1,
+        defenders,
+        Firepower.Sidearms(defenders, defenders),
+        morale,
+        power,
+        garrisonBonus);
+
+    AssertTrue(defence > attack,
+        $"a fully buffed {defenders}-thug garrison should hold against {attackers} attackers: {defence} defence vs {attack} attack");
 }
 
 static void CombatBlocksSelfAttacks()

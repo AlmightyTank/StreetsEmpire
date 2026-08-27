@@ -90,6 +90,10 @@ public sealed record HandOverAllianceRequest(Guid MemberId);
 public sealed record InvitePlayerRequest(Guid PlayerId, string? Note);
 public sealed record ApplyToAllianceRequest(long AllianceId, string? Note);
 public sealed record AnswerAllianceRequest(long RequestId, bool Accept);
+public sealed record AllianceTransferRequest(Guid MemberId, string? Item, int Quantity);
+public sealed record AlliancePactRequest(long AllianceId);
+public sealed record AnswerAlliancePactRequest(long PactId, bool Accept);
+public sealed record AllianceAssistRequest(long AssistCallId, int Thugs, int Pistols, int Shotguns, int Smgs, int Rifles);
 
 /// <summary>One outstanding ask, from whichever side it came.</summary>
 public sealed record AllianceRequestResponse(
@@ -102,6 +106,43 @@ public sealed record AllianceRequestResponse(
     string? Note,
     /// <summary>Whether this viewer is the one who has to answer it.</summary>
     bool YoursToAnswer,
+    DateTime CreatedAtUtc);
+
+public sealed record AlliancePactResponse(
+    long Id,
+    long RequestingAllianceId,
+    string RequestingAllianceName,
+    long TargetAllianceId,
+    string TargetAllianceName,
+    string Status,
+    bool YoursToAnswer,
+    DateTime CreatedAtUtc);
+
+public sealed record AllianceAssistCallResponse(
+    long Id,
+    long CombatMissionId,
+    long DefenderAllianceId,
+    long AllyAllianceId,
+    string AttackerName,
+    string DefenderName,
+    string DefenderAllianceName,
+    string AllyAllianceName,
+    string MissionStatus,
+    string Status,
+    int ThugsSent,
+    int PistolsSent,
+    int ShotgunsSent,
+    int SmgsSent,
+    int RiflesSent,
+    DateTime CreatedAtUtc);
+
+public sealed record AllianceTransferResponse(
+    long Id,
+    string FromPlayerName,
+    string ToPlayerName,
+    string Item,
+    string Label,
+    int Quantity,
     DateTime CreatedAtUtc);
 
 /// <summary>One of the three ways a crew can take people on.</summary>
@@ -145,7 +186,11 @@ public sealed record AllianceSummaryResponse(
     string DoorDetail,
     bool Yours,
     bool YouFounded,
+    int CityControlThugs,
+    IReadOnlyList<AllianceCityControlResponse> ControlledCities,
     int Rank = 0);
+
+public sealed record AllianceCityControlResponse(string City, int Territories, int BonusThugs);
 
 /// <summary>One member, as their own crew sees them.</summary>
 public sealed record AllianceMemberResponse(
@@ -186,6 +231,9 @@ public sealed record AllianceBoardResponse(
     IReadOnlyList<AllianceDoorResponse> Doors,
     /// <summary>Asks waiting on somebody: invitations to the viewer, applications to their crew.</summary>
     IReadOnlyList<AllianceRequestResponse> Requests,
+    IReadOnlyList<AlliancePactResponse> Pacts,
+    IReadOnlyList<AllianceAssistCallResponse> AssistCalls,
+    IReadOnlyList<AllianceTransferResponse> Transfers,
     IReadOnlyList<AllianceSummaryResponse> Board);
 
 /// <summary>
@@ -314,9 +362,12 @@ public sealed record TerritoryBoardResponse(
     int Held,
     int HoldingCap,
     int MinimumGarrison,
+    int MaxGarrisonThugs,
+    int MaxRaidThugs,
     int ClaimTurnCost,
     int FreeThugs,
     TerritoryEffectsResponse Effects,
+    AllianceCityControlResponse? AllianceCityControl,
     IReadOnlyList<TerritoryResponse> Territories);
 
 public sealed record TerritoryEffectsResponse(

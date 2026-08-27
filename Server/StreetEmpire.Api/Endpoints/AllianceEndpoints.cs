@@ -18,6 +18,7 @@ internal static class AllianceEndpoints
             GameDbContext db,
             EconomyService economy,
             AllianceService alliances,
+            TerritoryService territories,
             IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
         {
@@ -27,12 +28,16 @@ internal static class AllianceEndpoints
             // Crews seed themselves into an existing world the first time anybody looks, the same way
             // ground does. A board showing only the crew the player just made is not a board.
             await alliances.SeedRivalCrewsAsync(DateTime.UtcNow, ct);
+            await territories.SeedAsync(ct);
 
             var board = await alliances.BoardAsync(player, ct);
             var config = gameOptions.Value.Alliances;
             var yours = board.FirstOrDefault(x => x.Yours);
 
             var members = new List<AllianceMemberResponse>();
+            var pacts = new List<AlliancePactResponse>();
+            var assistCalls = new List<AllianceAssistCallResponse>();
+            var transfers = new List<AllianceTransferResponse>();
             long treasury = 0;
             if (player.AllianceId is { } id)
             {
@@ -61,6 +66,38 @@ internal static class AllianceEndpoints
                         x.AllianceJoinedAtUtc))
                     .OrderByDescending(x => x.NetWorth)
                     .ToList();
+
+                var canAnswerPacts = crew is not null && AllianceService.Can(player, crew, AlliancePower.Invite);
+                var pactRows = await db.AlliancePacts.AsNoTracking()
+                    .Include(x => x.RequestingAlliance)
+                    .Include(x => x.TargetAlliance)
+                    .Where(x => (x.RequestingAllianceId == id || x.TargetAllianceId == id)
+                                && (x.Status == AlliancePactStatuses.Pending || x.Status == AlliancePactStatuses.Active))
+                    .OrderByDescending(x => x.CreatedAtUtc)
+                    .Take(20)
+                    .ToListAsync(ct);
+                pacts = pactRows.Select(x => ToPactResponse(x, id, canAnswerPacts)).ToList();
+
+                var callRows = await db.AllianceAssistCalls.AsNoTracking()
+                    .Include(x => x.AllyAlliance)
+                    .Include(x => x.DefenderAlliance)
+                    .Include(x => x.CombatMission).ThenInclude(x => x.Attacker)
+                    .Include(x => x.CombatMission).ThenInclude(x => x.Defender)
+                    .Where(x => x.AllyAllianceId == id || x.DefenderAllianceId == id)
+                    .OrderByDescending(x => x.Status == AllianceAssistStatuses.Open)
+                    .ThenByDescending(x => x.CreatedAtUtc)
+                    .Take(20)
+                    .ToListAsync(ct);
+                assistCalls = callRows.Select(ToAssistCallResponse).ToList();
+
+                var transferRows = await db.AllianceTransfers.AsNoTracking()
+                    .Include(x => x.FromPlayer)
+                    .Include(x => x.ToPlayer)
+                    .Where(x => x.AllianceId == id)
+                    .OrderByDescending(x => x.CreatedAtUtc)
+                    .Take(20)
+                    .ToListAsync(ct);
+                transfers = transferRows.Select(ToTransferResponse).ToList();
             }
 
             // Everything this player has a part in: invitations waiting on them, applications waiting on
@@ -106,6 +143,9 @@ internal static class AllianceEndpoints
                     .Select(x => new AllianceDoorResponse(x.ToString(), AllianceDoors.Label(x), AllianceDoors.Describe(x)))
                     .ToList(),
                 pending.Select(x => ToRequestResponse(x, player)).ToList(),
+                pacts,
+                assistCalls,
+                transfers,
                 board));
         }).RequireAuthorization();
 
@@ -453,6 +493,139 @@ internal static class AllianceEndpoints
         }).RequireAuthorization();
 
 
+        app.MapPost("/api/game/alliances/transfer", async (
+            AllianceTransferRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var before = Snapshot(player);
+            try
+            {
+                var now = DateTime.UtcNow;
+                var transfer = await alliances.SendResourceAsync(player, request.MemberId, request.Item, request.Quantity, now, ct);
+                var summary = $"{player.Name} sent {transfer.Quantity:N0} {ResourceLabel(transfer.Item).ToLowerInvariant()} to {transfer.ToPlayer.Name}.";
+                AddLog(db, player, before, "ALLIANCE", 0, summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/alliances/pacts", async (
+            AlliancePactRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            try
+            {
+                var now = DateTime.UtcNow;
+                var pact = await alliances.RequestPactAsync(player, request.AllianceId, now, ct);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse($"{pact.TargetAlliance.Name} got your alliance pact offer.", player.Turns));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/alliances/pacts/answer", async (
+            AnswerAlliancePactRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            try
+            {
+                var now = DateTime.UtcNow;
+                var pact = await alliances.AnswerPactAsync(player, request.PactId, request.Accept, now, ct);
+                var summary = request.Accept
+                    ? $"{pact.TargetAlliance.Name} and {pact.RequestingAlliance.Name} are allies now."
+                    : "Pact refused.";
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/alliances/pacts/cancel", async (
+            AnswerAlliancePactRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            try
+            {
+                var now = DateTime.UtcNow;
+                var pact = await alliances.CancelPactAsync(player, request.PactId, now, ct);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse($"Pact with {OtherCrew(pact, player.AllianceId)} closed.", player.Turns));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/alliances/assist", async (
+            AllianceAssistRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var before = Snapshot(player);
+            try
+            {
+                var now = DateTime.UtcNow;
+                var weapons = new Armoury(request.Pistols, request.Shotguns, request.Smgs, request.Rifles);
+                var call = await alliances.AnswerAssistCallAsync(player, request.AssistCallId, request.Thugs, weapons, now, ct);
+                var sent = new List<string>();
+                if (request.Thugs > 0) sent.Add($"{request.Thugs:N0} thug(s)");
+                if (weapons.Total > 0) sent.Add(weapons.Describe());
+                var summary = $"{player.Name} sent {string.Join(" and ", sent)} to help {call.CombatMission.Defender.Name}.";
+                AddLog(db, player, before, "ALLIANCE", 0, summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
         app.MapPut("/api/game/alliances", async (
             UpdateAllianceRequest request,
             CurrentPlayerService current,
@@ -500,6 +673,57 @@ internal static class AllianceEndpoints
                 : viewer.AllianceId == request.AllianceId
                   && AllianceService.Can(viewer, request.Alliance, AlliancePower.Invite),
             request.CreatedAtUtc);
+
+    private static AlliancePactResponse ToPactResponse(AlliancePact pact, long viewerAllianceId, bool canAnswer)
+        => new(
+            pact.Id,
+            pact.RequestingAllianceId,
+            pact.RequestingAlliance.Name,
+            pact.TargetAllianceId,
+            pact.TargetAlliance.Name,
+            pact.Status,
+            pact.Status == AlliancePactStatuses.Pending && pact.TargetAllianceId == viewerAllianceId && canAnswer,
+            pact.CreatedAtUtc);
+
+    private static AllianceAssistCallResponse ToAssistCallResponse(AllianceAssistCall call)
+        => new(
+            call.Id,
+            call.CombatMissionId,
+            call.DefenderAllianceId,
+            call.AllyAllianceId,
+            call.CombatMission.Attacker.Name,
+            call.CombatMission.Defender.Name,
+            call.DefenderAlliance.Name,
+            call.AllyAlliance.Name,
+            call.CombatMission.Status,
+            call.Status,
+            call.ThugsSent,
+            call.PistolsSent,
+            call.ShotgunsSent,
+            call.SmgsSent,
+            call.RiflesSent,
+            call.CreatedAtUtc);
+
+    private static AllianceTransferResponse ToTransferResponse(AllianceTransfer transfer)
+        => new(
+            transfer.Id,
+            transfer.FromPlayer.Name,
+            transfer.ToPlayer.Name,
+            transfer.Item,
+            ResourceLabel(transfer.Item),
+            transfer.Quantity,
+            transfer.CreatedAtUtc);
+
+    private static string ResourceLabel(string key)
+        => key switch
+        {
+            "cash" => "Cash",
+            "thugs" => "Thugs",
+            _ => TradeGoods.Label(key)
+        };
+
+    private static string OtherCrew(AlliancePact pact, long? viewerAllianceId)
+        => pact.RequestingAllianceId == viewerAllianceId ? pact.TargetAlliance.Name : pact.RequestingAlliance.Name;
 
     /// <summary>What a power is called on the settings panel, in the words the game uses elsewhere.</summary>
     private static string PowerLabel(AlliancePower power) => power switch

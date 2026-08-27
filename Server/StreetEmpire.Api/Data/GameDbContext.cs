@@ -24,6 +24,9 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
+    public DbSet<AlliancePact> AlliancePacts => Set<AlliancePact>();
+    public DbSet<AllianceAssistCall> AllianceAssistCalls => Set<AllianceAssistCall>();
+    public DbSet<AllianceTransfer> AllianceTransfers => Set<AllianceTransfer>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<PlayerBlock> PlayerBlocks => Set<PlayerBlock>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -107,6 +110,72 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AlliancePact>(entity =>
+        {
+            entity.HasIndex(x => new { x.RequestingAllianceId, x.TargetAllianceId, x.Status });
+            entity.HasIndex(x => new { x.TargetAllianceId, x.Status });
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.HasOne(x => x.RequestingAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.RequestingAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TargetAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.TargetAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.RequestedBy)
+                .WithMany()
+                .HasForeignKey(x => x.RequestedById)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.AnsweredBy)
+                .WithMany()
+                .HasForeignKey(x => x.AnsweredById)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AllianceAssistCall>(entity =>
+        {
+            entity.HasIndex(x => new { x.AllyAllianceId, x.Status });
+            entity.HasIndex(x => new { x.DefenderAllianceId, x.Status });
+            entity.HasIndex(x => new { x.CombatMissionId, x.AllyAllianceId }).IsUnique();
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.HasOne(x => x.CombatMission)
+                .WithMany()
+                .HasForeignKey(x => x.CombatMissionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.DefenderAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.DefenderAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.AllyAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.AllyAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.RespondedBy)
+                .WithMany()
+                .HasForeignKey(x => x.RespondedById)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AllianceTransfer>(entity =>
+        {
+            entity.HasIndex(x => new { x.AllianceId, x.CreatedAtUtc });
+            entity.HasIndex(x => x.ToPlayerId);
+            entity.Property(x => x.Item).HasMaxLength(16);
+            entity.HasOne(x => x.Alliance)
+                .WithMany()
+                .HasForeignKey(x => x.AllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.FromPlayer)
+                .WithMany()
+                .HasForeignKey(x => x.FromPlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ToPlayer)
+                .WithMany()
+                .HasForeignKey(x => x.ToPlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Hideout>(entity =>

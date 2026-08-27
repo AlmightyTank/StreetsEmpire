@@ -508,7 +508,14 @@ public sealed class BotSimulationService(
         // Never garrison the whole roster. A bot that empties its house to hold a corner is free loot,
         // so it commits the same share it would send on a raid.
         var profile = BotAttackProfile.For(brain.Focus);
-        var commit = Math.Clamp((int)Math.Round(free * profile.ThugCommitShare), config.MinimumGarrison, free);
+        var claimCommit = Math.Clamp(
+            (int)Math.Round(free * profile.ThugCommitShare),
+            config.MinimumGarrison,
+            Math.Min(free, Math.Max(config.MinimumGarrison, config.MaxGarrisonThugs)));
+        var attackCommit = Math.Clamp(
+            (int)Math.Round(free * profile.ThugCommitShare),
+            config.MinimumGarrison,
+            Math.Min(free, Math.Max(config.MinimumGarrison, config.MaxRaidThugs)));
 
         var open = await db.Territories
             .Where(x => x.City == bot.City)
@@ -523,7 +530,7 @@ public sealed class BotSimulationService(
                 // Rivals post an Enforcer too, picking their best free one, or the ground is defended
                 // by thugs alone and every player walks over it.
                 var garrisonPimp = pimps.ChooseCommander(bot, await territories.GarrisonedPimpIdsAsync(bot.Id, ct));
-                var claimed = await territories.ClaimAsync(bot, open.Id, commit, garrisonPimp?.Id, nowUtc, ct);
+                var claimed = await territories.ClaimAsync(bot, open.Id, claimCommit, garrisonPimp?.Id, nowUtc, ct);
                 AddLog(bot, before, "TERRITORY", 0, nowUtc, $"AI: Took over {claimed.Name} with {claimed.GarrisonThugs:N0} thug(s).");
                 return 1;
             }
@@ -537,7 +544,7 @@ public sealed class BotSimulationService(
         // is the same correction the house-raid path needed.
         if (random.NextDouble() >= profile.AttackChance)
             return 0;
-        var attackPower = AttackPower(CombatMissionService.CommandingPimps, commit, bot.Armoury.Best(Math.Min(commit, free)), (bot.HoeHappiness + bot.ThugHappiness) / 2);
+        var attackPower = AttackPower(CombatMissionService.CommandingPimps, attackCommit, bot.Armoury.Best(Math.Min(attackCommit, free)), (bot.HoeHappiness + bot.ThugHappiness) / 2);
         var candidates = await db.Territories
             .Include(x => x.Holder)
             .Where(x => x.City == bot.City)
@@ -568,7 +575,7 @@ public sealed class BotSimulationService(
                 var mission = await missions.LaunchAsync(
                     bot,
                     holder,
-                    new CombatAttackRequest(holder.Id, commit, Math.Min(commit, free)),
+                    new CombatAttackRequest(holder.Id, attackCommit, Math.Min(attackCommit, free)),
                     ground,
                     nowUtc,
                     ct);

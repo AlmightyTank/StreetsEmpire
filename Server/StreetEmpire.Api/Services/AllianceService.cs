@@ -14,7 +14,12 @@ namespace StreetEmpire.Api.Services;
 /// founder is a member like anyone else. Written out per endpoint, founding would forget a check that
 /// joining remembered.
 /// </summary>
-public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptions> options, EconomyService economy)
+public sealed class AllianceService(
+    GameDbContext db,
+    IOptionsSnapshot<GameOptions> options,
+    EconomyService economy,
+    HideoutService? hideouts = null,
+    TerritoryService? territories = null)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -25,6 +30,199 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
     /// </summary>
     public static bool AreAllied(Player one, Player other)
         => one.AllianceId is { } crew && other.AllianceId == crew;
+
+    public async Task<bool> AreAlliedAsync(Player one, Player other, CancellationToken cancellationToken)
+    {
+        if (AreAllied(one, other))
+            return true;
+        if (one.AllianceId is not { } mine || other.AllianceId is not { } theirs)
+            return false;
+
+        return await db.AlliancePacts.AsNoTracking()
+            .AnyAsync(x => x.Status == AlliancePactStatuses.Active
+                           && ((x.RequestingAllianceId == mine && x.TargetAllianceId == theirs)
+                               || (x.RequestingAllianceId == theirs && x.TargetAllianceId == mine)),
+                cancellationToken);
+    }
+
+    public async Task<AllianceTransfer> SendResourceAsync(Player sender, Guid receiverId, string? item, int quantity, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        TravelGate.EnsureLanded(sender);
+        if (sender.AllianceId is not { } allianceId)
+            throw new GameRuleException("You are not running with a crew.");
+        if (receiverId == sender.Id)
+            throw new GameRuleException("You already have that.");
+        if (quantity < 1)
+            throw new GameRuleException("Send at least one.");
+
+        var receiver = await db.Players
+            .Include(x => x.Hideout)
+            .SingleOrDefaultAsync(x => x.Id == receiverId, cancellationToken)
+            ?? throw new GameRuleException("No such player.");
+        if (receiver.AllianceId != allianceId)
+            throw new GameRuleException($"{receiver.Name} is not in your crew.");
+
+        var key = NormaliseResource(item);
+        await MoveResourceAsync(sender, receiver, key, quantity, enforceReceiverRoom: true, cancellationToken);
+
+        var transfer = new AllianceTransfer
+        {
+            AllianceId = allianceId,
+            FromPlayerId = sender.Id,
+            FromPlayer = sender,
+            ToPlayerId = receiver.Id,
+            ToPlayer = receiver,
+            Item = key,
+            Quantity = quantity,
+            CreatedAtUtc = nowUtc
+        };
+        db.AllianceTransfers.Add(transfer);
+        return transfer;
+    }
+
+    public async Task<AlliancePact> RequestPactAsync(Player actor, long targetAllianceId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.Invite);
+        if (targetAllianceId == alliance.Id)
+            throw new GameRuleException("You are already that crew.");
+
+        var target = await db.Alliances.SingleOrDefaultAsync(x => x.Id == targetAllianceId, cancellationToken)
+            ?? throw new GameRuleException("That crew does not exist.");
+
+        if (await AnyLivePactAsync(alliance.Id, target.Id, cancellationToken))
+            throw new GameRuleException($"{target.Name} already has a pact or a pact request with you.");
+
+        var pact = new AlliancePact
+        {
+            RequestingAllianceId = alliance.Id,
+            RequestingAlliance = alliance,
+            TargetAllianceId = target.Id,
+            TargetAlliance = target,
+            RequestedById = actor.Id,
+            RequestedBy = actor,
+            Status = AlliancePactStatuses.Pending,
+            CreatedAtUtc = nowUtc
+        };
+        db.AlliancePacts.Add(pact);
+        return pact;
+    }
+
+    public async Task<AlliancePact> AnswerPactAsync(Player actor, long pactId, bool accept, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.Invite);
+
+        var pact = await db.AlliancePacts
+            .Include(x => x.RequestingAlliance)
+            .Include(x => x.TargetAlliance)
+            .SingleOrDefaultAsync(x => x.Id == pactId, cancellationToken)
+            ?? throw new GameRuleException("That pact request is gone.");
+        if (pact.TargetAllianceId != alliance.Id)
+            throw new GameRuleException("That pact request is not for your crew.");
+        if (pact.Status != AlliancePactStatuses.Pending)
+            throw new GameRuleException("That pact request has already been answered.");
+
+        pact.Status = accept ? AlliancePactStatuses.Active : AlliancePactStatuses.Declined;
+        pact.AnsweredById = actor.Id;
+        pact.AnsweredBy = actor;
+        pact.AnsweredAtUtc = nowUtc;
+        return pact;
+    }
+
+    public async Task<AlliancePact> CancelPactAsync(Player actor, long pactId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.Invite);
+
+        var pact = await db.AlliancePacts
+            .Include(x => x.RequestingAlliance)
+            .Include(x => x.TargetAlliance)
+            .SingleOrDefaultAsync(x => x.Id == pactId, cancellationToken)
+            ?? throw new GameRuleException("That pact is gone.");
+        if (pact.RequestingAllianceId != alliance.Id && pact.TargetAllianceId != alliance.Id)
+            throw new GameRuleException("That pact is not yours.");
+        if (pact.Status != AlliancePactStatuses.Pending && pact.Status != AlliancePactStatuses.Active)
+            throw new GameRuleException("That pact is already closed.");
+
+        pact.Status = AlliancePactStatuses.Canceled;
+        pact.AnsweredById = actor.Id;
+        pact.AnsweredBy = actor;
+        pact.AnsweredAtUtc = nowUtc;
+        return pact;
+    }
+
+    public async Task<IReadOnlyList<AllianceAssistCall>> CreateAssistCallsForAsync(CombatMission mission, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        if (mission.TerritoryId is not null || mission.Defender.AllianceId is not { } defenderAllianceId)
+            return [];
+
+        var allyIds = await db.AlliancePacts.AsNoTracking()
+            .Where(x => x.Status == AlliancePactStatuses.Active
+                        && (x.RequestingAllianceId == defenderAllianceId || x.TargetAllianceId == defenderAllianceId))
+            .Select(x => x.RequestingAllianceId == defenderAllianceId ? x.TargetAllianceId : x.RequestingAllianceId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (allyIds.Count == 0)
+            return [];
+
+        var calls = new List<AllianceAssistCall>();
+        foreach (var allyId in allyIds)
+        {
+            var call = new AllianceAssistCall
+            {
+                CombatMission = mission,
+                DefenderAllianceId = defenderAllianceId,
+                AllyAllianceId = allyId,
+                Status = AllianceAssistStatuses.Open,
+                CreatedAtUtc = nowUtc
+            };
+            db.AllianceAssistCalls.Add(call);
+            calls.Add(call);
+        }
+
+        return calls;
+    }
+
+    public async Task<AllianceAssistCall> AnswerAssistCallAsync(Player actor, long assistCallId, int thugs, Armoury weapons, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        TravelGate.EnsureLanded(actor);
+        if (actor.AllianceId is null)
+            throw new GameRuleException("You are not running with a crew.");
+        if (thugs < 0 || weapons.Pistols < 0 || weapons.Shotguns < 0 || weapons.Smgs < 0 || weapons.Rifles < 0)
+            throw new GameRuleException("Send zero or more of each resource.");
+        if (thugs == 0 && weapons.Total == 0)
+            throw new GameRuleException("Send thugs, guns, or both.");
+
+        var call = await db.AllianceAssistCalls
+            .Include(x => x.AllyAlliance)
+            .Include(x => x.DefenderAlliance)
+            .Include(x => x.CombatMission).ThenInclude(x => x.Attacker)
+            .Include(x => x.CombatMission).ThenInclude(x => x.Defender).ThenInclude(x => x.Hideout)
+            .SingleOrDefaultAsync(x => x.Id == assistCallId, cancellationToken)
+            ?? throw new GameRuleException("That call is gone.");
+
+        if (actor.AllianceId != call.AllyAllianceId)
+            throw new GameRuleException("That call is for another crew.");
+        if (call.Status != AllianceAssistStatuses.Open)
+            throw new GameRuleException("That call has already been answered.");
+        if (call.CombatMission.Status != "Traveling" && call.CombatMission.Status != "Fighting")
+            throw new GameRuleException("That fight is no longer taking help.");
+
+        var defender = call.CombatMission.Defender;
+        await MoveAssistResourcesAsync(actor, defender, thugs, weapons, cancellationToken);
+
+        call.ThugsSent = thugs;
+        call.PistolsSent = weapons.Pistols;
+        call.ShotgunsSent = weapons.Shotguns;
+        call.SmgsSent = weapons.Smgs;
+        call.RiflesSent = weapons.Rifles;
+        call.RespondedById = actor.Id;
+        call.RespondedBy = actor;
+        call.RespondedAtUtc = nowUtc;
+        call.Status = AllianceAssistStatuses.Answered;
+        return call;
+    }
 
     public async Task<Alliance> FoundAsync(Player founder, string? name, string? motto, DateTime nowUtc, CancellationToken cancellationToken)
     {
@@ -260,6 +458,9 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
         var totals = standings
             .GroupBy(x => x.AllianceId!.Value)
             .ToDictionary(g => g.Key, g => new { NetWorth = g.Sum(x => x.NetWorth), Members = g.Count() });
+        var controlled = territories is null
+            ? new Dictionary<long, IReadOnlyList<AllianceCityControl>>()
+            : await territories.ControlledCitiesByAllianceAsync(cancellationToken);
 
         var crews = await db.Alliances.AsNoTracking().ToListAsync(cancellationToken);
 
@@ -267,6 +468,10 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
             .Select(x =>
             {
                 var tally = totals.GetValueOrDefault(x.Id);
+                var cityControl = controlled.GetValueOrDefault(x.Id) ?? [];
+                var cityControlResponses = cityControl
+                    .Select(city => new AllianceCityControlResponse(city.City, city.Territories, city.BonusThugs))
+                    .ToList();
                 return new AllianceSummaryResponse(
                     x.Id,
                     x.Name,
@@ -281,7 +486,9 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
                     AllianceDoors.Label(x.Door),
                     AllianceDoors.Describe(x.Door),
                     x.Id == viewer.AllianceId,
-                    x.FounderId == viewer.Id);
+                    x.FounderId == viewer.Id,
+                    cityControl.Sum(city => city.BonusThugs),
+                    cityControlResponses);
             })
             .OrderByDescending(x => x.NetWorth)
             .ThenBy(x => x.Name, StringComparer.Ordinal)
@@ -439,6 +646,108 @@ public sealed class AllianceService(GameDbContext db, IOptionsSnapshot<GameOptio
     }
 
     public int MaxMembers => Math.Max(2, _options.Alliances.MaxMembers);
+
+    private async Task<bool> AnyLivePactAsync(long one, long two, CancellationToken cancellationToken)
+        => await db.AlliancePacts.AnyAsync(x =>
+            x.Status != AlliancePactStatuses.Canceled
+            && x.Status != AlliancePactStatuses.Declined
+            && ((x.RequestingAllianceId == one && x.TargetAllianceId == two)
+                || (x.RequestingAllianceId == two && x.TargetAllianceId == one)),
+            cancellationToken);
+
+    private static string NormaliseResource(string? item)
+    {
+        var key = TradeGoods.Normalise(item);
+        if (key is "cash" or "thugs")
+            return key;
+        if (TradeGoods.IsTradeable(key))
+            return key;
+        throw new GameRuleException($"You can send cash, thugs, or {string.Join(", ", TradeGoods.Keys)}.");
+    }
+
+    private async Task MoveResourceAsync(Player sender, Player receiver, string key, int quantity, bool enforceReceiverRoom, CancellationToken cancellationToken)
+    {
+        if (key == "cash")
+        {
+            if (sender.Cash < quantity)
+                throw new GameRuleException($"You have {sender.Cash:C0} on hand.");
+            sender.Cash -= quantity;
+            receiver.Cash += quantity;
+            return;
+        }
+
+        if (key == "thugs")
+        {
+            var free = await FreeThugsAsync(sender, cancellationToken);
+            if (free < quantity)
+                throw new GameRuleException($"You have {free:N0} thug(s) standing free.");
+            if (enforceReceiverRoom && hideouts?.CrewRoom(receiver, "thugs") < quantity)
+                throw new GameRuleException($"{receiver.Name} does not have room for that many thugs.");
+            sender.Thugs -= quantity;
+            receiver.Thugs += quantity;
+            return;
+        }
+
+        var held = TradeGoods.Held(sender, key);
+        if (held < quantity)
+            throw new GameRuleException($"You only have {held:N0} {TradeGoods.Label(key).ToLowerInvariant()}.");
+        if (enforceReceiverRoom && hideouts is not null)
+        {
+            var room = TradeGoods.Room(receiver, hideouts.CapacityFor(receiver.Hideout), key);
+            if (room < quantity)
+                throw new GameRuleException($"{receiver.Name} has room for {room:N0} more {TradeGoods.Label(key).ToLowerInvariant()}.");
+        }
+
+        TradeGoods.Add(sender, key, -quantity);
+        TradeGoods.Add(receiver, key, quantity);
+    }
+
+    private async Task MoveAssistResourcesAsync(Player sender, Player receiver, int thugs, Armoury weapons, CancellationToken cancellationToken)
+    {
+        if (thugs > 0)
+        {
+            var freeThugs = await FreeThugsAsync(sender, cancellationToken);
+            if (freeThugs < thugs)
+                throw new GameRuleException($"You have {freeThugs:N0} thug(s) standing free.");
+            sender.Thugs -= thugs;
+            receiver.Thugs += thugs;
+        }
+
+        if (weapons.Total <= 0)
+            return;
+
+        var freeRack = sender.Armoury - await CarriedWeaponsAsync(sender.Id, cancellationToken);
+        foreach (var tier in WeaponTiers.All)
+        {
+            var wanted = weapons.Of(tier);
+            if (wanted <= 0) continue;
+            if (freeRack.Of(tier) < wanted)
+                throw new GameRuleException($"You have {freeRack.Of(tier):N0} {WeaponTiers.Label(tier).ToLowerInvariant()} off the rack.");
+        }
+
+        sender.Armoury -= weapons;
+        receiver.Armoury += weapons;
+    }
+
+    private async Task<int> FreeThugsAsync(Player player, CancellationToken cancellationToken)
+    {
+        var onMissions = await db.CombatMissions.AsNoTracking()
+            .Where(x => x.AttackerId == player.Id && x.Status != "Complete")
+            .SumAsync(x => (int?)x.RemainingAttackers, cancellationToken) ?? 0;
+        var garrisoned = await db.Territories.AsNoTracking()
+            .Where(x => x.HolderId == player.Id)
+            .SumAsync(x => (int?)x.GarrisonThugs, cancellationToken) ?? 0;
+        return Math.Max(0, player.Thugs - onMissions - garrisoned);
+    }
+
+    private async Task<Armoury> CarriedWeaponsAsync(Guid playerId, CancellationToken cancellationToken)
+    {
+        var carried = await db.CombatMissions.AsNoTracking()
+            .Where(x => x.AttackerId == playerId && x.Status != "Complete")
+            .Select(x => new Armoury(x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles))
+            .ToListAsync(cancellationToken);
+        return carried.Aggregate(Armoury.Empty, (total, rack) => total + rack);
+    }
 
     /// <summary>
     /// How many borrowed thugs this member may field alongside a crew of their own this size.

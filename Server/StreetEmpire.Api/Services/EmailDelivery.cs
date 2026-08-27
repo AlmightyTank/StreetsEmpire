@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
@@ -48,6 +49,15 @@ public sealed class EmailOptions
     /// running against a real provider in a load test should not mail a real person a thousand times.
     /// </summary>
     public bool SendSecurityNotices { get; set; } = true;
+
+    /// <summary>
+    /// How long a spent or expired code is kept before it is swept.
+    ///
+    /// They are worth keeping for a few days - "did a code actually go out on Tuesday" is a real
+    /// question - and worth nothing after that. A row that can never be used again is a spent secret
+    /// sitting in a table, and the table only grows.
+    /// </summary>
+    public int CodeRetentionDays { get; set; } = 7;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 }
@@ -134,24 +144,46 @@ public sealed class LoggedEmailSender(ILogger<LoggedEmailSender> logger) : IEmai
 }
 
 /// <summary>
-/// The one message this game sends.
+/// The message that carries a code.
 ///
-/// Kept as a builder rather than inline in the service so that the copy is in one place and reads like
-/// the rest of the game rather than like a receipt.
+/// One builder for both flows rather than two, so the two cannot drift apart in tone or forget the same
+/// line. What changes between them is only what the code is for and what it would mean if the reader
+/// did not ask for it - which for a reset is a good deal more serious than for a confirmation.
 /// </summary>
-public static class VerificationEmail
+public static class CodeEmail
 {
-    public static EmailMessage Build(string to, string playerName, string code, int minutes, string appName)
+    public static EmailMessage Build(
+        string to,
+        string playerName,
+        string code,
+        VerificationPurpose purpose,
+        int minutes,
+        string appName)
     {
-        var subject = $"{code} is your {appName} code";
+        var (what, ifNotYou) = purpose switch
+        {
+            VerificationPurpose.ResetPassword => (
+                $"That is the code to set a new password on your {appName} account, {playerName}.",
+                "If you did not ask to reset it, ignore this and nothing happens - your password has not "
+                + "changed and this code expires on its own. Somebody knows your username or address, "
+                + "though, so it is worth making sure your password is not one you use anywhere else."),
+            _ => (
+                $"That is the code to confirm this address on your {appName} account, {playerName}.",
+                "If you did not ask for it, nothing has happened and you can ignore this."),
+        };
+
+        var subject = purpose == VerificationPurpose.ResetPassword
+            ? $"{code} is your {appName} password reset code"
+            : $"{code} is your {appName} code";
+
         var text =
             $"""
             {code}
 
-            That is the code to confirm this address on your {appName} account, {playerName}.
-            Type it into the Account page. It is good for {minutes} minutes.
+            {what}
+            Type it into the {(purpose == VerificationPurpose.ResetPassword ? "sign-in screen" : "Account page")}. It is good for {minutes} minutes.
 
-            If you did not ask for it, nothing has happened and you can ignore this.
+            {ifNotYou}
             """;
 
         // Inline styles and a table-free layout: mail clients are not browsers, and half of them will
@@ -159,12 +191,10 @@ public static class VerificationEmail
         var html =
             $"""
             <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1a1a1a">
-              <p style="margin:0 0 24px;font-size:15px">
-                That is the code to confirm this address on your {Escape(appName)} account, <strong>{Escape(playerName)}</strong>.
-              </p>
+              <p style="margin:0 0 24px;font-size:15px">{Escape(what)}</p>
               <p style="margin:0 0 24px;font-size:34px;font-weight:700;letter-spacing:.18em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{Escape(code)}</p>
-              <p style="margin:0 0 24px;font-size:15px">Type it into the Account page. It is good for {minutes} minutes.</p>
-              <p style="margin:0;font-size:13px;color:#666">If you did not ask for it, nothing has happened and you can ignore this.</p>
+              <p style="margin:0 0 24px;font-size:15px">It is good for {minutes} minutes.</p>
+              <p style="margin:0;font-size:13px;color:#666">{Escape(ifNotYou)}</p>
             </div>
             """;
 
@@ -177,3 +207,4 @@ public static class VerificationEmail
     private static string Escape(string value)
         => value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
 }
+

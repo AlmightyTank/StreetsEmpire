@@ -93,7 +93,7 @@ internal static class AuthEndpoints
             // an account with an unconfirmed address is a working account that cannot yet be signed
             // into by address, and the account page has the button to finish it.
             if (email is not null && verification.Options.SendOnSignUp)
-                await verification.SendAsync(account, ct);
+                await verification.SendAsync(account, VerificationPurpose.ConfirmAddress, ct);
 
             await SignInAsync(http, account);
             return Results.Ok(new AuthResponse(player.Id, player.Name, account.Username));
@@ -233,6 +233,12 @@ internal static class AuthEndpoints
                 }
 
                 await SignInAsync(http, linked);
+
+                // The only notice that is not about a setting. A connected Discord signs in without a
+                // password, so this is the single event that tells somebody another person is in their
+                // account - and nothing else would ever mention it.
+                await notices.TellAccountAsync(linked, AccountChange.SignedInWithDiscord, profile.DisplayName, ct);
+
                 return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "signed-in"));
             }
 
@@ -346,16 +352,27 @@ internal static class AuthEndpoints
     }
 
     /// <summary>
-    /// A moment fit to be compared against a session cookie, meaning floored to the whole second.
+    /// The moment to stamp both a sessions-valid-after watermark and the cookie that has to survive it:
+    /// the current second, floored, plus one.
     ///
-    /// The cookie ticket writes its issued-at through DateTimeOffset's round-trip string, which keeps
-    /// seconds and throws the fraction away. So a watermark written from an unrounded clock is always a
-    /// few hundred microseconds ahead of the cookie issued in the same breath, and the session that
-    /// just changed its own password is the first one the watermark throws out - which is exactly what
-    /// happened here before this existed.
+    /// Two things are going on here, and both come from the same fact - a cookie ticket writes its
+    /// issued-at through the round-trip string format, which keeps whole seconds and throws the
+    /// fraction away.
+    ///
+    /// The flooring is what stops a watermark written from an unrounded clock sitting a few hundred
+    /// microseconds ahead of the cookie issued in the same breath, which used to sign a player out of
+    /// their own password change.
+    ///
+    /// The extra second is what closes the window that flooring alone left open. Stamped with the same
+    /// floored second, a session that signed in earlier *in that second* compares equal to the
+    /// watermark rather than before it, and survives being revoked - so somebody who got in moments
+    /// before a reset kept their session. Moving both a second forward makes every session issued in
+    /// or before this second strictly earlier than the watermark, while the one re-issued here still
+    /// matches it exactly. The cost is a cookie stamped up to a second in the future, which nothing
+    /// reads except this comparison.
     /// </summary>
     internal static DateTime ToSessionMoment(DateTime utc)
-        => new(utc.Ticks - (utc.Ticks % TimeSpan.TicksPerSecond), DateTimeKind.Utc);
+        => new DateTime(utc.Ticks - (utc.Ticks % TimeSpan.TicksPerSecond), DateTimeKind.Utc).AddSeconds(1);
 
     /// <summary>
     /// Issues the session cookie.

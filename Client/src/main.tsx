@@ -928,6 +928,14 @@ function App() {
   useEffect(() => { void api.providers().then(setProviders).catch(() => setProviders({ discord: false })) }, [])
   // A Discord login that turned out to belong to nobody yet, waiting on a name and a town.
   const [discordTicket, setDiscordTicket] = useState<DiscordSignUpTicket | null>(null)
+  /*
+    Where the sign-in card is in the reset flow, if it is in it at all. Two steps rather than one
+    screen, because the second needs a code that does not exist until the first has run - and the
+    identifier is carried between them rather than re-typed, since it is the thing the server matches
+    the code against.
+  */
+  const [resetStep, setResetStep] = useState<'off' | 'asking' | 'confirming'>('off')
+  const [resetIdentifier, setResetIdentifier] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [lastBreakdown, setLastBreakdown] = useState<Record<string, unknown> | null>(null)
@@ -1118,6 +1126,37 @@ function App() {
     finally { setBusy(false) }
   }
 
+  const startReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const identifier = String(new FormData(event.currentTarget).get('identifier') ?? '').trim()
+    setBusy(true); setError('')
+    try {
+      // The answer is the same sentence whether or not that account exists, so there is nothing here
+      // to branch on - which is the point. The step advances either way.
+      const answer = await api.startPasswordReset(identifier)
+      setResetIdentifier(identifier)
+      setResetStep('confirming')
+      setNotice(answer.message)
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const finishReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const next = String(form.get('newPassword') ?? '')
+    if (next !== String(form.get('confirmPassword') ?? '')) { setError('The two passwords do not match.'); return }
+    setBusy(true); setError('')
+    try {
+      await api.confirmPasswordReset(resetIdentifier, String(form.get('code') ?? ''), next)
+      setResetStep('off'); setResetIdentifier(''); setNotice('')
+      await refresh()
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const leaveReset = () => { setResetStep('off'); setResetIdentifier(''); setError(''); setNotice('') }
+
   const abandonDiscordSignUp = () => {
     sessionStorage.removeItem(discordPendingKey)
     setDiscordTicket(null)
@@ -1181,7 +1220,56 @@ function App() {
         <div className="brand-mark d-grid place-items-center border border-primary text-primary fw-bolder mb-3">SE</div>
         <h1>Street Empire</h1>
 
-        {discordTicket
+        {resetStep !== 'off'
+          ? <>
+            <p className="text-body-secondary">
+              {resetStep === 'asking'
+                ? 'A code goes to the confirmed email address on the account. Without one there is no way back in - which is what confirming an address is for.'
+                : 'Type the code from that email and pick a new password. Every other session on the account will be signed out.'}
+            </p>
+            {resetStep === 'asking'
+              ? <form className="d-grid gap-3 mt-4" onSubmit={startReset}>
+                <label className="field">
+                  Username or Email
+                  <input className="form-control" name="identifier" maxLength={254} required autoFocus />
+                </label>
+                {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Send Me a Code'}</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
+              </form>
+              : <form className="d-grid gap-3 mt-4" onSubmit={finishReset}>
+                <label className="field">
+                  Code
+                  <input
+                    className="form-control tnum fs-4 text-center"
+                    style={{ letterSpacing: '.4em' }}
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    placeholder="000000"
+                    required
+                    autoFocus
+                  />
+                </label>
+                <label className="field">
+                  New password
+                  <input className="form-control" name="newPassword" type="password" autoComplete="new-password" minLength={8} required />
+                  <small className="form-text">Eight characters at the very least.</small>
+                </label>
+                <label className="field">
+                  New password again
+                  <input className="form-control" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required />
+                </label>
+                {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
+                {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Set My Password'}</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={() => setResetStep('asking')}>Send another code</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
+              </form>}
+          </>
+          : discordTicket
           ? <>
             <p className="text-body-secondary">
               Signed in as <strong className="text-primary">{discordTicket.discordUsername}</strong> on Discord.
@@ -1255,6 +1343,13 @@ function App() {
               {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
               {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
               <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
+              {/* Only on the login side. Offering it while somebody is creating an account is offering
+                  to reset a password they have not chosen yet. */}
+              {authMode === 'login' && <button
+                className="btn btn-link text-body-secondary"
+                type="button"
+                onClick={() => { setResetStep('asking'); setError(''); setNotice('') }}
+              >Forgotten your password?</button>}
             </form>
             {/*
               A real link rather than a button, because this is a full-page navigation to somebody
@@ -3411,7 +3506,12 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           onClick={() => void open(player.playerId)}
         >
           <strong>{player.name}</strong>
-          <small>{player.username}{player.isBot ? ' / AI' : ''}{player.isAdmin ? ' / admin' : ''}</small>
+          <small>
+            {player.username}{player.isBot ? ' / AI' : ''}{player.isAdmin ? ' / admin' : ''}
+            {/* Marked in the list, so a search that matched on identity shows why without a click. */}
+            {player.discordUsername && ` / ${player.discordUsername}`}
+            {player.emailVerified && ' / ✉'}
+          </small>
           <em>{enforcementLabel(player)}</em>
           <b>{money.format(player.netWorth)}</b>
         </button>)}
@@ -3434,6 +3534,24 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           <AdminMetric label="Morale" value={`${detail.hoeHappiness.toFixed(0)}% / ${detail.thugHappiness.toFixed(0)}%`} />
           <AdminMetric label="Hideout" value={`${detail.hideout.tierName} S${detail.hideout.storageLevel}/V${detail.hideout.safeLevel}`} />
           <AdminMetric label="Joined" value={new Date(target.createdAtUtc).toLocaleDateString()} />
+        </div>
+
+        {/*
+          Who this account actually is, rather than what it owns.
+
+          A moderator handling a returning ban evader is asking one question - is this the same person -
+          and the panel could not previously answer it at all. A username is the first thing somebody
+          changes on the way to a second account; a Discord snowflake is the last, which is why it is
+          shown as well as the handle and why both are searchable.
+        */}
+        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
+          <AdminMetric
+            label="Email"
+            value={target.email ?? '—'}
+            sub={target.email ? (target.emailVerified ? 'Confirmed' : 'Not confirmed') : 'None set'}
+          />
+          <AdminMetric label="Discord" value={target.discordUsername ?? '—'} sub={target.discordUsername ? 'Connected' : 'Not connected'} />
+          <AdminMetric label="Discord ID" value={target.discordUserId ?? '—'} sub="Survives a rename" />
         </div>
 
         <label className="field">Reason (recorded in the audit trail)
@@ -5176,10 +5294,12 @@ function ActivityList({ entries }: { entries: { id: number, action: string, crea
   </div>
 }
 
-function AdminMetric({ label, value }: { label: string, value: string }) {
+/** `sub` is for a tile whose number needs a word under it - confirmed, connected, none set. */
+function AdminMetric({ label, value, sub }: { label: string, value: string, sub?: string }) {
   return <div className="d-grid gap-1 border rounded bg-body-secondary px-3 py-2">
     <span className="eyebrow">{label}</span>
     <strong className="min-w-0 fs-5 text-break">{value}</strong>
+    {sub && <small className="small text-body-tertiary">{sub}</small>}
   </div>
 }
 

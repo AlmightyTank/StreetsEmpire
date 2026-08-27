@@ -1,6 +1,20 @@
 namespace StreetEmpire.Api.Models;
 
 /// <summary>
+/// What a code is for.
+///
+/// The two flows are the same machinery with opposite preconditions - confirming needs an address
+/// nobody has proved yet, resetting needs one somebody already did - so they share a table and are kept
+/// apart by this. Sharing it without a purpose column would let a code sent to confirm an address be
+/// typed into the reset form, which is a way in issued for one thing being spent on another.
+/// </summary>
+public enum VerificationPurpose
+{
+    ConfirmAddress,
+    ResetPassword,
+}
+
+/// <summary>
 /// One issued verification code.
 ///
 /// A row rather than a column on the account, because a code is an event with a life of its own: it
@@ -22,6 +36,9 @@ public sealed class EmailVerification
     /// must not be allowed to mark the new one verified.
     /// </summary>
     public string Email { get; set; } = string.Empty;
+
+    /// <summary>Which flow issued it. A code is only ever valid for the thing it was sent for.</summary>
+    public VerificationPurpose Purpose { get; set; } = VerificationPurpose.ConfirmAddress;
 
     /// <summary>
     /// The code, sealed by the data protection key ring rather than stored as it was sent.

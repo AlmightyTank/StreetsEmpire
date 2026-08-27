@@ -52,6 +52,15 @@ public sealed record EmailVerificationState(
 
 public sealed record ConfirmEmailRequest(string? Code);
 
+/// <param name="Identifier">A username or a confirmed email address - whichever the player remembers.</param>
+public sealed record StartPasswordResetRequest(string? Identifier);
+
+/// <param name="Identifier">
+/// Sent again rather than remembered server-side. The first leg is deliberately stateless: holding a
+/// "reset in progress" for an unauthenticated caller would be a thing anybody could create for anybody.
+/// </param>
+public sealed record ConfirmPasswordResetRequest(string? Identifier, string? Code, string? NewPassword);
+
 /// <param name="Email">Null or empty removes the address. </param>
 /// <param name="CurrentPassword">Required when the account has a password. Changing where a sign-in
 /// can come from is exactly the kind of change that should cost the current password.</param>

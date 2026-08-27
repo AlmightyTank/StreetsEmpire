@@ -88,7 +88,7 @@ internal static class AccountEndpoints
             // A new address with no code in the post is a dead end: the player would have to go and
             // find the button themselves to finish what they just started.
             if (email is not null && verification.Options.SendOnSignUp)
-                await verification.SendAsync(current, ct);
+                await verification.SendAsync(current, VerificationPurpose.ConfirmAddress, ct);
 
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         }).RequireRateLimiting("sign-in");
@@ -109,7 +109,7 @@ internal static class AccountEndpoints
             var current = await LoadAsync(http, db, ct);
             if (current is null) return Results.Unauthorized();
 
-            var outcome = await verification.SendAsync(current, ct);
+            var outcome = await verification.SendAsync(current, VerificationPurpose.ConfirmAddress, ct);
             var described = await DescribeAsync(current, discord, verification, ct);
             return outcome switch
             {
@@ -137,7 +137,7 @@ internal static class AccountEndpoints
             var current = await LoadAsync(http, db, ct);
             if (current is null) return Results.Unauthorized();
 
-            var outcome = await verification.ConfirmAsync(current, request.Code, ct);
+            var outcome = await verification.ConfirmAsync(current, VerificationPurpose.ConfirmAddress, request.Code, ct);
             var described = await DescribeAsync(current, discord, verification, ct);
             return outcome switch
             {
@@ -258,14 +258,14 @@ internal static class AccountEndpoints
         EmailVerificationService verification,
         CancellationToken ct)
     {
-        var pending = await verification.PendingAsync(account.Id, ct);
+        var pending = await verification.PendingAsync(account.Id, VerificationPurpose.ConfirmAddress, ct);
         var state = pending is null
             ? null
             : new EmailVerificationState(
                 pending.Email,
                 pending.ExpiresAtUtc,
                 Math.Max(0, verification.Options.MaxAttempts - pending.Attempts),
-                await verification.ResendableAtAsync(account.Id, account.Email, ct));
+                await verification.ResendableAtAsync(account.Id, VerificationPurpose.ConfirmAddress, account.Email, ct));
 
         return new AccountResponse(
             account.Username,

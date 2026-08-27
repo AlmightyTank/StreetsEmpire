@@ -1087,10 +1087,23 @@ public sealed record AdminSetAdminRequest(bool IsAdmin, string? Reason);
 public sealed record AdminRenameRequest(string? Name, string? Reason);
 public sealed record AdminReasonRequest(string? Reason);
 
+/// <param name="Email">
+/// The address on the account, and whether anybody proved it. A moderator looking at a returning
+/// player wants to know what identity they came back on, and until this was here the panel could see a
+/// username and nothing else - which is the one field a ban evader changes first.
+/// </param>
+/// <param name="DiscordUserId">
+/// The snowflake rather than the handle. A handle is renamed in a second; the snowflake is the thing
+/// that is actually the same person, and it is what a second account would have to reuse.
+/// </param>
 public sealed record AdminPlayerSummaryResponse(
     Guid PlayerId,
     string Name,
     string Username,
+    string? Email,
+    bool EmailVerified,
+    string? DiscordUsername,
+    string? DiscordUserId,
     string City,
     bool IsBot,
     bool IsAdmin,

@@ -17,6 +17,11 @@ public enum SendCodeResult
     NoAddress,
     /// <summary>Already ticked. Sending another code would only invite somebody to type one.</summary>
     AlreadyVerified,
+    /// <summary>
+    /// A reset was asked for against an address nobody has proved. Refused, because a reset code sent
+    /// to an unproven address is a way into the account handed to whoever typed the address in.
+    /// </summary>
+    AddressNotConfirmed,
     /// <summary>The provider would not take it. The code exists; the message did not go.</summary>
     NotDelivered,
 }
@@ -35,13 +40,17 @@ public enum ConfirmCodeResult
 }
 
 /// <summary>
-/// Issuing and checking the six digits.
+/// Issuing and checking the six digits, for both of the things they are used for.
 ///
 /// The whole design rests on one trade. Six digits is a million possibilities, which is small enough
 /// to guess through if you are given time and tries - so the code is given neither. It lives fifteen
 /// minutes, it takes five wrong guesses before it is burned, and a new one cannot be asked for more
 /// than once a minute. A longer window would need a longer secret, which would need a link rather than
 /// something a person types, which is the flow this deliberately is not.
+///
+/// Confirming an address and resetting a password are the same machinery with opposite preconditions:
+/// one needs an address nobody has proved, the other needs one somebody already did. They are told
+/// apart by the purpose on the row, and a code issued for one is never accepted by the other.
 /// </summary>
 public sealed class EmailVerificationService(
     GameDbContext db,
@@ -58,19 +67,28 @@ public sealed class EmailVerificationService(
     public bool Delivers => sender.Delivers;
 
     /// <summary>
-    /// Issues a code and sends it, retiring whatever was outstanding.
+    /// Issues a code and sends it, retiring whatever was outstanding for the same purpose.
     ///
     /// The previous code is consumed rather than left alongside the new one. Two live codes means two
     /// chances to guess and, worse, a player typing the older of two mails and being told they are
     /// wrong.
     /// </summary>
-    public async Task<SendCodeResult> SendAsync(PlayerAccount account, CancellationToken ct)
+    public async Task<SendCodeResult> SendAsync(PlayerAccount account, VerificationPurpose purpose, CancellationToken ct)
     {
         if (account.Email is null) return SendCodeResult.NoAddress;
-        if (account.EmailVerified) return SendCodeResult.AlreadyVerified;
+
+        // The preconditions are exact opposites, which is the whole reason the two flows are told apart
+        // rather than sharing one entry point that guesses.
+        switch (purpose)
+        {
+            case VerificationPurpose.ConfirmAddress when account.EmailVerified:
+                return SendCodeResult.AlreadyVerified;
+            case VerificationPurpose.ResetPassword when !account.EmailVerified:
+                return SendCodeResult.AddressNotConfirmed;
+        }
 
         var now = DateTime.UtcNow;
-        var outstanding = await LatestAsync(account.Id, ct);
+        var outstanding = await LatestAsync(account.Id, purpose, ct);
 
         if (IsTooSoon(outstanding, account.Email, now, Options.ResendCooldownSeconds))
             return SendCodeResult.TooSoon;
@@ -83,6 +101,7 @@ public sealed class EmailVerificationService(
         {
             AccountId = account.Id,
             Email = account.Email,
+            Purpose = purpose,
             SealedCode = _seal.Protect(code),
             CreatedAtUtc = now,
             ExpiresAtUtc = now.AddMinutes(Options.CodeLifetimeMinutes),
@@ -91,24 +110,36 @@ public sealed class EmailVerificationService(
         await db.SaveChangesAsync(ct);
 
         var playerName = account.Player?.Name ?? account.Username;
-        var message = VerificationEmail.Build(account.Email, playerName, code, Options.CodeLifetimeMinutes, Options.AppName);
+        var message = CodeEmail.Build(account.Email, playerName, code, purpose, Options.CodeLifetimeMinutes, Options.AppName);
         if (await sender.SendAsync(message, ct))
             return SendCodeResult.Sent;
 
         // The record stays. A player who is told the mail failed and then finds it in their inbox a
         // minute later should still be able to use what is in it.
-        logger.LogWarning("A verification code was issued for account {Account} but could not be sent.", account.Id);
+        logger.LogWarning("A {Purpose} code was issued for account {Account} but could not be sent.", purpose, account.Id);
         return SendCodeResult.NotDelivered;
     }
 
-    /// <summary>Checks a typed code, and on a match ticks the account off.</summary>
-    public async Task<ConfirmCodeResult> ConfirmAsync(PlayerAccount account, string? typed, CancellationToken ct)
+    /// <summary>
+    /// Checks a typed code against the outstanding one for that purpose.
+    ///
+    /// Confirming an address ticks the account off here, because that is the whole of what it does. A
+    /// reset does not: it only says the code was right, and setting the password is the caller's to do
+    /// alongside ending the sessions and sending the notice, in one place where those three cannot
+    /// come apart.
+    /// </summary>
+    public async Task<ConfirmCodeResult> ConfirmAsync(
+        PlayerAccount account,
+        VerificationPurpose purpose,
+        string? typed,
+        CancellationToken ct)
     {
-        if (account.EmailVerified) return ConfirmCodeResult.AlreadyVerified;
+        if (purpose == VerificationPurpose.ConfirmAddress && account.EmailVerified)
+            return ConfirmCodeResult.AlreadyVerified;
         if (account.Email is null) return ConfirmCodeResult.NothingToConfirm;
 
         var now = DateTime.UtcNow;
-        var record = await LatestAsync(account.Id, ct);
+        var record = await LatestAsync(account.Id, purpose, ct);
         if (record is null) return ConfirmCodeResult.NothingToConfirm;
         if (!record.IsLive(now, Options.MaxAttempts)) return ConfirmCodeResult.Expired;
 
@@ -134,23 +165,30 @@ public sealed class EmailVerificationService(
         }
 
         record.ConsumedAtUtc = now;
-        account.EmailVerified = true;
-        account.EmailVerifiedAtUtc = now;
+        if (purpose == VerificationPurpose.ConfirmAddress)
+        {
+            account.EmailVerified = true;
+            account.EmailVerifiedAtUtc = now;
+        }
         await db.SaveChangesAsync(ct);
         return ConfirmCodeResult.Verified;
     }
 
-    /// <summary>The outstanding code, if there is one worth typing against.</summary>
-    public async Task<EmailVerification?> PendingAsync(Guid accountId, CancellationToken ct)
+    /// <summary>The outstanding code for a purpose, if there is one worth typing against.</summary>
+    public async Task<EmailVerification?> PendingAsync(Guid accountId, VerificationPurpose purpose, CancellationToken ct)
     {
-        var record = await LatestAsync(accountId, ct);
+        var record = await LatestAsync(accountId, purpose, ct);
         return record is not null && record.IsLive(DateTime.UtcNow, Options.MaxAttempts) ? record : null;
     }
 
     /// <summary>When the button becomes pressable again, or null if it already is.</summary>
-    public async Task<DateTime?> ResendableAtAsync(Guid accountId, string? sendingTo, CancellationToken ct)
+    public async Task<DateTime?> ResendableAtAsync(
+        Guid accountId,
+        VerificationPurpose purpose,
+        string? sendingTo,
+        CancellationToken ct)
     {
-        var record = await LatestAsync(accountId, ct);
+        var record = await LatestAsync(accountId, purpose, ct);
         // Asks the same question the send does, so the clock on the button can never disagree with
         // what pressing it would actually do.
         return IsTooSoon(record, sendingTo, DateTime.UtcNow, Options.ResendCooldownSeconds)
@@ -175,9 +213,9 @@ public sealed class EmailVerificationService(
             && string.Equals(latest.Email, sendingTo, StringComparison.Ordinal)
             && latest.CreatedAtUtc.AddSeconds(cooldownSeconds) > nowUtc;
 
-    private Task<EmailVerification?> LatestAsync(Guid accountId, CancellationToken ct)
+    private Task<EmailVerification?> LatestAsync(Guid accountId, VerificationPurpose purpose, CancellationToken ct)
         => db.EmailVerifications
-            .Where(x => x.AccountId == accountId)
+            .Where(x => x.AccountId == accountId && x.Purpose == purpose)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(ct);

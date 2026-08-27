@@ -52,9 +52,14 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
 
         modelBuilder.Entity<EmailVerification>(entity =>
         {
-            // Every read is "the newest code for this account", so that is the index.
-            entity.HasIndex(x => new { x.AccountId, x.CreatedAtUtc });
+            // Every read is "the newest code of this kind for this account", so that is the index.
+            entity.HasIndex(x => new { x.AccountId, x.Purpose, x.CreatedAtUtc });
+            // Swept by age, so the sweep gets an index of its own rather than a table scan a day.
+            entity.HasIndex(x => x.CreatedAtUtc);
             entity.Property(x => x.Email).HasMaxLength(254);
+            // Stored as its name. An integer here would mean reading the source to find out what a row
+            // in the table is for, and this is a table somebody reads while something is going wrong.
+            entity.Property(x => x.Purpose).HasConversion<string>().HasMaxLength(24);
             entity.Property(x => x.SealedCode).HasMaxLength(512);
             entity.HasOne(x => x.Account)
                 .WithMany(x => x.EmailVerifications)

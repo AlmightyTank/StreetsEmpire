@@ -100,6 +100,7 @@ builder.Services.AddScoped<IEmailSender>(services =>
         : ActivatorUtilities.CreateInstance<LoggedEmailSender>(services));
 builder.Services.AddScoped<EmailVerificationService>();
 builder.Services.AddScoped<AccountNotices>();
+builder.Services.AddHostedService<EmailVerificationSweep>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -247,6 +248,25 @@ if (discordAtStartup.IsConfigured)
         "Discord sign-in is on. This exact string must be registered and saved under OAuth2 > Redirects: {RedirectUri}",
         discordAtStartup.RedirectUri);
 
+// Mail that goes nowhere, said loudly, and only where it would be a surprise.
+//
+// With no provider key the verification code is written to this log instead of sent. On a laptop that
+// is the point - the whole flow is clickable without an account anywhere. Anywhere else it is a quiet
+// disaster: every player is stuck at an unconfirmed address, nobody can reset a password, and the only
+// hint is one line on a settings page. A warning here is the difference between finding that out at
+// startup and finding it out from a player.
+var emailAtStartup = app.Services.GetRequiredService<IOptions<EmailOptions>>().Value;
+if (emailAtStartup.IsConfigured)
+    app.Logger.LogInformation("Email is on, sending as {From}.", emailAtStartup.FromAddress);
+else if (app.Environment.IsDevelopment())
+    app.Logger.LogInformation(
+        "No email provider is configured. Verification codes and account notices will be written to this log instead of sent.");
+else
+    app.Logger.LogWarning(
+        "NO EMAIL PROVIDER IS CONFIGURED and this is not a development environment. Verification codes "
+        + "and account notices are being written to this log instead of sent, which means no player can "
+        + "confirm an address or reset a password. Set Auth__Email__ApiKey.");
+
 // Overrides live in the database, so they have to be in memory before the first request binds options.
 using (var startupScope = app.Services.CreateScope())
 {
@@ -365,6 +385,7 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "0.2.6
 
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();
+app.MapPasswordResetEndpoints();
 app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();

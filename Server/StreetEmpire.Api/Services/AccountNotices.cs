@@ -15,6 +15,14 @@ public enum AccountChange
 {
     PasswordSet,
     PasswordChanged,
+    /// <summary>Changed by somebody who proved they can read the account's mail, without the old one.</summary>
+    PasswordReset,
+    /// <summary>
+    /// Not a settings change, and on the list anyway. A connected Discord signs in without a password,
+    /// so this is the one event that reports somebody simply being in the account - which is the thing
+    /// a person most wants to hear about and the last thing anything else would tell them.
+    /// </summary>
+    SignedInWithDiscord,
     EmailChanged,
     EmailRemoved,
     DiscordConnected,
@@ -104,12 +112,14 @@ public static class AccountNoticeEmail
         var (subject, happened) = Describe(change, detail);
         var when = whenUtc.ToString("HH:mm 'UTC' on d MMMM yyyy");
 
-        // There is no password reset in this game, so the advice cannot be "reset your password". What
-        // it can honestly say is: get in while you still can, and shut the other doors.
+        // Written for the reader who has already lost the account, because that is who most needs it.
+        // "Sign in and change your password" is useless advice to somebody whose password was just
+        // changed out from under them - so the route named is the one that works without it, which is
+        // the reset, and the reset needs only this mailbox.
         const string ifNotYou =
-            "If that was not you, sign in and change your password on the Account page straight away - "
-            + "changing it signs out every other session. Check the Sign-in tab for a Discord connection "
-            + "you do not recognise while you are there.";
+            "If that was not you, take the account back now: reset your password from the sign-in screen "
+            + "using this address, which signs out every other session. Then check the Sign-in tab for a "
+            + "Discord connection you do not recognise.";
 
         var text =
             $"""
@@ -145,6 +155,17 @@ public static class AccountNoticeEmail
         AccountChange.PasswordChanged => (
             "your password was changed",
             "The password on your account was changed. Every other session was signed out."),
+
+        AccountChange.PasswordReset => (
+            "your password was reset",
+            "Your password was reset using a code sent to this address, and every other session was signed out. "
+            + "Whoever did it did not need the old password - only this mailbox."),
+
+        AccountChange.SignedInWithDiscord => (
+            "a Discord account signed in",
+            detail is null
+                ? "A connected Discord account signed into your empire."
+                : $"The Discord account {detail} signed into your empire."),
 
         // Named rather than hinted at. This notice goes to the address being left behind, and its whole
         // job is to let somebody see where their account went.

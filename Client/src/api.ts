@@ -1053,6 +1053,24 @@ export const api = {
     }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
 
+  /*
+    Getting back in without the password.
+
+    Both legs answer the same way whether or not the account exists, so nothing the client does with
+    the result can be used to find out - which is the point, and why there is no "we could not find
+    that account" to render.
+  */
+  startPasswordReset: (identifier: string) =>
+    request<{ message: string }>('/api/auth/reset/start', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    }),
+  confirmPasswordReset: (identifier: string, code: string, newPassword: string) =>
+    request('/api/auth/reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, code, newPassword }),
+    }),
+
   account: () => request<Account>('/api/account'),
   /** An empty address removes it. The current password is required unless there is not one yet. */
   setEmail: (email: string, currentPassword: string) =>
@@ -1259,6 +1277,12 @@ export type AdminPlayerSummary = {
   playerId: string
   name: string
   username: string
+  /** What a moderator needs to connect a returning account to the one they banned. */
+  email: string | null
+  emailVerified: boolean
+  discordUsername: string | null
+  /** The snowflake, not the handle: a handle is renamed in a second, this is not. */
+  discordUserId: string | null
   city: string
   isBot: boolean
   isAdmin: boolean

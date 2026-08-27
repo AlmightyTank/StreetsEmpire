@@ -177,12 +177,75 @@ next event added cannot quietly ship as "Something on your account changed".
 Turn them off with `Auth__Email__SendSecurityNotices=false`, which exists for load testing against a
 real provider and for nothing else.
 
-### What verification does not do
+One notice is not about a setting at all: **a Discord account signing in**. A connected Discord signs
+in without a password, so nothing else would ever tell somebody that another person is in their
+account. It is noisier than the rest by design.
 
-There is no password reset in this game, so a confirmed address is a way to **sign in** and never a way
-to **get back in**. The account page says so where somebody deciding how much to lean on their email
-will read it, and the security tab counts ways in as two - password and Discord - because an address is
-a second name for the password door and opens nothing once the password is gone.
+### When mail goes nowhere
+
+With no provider key the message is written to the server log instead of sent. On a laptop that is the
+point. Anywhere else it is a quiet disaster - nobody can confirm an address, nobody can reset a
+password, and the only hint is one line on a settings page - so the server now says which of the three
+situations it is in, at startup:
+
+```
+Email is on, sending as Street Empire <no-reply@yourdomain.example>.
+No email provider is configured. Verification codes and account notices will be written to this log instead of sent.
+NO EMAIL PROVIDER IS CONFIGURED and this is not a development environment. ...
+```
+
+The third is a warning rather than a refusal to start. A server with no mail is degraded, not broken:
+existing players keep playing.
+
+### Getting back in without the password
+
+This is what confirming an address was always for. A confirmed address can be handed a reset code, and
+that code sets a new password - so the address is now both a way to sign in and a way back in.
+
+The flow is two legs, and the shape of both is decided by one fact: it is the only unauthenticated
+flow in the game, so **every answer it gives is an answer to a stranger.**
+
+- **It never says whether an account exists.** Starting a reset returns the same sentence, byte for
+  byte, for a real username, a real address, a typo and a fishing expedition. Otherwise the form is a
+  way to test whether somebody plays this game, and then a way to test which of a leaked address list
+  does.
+- **A missing account and a wrong code are the same refusal.** Both cost an attempt against the sign-in
+  limiter, so the confirm leg cannot become the enumeration oracle the start leg refuses to be.
+- **An unconfirmed address is not found at all.** Mailing a reset code to an address nobody proved would
+  hand the account to whoever typed the address in.
+- **Success ends every other session.** Whoever took the account is signed in right now; a new password
+  that left them there would have changed nothing. The same watermark machinery a password change uses.
+
+Codes for the two flows share a table and are told apart by a `Purpose` column. Without it, a code
+mailed to confirm an address - which the mail correctly describes as harmless - could be typed into the
+reset form and become a new password. The two mails say plainly which they are, and the reset one tells
+a reader who did not ask for it that nothing has happened yet.
+
+### What a reset still cannot do
+
+An account with no confirmed address has no way back in, and that is not an oversight - there is
+nothing to prove ownership *with*. The account page says so, and the security tab counts ways in as two
+(password and Discord) rather than three, because an address is a second name for the password door
+rather than a door of its own.
+
+### Keeping the table honest
+
+Spent and expired codes are swept daily, five minutes after startup, once they are older than
+`Auth__Email__CodeRetentionDays` (7 by default). They are worth a few days - "did a code actually go out
+on Tuesday" is a real question when a player says they never got one - and worth nothing after that.
+
+Age is the only test, deliberately, rather than "spent or expired": a row younger than the window is
+left alone whatever state it is in, so the sweep can never race a flow that is using one.
+
+### What a moderator can see
+
+The admin panel could see a username and nothing else about who an account belongs to, which is the
+one field somebody changes first on the way to a second account. It now shows the email address and
+whether anybody proved it, the Discord handle, and the Discord snowflake - and searches all three.
+
+The snowflake is shown next to the handle rather than instead of it because a handle is renamed in a
+second and the snowflake is not. For the question a moderator is actually asking - is this the same
+person who was banned last week - it is the only one of the two worth anything.
 
 ### Where the credentials live
 

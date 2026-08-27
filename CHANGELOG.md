@@ -64,6 +64,32 @@
   cannot answer an error for a password that really did change.
 - A test walks every value of the change enum and fails if one has no copy of its own, so the next
   event added cannot quietly ship as "Something on your account changed".
+- **A forgotten password can be reset**, which is what confirming an address was always for. A code
+  goes to the confirmed address, and typing it sets a new password and ends every other session on the
+  account - whoever took it is signed in right now, and a new password that left them there would have
+  changed nothing.
+- The reset is the only unauthenticated flow in the game, so it never says whether an account exists:
+  starting one returns the same sentence byte for byte for a real username, a real address, a typo and
+  a fishing expedition, and on the second leg a missing account and a wrong code are the same refusal.
+  An unconfirmed address is not found at all, since mailing a reset code to an address nobody proved
+  would hand the account to whoever typed it in.
+- Codes for the two flows share a table and are told apart by a purpose column. Without it, a code
+  mailed to confirm an address - which that mail correctly calls harmless - could be typed into the
+  reset form and become a new password.
+- **The admin panel can see who an account belongs to.** It showed a username and nothing else, which
+  is the first field somebody changes on the way to a second account. It now shows and searches the
+  email address, whether it was confirmed, the Discord handle, and the Discord snowflake - the last
+  because a handle is renamed in a second and a snowflake is not.
+- **A Discord account signing in now sends a notice.** It is not a settings change, and it is on the
+  list anyway: a connected Discord signs in without a password, so nothing else would ever tell
+  somebody that another person is in their account.
+- **The server says at startup when mail is going nowhere.** Without a provider key, codes are written
+  to the log instead of sent - right on a laptop, a quiet disaster anywhere else, where it means nobody
+  can confirm an address or reset a password and the only hint is a line on a settings page. Outside
+  development that is now a warning you cannot miss.
+- **Spent codes are swept.** Nothing ever deleted from that table, so every code ever issued stayed in
+  it. They go daily once they are a week old. Age is the only test, so the sweep can never race a flow
+  that is using one.
 - **Credentials come from a `.env` file at the repository root.** `.env.example` is the committed
   template, `.env` is gitignored, and a test fails the build if any key in the example ever carries a
   value. Names are the appsettings paths with `__` where the JSON nests, which is .NET's own convention
@@ -82,6 +108,12 @@
   should not have to change their password to do.
 
 ### Fixed
+- **A session opened in the same second as a password change or reset survived it.** The watermark and
+  the cookie are compared through a format that keeps whole seconds, so flooring both - the fix for the
+  bug below - left them comparing equal rather than ordered, and equal is not before. Somebody who got
+  in moments before a reset kept their session, which is precisely who a reset is aimed at. Both are
+  stamped a second forward now, which orders them again without breaking the session doing the change.
+  Found by clicking: the unit test for the original bug passed throughout.
 - **Changing your password signed you out of your own password change.** Ending the other sessions is
   done by writing a watermark and re-issuing this session against it, and the two are compared through
   the session cookie - which stores the moment it was issued as an RFC1123 string, keeping whole
@@ -90,7 +122,6 @@
   had just changed the password. Found by clicking, not by reading: everything returned 200 and the
   next request was a 401. Both are floored to the second now.
 
-### Fixed
 - **Changing your email address sent no code at all, if you did it in your first minute.** The resend
   cooldown was measured per account rather than per address, so an address change inside sixty seconds
   of the last code was refused by the same rule that exists to stop the resend button being a mail

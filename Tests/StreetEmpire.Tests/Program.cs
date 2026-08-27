@@ -160,6 +160,8 @@ var tests = new (string Name, Action Test)[]
     ("a .env file reads the way every other one does", ADotEnvFileReadsTheWayEveryOtherOneDoes),
     ("the real environment always beats the file", TheRealEnvironmentAlwaysBeatsTheFile),
     ("the committed example holds no secrets and no surprises", TheCommittedExampleHoldsNoSecrets),
+    ("a code is only ever good for the thing it was sent for", ACodeIsOnlyGoodForWhatItWasSentFor),
+    ("a reset needs an address somebody actually proved", AResetNeedsAProvenAddress),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -1678,11 +1680,10 @@ static void SessionWatermarksAreMeasuredInWholeSeconds()
     var fractional = new DateTime(2026, 8, 26, 13, 24, 18, 390, DateTimeKind.Utc).AddTicks(5_490);
     var floored = AuthEndpoints.ToSessionMoment(fractional);
 
-    AssertEqual(new DateTime(2026, 8, 26, 13, 24, 18, DateTimeKind.Utc), floored);
+    // The current second, floored, plus one.
+    AssertEqual(new DateTime(2026, 8, 26, 13, 24, 19, DateTimeKind.Utc), floored);
     AssertEqual(DateTimeKind.Utc, floored.Kind);
-    AssertTrue(floored <= fractional, "flooring should never move a moment forwards");
-    // Running it twice changes nothing, so a watermark read back and rewritten stays put.
-    AssertEqual(floored, AuthEndpoints.ToSessionMoment(floored));
+    AssertEqual(0, floored.Ticks % TimeSpan.TicksPerSecond);
 
     // The mechanism itself, rather than a restatement of the flooring. A cookie ticket writes its
     // issued-at through the RFC1123 round-trip format, and whatever survives that trip is what the
@@ -1698,9 +1699,18 @@ static void SessionWatermarksAreMeasuredInWholeSeconds()
     // the session that just changed its own password is the first one the watermark throws out.
     AssertTrue(ThroughACookieTicket(fractional) < fractional,
         "a cookie ticket should lose the fraction, which is what made an unrounded watermark a trap");
-    // Floor both and the same trip is survivable, which is the fix.
+
+    // The session re-issued alongside the watermark survives it. This is the one that must not break.
     AssertTrue(!(ThroughACookieTicket(floored) < floored),
-        "a session issued at the floored moment must survive the watermark written at it");
+        "the session issued at the watermark must survive it");
+
+    // And every session that already existed does not - including one signed in earlier in the very
+    // same second, which flooring alone let through. Somebody who got in moments before a reset kept
+    // their session, which is precisely who a reset is aimed at.
+    var sameSecond = ThroughACookieTicket(new DateTime(2026, 8, 26, 13, 24, 18, 100, DateTimeKind.Utc));
+    var secondsBefore = ThroughACookieTicket(new DateTime(2026, 8, 26, 13, 24, 11, DateTimeKind.Utc));
+    AssertTrue(sameSecond < floored, "a session from the same second must still be revoked");
+    AssertTrue(secondsBefore < floored, "an older session must be revoked");
 }
 
 static void AnAddressAndItsTickMoveTogether()
@@ -1783,7 +1793,9 @@ static void TheCodeEmailCarriesTheCodeAndEscapesTheName()
     // A player name is chosen by the player, so it reaches the HTML body as markup unless something
     // stops it. Nobody reading their own mail is the victim here - but the same copy is one refactor
     // away from being shown somewhere else, and escaping it costs nothing.
-    var message = VerificationEmail.Build("sam@example.com", "<script>alert(1)</script>", "042137", 15, "Street Empire");
+    var message = CodeEmail.Build(
+        "sam@example.com", "<script>alert(1)</script>", "042137",
+        VerificationPurpose.ConfirmAddress, 15, "Street Empire");
 
     AssertEqual("sam@example.com", message.To);
     AssertTrue(message.Subject.Contains("042137"), "the subject should carry the code, so it reads from a notification");
@@ -1792,6 +1804,17 @@ static void TheCodeEmailCarriesTheCodeAndEscapesTheName()
     AssertTrue(message.Text.Contains("15 minutes"), "the mail should say how long the code is good for");
     AssertTrue(!message.Html.Contains("<script>"), "a player name must never reach the body as markup");
     AssertTrue(message.Html.Contains("&lt;script&gt;"), "the name should still be shown, escaped");
+
+    // Both flows use one builder, so both have to end up saying which of the two they are - a reset
+    // mail that reads like a confirmation is a reset nobody realises they did not ask for.
+    var reset = CodeEmail.Build(
+        "sam@example.com", "Sam", "042137", VerificationPurpose.ResetPassword, 15, "Street Empire");
+
+    AssertTrue(reset.Subject != message.Subject, "a reset should not look like a confirmation in an inbox");
+    AssertTrue(reset.Subject.Contains("reset"), "the subject should say what the code is for");
+    AssertTrue(reset.Text.Contains("new password"), "the body should say what the code is for");
+    // The one line that matters to somebody who did not ask: a code alone changes nothing.
+    AssertTrue(reset.Text.Contains("your password has not"), "an unasked-for reset mail should say nothing has happened yet");
 }
 
 static void AnEmailIsOnlyASecondNameForThePasswordDoor()
@@ -1981,7 +2004,7 @@ static void EveryAccountChangeHasCopyOfItsOwn()
     // Distinct, because two changes sharing a subject line is two changes one of them cannot be told
     // apart from in an inbox.
     AssertEqual(subjects.Count, subjects.Distinct().Count());
-    AssertTrue(subjects.Count >= 7, "every way in should have a notice behind it");
+    AssertTrue(subjects.Count >= 9, "every way in should have a notice behind it");
 }
 
 static void ANoticeSaysWhatHappenedAndNeverWhatItWas()
@@ -1995,7 +2018,13 @@ static void ANoticeSaysWhatHappenedAndNeverWhatItWas()
 
     AssertTrue(message.Text.Contains("14:05 UTC"), "a notice should say when, or it cannot be checked against memory");
     AssertTrue(message.Text.Contains("Every other session was signed out."), "it should say what else the change did");
-    AssertTrue(message.Text.Contains("Account page"), "it should say what to do if it was not them");
+    // The advice has to work for the reader who has already lost the account, which is who most needs
+    // it. "Sign in and change your password" is useless to somebody whose password was just changed
+    // out from under them, so the route named has to be the one that works without it.
+    AssertTrue(message.Text.Contains("reset your password from the sign-in screen"),
+        "the advice should name the route that works when you are already locked out");
+    AssertTrue(message.Text.Contains("Discord connection you do not recognise"),
+        "it should also point at the other way in somebody could have left behind");
 
     // The detail is somebody else's text - a Discord handle is chosen by its owner - so it never
     // reaches the body as markup.
@@ -2064,6 +2093,66 @@ static void TheAddressBeingLeftBehindGetsTold()
     var broken = new AccountNotices(new ThrowingEmailSender(), Options(new EmailOptions()), NullLogger<AccountNotices>.Instance);
     broken.TellFormerAddressAsync("old@example.com", "Sam", AccountChange.EmailRemoved, null, default)
         .GetAwaiter().GetResult();
+}
+
+static void ACodeIsOnlyGoodForWhatItWasSentFor()
+{
+    // Confirming an address and resetting a password share a table, and the purpose column is the only
+    // thing keeping them apart. Without it a code mailed to confirm an address - which the mail calls
+    // harmless - could be typed into the reset form and become a new password.
+    AssertEqual(2, Enum.GetValues<VerificationPurpose>().Length);
+
+    var confirm = new EmailVerification { Purpose = VerificationPurpose.ConfirmAddress };
+    var reset = new EmailVerification { Purpose = VerificationPurpose.ResetPassword };
+    AssertTrue(confirm.Purpose != reset.Purpose, "the two purposes must be distinguishable on the row");
+
+    // Existing rows predate the column, and every one of them was a confirmation. The migration has to
+    // say so, because the empty string EF would otherwise write is not a name the enum reads back from.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var migration = Directory
+        .GetFiles(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Migrations"), "*_PasswordResetCodes.cs")
+        .Single(x => !x.EndsWith(".Designer.cs", StringComparison.Ordinal));
+    var text = File.ReadAllText(migration);
+    AssertTrue(text.Contains($"defaultValue: \"{nameof(VerificationPurpose.ConfirmAddress)}\""),
+        "the purpose column must backfill existing rows with a name the enum can be read back from");
+}
+
+static void AResetNeedsAProvenAddress()
+{
+    // The two flows have exactly opposite preconditions, and getting either backwards is a hole:
+    // confirming an address that is already confirmed is pointless, and resetting against an address
+    // nobody proved would mail a way into the account to whoever typed the address in.
+    var unproven = new PlayerAccount { Username = "sam" };
+    unproven.SetEmail("sam@example.com");
+
+    var proven = new PlayerAccount { Username = "sam", EmailVerified = true };
+    proven.Email = "sam@example.com";
+
+    var noAddress = new PlayerAccount { Username = "sam" };
+
+    AssertEqual(SendCodeResult.AddressNotConfirmed, Precondition(unproven, VerificationPurpose.ResetPassword));
+    AssertEqual(SendCodeResult.Sent, Precondition(proven, VerificationPurpose.ResetPassword));
+    AssertEqual(SendCodeResult.Sent, Precondition(unproven, VerificationPurpose.ConfirmAddress));
+    AssertEqual(SendCodeResult.AlreadyVerified, Precondition(proven, VerificationPurpose.ConfirmAddress));
+    AssertEqual(SendCodeResult.NoAddress, Precondition(noAddress, VerificationPurpose.ResetPassword));
+    AssertEqual(SendCodeResult.NoAddress, Precondition(noAddress, VerificationPurpose.ConfirmAddress));
+
+    // Mirrors the gate at the top of SendAsync. Kept here rather than reaching for a database, because
+    // the decision is about the account alone and this suite runs without one.
+    static SendCodeResult Precondition(PlayerAccount account, VerificationPurpose purpose)
+    {
+        if (account.Email is null) return SendCodeResult.NoAddress;
+        return purpose switch
+        {
+            VerificationPurpose.ConfirmAddress when account.EmailVerified => SendCodeResult.AlreadyVerified,
+            VerificationPurpose.ResetPassword when !account.EmailVerified => SendCodeResult.AddressNotConfirmed,
+            _ => SendCodeResult.Sent,
+        };
+    }
 }
 
 static void EveryTestWrittenIsATestThatRuns()

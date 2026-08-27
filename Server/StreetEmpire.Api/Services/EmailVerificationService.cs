@@ -22,6 +22,11 @@ public enum SendCodeResult
     /// to an unproven address is a way into the account handed to whoever typed the address in.
     /// </summary>
     AddressNotConfirmed,
+    /// <summary>
+    /// This address has had its day's worth. Distinct from TooSoon because the answer is different:
+    /// waiting a minute will not help.
+    /// </summary>
+    TooMany,
     /// <summary>The provider would not take it. The code exists; the message did not go.</summary>
     NotDelivered,
 }
@@ -92,6 +97,19 @@ public sealed class EmailVerificationService(
 
         if (IsTooSoon(outstanding, account.Email, now, Options.ResendCooldownSeconds))
             return SendCodeResult.TooSoon;
+
+        // The ceiling under the rate. Counted per address rather than per account, for the same reason
+        // the cooldown is: the inbox is the thing being protected, and both purposes land in it.
+        var since = now.AddDays(-1);
+        var today = await db.EmailVerifications
+            .CountAsync(x => x.AccountId == account.Id && x.Email == account.Email && x.CreatedAtUtc > since, ct);
+        if (today >= Math.Max(1, Options.MaxCodesPerDay))
+        {
+            logger.LogWarning(
+                "Account {Account} has had {Count} code(s) in a day; refusing more until the window moves.",
+                account.Id, today);
+            return SendCodeResult.TooMany;
+        }
 
         if (outstanding is not null && outstanding.ConsumedAtUtc is null)
             outstanding.ConsumedAtUtc = now;

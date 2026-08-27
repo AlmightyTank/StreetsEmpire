@@ -261,6 +261,31 @@ nothing to prove ownership *with*. The account page says so, and the security ta
 (password and Discord) rather than three, because an address is a second name for the password door
 rather than a door of its own.
 
+### The ceiling under the rate
+
+Starting a password reset needs no account and no password, so the sixty-second cooldown only sets a
+*rate* - and a rate with no ceiling is unbounded. Anybody who knew an address could aim a message a
+minute at it for as long as they liked: sixty an hour, somebody else's inbox ruined, and a pile of spam
+complaints against the one domain every code goes out from.
+
+`Auth__Email__MaxCodesPerDay` (10) is the ceiling, counted per address across both flows. Far above what
+a real person needs - a confirmation, a couple of resends, a forgotten password or two - and far below a
+nuisance. It answers differently from the cooldown on purpose, because "wait a minute" is useless advice
+to somebody who has used the day up.
+
+### When two people want the same name
+
+Every place that takes a name checks whether it is free and then saves, and those are two moments with a
+gap between them. Two registrations in that gap both pass the check, and the second hits the unique
+index - which is the thing that actually decides, and which used to arrive as an uncaught
+`DbUpdateException`: a 500, with a stack trace in the body in development. Four simultaneous identical
+registrations reproduced it every time.
+
+The check stays, because it produces a decent message almost always. The index is now caught too, and
+says which of the names was taken. Outside development anything still uncaught gets one sentence in the
+same shape as every other error here, with the detail in the log where it belongs, rather than whatever
+the framework felt like putting in the body.
+
 ### Keeping the table honest
 
 Spent and expired codes are swept daily, five minutes after startup, once they are older than

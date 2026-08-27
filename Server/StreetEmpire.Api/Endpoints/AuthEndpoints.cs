@@ -95,7 +95,16 @@ internal static class AuthEndpoints
             db.Accounts.Add(account);
             db.Players.Add(player);
             db.ActionLogs.Add(log);
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex) is { } taken)
+            {
+                // Somebody took one of these names between the checks above and this line. Rare enough
+                // to be worth no more than an honest 409, and common enough that it must not be a 500.
+                return Results.Conflict(new { error = taken });
+            }
 
             // Verification starts at sign-up rather than waiting to be asked for, which is the only
             // moment a player is already thinking about the address they just typed. It is never fatal:
@@ -361,7 +370,14 @@ internal static class AuthEndpoints
             db.Accounts.Add(account);
             db.Players.Add(player);
             db.ActionLogs.Add(log);
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex) is { } taken)
+            {
+                return Results.Conflict(new { error = taken });
+            }
 
             // Same as the register form: the code goes out at the one moment the player is thinking
             // about the address they just typed.

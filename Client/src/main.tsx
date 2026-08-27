@@ -5571,6 +5571,14 @@ function AccountPage(ctx: PageContext) {
   // depending on something it has no business touching.
   const panel: AccountPanel = { account, busy, run, fail: setError }
 
+  /*
+    Accounts made before signing up required one of the two exist, and nothing was ever going to tell
+    them. They keep working - it is a rule about signing up, not about carrying on playing - but an
+    account with no way back is one forgotten password from being gone, and the owner should hear that
+    from the page rather than from the day it happens.
+  */
+  const strandable = waysBackIn(account).length === 0
+
   return <div className="d-grid gtc-1 gap-3 align-items-start">
     <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
       {ACCOUNT_TABS.map(name => <button
@@ -5588,6 +5596,18 @@ function AccountPage(ctx: PageContext) {
     {(error || notice) && <div className="d-grid gap-2">
       {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
       {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
+    </div>}
+
+    {/* Not dismissible, and on every tab. It is true until it is fixed, and hiding it would be doing
+        the player a favour they did not ask for. */}
+    {strandable && <div className="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-3 mb-0">
+      <span>
+        <strong>There is no way back into this account.</strong> Forget your password and it is gone -
+        confirm an email address or connect Discord, and there is a way back.
+      </span>
+      {tab !== 'signin' && <button className="btn btn-warning flex-shrink-0" type="button" onClick={() => setTab('signin')}>
+        Fix this
+      </button>}
     </div>}
 
     <div className="d-grid gtc-1 gtc-xl-2 gap-3 align-items-start">

@@ -83,7 +83,16 @@ internal static class AccountEndpoints
 
             // Address and tick move together, always. See PlayerAccount.SetEmail.
             current.SetEmail(email);
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex) is { } taken)
+            {
+                // The check above and this line are two moments, and an address can be claimed between
+                // them. The unique index is the thing that actually decides; this is how it says so.
+                return Results.Conflict(new { error = taken });
+            }
 
             // The most important notice in the whole set. Moving the address is how somebody who has
             // taken an account keeps it - the owner is cut off and never told - so the old address is
@@ -129,6 +138,7 @@ internal static class AccountEndpoints
                 SendCodeResult.NoAddress => Results.BadRequest(new { error = "Add an email address first." }),
                 SendCodeResult.AlreadyVerified => Results.BadRequest(new { error = "That address is already confirmed." }),
                 SendCodeResult.TooSoon => Results.BadRequest(new { error = "A code has just gone out. Give it a minute before asking for another." }),
+                SendCodeResult.TooMany => Results.BadRequest(new { error = "That address has had a lot of codes today. Try again tomorrow." }),
                 // The code is real and the message is not. Said plainly rather than as a success,
                 // because a player waiting for mail that will never arrive cannot work that out alone.
                 SendCodeResult.NotDelivered => Results.Json(

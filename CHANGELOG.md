@@ -69,6 +69,10 @@
   would have moved the hole rather than filled it: connect Discord, drop the address because Discord
   covers it, drop Discord because the password covers it - and out comes an account with a password and
   no way to recover it, one allowed step at a time.
+- An account that predates the sign-up rule and has no way back in now says so on the account page,
+  on every tab, with a button to the place that fixes it. It keeps working - the rule governs signing
+  up, not playing - but nobody should find out they are one forgotten password from losing an empire
+  on the day it happens.
 - The account now answers two questions rather than one. What lets somebody *in* is a password or a
   Discord; what could get them *back in* is a confirmed address or a Discord. A password answers the
   first and never the second, so an account can be perfectly reachable and completely unrecoverable -
@@ -152,6 +156,15 @@
   cannon - and the endpoint ignored the refusal, leaving the player on a new address with nothing in the
   post and no explanation. The cooldown is measured per address now, which is what it was always for:
   hammering one inbox waits, moving to a new one does not.
+
+- **Two people registering the same name at the same moment got a 500 with a stack trace in it.** The
+  free-name check and the save are two moments, and the unique index between them was never caught -
+  four simultaneous identical registrations reproduced it every time. They get a 409 naming which of
+  the names was taken now, and outside development anything still uncaught gets one sentence in the
+  shape every other error here uses, with the detail in the log rather than the body.
+- **An unauthenticated caller could aim a message a minute at somebody else's inbox for ever.** Starting
+  a password reset needs no account and no password, and the cooldown only set a rate. There is a
+  ceiling of ten codes a day per address now, across both flows.
 
 ### Changed
 - **An unconfirmed address can no longer be signed in with.** It still holds the address against other

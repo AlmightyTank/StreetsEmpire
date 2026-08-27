@@ -53,7 +53,7 @@ internal static class PasswordResetEndpoints
                 // Told to the log and never to the caller. An operator has to be able to tell "nobody
                 // asked" from "somebody asked and the mail did not go", and the sentence below cannot
                 // say which without answering the question this endpoint exists not to answer.
-                if (outcome is not (SendCodeResult.Sent or SendCodeResult.TooSoon))
+                if (outcome is not (SendCodeResult.Sent or SendCodeResult.TooSoon or SendCodeResult.TooMany))
                     logs.CreateLogger("StreetEmpire.PasswordReset").LogWarning(
                         "A reset was asked for on account {Account} and no code went out: {Outcome}.",
                         account.Id, outcome);

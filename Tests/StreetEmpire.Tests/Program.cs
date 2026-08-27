@@ -165,6 +165,8 @@ var tests = new (string Name, Action Test)[]
     ("an account made through Discord is a whole account", ADiscordSignUpIsAWholeAccount),
     ("every new account arrives with a way back in", EveryNewAccountArrivesWithAWayBackIn),
     ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
+    ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
+    ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
     ("notices only ever go to an address somebody proved they own", NoticesOnlyGoToProvenAddresses),
@@ -2279,6 +2281,69 @@ static void TheLastWayBackInCannotBeRemoved()
     var passwordOnly = new PlayerAccount { Username = "kim", PasswordHash = "hashed" };
     AssertTrue(passwordOnly.HasAnotherWayIn(), "a password gets you in");
     AssertTrue(!passwordOnly.HasAnotherWayBackIn(), "a password never gets you back in");
+}
+
+static void ALostRaceIsAnAnswerNotAStackTrace()
+{
+    // Every place that takes a name checks whether it is free and then saves, and those are two moments
+    // with a gap. Two people registering the same username in that gap both passed the check, the second
+    // save hit the unique index, and nothing caught what came back - a 500, carrying a stack trace to
+    // whoever asked for it. Three registrations fired at once reproduced it every time.
+    //
+    // The names here are the ones EF generates for those indexes. If one is ever renamed this test is
+    // what says so, rather than a 500 nobody sees until it happens in the wild.
+    foreach (var (constraint, expected) in new[]
+    {
+        ("IX_Accounts_Username", "Username is already taken."),
+        ("IX_Accounts_Email", "That email is already on an account."),
+        ("IX_Accounts_DiscordUserId", "That Discord account is already on an empire. Sign in with it instead."),
+        ("IX_Players_Name", "Player name is already taken."),
+    })
+        AssertEqual(expected, DatabaseErrors.DescribeConstraint(constraint));
+
+    // A constraint nobody planned for still gets an answer rather than an exception, because the
+    // alternative is the 500 this exists to stop. Same for one that arrives without a name at all.
+    AssertTrue(DatabaseErrors.DescribeConstraint("IX_Something_Else").Length > 0,
+        "an unrecognised constraint should still be answered");
+    AssertTrue(DatabaseErrors.DescribeConstraint(null).Length > 0,
+        "a nameless constraint should still be answered");
+
+    // And anything that is not a lost race is left alone to be the exception it is. Swallowing those
+    // would turn a real fault into a polite conflict and hide it.
+    AssertEqual(null, DatabaseErrors.DescribeUniqueViolation(new InvalidOperationException("something else")));
+    AssertEqual(null, DatabaseErrors.DescribeUniqueViolation(new DbUpdateException("no inner cause")));
+}
+
+static void OneInboxCanOnlyBeAimedAtSoManyTimes()
+{
+    // Starting a password reset needs no account and no password, so the cooldown alone only sets a
+    // rate - and a rate with no ceiling is unbounded. Anybody who knew an address could aim a message a
+    // minute at it for as long as they liked: sixty an hour, somebody else's inbox ruined, and a pile
+    // of spam complaints against the domain that all the codes go out from.
+    var options = new EmailOptions();
+    AssertTrue(options.MaxCodesPerDay is > 0 and <= 25,
+        $"a ceiling of {options.MaxCodesPerDay} a day is not a ceiling");
+
+    // Comfortably above a real day's use - a confirmation, a couple of resends, a forgotten password
+    // or two - and comfortably below a nuisance.
+    AssertTrue(options.MaxCodesPerDay >= 5, "the ceiling must not get in a real player's way");
+
+    // And the shipped file has to agree, since that is the one that actually runs.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+    var configured = new EmailOptions();
+    shipped.GetSection("Auth:Email").Bind(configured);
+    AssertTrue(configured.MaxCodesPerDay is > 0 and <= 25, "the shipped ceiling should still be a ceiling");
+
+    // The two limits answer different questions, so they are different results - "wait a minute" is
+    // useless advice to somebody who has used the day up.
+    AssertTrue(SendCodeResult.TooSoon != SendCodeResult.TooMany, "the two refusals must be tellable apart");
 }
 
 static void EveryTestWrittenIsATestThatRuns()

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -334,6 +335,26 @@ using (var startupScope = app.Services.CreateScope())
         // A missing or unreadable settings row must not stop the game booting on appsettings alone.
         app.Logger.LogWarning(ex, "Could not load stored settings; running on appsettings values.");
     }
+}
+
+// Anything that reaches here uncaught, outside development.
+//
+// A bug used to answer a bare 500 with whatever the framework felt like putting in the body - in
+// development, a full stack trace, sent to whoever asked. The developer page is worth keeping where it
+// helps and worth nowhere near production, so it keeps development and this takes everywhere else: one
+// sentence in the shape every other error in this API uses, and the detail in the log where it belongs.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler(handler => handler.Run(async context =>
+    {
+        var thrown = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        app.Logger.LogError(thrown, "Unhandled exception answering {Method} {Path}.",
+            context.Request.Method, context.Request.Path);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new { error = "Something went wrong. Try again shortly." });
+    }));
 }
 
 app.UseCors();

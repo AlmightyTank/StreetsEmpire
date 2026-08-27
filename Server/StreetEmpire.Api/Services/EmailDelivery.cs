@@ -38,6 +38,20 @@ public sealed class EmailOptions
     /// <summary>The wait between one code and the next, which is what stops the button being a mail cannon.</summary>
     public int ResendCooldownSeconds { get; set; } = 60;
 
+    /// <summary>
+    /// The most codes one address will be sent in a day, however they were asked for.
+    ///
+    /// The cooldown alone only sets a rate, and a rate with no ceiling is still unbounded: starting a
+    /// password reset needs no account and no password, so anybody who knows an address could aim a
+    /// message a minute at it for as long as they liked. Sixty an hour is somebody else's inbox ruined
+    /// and a pile of spam complaints against the sending domain, which would eventually stop codes
+    /// arriving for everybody.
+    ///
+    /// Ten is far above what a real person needs - a confirmation, a couple of resends, a forgotten
+    /// password or two - and far below a nuisance.
+    /// </summary>
+    public int MaxCodesPerDay { get; set; } = 10;
+
     /// <summary>Whether registering with an address should put a code in the post straight away.</summary>
     public bool SendOnSignUp { get; set; } = true;
 

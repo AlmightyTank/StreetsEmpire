@@ -10,7 +10,10 @@ public enum AccountAvatarSource
 public enum DirectMessagePolicy
 {
     Everyone,
+    /// <summary>Their crew and nobody else.</summary>
     Alliance,
+    /// <summary>Their crew, and any crew theirs has a standing pact with.</summary>
+    AllianceAndPacts,
     Nobody,
 }
 
@@ -110,6 +113,23 @@ public sealed class PlayerAccount
     public bool ShowDiscordOnProfile { get; set; }
     public DirectMessagePolicy DirectMessagePolicy { get; set; } = DirectMessagePolicy.Everyone;
     public bool SyncDiscordAvatar { get; set; }
+    /// <summary>
+    /// Whether the last eight things you did are shown to anybody who opens your profile. On by
+    /// default, because a game where nobody can see what anybody is doing is a quieter game - but this
+    /// is the one genuinely private thing on a profile: timestamps and cash deltas, action by action,
+    /// available nowhere else. The city and the numbers are on the leaderboard whatever this says.
+    /// </summary>
+    public bool ShowActivityOnProfile { get; set; } = true;
+
+    /// <summary>
+    /// The alert bell, by category, and deliberately separate from the email switches below. Somebody
+    /// who wants no mail still wants the bell, and somebody who wants mail about a raid does not
+    /// necessarily want it about a sale.
+    /// </summary>
+    public bool NoticeCombat { get; set; } = true;
+    public bool NoticeCrew { get; set; } = true;
+    public bool NoticeMarket { get; set; } = true;
+
     public bool EmailSecurityNotices { get; set; } = true;
     public bool EmailCombatNotices { get; set; } = true;
     public bool EmailAllianceNotices { get; set; } = true;

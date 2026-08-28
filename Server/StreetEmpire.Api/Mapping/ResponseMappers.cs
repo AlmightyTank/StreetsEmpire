@@ -31,18 +31,13 @@ internal static class ResponseMappers
     internal static string? PublicDiscordUsername(PlayerAccount account)
         => account.ShowDiscordOnProfile ? account.DiscordUsername : null;
 
-    internal static string? MessageBlockedReason(Player? viewer, Player target)
-    {
-        if (viewer is null) return "Sign in to send messages.";
-        if (viewer.Id == target.Id) return "You are already talking to yourself.";
-        return target.Account.DirectMessagePolicy switch
-        {
-            DirectMessagePolicy.Nobody => "They are not taking direct messages.",
-            DirectMessagePolicy.Alliance when viewer.AllianceId is null || viewer.AllianceId != target.AllianceId =>
-                "They are only taking messages from their crew.",
-            _ => null,
-        };
-    }
+    /// <summary>
+    /// Whether the message button is drawn, and why not. The rule itself lives in DirectMessages, which
+    /// is also what refuses the send - these were two copies of one switch until the pact case needed a
+    /// database and only one of them had one.
+    /// </summary>
+    internal static string? MessageBlockedReason(Player? viewer, Player target, IReadOnlySet<long> viewerPactAllies)
+        => DirectMessages.BlockedReason(viewer, target, viewerPactAllies);
 
     internal static AdminPlayerSummaryResponse ToAdminSummary(Player player, EconomyService economy)
         => new(
@@ -110,7 +105,7 @@ internal static class ResponseMappers
         return Math.Max(0, (int)Math.Round(share * 100, MidpointRounding.AwayFromZero));
     }
 
-    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerPlunder = 0, IReadOnlyList<PlayerTitleResponse>? titles = null)
+    internal static PlayerTargetResponse ToTargetResponse(RankedPlayer ranked, DateTime nowUtc, Player? viewer, GameOptions options, IReadOnlySet<long> viewerPactAllies, int recentAttacksMade = 0, int recentDefenses = 0, DateTime? viewerLaneReadyAtUtc = null, long viewerPlunder = 0, IReadOnlyList<PlayerTitleResponse>? titles = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
@@ -118,7 +113,7 @@ internal static class ResponseMappers
             // What a raid could carry off on both sides. The row still shows net worth; it is only
             // the question of who may fight whom that a building has no business answering.
             : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
-        var messageBlock = MessageBlockedReason(viewer, player);
+        var messageBlock = MessageBlockedReason(viewer, player, viewerPactAllies);
         return new PlayerTargetResponse(
             player.Id,
             player.Name,
@@ -152,6 +147,7 @@ internal static class ResponseMappers
         DateTime nowUtc,
         Player? viewer,
         GameOptions options,
+        IReadOnlySet<long> viewerPactAllies,
         int recentAttacksMade,
         int recentDefenses,
         DateTime? viewerLaneReadyAtUtc,
@@ -163,7 +159,7 @@ internal static class ResponseMappers
         var mismatch = viewer is null || viewer.Id == player.Id
             ? null
             : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
-        var messageBlock = MessageBlockedReason(viewer, player);
+        var messageBlock = MessageBlockedReason(viewer, player, viewerPactAllies);
         return new PlayerProfileResponse(
             strikeBlockers ?? new Dictionary<string, string>(),
             player.Id,
@@ -200,7 +196,8 @@ internal static class ResponseMappers
             ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch),
             messageBlock is null,
             messageBlock,
-            publicActivity);
+            publicActivity,
+            !player.Account.ShowActivityOnProfile);
     }
 
     /// <summary>Where a shift can be worked, and what each place is actually for.</summary>

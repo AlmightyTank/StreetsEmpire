@@ -54,7 +54,19 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.ProfileLocation).HasMaxLength(64);
             entity.Property(x => x.ProfileAccent).HasConversion<string>().HasMaxLength(16).HasDefaultValue(ProfileAccent.Gold);
             entity.Property(x => x.ProfileBanner).HasConversion<string>().HasMaxLength(16).HasDefaultValue(ProfileBanner.None);
-            entity.Property(x => x.DirectMessagePolicy).HasConversion<string>().HasMaxLength(16);
+            // 24 rather than 16: AllianceAndPacts is sixteen characters exactly, and a column sized to
+            // the longest value it has ever held is a column that refuses the next one.
+            entity.Property(x => x.DirectMessagePolicy).HasConversion<string>().HasMaxLength(24);
+
+            // Said here as well as on the property, and that is not belt and braces. The C# initialiser
+            // decides what a new account gets; this decides what the rows that already exist get when
+            // the column is added. Left off, EF scaffolds default(bool) - and the first deploy would
+            // quietly switch every existing player's alerts off and hide their profile activity, with
+            // nothing to see and nobody told.
+            entity.Property(x => x.ShowActivityOnProfile).HasDefaultValue(true);
+            entity.Property(x => x.NoticeCombat).HasDefaultValue(true);
+            entity.Property(x => x.NoticeCrew).HasDefaultValue(true);
+            entity.Property(x => x.NoticeMarket).HasDefaultValue(true);
             entity.Property(x => x.EmailSecurityNotices).HasDefaultValue(true);
             entity.Property(x => x.EmailCombatNotices).HasDefaultValue(true);
             entity.Property(x => x.EmailAllianceNotices).HasDefaultValue(true);

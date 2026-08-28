@@ -312,17 +312,20 @@ internal static class AccountEndpoints
 
             if (request.ShowDiscordOnProfile is { } showDiscord)
                 current.ShowDiscordOnProfile = showDiscord && current.DiscordUserId is not null;
+            if (request.ShowActivityOnProfile is { } showActivity)
+                current.ShowActivityOnProfile = showActivity;
 
             var policy = request.DirectMessagePolicy?.Trim().ToLowerInvariant() switch
             {
                 null or "" => (DirectMessagePolicy?)null,
                 "everyone" => DirectMessagePolicy.Everyone,
                 "alliance" => DirectMessagePolicy.Alliance,
+                "allianceandpacts" or "alliance-and-pacts" or "pacts" => DirectMessagePolicy.AllianceAndPacts,
                 "nobody" => DirectMessagePolicy.Nobody,
                 _ => (DirectMessagePolicy?)null,
             };
             if (!string.IsNullOrWhiteSpace(request.DirectMessagePolicy) && policy is null)
-                return Results.BadRequest(new { error = "Pick one of: everyone, alliance, nobody." });
+                return Results.BadRequest(new { error = "Pick one of: everyone, alliance, pacts, nobody." });
             if (policy is { } selected)
                 current.DirectMessagePolicy = selected;
 
@@ -355,6 +358,13 @@ internal static class AccountEndpoints
                 current.EmailCombatNotices = combat;
             if (request.EmailAllianceNotices is { } alliance)
                 current.EmailAllianceNotices = alliance;
+
+            if (request.NoticeCombat is { } noticeCombat)
+                current.NoticeCombat = noticeCombat;
+            if (request.NoticeCrew is { } noticeCrew)
+                current.NoticeCrew = noticeCrew;
+            if (request.NoticeMarket is { } noticeMarket)
+                current.NoticeMarket = noticeMarket;
 
             await db.SaveChangesAsync(ct);
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
@@ -600,8 +610,12 @@ internal static class AccountEndpoints
             account.ProfileAccent.ToString(),
             account.ProfileBanner.ToString(),
             account.ShowDiscordOnProfile,
+            account.ShowActivityOnProfile,
             account.DirectMessagePolicy.ToString(),
             account.SyncDiscordAvatar,
+            account.NoticeCombat,
+            account.NoticeCrew,
+            account.NoticeMarket,
             account.EmailSecurityNotices,
             account.EmailCombatNotices,
             account.EmailAllianceNotices,

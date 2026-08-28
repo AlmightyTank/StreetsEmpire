@@ -70,8 +70,10 @@ internal static class CombatEndpoints
                 .Take(20)
                 .ToListAsync(ct);
             var ranked = await RankPageAsync(page, db, economy, ct);
+            // Once for the page rather than once per row: every row is judged against the same sender.
+            var pactAllies = await DirectMessages.PactAlliesAsync(db, player.AllianceId, ct);
             var targets = ranked
-                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, viewerLaneReadyAtUtc: laneReadyAt, viewerPlunder: viewerPlunder, titles: board))
+                .Select(x => ToTargetResponse(x, now, player, gameOptions.Value, pactAllies, viewerLaneReadyAtUtc: laneReadyAt, viewerPlunder: viewerPlunder, titles: board))
                 .ToList();
 
             return Results.Ok(targets);
@@ -107,7 +109,11 @@ internal static class CombatEndpoints
                 .CountAsync(economy.RanksAbove(subjectNetWorth, subject.CreatedAtUtc), ct) + 1;
             var target = new RankedPlayer(subject, subjectNetWorth, economy.CalculatePlunder(subject), subjectRank);
 
-            var activity = await db.ActionLogs.AsNoTracking()
+            // Not fetched at all when it is not going to be shown. Filtering after the query would
+            // read the same rows out of the database and then decide not to use them, which is the
+            // shape of privacy that leaks the first time somebody adds a field to the response.
+            var showActivity = subject.Account.ShowActivityOnProfile;
+            var activity = !showActivity ? [] : await db.ActionLogs.AsNoTracking()
                 .Where(x => x.PlayerId == playerId && x.Action != "ADMIN" && x.Action != "STORE")
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ThenByDescending(x => x.Id)
@@ -143,7 +149,9 @@ internal static class CombatEndpoints
             }
 
             return Results.Ok(ToProfileResponse(
-                target, activity, now, viewer, gameOptions.Value, recentAttacksMade, recentDefenses, laneReadyAt,
+                target, activity, now, viewer, gameOptions.Value,
+                await DirectMessages.PactAlliesAsync(db, viewer?.AllianceId, ct),
+                recentAttacksMade, recentDefenses, laneReadyAt,
                 // Plunder, not net worth: this is the anti-farm gate, and it weighs what can be taken.
                 // It said CalculateNetWorth here, so a profile judged the viewer on a sum that included
                 // their buildings while the target list beside it judged them on one that did not - the
@@ -387,12 +395,25 @@ internal static class CombatEndpoints
                 .Select(x => new { x.Id, x.Action, x.Summary, x.CreatedAtUtc })
                 .ToListAsync(ct);
 
+            // Filtered here rather than in the two queries above, because the switch is per category and
+            // a category is a property of the alert the classifier produces rather than of the row it
+            // came from. Turning one off hides it from the count as well as the list: an unread badge
+            // over something you asked not to be told about is the notification you switched off.
+            var wanted = (AlertCategory category) => category switch
+            {
+                AlertCategory.Combat => player.Account.NoticeCombat,
+                AlertCategory.Crew => player.Account.NoticeCrew,
+                AlertCategory.Market => player.Account.NoticeMarket,
+                _ => true,
+            };
+
             var alerts = logs
                 .Select(x => DefenceAlerts.ToAlert(DefenceAlerts.Describe(x, player.CombatAlertsSeenAtUtc)))
                 .Concat(notices
                     .Select(x => DefenceAlerts.ToAlert(x.Id, x.Action, x.Summary, x.CreatedAtUtc, player.CombatAlertsSeenAtUtc))
                     .Where(x => x is not null)
                     .Select(x => x!))
+                .Where(x => wanted(DefenceAlerts.CategoryOf(x.Kind)))
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .Take(25)
                 .ToList();

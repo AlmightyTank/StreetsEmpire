@@ -124,6 +124,13 @@ public static class DefenceAlerts
                 => new AlertResponse($"log-{logId}", "ground", "Your ground held", summary, "good", unread, createdAtUtc),
             "GROUND"
                 => new AlertResponse($"log-{logId}", "ground", "You lost ground", summary, "bad", unread, createdAtUtc),
+            // A sale happens to the seller rather than because of them - the row already said so in its
+            // own comment where it is written - but it was never in this list, so it sat in the seller's
+            // activity looking like something they did while they were asleep.
+            "SALE" => new AlertResponse($"log-{logId}", "sale", "Something of yours sold", summary, "good", unread, createdAtUtc),
+            // Raised by a crew you have a pact with, at the moment they are being raided. Worth waking
+            // somebody for: an assist call nobody sees is a call that expires unanswered.
+            "CREW" => new AlertResponse($"log-{logId}", "crew", "Your allies need help", summary, "bad", unread, createdAtUtc),
             _ => null
         };
     }
@@ -144,13 +151,33 @@ public static class DefenceAlerts
                || log.Action == "GROUND"
                || log.Action == "BUST"
                // A run settles on the clock rather than on a request, so it is news, not activity.
-               || log.Action == "MULE";
+               || log.Action == "MULE"
+               // Written to the seller by the buyer's request, and to a crew by their ally's attacker.
+               // Neither player was here when it happened, which is the whole definition above.
+               || log.Action == "SALE"
+               || log.Action == "CREW";
 
     /// <summary>The same rule negated, for the activity list. Derived so the two cannot disagree.</summary>
     public static Expression<Func<GameActionLog, bool>> IsActionRow { get; } =
         Expression.Lambda<Func<GameActionLog, bool>>(
             Expression.Not(IsNotificationRow.Body),
             IsNotificationRow.Parameters);
+
+    /// <summary>
+    /// Which switch on the account page governs an alert.
+    ///
+    /// Kept beside the kinds rather than in the endpoint that filters, because the failure mode is an
+    /// alert kind that belongs to no category and is therefore unfilterable - it would simply always
+    /// show, and nothing would say so. Everything not named here is deliberately uncategorised: labs,
+    /// builds, mules and busts are your own machinery reporting in, and there is no switch for them.
+    /// </summary>
+    public static AlertCategory CategoryOf(string kind) => kind switch
+    {
+        "attack" or "bust" or "ground" => AlertCategory.Combat,
+        "crew" => AlertCategory.Crew,
+        "sale" => AlertCategory.Market,
+        _ => AlertCategory.Always,
+    };
 
     /// <summary>The in-memory twin, kept in step by a test that runs both over the same rows.</summary>
     public static bool IsNotification(string action, string summary)

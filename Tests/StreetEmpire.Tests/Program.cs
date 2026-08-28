@@ -188,6 +188,9 @@ var tests = new (string Name, Action Test)[]
     ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
     ("one box on the form is one name underneath", OneBoxOnTheFormIsOneNameUnderneath),
     ("money is dollars wherever the server happens to be", MoneyIsDollarsWhereverTheServerIs),
+    ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
+    ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
+    ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2356,6 +2359,100 @@ static void ALostRaceIsAnAnswerNotAStackTrace()
     AssertEqual(AccountSetup.NameTaken, DatabaseErrors.DescribeConstraint("IX_Players_Name", oneName: true));
     AssertEqual("That email is already on an account.",
         DatabaseErrors.DescribeConstraint("IX_Accounts_Email", oneName: true));
+}
+
+static void APactOpensTheDoorACrewOnlySettingCloses()
+{
+    // The rule used to live twice - once in ChatService, refusing the send, and once in ResponseMappers,
+    // deciding whether the button was drawn. They agreed until one of them was taught something. This
+    // exercises the one that is left, which is now what both of them call.
+    PlayerAccount With(DirectMessagePolicy policy)
+        => new() { Username = $"u{Guid.NewGuid():N}", PasswordHash = "hashed", DirectMessagePolicy = policy };
+
+    var sender = new Player { Id = Guid.NewGuid(), Name = "Sender", AllianceId = 1, Account = With(DirectMessagePolicy.Everyone) };
+    var crewmate = new Player { Id = Guid.NewGuid(), Name = "Crewmate", AllianceId = 1, Account = With(DirectMessagePolicy.AllianceAndPacts) };
+    var ally = new Player { Id = Guid.NewGuid(), Name = "Ally", AllianceId = 2, Account = With(DirectMessagePolicy.AllianceAndPacts) };
+    var stranger = new Player { Id = Guid.NewGuid(), Name = "Stranger", AllianceId = 3, Account = With(DirectMessagePolicy.AllianceAndPacts) };
+    var crewOnly = new Player { Id = Guid.NewGuid(), Name = "CrewOnly", AllianceId = 2, Account = With(DirectMessagePolicy.Alliance) };
+
+    // Crew 2 has a pact with the sender's crew. Crew 3 does not.
+    var pacts = new HashSet<long> { 2 };
+
+    AssertTrue(DirectMessages.BlockedReason(sender, crewmate, pacts) is null, "their own crew is always allowed");
+    AssertTrue(DirectMessages.BlockedReason(sender, ally, pacts) is null, "a pact is what this setting is for");
+    AssertEqual("They are only taking messages from their crew and their allies.",
+        DirectMessages.BlockedReason(sender, stranger, pacts));
+
+    // The narrower setting is unmoved by the pact, which is the point of having two settings.
+    AssertEqual("They are only taking messages from their crew.",
+        DirectMessages.BlockedReason(sender, crewOnly, pacts));
+
+    // A player in no crew has no pacts, and the wider setting collapses to the narrower one for them
+    // rather than throwing or letting them through.
+    var crewless = new Player { Id = Guid.NewGuid(), Name = "Crewless", AllianceId = null, Account = With(DirectMessagePolicy.Everyone) };
+    AssertEqual("They are only taking messages from their crew and their allies.",
+        DirectMessages.BlockedReason(crewless, ally, new HashSet<long>()));
+
+    // And two players in no crew are not somehow in the same one, which a null-equals-null comparison
+    // would have said they were.
+    var alsoCrewless = new Player { Id = Guid.NewGuid(), Name = "Also", AllianceId = null, Account = With(DirectMessagePolicy.Alliance) };
+    AssertEqual("They are only taking messages from their crew.",
+        DirectMessages.BlockedReason(crewless, alsoCrewless, new HashSet<long>()));
+}
+
+static void EveryAlertKindAnswersToASwitch()
+{
+    // The failure this stops is an alert kind that belongs to no category: it would simply always show,
+    // no switch would govern it, and nothing anywhere would say so.
+    AssertEqual(AlertCategory.Combat, DefenceAlerts.CategoryOf("attack"));
+    AssertEqual(AlertCategory.Combat, DefenceAlerts.CategoryOf("bust"));
+    AssertEqual(AlertCategory.Combat, DefenceAlerts.CategoryOf("ground"));
+    AssertEqual(AlertCategory.Crew, DefenceAlerts.CategoryOf("crew"));
+    AssertEqual(AlertCategory.Market, DefenceAlerts.CategoryOf("sale"));
+
+    // These three are your own machinery reporting in. Uncategorised on purpose - there is no switch
+    // for them and this says so out loud rather than leaving it to be discovered.
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("labs"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("hideout"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("mule"));
+
+    // Both new kinds have to be notifications as well as categorised, or the switch governs a row that
+    // never reaches the bell in the first place. SALE in particular was already being written to the
+    // seller with a comment saying it happens to them, and was still landing in their activity list.
+    AssertTrue(DefenceAlerts.IsNotification("SALE", "Somebody bought your coke."), "a sale is news to the seller");
+    AssertTrue(DefenceAlerts.IsNotification("CREW", "Your allies are being raided."), "an assist call is news");
+    AssertTrue(!DefenceAlerts.IsNotification("MARKET", "You listed 10 coke."), "listing something is an action");
+
+    // And the classifier turns them into alerts rather than dropping them, which is a separate step from
+    // being a notification row and was where a kind could previously be lost in silence.
+    var now = DateTime.UtcNow;
+    AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
+    AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+}
+
+static void ANewColumnDoesNotSwitchAnythingOff()
+{
+    // A near miss worth a test. These four properties default to true in C#, which decides what a new
+    // account gets - and EF scaffolded the migration with default(bool), which decides what every row
+    // that already exists gets when the column is added. The first deploy would have switched every
+    // living player's alerts off and hidden their profile activity, silently, with nothing to see.
+    //
+    // So the database default is asserted rather than the C# one: it is the half that was wrong, and it
+    // is the half no other test would ever have exercised.
+    using var world = NewCrewWorld();
+    var account = world.Db.Model.FindEntityType(typeof(PlayerAccount))!;
+
+    foreach (var name in new[] { "ShowActivityOnProfile", "NoticeCombat", "NoticeCrew", "NoticeMarket" })
+    {
+        var property = account.FindProperty(name);
+        AssertTrue(property is not null, $"{name} should be mapped");
+        AssertEqual(true, property!.GetDefaultValue());
+    }
+
+    // The C# side too, since a row inserted by the app never consults the database default.
+    var fresh = new PlayerAccount();
+    AssertTrue(fresh.ShowActivityOnProfile, "a new account shows its activity");
+    AssertTrue(fresh.NoticeCombat && fresh.NoticeCrew && fresh.NoticeMarket, "a new account hears everything");
 }
 
 static void MoneyIsDollarsWhereverTheServerIs()
@@ -4645,9 +4742,11 @@ static void MessagePrivacyClosesOnlyNamedDoors()
         }
     };
 
-    AssertTrue(ChatService.DirectMessageBlockReason(sender, crewmate) is null, "crew-only still lets the crew speak");
-    AssertEqual("They are only taking messages from their crew.", ChatService.DirectMessageBlockReason(sender, outsider));
-    AssertEqual("They are not taking direct messages.", ChatService.DirectMessageBlockReason(sender, closed));
+    // No pacts in this scenario, which is the case every policy but one ignores entirely.
+    var noPacts = new HashSet<long>();
+    AssertTrue(ChatService.DirectMessageBlockReason(sender, crewmate, noPacts) is null, "crew-only still lets the crew speak");
+    AssertEqual("They are only taking messages from their crew.", ChatService.DirectMessageBlockReason(sender, outsider, noPacts));
+    AssertEqual("They are not taking direct messages.", ChatService.DirectMessageBlockReason(sender, closed, noPacts));
     AssertEqual("closed#0001", PublicDiscordUsername(closed.Account));
 
     closed.Account.ShowDiscordOnProfile = false;

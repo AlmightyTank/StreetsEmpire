@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Data;
 using StreetEmpire.Api.Models;
+using StreetEmpire.Api.Support;
 
 namespace StreetEmpire.Api.Services;
 
@@ -264,7 +265,8 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
         var silenced = await SilencedAsync(player, cancellationToken);
         if (silenced.Contains(otherId))
             throw new GameRuleException($"{other.Name} is not taking messages from you.");
-        if (DirectMessageBlockReason(player, other) is { } privacy)
+        var pactAllies = await DirectMessages.PactAlliesAsync(db, player.AllianceId, cancellationToken);
+        if (DirectMessageBlockReason(player, other, pactAllies) is { } privacy)
             throw new GameRuleException(privacy);
 
         // The pair conversation is the one that is not a group and has exactly these two in it.
@@ -321,8 +323,9 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
             .AsNoTracking()
             .Where(x => allowed.Contains(x.Id))
             .ToListAsync(cancellationToken);
+        var pactAllies = await DirectMessages.PactAlliesAsync(db, player.AllianceId, cancellationToken);
         var takingMessages = real
-            .Where(x => DirectMessageBlockReason(player, x) is null)
+            .Where(x => DirectMessageBlockReason(player, x, pactAllies) is null)
             .Select(x => x.Id)
             .ToList();
         if (takingMessages.Count == 0)
@@ -381,7 +384,8 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
                 .AsNoTracking()
                 .SingleOrDefaultAsync(x => x.Id == otherId, cancellationToken)
                 ?? throw new GameRuleException("There is nothing to read here.");
-            if (DirectMessageBlockReason(player, other) is { } privacy)
+            var pactAllies = await DirectMessages.PactAlliesAsync(db, player.AllianceId, cancellationToken);
+            if (DirectMessageBlockReason(player, other, pactAllies) is { } privacy)
                 throw new GameRuleException(privacy);
         }
 
@@ -431,20 +435,23 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
             .Take(20)
             .ToListAsync(cancellationToken);
 
+        var pactAllies = await DirectMessages.PactAlliesAsync(db, player.AllianceId, cancellationToken);
         return found
-            .Where(x => !silenced.Contains(x.Id) && DirectMessageBlockReason(player, x) is null)
+            .Where(x => !silenced.Contains(x.Id) && DirectMessageBlockReason(player, x, pactAllies) is null)
             .Select(x => (x.Id, x.Name, x.City))
             .ToList();
     }
 
-    public static string? DirectMessageBlockReason(Player sender, Player recipient)
-        => recipient.Account.DirectMessagePolicy switch
-        {
-            DirectMessagePolicy.Nobody => "They are not taking direct messages.",
-            DirectMessagePolicy.Alliance when sender.AllianceId is null || sender.AllianceId != recipient.AllianceId =>
-                "They are only taking messages from their crew.",
-            _ => null,
-        };
+    /// <summary>
+    /// Why this send is refused, or null. The rule is DirectMessages', shared with the mapper that
+    /// decides whether the button is drawn at all, so the page and the server cannot disagree about
+    /// whether a door is open.
+    /// </summary>
+    /// Takes the pact set rather than loading it, because the callers here check a list of players
+    /// against one sender, and a query per row would be the same answer fifty times over.
+    public static string? DirectMessageBlockReason(
+        Player sender, Player recipient, IReadOnlySet<long> senderPactAllies)
+        => DirectMessages.BlockedReason(sender, recipient, senderPactAllies);
 
     /// <summary>
     /// Everybody this player will not hear from, in either direction.

@@ -706,6 +706,8 @@ export type PlayerProfile = PlayerTarget & {
   hoeHappiness: number
   thugHappiness: number
   publicActivity: Activity[]
+  /** True when they turned it off, as opposed to having done nothing yet. */
+  activityHidden: boolean
 }
 
 export type CatchUpItem = {
@@ -1112,8 +1114,13 @@ export type Account = {
   profileAccent: 'Gold' | 'Teal' | 'Rose' | 'Steel'
   profileBanner: ProfileBanner
   showDiscordOnProfile: boolean
-  directMessagePolicy: 'Everyone' | 'Alliance' | 'Nobody'
+  directMessagePolicy: 'Everyone' | 'Alliance' | 'AllianceAndPacts' | 'Nobody'
+  showActivityOnProfile: boolean
   syncDiscordAvatar: boolean
+  /** The bell, by category. Separate from the email switches below - a different channel. */
+  noticeCombat: boolean
+  noticeCrew: boolean
+  noticeMarket: boolean
   emailSecurityNotices: boolean
   emailCombatNotices: boolean
   emailAllianceNotices: boolean
@@ -1210,19 +1217,34 @@ export const api = {
         banner,
       }),
     }),
-  setPrivacy: (showDiscordOnProfile: boolean, directMessagePolicy: Account['directMessagePolicy']) =>
+  setPrivacy: (
+    showDiscordOnProfile: boolean,
+    directMessagePolicy: Account['directMessagePolicy'],
+    showActivityOnProfile: boolean,
+  ) =>
     request<Account>('/api/account/privacy', {
       method: 'PUT',
-      body: JSON.stringify({ showDiscordOnProfile, directMessagePolicy }),
+      body: JSON.stringify({ showDiscordOnProfile, directMessagePolicy, showActivityOnProfile }),
     }),
   setNotificationPreferences: (
     syncDiscordAvatar: boolean,
     emailSecurityNotices: boolean,
     emailCombatNotices: boolean,
-    emailAllianceNotices: boolean) =>
+    emailAllianceNotices: boolean,
+    noticeCombat: boolean,
+    noticeCrew: boolean,
+    noticeMarket: boolean) =>
     request<Account>('/api/account/notifications', {
       method: 'PUT',
-      body: JSON.stringify({ syncDiscordAvatar, emailSecurityNotices, emailCombatNotices, emailAllianceNotices }),
+      body: JSON.stringify({
+        syncDiscordAvatar,
+        emailSecurityNotices,
+        emailCombatNotices,
+        emailAllianceNotices,
+        noticeCombat,
+        noticeCrew,
+        noticeMarket,
+      }),
     }),
   uploadCustomAvatar: (file: File) => {
     const form = new FormData()

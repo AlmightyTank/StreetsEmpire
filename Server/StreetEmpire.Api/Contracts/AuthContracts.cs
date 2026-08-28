@@ -52,8 +52,12 @@ public sealed record AccountResponse(
     string ProfileAccent,
     string ProfileBanner,
     bool ShowDiscordOnProfile,
+    bool ShowActivityOnProfile,
     string DirectMessagePolicy,
     bool SyncDiscordAvatar,
+    bool NoticeCombat,
+    bool NoticeCrew,
+    bool NoticeMarket,
     bool EmailSecurityNotices,
     bool EmailCombatNotices,
     bool EmailAllianceNotices,
@@ -92,12 +96,20 @@ public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewP
 
 public sealed record ChangeAvatarRequest(string? Source);
 public sealed record ChangeProfileRequest(string? Tagline, string? Pronouns, string? Location, string? Accent, string? Banner = null);
-public sealed record ChangePrivacyRequest(bool? ShowDiscordOnProfile, string? DirectMessagePolicy);
+public sealed record ChangePrivacyRequest(
+    bool? ShowDiscordOnProfile,
+    string? DirectMessagePolicy,
+    bool? ShowActivityOnProfile = null);
+
+/// <param name="NoticeCombat">The bell, not the inbox. The email switches below are a separate channel.</param>
 public sealed record ChangeNotificationPreferencesRequest(
     bool? SyncDiscordAvatar,
     bool? EmailSecurityNotices,
     bool? EmailCombatNotices,
-    bool? EmailAllianceNotices);
+    bool? EmailAllianceNotices,
+    bool? NoticeCombat = null,
+    bool? NoticeCrew = null,
+    bool? NoticeMarket = null);
 
 /// <summary>The half of a Discord sign-up the game needs and Discord cannot answer.</summary>
 /// <param name="Email">

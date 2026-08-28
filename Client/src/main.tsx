@@ -4532,7 +4532,14 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         </div>
         <div className="mt-3 border-top pt-3">
           <strong className="d-block mb-1 text-primary">Public Activity</strong>
-          {profile.publicActivity.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No public activity yet.</p>}
+          {/*
+            Turned off and never done anything are different facts, and an empty list with no
+            explanation reads as a broken profile rather than a choice. Saying which gives away nothing
+            they did not choose to say.
+          */}
+          {profile.activityHidden
+            ? <p className="text-body-tertiary small mt-3 mb-0">They keep their recent activity private.</p>
+            : profile.publicActivity.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No public activity yet.</p>}
           <ActivityList entries={profile.publicActivity} />
         </div>
       </div>}
@@ -6622,19 +6629,28 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
 function AccountPrivacyPanel({ account, busy, run }: AccountPanel) {
   const [showDiscord, setShowDiscord] = useState(account.showDiscordOnProfile)
   const [dmPolicy, setDmPolicy] = useState<Account['directMessagePolicy']>(account.directMessagePolicy)
+  const [showActivity, setShowActivity] = useState(account.showActivityOnProfile)
   useEffect(() => {
     setShowDiscord(account.showDiscordOnProfile)
     setDmPolicy(account.directMessagePolicy)
-  }, [account.showDiscordOnProfile, account.directMessagePolicy])
+    setShowActivity(account.showActivityOnProfile)
+  }, [account.showDiscordOnProfile, account.directMessagePolicy, account.showActivityOnProfile])
 
-  const changed = showDiscord !== account.showDiscordOnProfile || dmPolicy !== account.directMessagePolicy
+  const changed = showDiscord !== account.showDiscordOnProfile
+    || dmPolicy !== account.directMessagePolicy
+    || showActivity !== account.showActivityOnProfile
   const save = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    void run(() => api.setPrivacy(showDiscord, dmPolicy), 'Privacy saved.')
+    void run(() => api.setPrivacy(showDiscord, dmPolicy, showActivity), 'Privacy saved.')
   }
 
   return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title"><h2>Privacy</h2><span>{dmPolicy === 'Everyone' ? 'Open' : dmPolicy === 'Alliance' ? 'Crew only' : 'Closed'}</span></div>
+    <div className="panel-title"><h2>Privacy</h2><span>{
+      dmPolicy === 'Everyone' ? 'Open'
+        : dmPolicy === 'Alliance' ? 'Crew only'
+          : dmPolicy === 'AllianceAndPacts' ? 'Crew and allies'
+            : 'Closed'
+    }</span></div>
     <form className="d-grid gap-3" onSubmit={save}>
       <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
         <input
@@ -6659,10 +6675,31 @@ function AccountPrivacyPanel({ account, busy, run }: AccountPanel) {
           onChange={event => setDmPolicy(event.target.value as Account['directMessagePolicy'])}
         >
           <option value="Everyone">Everyone</option>
-          <option value="Alliance">Crew only</option>
+          <option value="AllianceAndPacts">My crew and our allies</option>
+          <option value="Alliance">My crew only</option>
           <option value="Nobody">Nobody</option>
         </select>
-        <small className="form-text">Existing blocks still win over this setting.</small>
+        <small className="form-text">
+          Allies are crews yours has a standing pact with. Existing blocks still win over this setting.
+        </small>
+      </label>
+      {/*
+        The one genuinely private thing on a profile, and the reason this is a switch rather than a
+        blanket setting. Your city and your numbers are on the leaderboard whatever you choose here -
+        this is the eight-action list with timestamps and takings, which is available nowhere else.
+      */}
+      <label className="form-check form-switch border rounded bg-body-secondary p-3 ps-5">
+        <input
+          className="form-check-input"
+          type="checkbox"
+          checked={showActivity}
+          onChange={event => setShowActivity(event.target.checked)}
+        />
+        <strong className="d-block">Show recent activity on my profile</strong>
+        <small className="form-text">
+          The last eight things you did, with times and takings, to anybody who opens your profile. Your
+          city and your worth are on the leaderboard either way; this is the part that is not.
+        </small>
       </label>
       <button className="btn btn-primary" disabled={busy || !changed}>{busy ? 'Working...' : 'Save Privacy'}</button>
     </form>
@@ -6674,21 +6711,33 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
   const [security, setSecurity] = useState(account.emailSecurityNotices)
   const [combat, setCombat] = useState(account.emailCombatNotices)
   const [alliance, setAlliance] = useState(account.emailAllianceNotices)
+  const [bellCombat, setBellCombat] = useState(account.noticeCombat)
+  const [bellCrew, setBellCrew] = useState(account.noticeCrew)
+  const [bellMarket, setBellMarket] = useState(account.noticeMarket)
   useEffect(() => {
     setSyncDiscord(account.syncDiscordAvatar)
     setSecurity(account.emailSecurityNotices)
     setCombat(account.emailCombatNotices)
     setAlliance(account.emailAllianceNotices)
-  }, [account.syncDiscordAvatar, account.emailSecurityNotices, account.emailCombatNotices, account.emailAllianceNotices])
+    setBellCombat(account.noticeCombat)
+    setBellCrew(account.noticeCrew)
+    setBellMarket(account.noticeMarket)
+  }, [account.syncDiscordAvatar, account.emailSecurityNotices, account.emailCombatNotices, account.emailAllianceNotices,
+      account.noticeCombat, account.noticeCrew, account.noticeMarket])
 
   const changed = syncDiscord !== account.syncDiscordAvatar
     || security !== account.emailSecurityNotices
     || combat !== account.emailCombatNotices
     || alliance !== account.emailAllianceNotices
+    || bellCombat !== account.noticeCombat
+    || bellCrew !== account.noticeCrew
+    || bellMarket !== account.noticeMarket
 
   const save = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    void run(() => api.setNotificationPreferences(syncDiscord, security, combat, alliance), 'Alert settings saved.')
+    void run(
+      () => api.setNotificationPreferences(syncDiscord, security, combat, alliance, bellCombat, bellCrew, bellMarket),
+      'Alert settings saved.')
   }
 
   return <section className="card p-3 gcol-xl-full">
@@ -6735,6 +6784,9 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
           Refresh from Discord
         </a>
       </div>}
+      <div>
+        <span className="eyebrow d-block mb-2">By email</span>
+      </div>
       <div className="d-grid gtc-1 gtc-md-3 gap-2">
         <NoticeToggle
           label="Security"
@@ -6755,6 +6807,43 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
           onChange={setAlliance}
         />
       </div>
+
+      {/*
+        A different channel, not a duplicate of the three above. Somebody who wants no mail at all still
+        wants the bell, and somebody who wants mail about a raid does not necessarily want it about a
+        sale - so these are their own columns rather than one set of switches governing both.
+
+        Turning one off takes it out of the unread count as well as the list: a badge over something you
+        asked not to be told about is the notification you switched off.
+      */}
+      <div>
+        <span className="eyebrow d-block mb-2">In the game, on the bell</span>
+        <div className="d-grid gtc-1 gtc-md-3 gap-2">
+          <NoticeToggle
+            label="Combat"
+            detail="Raids on your house, and ground won or lost."
+            checked={bellCombat}
+            onChange={setBellCombat}
+          />
+          <NoticeToggle
+            label="Crew"
+            detail="Allies calling for help while they are being raided."
+            checked={bellCrew}
+            onChange={setBellCrew}
+          />
+          <NoticeToggle
+            label="Market"
+            detail="Somebody buying what you put up for sale."
+            checked={bellMarket}
+            onChange={setBellMarket}
+          />
+        </div>
+        <small className="form-text d-block mt-2">
+          Your labs, builds and mule runs always ring. They are your own machinery reporting in, and
+          there is nowhere else they are said.
+        </small>
+      </div>
+
       <button className="btn btn-primary" disabled={busy || !changed}>{busy ? 'Working...' : 'Save Alerts'}</button>
     </form>
   </section>

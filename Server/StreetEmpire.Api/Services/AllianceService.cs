@@ -231,6 +231,30 @@ public sealed class AllianceService(
             calls.Add(call);
         }
 
+        // And somebody is told. The calls were being created and then waiting to be noticed: a player
+        // in an allied crew had to happen to open the alliance board while the fight was still running,
+        // which for most of them meant every call expired unanswered. This is the notice the bell shows.
+        // Humans only, and that is not a nicety. Ten minutes of a bot world produced 129 of these rows,
+        // 119 of them addressed to accounts that will never open a bell - permanent storage, and weight
+        // in every alert query afterwards, for nobody. Bots decide whether to answer a call by looking
+        // at the call.
+        var allyMembers = await db.Players.AsNoTracking()
+            .Where(x => x.AllianceId != null && allyIds.Contains(x.AllianceId.Value) && !x.Account.IsBot)
+            .Select(x => new { x.Id, x.AllianceId })
+            .ToListAsync(cancellationToken);
+
+        foreach (var member in allyMembers)
+        {
+            db.ActionLogs.Add(new GameActionLog
+            {
+                PlayerId = member.Id,
+                Action = "CREW",
+                Summary = $"{mission.Defender.Name} is under attack and your crews have a pact. "
+                          + "Send thugs or guns from the alliance board.",
+                CreatedAtUtc = nowUtc,
+            });
+        }
+
         return calls;
     }
 

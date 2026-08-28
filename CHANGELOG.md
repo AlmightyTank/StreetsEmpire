@@ -71,6 +71,32 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **Direct messages can be opened to allies, not just crew.** A new setting sits between "my crew" and
+  "everyone": crews yours has a standing pact with. The rule itself was written twice - once in
+  ChatService refusing the send, once in ResponseMappers deciding whether the button was drawn - and
+  they agreed right up until one of them had to be taught something. They are one function now, which
+  the pact case forced: answering it needs a database, and the copy that drew the button had none.
+- **Recent activity on a profile can be turned off.** The last eight things you did, with times and
+  takings, to anybody who opens your profile - the one genuinely private thing there, and available
+  nowhere else. When it is off the rows are not fetched at all rather than fetched and dropped, and the
+  profile says they keep it private rather than showing a blank that reads as a broken page.
+- **The alert bell has its own switches**, by category, separate from the email ones: combat, crew and
+  market. A different channel rather than a duplicate - somebody who wants no mail still wants the bell.
+  Turning one off takes it out of the unread count as well as the list, since a badge over something you
+  asked not to be told about is the notification you switched off. Labs, builds and mules always ring:
+  they are your own machinery reporting in and there is nowhere else they are said.
+- **A sale now reaches the seller's bell.** The row was already being written to them, with a comment
+  saying a sale happens to them rather than because of them, and it was still landing in their activity
+  list as though they had done it in their sleep.
+- **An assist call now tells the crew it is asking.** The calls were created and then waited to be
+  noticed: somebody in an allied crew had to happen to open the alliance board while the fight was still
+  running, which mostly meant every call expired unanswered. Bots are not told - ten minutes of a test
+  world wrote 129 of these and 119 went to accounts that will never open a bell.
+- Two of the six things asked for in this batch are not here, and the reason is the same for both. The
+  leaderboard prints every player's city, net worth, cash and bank for the top fifty of every town, to
+  anybody signed in - so hiding either on a profile hides nothing. Making them genuinely private is a
+  change to what the game shows everybody rather than a setting on an account, and net worth in
+  particular is the ranking itself.
 - **Display preferences, per device.** Compact tightens rows and padding on the screens that are lists -
   the leaderboard, the feed, the market - without touching a button or a tab bar, since a smaller target
   is a harder one to hit. Reduce animations starts from what the device asks for in

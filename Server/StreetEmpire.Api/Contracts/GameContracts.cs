@@ -634,7 +634,13 @@ public sealed record PlayerProfileResponse(
     CombatStatusResponse CombatStatus,
     bool CanMessage,
     string? MessageBlockedReason,
-    IReadOnlyList<ActivityResponse> PublicActivity);
+    IReadOnlyList<ActivityResponse> PublicActivity,
+    /// <summary>
+    /// True when they have turned it off, as opposed to having done nothing yet. The page needs to tell
+    /// those apart: an empty list with no explanation reads as a broken profile, and saying "they keep
+    /// this private" gives away nothing they did not choose.
+    /// </summary>
+    bool ActivityHidden);
 
 public sealed record HideoutUpgradeRequest(string? Room);
 

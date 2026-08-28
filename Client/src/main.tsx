@@ -4344,9 +4344,9 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <span className="text-primary fw-bolder">#{target.rank}</span>
           <span className="d-flex align-items-center gap-2 min-w-0">
             <PlayerAvatar name={target.name} avatarUrl={target.avatarUrl} size={32} />
-            <strong className="min-w-0 text-truncate">{target.name}</strong>
+            <strong className={`min-w-0 text-truncate ${profileAccentClass(target.profileAccent)}`}>{target.name}</strong>
           </span>
-          <small className="text-body-secondary small">{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
+          <small className="text-body-secondary small">{target.profileTagline || `${target.city}${target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}`}</small>
           <em className={`eyebrow fst-normal ${target.combatStatus.mismatchReason ? 'text-warning-emphasis' : ''}`}>{target.titles.length > 0 ? target.titles.join(', ') : `${target.combatStatus.eligibility} / ${target.combatReadiness.riskBand}`}{target.rides > 0 ? ` / ${target.rides} parked` : ''}</em>
           <b className="text-body">{money.format(target.netWorth)}</b>
         </button>)}
@@ -4356,8 +4356,16 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <div className="d-flex align-items-center gap-3 min-w-0">
             <PlayerAvatar name={profile.name} avatarUrl={profile.avatarUrl} size={56} />
             <div className="d-grid gap-1 min-w-0">
-              <strong className="text-body fs-5 text-truncate">{profile.name}</strong>
-              <span className="eyebrow">{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span>
+              <strong className={`${profileAccentClass(profile.profileAccent)} fs-5 text-truncate`}>{profile.name}</strong>
+              <span className="eyebrow">
+                {[profile.city, profile.profilePronouns, profile.profileLocation].filter(Boolean).join(' / ')}
+                {profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}
+              </span>
+              {profile.publicDiscordUsername && <small className="d-block text-primary">
+                <i className="bi bi-discord me-1" aria-hidden="true" />
+                {profile.publicDiscordUsername}
+              </small>}
+              {profile.profileTagline && <small className={`d-block ${profileAccentClass(profile.profileAccent)}`}>{profile.profileTagline}</small>}
               {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
             </div>
           </div>
@@ -4366,13 +4374,15 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <button
             className="btn btn-secondary btn-sm"
             type="button"
+            disabled={!profile.canMessage}
+            title={profile.messageBlockedReason ?? 'Start a direct conversation'}
             onClick={() => void (async () => {
               try {
                 const { id } = await api.openDirect(profile.playerId)
                 window.dispatchEvent(new CustomEvent('street-empire:conversation', { detail: { conversationId: id } }))
               } catch { /* the profile shows its own errors elsewhere */ }
             })()}
-          >Message</button>
+          >{profile.canMessage ? 'Message' : 'Closed'}</button>
           {/* Silences them. Says so plainly, because a player who thinks this also keeps them from
               raiding the house will find out the hard way and blame the button. */}
           <button
@@ -5609,7 +5619,10 @@ function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], 
       <span className="text-body-secondary">#{l.rank}</span>
       <span className="d-flex align-items-center gap-2 min-w-0">
         <PlayerAvatar name={l.playerName} avatarUrl={l.avatarUrl} size={30} />
-        <strong className="min-w-0 text-truncate">{l.playerName}</strong>
+        <span className="d-grid min-w-0">
+          <strong className="min-w-0 text-truncate">{l.playerName}</strong>
+          {l.profileTagline && <small className="text-body-tertiary text-truncate">{l.profileTagline}</small>}
+        </span>
       </span>
       <span className="text-body-secondary">{money.format(l.netWorth)}</span>
     </div>)}
@@ -5774,13 +5787,27 @@ function formatBreakdownValue(key: string, value: unknown) {
   return String(value)
 }
 
-const ACCOUNT_TABS = ['profile', 'signin', 'security'] as const
+const ACCOUNT_TABS = ['profile', 'signin', 'privacy', 'alerts', 'security'] as const
 type AccountTab = typeof ACCOUNT_TABS[number]
 
 const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = {
   profile: { label: 'Profile', kicker: 'Who you are here' },
   signin: { label: 'Sign-in', kicker: 'Email, password, Discord' },
+  privacy: { label: 'Privacy', kicker: 'Discord and messages' },
+  alerts: { label: 'Alerts', kicker: 'Email and sync' },
   security: { label: 'Security', kicker: 'Sessions and last doors' },
+}
+
+const PROFILE_ACCENTS: Account['profileAccent'][] = ['Gold', 'Teal', 'Rose', 'Steel']
+
+function profileAccentClass(accent: Account['profileAccent'] | PlayerTarget['profileAccent']) {
+  return accent === 'Teal'
+    ? 'text-info'
+    : accent === 'Rose'
+      ? 'text-danger'
+      : accent === 'Steel'
+        ? 'text-body-secondary'
+        : 'text-primary'
 }
 
 /**
@@ -5911,12 +5938,14 @@ function AccountPage(ctx: PageContext) {
     </div>}
 
     <div className="d-grid gtc-1 gtc-xl-2 gap-3 align-items-start">
-      {tab === 'profile' && <AccountProfilePanel account={account} dashboard={ctx.dashboard} onTab={setTab} />}
+      {tab === 'profile' && <AccountProfilePanel {...panel} dashboard={ctx.dashboard} onTab={setTab} />}
       {tab === 'signin' && <>
         <AccountEmailPanel {...panel} email={email} setEmail={setEmail} />
         <AccountPasswordPanel {...panel} />
         <AccountDiscordPanel {...panel} />
       </>}
+      {tab === 'privacy' && <AccountPrivacyPanel {...panel} />}
+      {tab === 'alerts' && <AccountAlertsPanel {...panel} />}
       {tab === 'security' && <AccountSecurityPanel {...panel} onTab={setTab} />}
     </div>
   </div>
@@ -5931,10 +5960,35 @@ type AccountPanel = {
   fail: (message: string) => void
 }
 
-function AccountProfilePanel({ account, dashboard, onTab }: { account: Account, dashboard: Dashboard, onTab: (tab: AccountTab) => void }) {
+function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: AccountPanel & { dashboard: Dashboard, onTab: (tab: AccountTab) => void }) {
   // Two names, and they are not the same thing, which is worth saying plainly on the page where both
   // appear: one is how you sign in and nobody else sees it, the other is what the whole city calls you.
   const open = waysIn(account)
+  const [tagline, setTagline] = useState(account.profileTagline ?? '')
+  const [pronouns, setPronouns] = useState(account.profilePronouns ?? '')
+  const [location, setLocation] = useState(account.profileLocation ?? '')
+  const [accent, setAccent] = useState<Account['profileAccent']>(account.profileAccent)
+  useEffect(() => {
+    setTagline(account.profileTagline ?? '')
+    setPronouns(account.profilePronouns ?? '')
+    setLocation(account.profileLocation ?? '')
+    setAccent(account.profileAccent)
+  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent])
+
+  const saveProfile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void run(() => api.setProfile(tagline.trim(), pronouns.trim(), location.trim(), accent), 'Profile saved.')
+  }
+
+  const uploadAvatar = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const file = (new FormData(form).get('avatar') as File | null)
+    if (!(file instanceof File) || file.size === 0) { fail('Choose an image file first.'); return }
+    if (file.size > 1_000_000) { fail('Avatar image must be 1 MB or smaller.'); return }
+    void run(() => api.uploadCustomAvatar(file), 'Custom avatar uploaded.', form)
+  }
+
   return <>
     <section className="card p-3 gcol-xl-full">
       <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
@@ -5942,8 +5996,12 @@ function AccountProfilePanel({ account, dashboard, onTab }: { account: Account, 
         <div className="min-w-0 flex-fill">
           <div className="panel-title mb-0"><h2>{account.playerName}</h2><span>{dashboard.city} / Rank #{dashboard.rank}</span></div>
           <small className="text-body-tertiary">
-            {account.avatarSource === 'Discord' ? 'Using Discord avatar' : 'Using default avatar'}
+            {account.avatarSource === 'Discord' ? 'Using Discord avatar' : account.avatarSource === 'Custom' ? 'Using custom avatar' : 'Using default avatar'}
           </small>
+          {account.profileTagline && <p className={`mb-0 mt-1 ${profileAccentClass(account.profileAccent)} text-truncate`}>{account.profileTagline}</p>}
+          {(account.profilePronouns || account.profileLocation) && <small className="d-block text-body-tertiary text-truncate">
+            {[account.profilePronouns, account.profileLocation].filter(Boolean).join(' / ')}
+          </small>}
         </div>
       </div>
       <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
@@ -5957,6 +6015,99 @@ function AccountProfilePanel({ account, dashboard, onTab }: { account: Account, 
         news, the wanted list. Your <strong className="text-primary">username</strong> is only ever how you
         sign in, and nobody else is shown it. Neither of them changes.
       </p>
+      <div className="d-grid gtc-1 gtc-lg-2 gap-3 mt-3">
+        <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={saveProfile}>
+          <label className="field">
+            Tagline
+            <input
+              className="form-control"
+              maxLength={140}
+              value={tagline}
+              placeholder="One line the city sees"
+              onChange={event => setTagline(event.target.value)}
+            />
+            <small className="form-text">{Math.max(0, 140 - tagline.length)} characters left.</small>
+          </label>
+          <div className="d-grid gtc-1 gtc-md-2 gap-3">
+            <label className="field">
+              Pronouns
+              <input
+                className="form-control"
+                maxLength={64}
+                value={pronouns}
+                placeholder="Optional"
+                onChange={event => setPronouns(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              Profile location
+              <input
+                className="form-control"
+                maxLength={64}
+                value={location}
+                placeholder="Optional"
+                onChange={event => setLocation(event.target.value)}
+              />
+            </label>
+          </div>
+          <label className="field">
+            Accent
+            <select
+              className="form-select"
+              value={accent}
+              onChange={event => setAccent(event.target.value as Account['profileAccent'])}
+            >
+              {PROFILE_ACCENTS.map(option => <option value={option} key={option}>{option}</option>)}
+            </select>
+          </label>
+          <button
+            className="btn btn-primary"
+            disabled={busy
+              || (tagline.trim() === (account.profileTagline ?? '')
+                && pronouns.trim() === (account.profilePronouns ?? '')
+                && location.trim() === (account.profileLocation ?? '')
+                && accent === account.profileAccent)}
+          >
+            {busy ? 'Working...' : 'Save Profile'}
+          </button>
+        </form>
+
+        <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={uploadAvatar}>
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <PlayerAvatar name={account.playerName} username={account.username} avatarUrl={account.customAvatarUrl} size={56} />
+            <div className="min-w-0">
+              <span className="eyebrow d-block">Uploaded avatar</span>
+              <strong className="d-block text-truncate">{account.customAvatarUrl ? 'Ready' : 'None uploaded'}</strong>
+            </div>
+          </div>
+          <label className="field">
+            Custom avatar
+            <input className="form-control" name="avatar" type="file" accept="image/png,image/jpeg,image/gif,image/webp" />
+            <small className="form-text">PNG, JPG, GIF, or WebP. 1 MB max.</small>
+          </label>
+          <div className="d-flex flex-wrap gap-2">
+            <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Upload and Use'}</button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={busy || account.avatarSource === 'Custom' || !account.customAvatarUrl}
+              onClick={() => void run(() => api.setAvatarSource('Custom'), 'Custom avatar selected.')}
+            >Use Custom</button>
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              disabled={busy || account.avatarSource === 'None'}
+              onClick={() => void run(() => api.setAvatarSource('None'), 'Default avatar selected.')}
+            >Use Default</button>
+            <button
+              className="btn btn-outline-danger"
+              type="button"
+              disabled={busy || !account.customAvatarUrl}
+              onClick={() => void run(() => api.deleteCustomAvatar(), 'Custom avatar removed.')}
+            >Remove Custom</button>
+          </div>
+        </form>
+      </div>
     </section>
 
     {/*
@@ -6278,7 +6429,9 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
             <div className="min-w-0">
               <span className="eyebrow d-block">Avatar</span>
               <strong className="d-block text-truncate">
-                {account.avatarSource === 'Discord' ? 'Synced from Discord' : 'Default'}
+                {account.avatarSource === 'Discord'
+                  ? 'Synced from Discord'
+                  : account.avatarSource === 'Custom' ? 'Using custom avatar' : 'Default'}
               </strong>
               <small className="text-body-tertiary">
                 {account.discordAvatarUrl ? 'Refresh after changing it on Discord.' : 'No custom Discord avatar found.'}
@@ -6344,6 +6497,139 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
           This server has no Discord credentials set, so there is nothing to connect to yet.
         </p>}
   </section>
+}
+
+function AccountPrivacyPanel({ account, busy, run }: AccountPanel) {
+  const [showDiscord, setShowDiscord] = useState(account.showDiscordOnProfile)
+  const [dmPolicy, setDmPolicy] = useState<Account['directMessagePolicy']>(account.directMessagePolicy)
+  useEffect(() => {
+    setShowDiscord(account.showDiscordOnProfile)
+    setDmPolicy(account.directMessagePolicy)
+  }, [account.showDiscordOnProfile, account.directMessagePolicy])
+
+  const changed = showDiscord !== account.showDiscordOnProfile || dmPolicy !== account.directMessagePolicy
+  const save = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void run(() => api.setPrivacy(showDiscord, dmPolicy), 'Privacy saved.')
+  }
+
+  return <section className="card p-3 gcol-xl-full">
+    <div className="panel-title"><h2>Privacy</h2><span>{dmPolicy === 'Everyone' ? 'Open' : dmPolicy === 'Alliance' ? 'Crew only' : 'Closed'}</span></div>
+    <form className="d-grid gap-3" onSubmit={save}>
+      <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
+        <input
+          className="form-check-input"
+          type="checkbox"
+          checked={showDiscord}
+          disabled={!account.discordConnected}
+          onChange={event => setShowDiscord(event.target.checked)}
+        />
+        <strong className="d-block">Show Discord on public profile</strong>
+        <small className="form-text">
+          {account.discordConnected
+            ? account.discordUsername ?? 'Connected Discord'
+            : 'Connect Discord before showing it publicly.'}
+        </small>
+      </label>
+      <label className="field">
+        Direct messages
+        <select
+          className="form-select"
+          value={dmPolicy}
+          onChange={event => setDmPolicy(event.target.value as Account['directMessagePolicy'])}
+        >
+          <option value="Everyone">Everyone</option>
+          <option value="Alliance">Crew only</option>
+          <option value="Nobody">Nobody</option>
+        </select>
+        <small className="form-text">Existing blocks still win over this setting.</small>
+      </label>
+      <button className="btn btn-primary" disabled={busy || !changed}>{busy ? 'Working...' : 'Save Privacy'}</button>
+    </form>
+  </section>
+}
+
+function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
+  const [syncDiscord, setSyncDiscord] = useState(account.syncDiscordAvatar)
+  const [security, setSecurity] = useState(account.emailSecurityNotices)
+  const [combat, setCombat] = useState(account.emailCombatNotices)
+  const [alliance, setAlliance] = useState(account.emailAllianceNotices)
+  useEffect(() => {
+    setSyncDiscord(account.syncDiscordAvatar)
+    setSecurity(account.emailSecurityNotices)
+    setCombat(account.emailCombatNotices)
+    setAlliance(account.emailAllianceNotices)
+  }, [account.syncDiscordAvatar, account.emailSecurityNotices, account.emailCombatNotices, account.emailAllianceNotices])
+
+  const changed = syncDiscord !== account.syncDiscordAvatar
+    || security !== account.emailSecurityNotices
+    || combat !== account.emailCombatNotices
+    || alliance !== account.emailAllianceNotices
+
+  const save = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void run(() => api.setNotificationPreferences(syncDiscord, security, combat, alliance), 'Alert settings saved.')
+  }
+
+  return <section className="card p-3 gcol-xl-full">
+    <div className="panel-title"><h2>Alerts</h2><span>{security || combat || alliance ? 'On' : 'Quiet'}</span></div>
+    <form className="d-grid gap-3" onSubmit={save}>
+      <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
+        <input
+          className="form-check-input"
+          type="checkbox"
+          checked={syncDiscord}
+          disabled={!account.discordConnected}
+          onChange={event => setSyncDiscord(event.target.checked)}
+        />
+        <strong className="d-block">Prefer Discord avatar after refresh</strong>
+        <small className="form-text">
+          {account.discordConnected
+            ? 'When Discord refreshes and has an avatar, it becomes your selected account avatar.'
+            : 'Connect Discord before turning this on.'}
+        </small>
+      </label>
+      <div className="d-grid gtc-1 gtc-md-3 gap-2">
+        <NoticeToggle
+          label="Security"
+          detail="Password, Discord, sessions, and account access."
+          checked={security}
+          onChange={setSecurity}
+        />
+        <NoticeToggle
+          label="Combat"
+          detail="Future fight and defence email alerts."
+          checked={combat}
+          onChange={setCombat}
+        />
+        <NoticeToggle
+          label="Crew"
+          detail="Future crew requests, pacts, and transfers."
+          checked={alliance}
+          onChange={setAlliance}
+        />
+      </div>
+      <button className="btn btn-primary" disabled={busy || !changed}>{busy ? 'Working...' : 'Save Alerts'}</button>
+    </form>
+  </section>
+}
+
+function NoticeToggle({ label, detail, checked, onChange }: {
+  label: string
+  detail: string
+  checked: boolean
+  onChange: (value: boolean) => void
+}) {
+  return <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${checked ? 'border-primary' : ''}`}>
+    <input
+      className="form-check-input"
+      type="checkbox"
+      checked={checked}
+      onChange={event => onChange(event.target.checked)}
+    />
+    <strong className="d-block">{label}</strong>
+    <small className="form-text">{detail}</small>
+  </label>
 }
 
 function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { onTab: (tab: AccountTab) => void }) {

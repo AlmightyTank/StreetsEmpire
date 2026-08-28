@@ -102,6 +102,7 @@ var tests = new (string Name, Action Test)[]
     ("a room only ever fails towards the loudest one", ChatFailsTowardsTheOpenRoom),
     ("a direct message is addressed, never posted", ADirectMessageIsAddressedNeverPosted),
     ("blocking silences somebody without shielding you from them", BlockingIsChatAndNotCover),
+    ("message privacy closes only the doors it names", MessagePrivacyClosesOnlyNamedDoors),
     ("a conversation is who is in it, whether that is two or twelve", AConversationIsWhoIsInIt),
     ("an order goes in as fast as the room allows", AnOrderGoesInAsFastAsTheRoomAllows),
     ("rivals keep their own hours and play in sittings", BotSchedulesLookLikePeople),
@@ -2100,6 +2101,10 @@ static void NoticesOnlyGoToProvenAddresses()
     notices.TellAccountAsync(confirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
     AssertEqual(1, sent.Messages.Count);
     AssertEqual("sam@example.com", sent.Messages[0].To);
+
+    confirmed.EmailSecurityNotices = false;
+    notices.TellAccountAsync(confirmed, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(1, sent.Messages.Count);
 
     // The switch exists for a load test against a real provider, not for ordinary use.
     var quiet = new AccountNotices(sent, Options(new EmailOptions { SendSecurityNotices = false }), NullLogger<AccountNotices>.Instance);
@@ -4601,6 +4606,52 @@ static void BlockingIsChatAndNotCover()
     };
     AssertEqual(ChatChannel.Direct, message.Channel);
     AssertTrue(message.City is null && message.AllianceId is null, "a direct message has no room scope");
+}
+
+static void MessagePrivacyClosesOnlyNamedDoors()
+{
+    const long crew = 77;
+    var sender = new Player
+    {
+        Id = Guid.NewGuid(),
+        Name = "Sender",
+        AllianceId = crew,
+        Account = new PlayerAccount { Username = "sender", PasswordHash = "hashed" }
+    };
+    var crewmate = new Player
+    {
+        Id = Guid.NewGuid(),
+        Name = "Crewmate",
+        AllianceId = crew,
+        Account = new PlayerAccount { Username = "crewmate", PasswordHash = "hashed", DirectMessagePolicy = DirectMessagePolicy.Alliance }
+    };
+    var outsider = new Player
+    {
+        Id = Guid.NewGuid(),
+        Name = "Outsider",
+        Account = new PlayerAccount { Username = "outsider", PasswordHash = "hashed", DirectMessagePolicy = DirectMessagePolicy.Alliance }
+    };
+    var closed = new Player
+    {
+        Id = Guid.NewGuid(),
+        Name = "Closed",
+        Account = new PlayerAccount
+        {
+            Username = "closed",
+            PasswordHash = "hashed",
+            DiscordUsername = "closed#0001",
+            ShowDiscordOnProfile = true,
+            DirectMessagePolicy = DirectMessagePolicy.Nobody
+        }
+    };
+
+    AssertTrue(ChatService.DirectMessageBlockReason(sender, crewmate) is null, "crew-only still lets the crew speak");
+    AssertEqual("They are only taking messages from their crew.", ChatService.DirectMessageBlockReason(sender, outsider));
+    AssertEqual("They are not taking direct messages.", ChatService.DirectMessageBlockReason(sender, closed));
+    AssertEqual("closed#0001", PublicDiscordUsername(closed.Account));
+
+    closed.Account.ShowDiscordOnProfile = false;
+    AssertTrue(PublicDiscordUsername(closed.Account) is null, "a Discord connection is private until shared");
 }
 
 static void ADirectMessageIsAddressedNeverPosted()

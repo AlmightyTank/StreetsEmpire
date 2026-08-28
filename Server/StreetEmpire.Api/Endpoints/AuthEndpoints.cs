@@ -364,6 +364,7 @@ internal static class AuthEndpoints
                 DiscordUsername = profile.DisplayName,
                 DiscordAvatarHash = profile.AvatarHash,
                 AvatarSource = profile.AvatarHash is null ? AccountAvatarSource.None : AccountAvatarSource.Discord,
+                SyncDiscordAvatar = profile.AvatarHash is not null,
                 DiscordLinkedAtUtc = DateTime.UtcNow,
             };
             account.SetEmail(email);
@@ -403,6 +404,11 @@ internal static class AuthEndpoints
         if (account.DiscordAvatarHash != profile.AvatarHash)
         {
             account.DiscordAvatarHash = profile.AvatarHash;
+            changed = true;
+        }
+        if (account.SyncDiscordAvatar && profile.AvatarHash is not null && account.AvatarSource != AccountAvatarSource.Discord)
+        {
+            account.AvatarSource = AccountAvatarSource.Discord;
             changed = true;
         }
         if (profile.AvatarHash is null && account.AvatarSource == AccountAvatarSource.Discord)

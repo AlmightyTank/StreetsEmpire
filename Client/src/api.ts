@@ -601,6 +601,7 @@ export type LeaderboardEntry = {
   rank: number
   playerName: string
   avatarUrl: string | null
+  profileTagline: string | null
   city: string
   netWorth: number
   cash: number
@@ -653,6 +654,11 @@ export type PlayerTarget = {
   playerId: string
   name: string
   avatarUrl: string | null
+  profileTagline: string | null
+  profilePronouns: string | null
+  profileLocation: string | null
+  profileAccent: 'Gold' | 'Teal' | 'Rose' | 'Steel'
+  publicDiscordUsername: string | null
   city: string
   isBot: boolean
   aiPersonality?: string | null
@@ -668,6 +674,8 @@ export type PlayerTarget = {
   averageMorale: number
   combatReadiness: CombatReadiness
   combatStatus: CombatStatus
+  canMessage: boolean
+  messageBlockedReason: string | null
 }
 
 export type PlayerProfile = PlayerTarget & {
@@ -950,9 +958,12 @@ export class RequestError extends Error {
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const uploadingForm = options?.body instanceof FormData
   const response = await fetch(url, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    headers: uploadingForm
+      ? { ...(options?.headers ?? {}) }
+      : { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
     ...options,
   })
 
@@ -1075,8 +1086,19 @@ export type Account = {
   discordUsername: string | null
   discordAvatarUrl: string | null
   discordLinkedAtUtc: string | null
-  avatarSource: 'None' | 'Discord'
+  avatarSource: 'None' | 'Discord' | 'Custom'
   avatarUrl: string | null
+  customAvatarUrl: string | null
+  profileTagline: string | null
+  profilePronouns: string | null
+  profileLocation: string | null
+  profileAccent: 'Gold' | 'Teal' | 'Rose' | 'Steel'
+  showDiscordOnProfile: boolean
+  directMessagePolicy: 'Everyone' | 'Alliance' | 'Nobody'
+  syncDiscordAvatar: boolean
+  emailSecurityNotices: boolean
+  emailCombatNotices: boolean
+  emailAllianceNotices: boolean
   /** False when the server has no Discord credentials, which hides the connect button entirely. */
   discordConfigured: boolean
   createdAtUtc: string
@@ -1153,6 +1175,36 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ source }),
     }),
+  setProfile: (tagline: string, pronouns: string, location: string, accent: Account['profileAccent']) =>
+    request<Account>('/api/account/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        tagline: tagline || null,
+        pronouns: pronouns || null,
+        location: location || null,
+        accent,
+      }),
+    }),
+  setPrivacy: (showDiscordOnProfile: boolean, directMessagePolicy: Account['directMessagePolicy']) =>
+    request<Account>('/api/account/privacy', {
+      method: 'PUT',
+      body: JSON.stringify({ showDiscordOnProfile, directMessagePolicy }),
+    }),
+  setNotificationPreferences: (
+    syncDiscordAvatar: boolean,
+    emailSecurityNotices: boolean,
+    emailCombatNotices: boolean,
+    emailAllianceNotices: boolean) =>
+    request<Account>('/api/account/notifications', {
+      method: 'PUT',
+      body: JSON.stringify({ syncDiscordAvatar, emailSecurityNotices, emailCombatNotices, emailAllianceNotices }),
+    }),
+  uploadCustomAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('avatar', file)
+    return request<Account>('/api/account/avatar/custom', { method: 'POST', body: form })
+  },
+  deleteCustomAvatar: () => request<Account>('/api/account/avatar/custom', { method: 'DELETE' }),
   disconnectDiscord: () => request<Account>('/api/account/discord', { method: 'DELETE' }),
   /** Issues a fresh code and retires whatever was outstanding. Refused inside the resend cooldown. */
   sendEmailCode: () => request<Account>('/api/account/email/verify/send', { method: 'POST' }),

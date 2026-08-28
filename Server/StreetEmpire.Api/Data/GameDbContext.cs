@@ -47,7 +47,16 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.DiscordUserId).HasMaxLength(32);
             entity.Property(x => x.DiscordUsername).HasMaxLength(64);
             entity.Property(x => x.DiscordAvatarHash).HasMaxLength(128);
+            entity.Property(x => x.CustomAvatarContentType).HasMaxLength(32);
             entity.Property(x => x.AvatarSource).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.ProfileTagline).HasMaxLength(140);
+            entity.Property(x => x.ProfilePronouns).HasMaxLength(64);
+            entity.Property(x => x.ProfileLocation).HasMaxLength(64);
+            entity.Property(x => x.ProfileAccent).HasConversion<string>().HasMaxLength(16).HasDefaultValue(ProfileAccent.Gold);
+            entity.Property(x => x.DirectMessagePolicy).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.EmailSecurityNotices).HasDefaultValue(true);
+            entity.Property(x => x.EmailCombatNotices).HasDefaultValue(true);
+            entity.Property(x => x.EmailAllianceNotices).HasDefaultValue(true);
             entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)

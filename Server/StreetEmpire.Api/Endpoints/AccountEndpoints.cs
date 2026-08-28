@@ -20,6 +20,11 @@ namespace StreetEmpire.Api.Endpoints;
 /// </summary>
 internal static class AccountEndpoints
 {
+    private const long MaxCustomAvatarBytes = 1_000_000;
+    private const int MaxTaglineLength = 140;
+    private const int MaxPronounsLength = 64;
+    private const int MaxLocationLength = 64;
+
     internal static void MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
         var account = app.MapGroup("/api/account").RequireAuthorization();
@@ -239,16 +244,167 @@ internal static class AccountEndpoints
             {
                 null or "" or "none" => AccountAvatarSource.None,
                 "discord" => AccountAvatarSource.Discord,
+                "custom" => AccountAvatarSource.Custom,
                 _ => (AccountAvatarSource?)null,
             };
             if (source is null)
-                return Results.BadRequest(new { error = "Pick one of: none, discord." });
+                return Results.BadRequest(new { error = "Pick one of: none, discord, custom." });
             if (source == AccountAvatarSource.Discord && current.DiscordUserId is null)
                 return Results.BadRequest(new { error = "Connect Discord before using its avatar." });
             if (source == AccountAvatarSource.Discord && DiscordAuthService.AvatarUrl(current.DiscordUserId, current.DiscordAvatarHash) is null)
                 return Results.BadRequest(new { error = "That Discord account does not have a custom avatar to use." });
+            if (source == AccountAvatarSource.Custom && current.CustomAvatar is null)
+                return Results.BadRequest(new { error = "Upload a custom avatar before using it." });
 
             current.AvatarSource = source.Value;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        });
+
+        account.MapPut("/profile", async (
+            ChangeProfileRequest request,
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            var tagline = NormalizeProfileText(request.Tagline);
+            var pronouns = NormalizeProfileText(request.Pronouns);
+            var location = NormalizeProfileText(request.Location);
+            var accent = ParseAccent(request.Accent);
+            if (tagline?.Length > MaxTaglineLength)
+                return Results.BadRequest(new { error = $"Tagline must be {MaxTaglineLength} characters or less." });
+            if (pronouns?.Length > MaxPronounsLength)
+                return Results.BadRequest(new { error = $"Pronouns must be {MaxPronounsLength} characters or less." });
+            if (location?.Length > MaxLocationLength)
+                return Results.BadRequest(new { error = $"Profile location must be {MaxLocationLength} characters or less." });
+            if (!string.IsNullOrWhiteSpace(request.Accent) && accent is null)
+                return Results.BadRequest(new { error = "Pick one of: gold, teal, rose, steel." });
+
+            current.ProfileTagline = tagline;
+            current.ProfilePronouns = pronouns;
+            current.ProfileLocation = location;
+            if (accent is { } selectedAccent)
+                current.ProfileAccent = selectedAccent;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        });
+
+        account.MapPut("/privacy", async (
+            ChangePrivacyRequest request,
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            if (request.ShowDiscordOnProfile is { } showDiscord)
+                current.ShowDiscordOnProfile = showDiscord && current.DiscordUserId is not null;
+
+            var policy = request.DirectMessagePolicy?.Trim().ToLowerInvariant() switch
+            {
+                null or "" => (DirectMessagePolicy?)null,
+                "everyone" => DirectMessagePolicy.Everyone,
+                "alliance" => DirectMessagePolicy.Alliance,
+                "nobody" => DirectMessagePolicy.Nobody,
+                _ => (DirectMessagePolicy?)null,
+            };
+            if (!string.IsNullOrWhiteSpace(request.DirectMessagePolicy) && policy is null)
+                return Results.BadRequest(new { error = "Pick one of: everyone, alliance, nobody." });
+            if (policy is { } selected)
+                current.DirectMessagePolicy = selected;
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        });
+
+        account.MapPut("/notifications", async (
+            ChangeNotificationPreferencesRequest request,
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            if (request.SyncDiscordAvatar is { } syncDiscordAvatar)
+            {
+                current.SyncDiscordAvatar = syncDiscordAvatar;
+                if (syncDiscordAvatar
+                    && current.DiscordUserId is not null
+                    && DiscordAuthService.AvatarUrl(current.DiscordUserId, current.DiscordAvatarHash) is not null)
+                    current.AvatarSource = AccountAvatarSource.Discord;
+            }
+            if (request.EmailSecurityNotices is { } security)
+                current.EmailSecurityNotices = security;
+            if (request.EmailCombatNotices is { } combat)
+                current.EmailCombatNotices = combat;
+            if (request.EmailAllianceNotices is { } alliance)
+                current.EmailAllianceNotices = alliance;
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        });
+
+        account.MapPost("/avatar/custom", async (
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+            if (!http.Request.HasFormContentType)
+                return Results.BadRequest(new { error = "Upload an image file." });
+
+            var form = await http.Request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("avatar") ?? form.Files.FirstOrDefault();
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new { error = "Choose an image file first." });
+            if (file.Length > MaxCustomAvatarBytes)
+                return Results.BadRequest(new { error = "Avatar image must be 1 MB or smaller." });
+
+            await using var stream = file.OpenReadStream();
+            using var bytes = new MemoryStream();
+            await stream.CopyToAsync(bytes, ct);
+            var data = bytes.ToArray();
+            var contentType = ImageContentType(data);
+            if (contentType is null)
+                return Results.BadRequest(new { error = "Avatar must be a PNG, JPG, GIF, or WebP image." });
+
+            current.CustomAvatar = data;
+            current.CustomAvatarContentType = contentType;
+            current.CustomAvatarUpdatedAtUtc = DateTime.UtcNow;
+            current.AvatarSource = AccountAvatarSource.Custom;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        }).DisableAntiforgery();
+
+        account.MapDelete("/avatar/custom", async (
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            current.CustomAvatar = null;
+            current.CustomAvatarContentType = null;
+            current.CustomAvatarUpdatedAtUtc = null;
+            if (current.AvatarSource == AccountAvatarSource.Custom)
+                current.AvatarSource = AccountAvatarSource.None;
             await db.SaveChangesAsync(ct);
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
@@ -283,6 +439,7 @@ internal static class AccountEndpoints
             current.DiscordUserId = null;
             current.DiscordUsername = null;
             current.DiscordAvatarHash = null;
+            current.ShowDiscordOnProfile = false;
             if (current.AvatarSource == AccountAvatarSource.Discord)
                 current.AvatarSource = AccountAvatarSource.None;
             current.DiscordLinkedAtUtc = null;
@@ -290,6 +447,24 @@ internal static class AccountEndpoints
             await notices.TellAccountAsync(current, AccountChange.DiscordDisconnected, wasConnectedTo, ct);
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
+
+        app.MapGet("/api/game/players/{playerId:guid}/avatar", async (
+            Guid playerId,
+            HttpContext http,
+            GameDbContext db,
+            CancellationToken ct) =>
+        {
+            var subject = await db.Players
+                .Include(x => x.Account)
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == playerId, ct);
+            if (subject?.Account is not { AvatarSource: AccountAvatarSource.Custom, CustomAvatar: not null } accountWithAvatar
+                || string.IsNullOrWhiteSpace(accountWithAvatar.CustomAvatarContentType))
+                return Results.NotFound();
+
+            http.Response.Headers.CacheControl = "private, max-age=86400";
+            return Results.File(accountWithAvatar.CustomAvatar, accountWithAvatar.CustomAvatarContentType);
+        }).RequireAuthorization();
     }
 
     /// <summary>
@@ -316,6 +491,53 @@ internal static class AccountEndpoints
         => !string.IsNullOrEmpty(password)
             && hasher.VerifyHashedPassword(account, account.PasswordHash, password) != PasswordVerificationResult.Failed;
 
+    private static string? NormalizeProfileText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var parts = value.Trim().Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', parts);
+    }
+
+    private static ProfileAccent? ParseAccent(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" => null,
+            "gold" => ProfileAccent.Gold,
+            "teal" => ProfileAccent.Teal,
+            "rose" => ProfileAccent.Rose,
+            "steel" => ProfileAccent.Steel,
+            _ => null,
+        };
+
+    private static string? ImageContentType(byte[] bytes)
+    {
+        if (bytes.Length >= 8
+            && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
+            && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A)
+            return "image/png";
+
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+            return "image/jpeg";
+
+        if (StartsWithAscii(bytes, "GIF87a") || StartsWithAscii(bytes, "GIF89a"))
+            return "image/gif";
+
+        if (bytes.Length >= 12 && StartsWithAscii(bytes, "RIFF", 0) && StartsWithAscii(bytes, "WEBP", 8))
+            return "image/webp";
+
+        return null;
+    }
+
+    private static bool StartsWithAscii(byte[] bytes, string value, int offset = 0)
+    {
+        if (bytes.Length < offset + value.Length) return false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (bytes[offset + i] != (byte)value[i]) return false;
+        }
+        return true;
+    }
+
     private static async Task<AccountResponse> DescribeAsync(
         PlayerAccount account,
         DiscordAuthService discord,
@@ -332,7 +554,10 @@ internal static class AccountEndpoints
                 await verification.ResendableAtAsync(account.Id, VerificationPurpose.ConfirmAddress, account.Email, ct));
 
         var discordAvatarUrl = DiscordAuthService.AvatarUrl(account.DiscordUserId, account.DiscordAvatarHash);
-        var avatarUrl = account.AvatarSource == AccountAvatarSource.Discord ? discordAvatarUrl : null;
+        var avatarUrl = StreetEmpire.Api.Mapping.ResponseMappers.AvatarUrl(account);
+        var customAvatarUrl = account.Player is not null && account.CustomAvatarUpdatedAtUtc is { } updated
+            ? $"/api/game/players/{account.Player.Id}/avatar?v={new DateTimeOffset(updated).ToUnixTimeMilliseconds()}"
+            : null;
 
         return new AccountResponse(
             account.Username,
@@ -349,6 +574,17 @@ internal static class AccountEndpoints
             account.DiscordLinkedAtUtc,
             account.AvatarSource.ToString(),
             avatarUrl,
+            customAvatarUrl,
+            account.ProfileTagline,
+            account.ProfilePronouns,
+            account.ProfileLocation,
+            account.ProfileAccent.ToString(),
+            account.ShowDiscordOnProfile,
+            account.DirectMessagePolicy.ToString(),
+            account.SyncDiscordAvatar,
+            account.EmailSecurityNotices,
+            account.EmailCombatNotices,
+            account.EmailAllianceNotices,
             discord.Options.IsConfigured,
             account.CreatedAtUtc);
     }

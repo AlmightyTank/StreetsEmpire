@@ -255,15 +255,17 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
         if (otherId == player.Id)
             throw new GameRuleException("You are already talking to yourself.");
 
-        var other = await db.Players.AsNoTracking()
-            .Where(x => x.Id == otherId)
-            .Select(x => new { x.Id, x.Name })
-            .SingleOrDefaultAsync(cancellationToken)
+        var other = await db.Players
+            .Include(x => x.Account)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == otherId, cancellationToken)
             ?? throw new GameRuleException("There is nobody by that name.");
 
         var silenced = await SilencedAsync(player, cancellationToken);
         if (silenced.Contains(otherId))
             throw new GameRuleException($"{other.Name} is not taking messages from you.");
+        if (DirectMessageBlockReason(player, other) is { } privacy)
+            throw new GameRuleException(privacy);
 
         // The pair conversation is the one that is not a group and has exactly these two in it.
         var existing = await db.Conversations
@@ -314,12 +316,19 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
         if (allowed.Count == 0)
             throw new GameRuleException("Nobody you picked is taking messages from you.");
 
-        var real = await db.Players.AsNoTracking()
+        var real = await db.Players
+            .Include(x => x.Account)
+            .AsNoTracking()
             .Where(x => allowed.Contains(x.Id))
-            .Select(x => x.Id)
             .ToListAsync(cancellationToken);
-        if (real.Count == 0)
-            throw new GameRuleException("There is nobody by that name.");
+        var takingMessages = real
+            .Where(x => DirectMessageBlockReason(player, x) is null)
+            .Select(x => x.Id)
+            .ToList();
+        if (takingMessages.Count == 0)
+            throw new GameRuleException(real.Count == 0
+                ? "There is nobody by that name."
+                : "Nobody you picked is taking messages from you.");
 
         var clean = (title ?? string.Empty).Trim();
         if (clean.Length > 48)
@@ -332,7 +341,7 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
             CreatedById = player.Id,
             CreatedAtUtc = DateTime.UtcNow,
             LastMessageAtUtc = DateTime.UtcNow,
-            Members = real.Append(player.Id)
+            Members = takingMessages.Append(player.Id)
                 .Select(id => new ConversationMember { PlayerId = id })
                 .ToList()
         };
@@ -367,6 +376,13 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
             var silenced = await SilencedAsync(player, cancellationToken);
             if (silenced.Contains(otherId))
                 throw new GameRuleException("They are not taking messages from you.");
+            var other = await db.Players
+                .Include(x => x.Account)
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == otherId, cancellationToken)
+                ?? throw new GameRuleException("There is nothing to read here.");
+            if (DirectMessageBlockReason(player, other) is { } privacy)
+                throw new GameRuleException(privacy);
         }
 
         var text = Clean(body);
@@ -408,18 +424,27 @@ public sealed class ChatService(GameDbContext db, IOptionsSnapshot<GameOptions> 
         var silenced = await SilencedAsync(player, cancellationToken);
 
         var found = await db.Players
+            .Include(x => x.Account)
             .AsNoTracking()
             .Where(x => x.Id != player.Id && EF.Functions.ILike(x.Name, $"%{text}%"))
             .OrderBy(x => x.Name)
             .Take(20)
-            .Select(x => new { x.Id, x.Name, x.City })
             .ToListAsync(cancellationToken);
 
         return found
-            .Where(x => !silenced.Contains(x.Id))
+            .Where(x => !silenced.Contains(x.Id) && DirectMessageBlockReason(player, x) is null)
             .Select(x => (x.Id, x.Name, x.City))
             .ToList();
     }
+
+    public static string? DirectMessageBlockReason(Player sender, Player recipient)
+        => recipient.Account.DirectMessagePolicy switch
+        {
+            DirectMessagePolicy.Nobody => "They are not taking direct messages.",
+            DirectMessagePolicy.Alliance when sender.AllianceId is null || sender.AllianceId != recipient.AllianceId =>
+                "They are only taking messages from their crew.",
+            _ => null,
+        };
 
     /// <summary>
     /// Everybody this player will not hear from, in either direction.

@@ -44,6 +44,17 @@ public sealed record AccountResponse(
     DateTime? DiscordLinkedAtUtc,
     string AvatarSource,
     string? AvatarUrl,
+    string? CustomAvatarUrl,
+    string? ProfileTagline,
+    string? ProfilePronouns,
+    string? ProfileLocation,
+    string ProfileAccent,
+    bool ShowDiscordOnProfile,
+    string DirectMessagePolicy,
+    bool SyncDiscordAvatar,
+    bool EmailSecurityNotices,
+    bool EmailCombatNotices,
+    bool EmailAllianceNotices,
     bool DiscordConfigured,
     DateTime CreatedAtUtc);
 
@@ -78,6 +89,13 @@ public sealed record ChangeEmailRequest(string? Email, string? CurrentPassword);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
 public sealed record ChangeAvatarRequest(string? Source);
+public sealed record ChangeProfileRequest(string? Tagline, string? Pronouns, string? Location, string? Accent);
+public sealed record ChangePrivacyRequest(bool? ShowDiscordOnProfile, string? DirectMessagePolicy);
+public sealed record ChangeNotificationPreferencesRequest(
+    bool? SyncDiscordAvatar,
+    bool? EmailSecurityNotices,
+    bool? EmailCombatNotices,
+    bool? EmailAllianceNotices);
 
 /// <summary>The half of a Discord sign-up the game needs and Discord cannot answer.</summary>
 /// <param name="Email">

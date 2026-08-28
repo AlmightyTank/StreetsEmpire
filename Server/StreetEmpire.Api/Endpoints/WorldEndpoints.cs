@@ -56,6 +56,7 @@ internal static class WorldEndpoints
                     index + 1,
                     x.Name,
                     AvatarUrl(x.Account),
+                    x.Account.ProfileTagline,
                     x.City,
                     economy.CalculateNetWorth(x),
                     x.Cash,

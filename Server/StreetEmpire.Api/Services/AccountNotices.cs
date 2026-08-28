@@ -58,7 +58,7 @@ public sealed class AccountNotices(
     /// confirm.
     /// </summary>
     public Task TellAccountAsync(PlayerAccount account, AccountChange change, string? detail, CancellationToken ct)
-        => account is { EmailVerified: true, Email: not null }
+        => account is { EmailVerified: true, Email: not null, EmailSecurityNotices: true }
             ? SendAsync(account.Email, account.Player?.Name ?? account.Username, change, detail, ct)
             : Task.CompletedTask;
 

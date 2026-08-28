@@ -20,9 +20,29 @@ namespace StreetEmpire.Api.Mapping;
 internal static class ResponseMappers
 {
     internal static string? AvatarUrl(PlayerAccount account)
-        => account.AvatarSource == AccountAvatarSource.Discord
-            ? DiscordAuthService.AvatarUrl(account.DiscordUserId, account.DiscordAvatarHash)
-            : null;
+        => account.AvatarSource switch
+        {
+            AccountAvatarSource.Discord => DiscordAuthService.AvatarUrl(account.DiscordUserId, account.DiscordAvatarHash),
+            AccountAvatarSource.Custom when account.Player is not null && account.CustomAvatarUpdatedAtUtc is { } updated =>
+                $"/api/game/players/{account.Player.Id}/avatar?v={new DateTimeOffset(updated).ToUnixTimeMilliseconds()}",
+            _ => null,
+        };
+
+    internal static string? PublicDiscordUsername(PlayerAccount account)
+        => account.ShowDiscordOnProfile ? account.DiscordUsername : null;
+
+    internal static string? MessageBlockedReason(Player? viewer, Player target)
+    {
+        if (viewer is null) return "Sign in to send messages.";
+        if (viewer.Id == target.Id) return "You are already talking to yourself.";
+        return target.Account.DirectMessagePolicy switch
+        {
+            DirectMessagePolicy.Nobody => "They are not taking direct messages.",
+            DirectMessagePolicy.Alliance when viewer.AllianceId is null || viewer.AllianceId != target.AllianceId =>
+                "They are only taking messages from their crew.",
+            _ => null,
+        };
+    }
 
     internal static AdminPlayerSummaryResponse ToAdminSummary(Player player, EconomyService economy)
         => new(
@@ -98,10 +118,16 @@ internal static class ResponseMappers
             // What a raid could carry off on both sides. The row still shows net worth; it is only
             // the question of who may fight whom that a building has no business answering.
             : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
+        var messageBlock = MessageBlockedReason(viewer, player);
         return new PlayerTargetResponse(
             player.Id,
             player.Name,
             AvatarUrl(player.Account),
+            player.Account.ProfileTagline,
+            player.Account.ProfilePronouns,
+            player.Account.ProfileLocation,
+            player.Account.ProfileAccent.ToString(),
+            PublicDiscordUsername(player.Account),
             player.City,
             player.Account.IsBot,
             player.Account.IsBot ? BotBrain.For(player).Name : null,
@@ -115,7 +141,9 @@ internal static class ResponseMappers
             player.Rides,
             AverageMorale(player),
             ToCombatReadiness(player, options),
-            ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch));
+            ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch),
+            messageBlock is null,
+            messageBlock);
     }
 
     internal static PlayerProfileResponse ToProfileResponse(
@@ -135,11 +163,17 @@ internal static class ResponseMappers
         var mismatch = viewer is null || viewer.Id == player.Id
             ? null
             : AntiFarm.RejectReason(viewerPlunder, ranked.Plunder, options.AntiFarm);
+        var messageBlock = MessageBlockedReason(viewer, player);
         return new PlayerProfileResponse(
             strikeBlockers ?? new Dictionary<string, string>(),
             player.Id,
             player.Name,
             AvatarUrl(player.Account),
+            player.Account.ProfileTagline,
+            player.Account.ProfilePronouns,
+            player.Account.ProfileLocation,
+            player.Account.ProfileAccent.ToString(),
+            PublicDiscordUsername(player.Account),
             player.City,
             player.Account.IsBot,
             player.Account.IsBot ? BotBrain.For(player).Name : null,
@@ -162,6 +196,8 @@ internal static class ResponseMappers
             AverageMorale(player),
             ToCombatReadiness(player, options),
             ToCombatStatus(player, nowUtc, viewer, options, recentAttacksMade, recentDefenses, viewerLaneReadyAtUtc, mismatch),
+            messageBlock is null,
+            messageBlock,
             publicActivity);
     }
 

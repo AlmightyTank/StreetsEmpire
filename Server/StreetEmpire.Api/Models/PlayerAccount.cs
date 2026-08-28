@@ -4,6 +4,22 @@ public enum AccountAvatarSource
 {
     None,
     Discord,
+    Custom,
+}
+
+public enum DirectMessagePolicy
+{
+    Everyone,
+    Alliance,
+    Nobody,
+}
+
+public enum ProfileAccent
+{
+    Gold,
+    Teal,
+    Rose,
+    Steel,
 }
 
 public sealed class PlayerAccount
@@ -64,7 +80,22 @@ public sealed class PlayerAccount
     /// <summary>Discord's avatar hash. Display only; the user id is what says whose account it is.</summary>
     public string? DiscordAvatarHash { get; set; }
 
+    public byte[]? CustomAvatar { get; set; }
+    public string? CustomAvatarContentType { get; set; }
+    public DateTime? CustomAvatarUpdatedAtUtc { get; set; }
+
     public AccountAvatarSource AvatarSource { get; set; }
+
+    public string? ProfileTagline { get; set; }
+    public string? ProfilePronouns { get; set; }
+    public string? ProfileLocation { get; set; }
+    public ProfileAccent ProfileAccent { get; set; } = ProfileAccent.Gold;
+    public bool ShowDiscordOnProfile { get; set; }
+    public DirectMessagePolicy DirectMessagePolicy { get; set; } = DirectMessagePolicy.Everyone;
+    public bool SyncDiscordAvatar { get; set; }
+    public bool EmailSecurityNotices { get; set; } = true;
+    public bool EmailCombatNotices { get; set; } = true;
+    public bool EmailAllianceNotices { get; set; } = true;
 
     public DateTime? DiscordLinkedAtUtc { get; set; }
 

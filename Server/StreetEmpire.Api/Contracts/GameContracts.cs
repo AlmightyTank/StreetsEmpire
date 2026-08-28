@@ -543,6 +543,7 @@ public sealed record LeaderboardEntryResponse(
     int Rank,
     string PlayerName,
     string? AvatarUrl,
+    string? ProfileTagline,
     string City,
     long NetWorth,
     long Cash,
@@ -555,6 +556,11 @@ public sealed record PlayerTargetResponse(
     Guid PlayerId,
     string Name,
     string? AvatarUrl,
+    string? ProfileTagline,
+    string? ProfilePronouns,
+    string? ProfileLocation,
+    string ProfileAccent,
+    string? PublicDiscordUsername,
     string City,
     bool IsBot,
     string? AiPersonality,
@@ -570,7 +576,9 @@ public sealed record PlayerTargetResponse(
     int Rides,
     double AverageMorale,
     CombatReadinessResponse CombatReadiness,
-    CombatStatusResponse CombatStatus);
+    CombatStatusResponse CombatStatus,
+    bool CanMessage,
+    string? MessageBlockedReason);
 
 public sealed record PlayerProfileResponse(
     /// <summary>
@@ -582,6 +590,11 @@ public sealed record PlayerProfileResponse(
     Guid PlayerId,
     string Name,
     string? AvatarUrl,
+    string? ProfileTagline,
+    string? ProfilePronouns,
+    string? ProfileLocation,
+    string ProfileAccent,
+    string? PublicDiscordUsername,
     string City,
     bool IsBot,
     string? AiPersonality,
@@ -611,6 +624,8 @@ public sealed record PlayerProfileResponse(
     double AverageMorale,
     CombatReadinessResponse CombatReadiness,
     CombatStatusResponse CombatStatus,
+    bool CanMessage,
+    string? MessageBlockedReason,
     IReadOnlyList<ActivityResponse> PublicActivity);
 
 public sealed record HideoutUpgradeRequest(string? Room);

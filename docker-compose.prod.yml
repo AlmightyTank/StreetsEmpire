@@ -34,10 +34,19 @@
 
 services:
   api:
+    # Built by CI and pulled from here, rather than built on the VPS. A server that builds its own image
+    # runs the .NET SDK and a Vite bundle on the machine currently serving the game, for minutes, and
+    # what it produces is an image no test ever ran against. The publish job only runs for a commit that
+    # went green, so what lands here has passed.
+    #
+    # IMAGE_TAG pins it. Leave it alone for the newest build of main; set it to a version - 0.2.6 - or to
+    # a full commit sha to go back to one, which is what a rollback is now.
+    image: ${IMAGE:-ghcr.io/almightytank/streetsempire}:${IMAGE_TAG:-latest}
+    # Still here so the image can be built by hand - `up -d --build` - for testing a change that is not
+    # pushed yet. It is not what a deploy does.
     build:
       context: .
       dockerfile: Dockerfile
-    image: street-empire:latest
     # Nothing left in this file to depend on, and the ordering that used to buy is covered by the restart
     # policy instead. The app migrates on boot, so if Docker comes back from a reboot before Postgres
     # does, the migration fails, the container exits, and this brings it straight back until the database

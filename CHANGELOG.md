@@ -35,6 +35,21 @@
   more characters than the server will take: it inherited a 254-character limit from the sign-in box,
   where the same field can hold an email address, and names stop at 32.
 
+- **CI builds the image and the VPS pulls it.** The server used to build its own: `up -d --build` ran
+  the .NET SDK, `npm ci` and a Vite bundle on the machine that was at that moment serving the game, for
+  minutes, using memory the game wanted - and produced an image no test had ever run against, because
+  building from a checkout does not care whether that commit was green. The publish job has
+  `needs: [server, tests, client]`, so an image exists only for a commit that passed all three.
+- Three tags, doing three jobs: `latest` for what a deploy takes, the version from `VERSION` for what a
+  human says out loud, and the commit sha - the only one that never moves, and therefore the only one
+  worth pinning to. Which makes a rollback the same command as a deploy with a sha after it.
+- `ops/deploy.sh` is that command. It pulls the checkout, pulls the image, restarts, and then waits
+  until the app actually answers before saying it worked - because "up" and "working" are different
+  claims when the app migrates on boot and a container that exits gets restarted for you.
+- **The image says which commit it is.** `/api/health` was already reporting the build, and in a built
+  image that build was the version and nothing else: the build context carries `Server/` and not `.git`,
+  so nothing inside it could know. CI passes the sha in as a build argument now. A build by hand still
+  leaves it off, which is honest - a local build is not any particular commit.
 - **Postgres runs on the VPS rather than in the compose stack.** Not for the data's sake - it was on a
   named volume, and a volume outlives every container that mounts it, which was demonstrated by
   destroying the container and counting the same eleven accounts afterwards. What moving it buys is that

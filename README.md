@@ -414,9 +414,9 @@ Three containers - the app, Caddy in front of it, and a job that takes dumps - t
 installed on the VPS itself. The app image carries the built client inside it, so one origin serves both.
 
 ```bash
-git clone <your-repo> streetsempire && cd streetsempire
+git clone https://github.com/AlmightyTank/StreetsEmpire.git streetsempire && cd streetsempire
 cp .env.example .env    # fill in DOMAIN, POSTGRES_HOST, POSTGRES_PASSWORD, and the keys you have
-docker compose -f docker-compose.prod.yml up -d --build
+./ops/deploy.sh
 ```
 
 Set the database up first - see below - because there is nothing to connect to until it exists. After
@@ -610,11 +610,51 @@ the account back.
 ### Updating it
 
 ```bash
-git pull && docker compose -f docker-compose.prod.yml up -d --build
+./ops/deploy.sh
 ```
 
-New migrations apply on the way up. The database is not part of this stack any more and is not touched
-by it, and the key ring volume is left alone.
+That pulls the checkout, pulls the image CI built, restarts, and waits until the app actually answers
+before calling it done. New migrations apply on the way up. The database is not part of this stack any
+more and is not touched by it, and the key ring volume is left alone.
+
+**The VPS does not build anything.** It used to: `up -d --build` ran the .NET SDK, `npm ci` and a Vite
+bundle on the machine that was at that moment serving the game, for minutes, using memory the game
+wanted - and what came out was an image no test had ever run against, because building from a checkout
+does not care whether that commit was green.
+
+The publish job in `.github/workflows/ci.yml` has `needs: [server, tests, client]`, so an image exists
+only for a commit that passed all three. It goes to GHCR under three tags doing three different jobs:
+
+| tag | what it is for |
+| --- | --- |
+| `latest` | the newest green build of main - what a deploy takes when you give it no argument |
+| `0.2.6` | the version in `VERSION`, which is the name a human says out loud |
+| the commit sha | the only one that never moves, and therefore the only one worth pinning to |
+
+Which makes going back one command, and the same command:
+
+```bash
+./ops/deploy.sh 4f3a91c8d2e5b7a1f0c9d8e7b6a5f4e3d2c1b0a9
+```
+
+It sets `IMAGE_TAG` for that one run rather than editing anything, so the next plain `./ops/deploy.sh`
+returns to `latest`. Pin it in `.env` instead if you want it to stay put across deploys.
+
+**One thing to do once, in GitHub.** A package published from a public repository still starts private,
+and the VPS has no credentials. Open the package under the repository's Packages, then Package settings,
+and change its visibility to public. The alternative is `docker login ghcr.io` on the VPS with a
+read-only token, which is a credential to store and rotate for an image that contains nothing secret -
+the app and the built client, with every password and key coming from `.env` at runtime.
+
+**The image reports which commit it is.** `/api/health` returns the version and the build:
+
+```json
+{"status":"ok","version":"0.2.6","build":"0.2.6+8f63b72f0dba6dac2fdafc95f3d7dbeaa74ede3e"}
+```
+
+The commit has to be passed in as a build argument, because the build context carries `Server/` and not
+`.git` - nothing inside the build could work it out. CI passes it. A build by hand leaves it off, which
+is honest: a local build genuinely is not any particular commit.
 
 ### Bumping the version
 

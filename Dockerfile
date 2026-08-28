@@ -35,8 +35,14 @@ COPY Tests/StreetEmpire.Tests/StreetEmpire.Tests.csproj Tests/StreetEmpire.Tests
 RUN dotnet restore Server/StreetEmpire.Api/StreetEmpire.Api.csproj
 
 COPY Server/ Server/
+
+# The commit this was built from, stamped into the assembly so /api/health can answer "is the thing I
+# deployed the thing running". It has to be passed in: the build context carries Server/ and not .git,
+# so nothing in here could work it out. Empty when somebody builds by hand, which is honest - a local
+# build genuinely is not any particular commit.
+ARG GIT_SHA=""
 RUN dotnet publish Server/StreetEmpire.Api/StreetEmpire.Api.csproj -c Release -o /app --no-restore \
-    -p:StreetEmpireStrictVersion=true
+    -p:StreetEmpireStrictVersion=true -p:SourceRevisionId=$GIT_SHA
 
 
 # ---- what actually runs -----------------------------------------------------------------------

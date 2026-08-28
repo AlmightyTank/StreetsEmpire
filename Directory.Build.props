@@ -21,4 +21,15 @@
     <Version>$(StreetEmpireVersion)</Version>
     <InformationalVersion>$(StreetEmpireVersion)</InformationalVersion>
   </PropertyGroup>
+
+  <!--
+    Somewhere that ships, the fallback above is not a kindness - it is an image quietly reporting a
+    version nobody ever released. The Docker build asks for this check, so a missing VERSION, or a
+    props file that never made it into the build context, stops the image being built rather than
+    being discovered months later at a health endpoint.
+  -->
+  <Target Name="RefuseFallbackVersion" BeforeTargets="Build" Condition="'$(StreetEmpireStrictVersion)' == 'true'">
+    <Error Condition="'$(StreetEmpireVersion)' == '0.0.0'"
+           Text="VERSION could not be read from '$(VersionFile)'. In a container build this usually means the file was never copied into the build context." />
+  </Target>
 </Project>

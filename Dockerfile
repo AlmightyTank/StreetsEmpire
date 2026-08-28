@@ -14,6 +14,9 @@ COPY Client/package.json Client/package-lock.json ./
 RUN npm ci
 
 COPY Client/ ./
+# vite.config.ts reads the version from here, one directory up, so the build needs it in the image.
+# After npm ci rather than before, so bumping a release does not re-install node_modules.
+COPY VERSION /VERSION
 RUN npm run build
 
 
@@ -23,12 +26,17 @@ WORKDIR /src
 
 # Same trick: restore against the project files alone, so a code change does not re-fetch NuGet.
 COPY StreetEmpire.sln ./
+# Both are read while MSBuild evaluates, so they have to be here before restore rather than before
+# publish. Without them MSBuild silently falls back and the image ships reporting a version nobody
+# released - which is why the publish below asks for the strict check.
+COPY VERSION Directory.Build.props ./
 COPY Server/StreetEmpire.Api/StreetEmpire.Api.csproj Server/StreetEmpire.Api/
 COPY Tests/StreetEmpire.Tests/StreetEmpire.Tests.csproj Tests/StreetEmpire.Tests/
 RUN dotnet restore Server/StreetEmpire.Api/StreetEmpire.Api.csproj
 
 COPY Server/ Server/
-RUN dotnet publish Server/StreetEmpire.Api/StreetEmpire.Api.csproj -c Release -o /app --no-restore
+RUN dotnet publish Server/StreetEmpire.Api/StreetEmpire.Api.csproj -c Release -o /app --no-restore \
+    -p:StreetEmpireStrictVersion=true
 
 
 # ---- what actually runs -----------------------------------------------------------------------

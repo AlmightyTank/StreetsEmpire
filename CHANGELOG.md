@@ -13,6 +13,13 @@
 - Both halves of that fail silently when broken - MSBuild falls back to 0.0.0 and vite leaves its token
   in place, and neither stops a build - so a test checks VERSION against what actually reached the
   assembly, and fails if any of the three files starts naming a number again.
+- **The image build broke, and would then have lied.** Reading the version from a file meant the Docker
+  build needed that file, and neither stage was given it. The client stage failed outright, which is how
+  it was noticed; the server stage would have carried on and produced an image quietly reporting 1.0.0 -
+  a version nobody released, at the endpoint you ask when you want to know what is deployed. Both stages
+  get the file now, and the image build asks MSBuild to refuse the fallback outright rather than fall
+  back to it. A developer's build still compiles without it, because a missing VERSION should never stop
+  somebody working.
 - **The health endpoint reports the commit** as well as the version, because "is the thing I deployed
   the thing running" is what a health endpoint gets asked from a server.
 

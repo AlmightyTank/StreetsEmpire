@@ -32,6 +32,19 @@
 # down once, in .env, because the alternative is a default in here that has to agree with a hand-edited
 # file on the host, and two copies of an address is how a database ends up unreachable after a reboot.
 
+# Container logs, bounded. Docker's default json-file driver keeps everything for ever, so on a box
+# that is only ever restarted for a deploy the logs are a slow leak with a disk at the end of it - and a
+# full disk on this VPS stops Postgres writing, which stops the game. Fifty megabytes a service is more
+# scrollback than anybody reads and a fixed ceiling either way.
+#
+# Written once and pointed at from each service, because three copies of a limit is two that get raised
+# and one that does not.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   api:
     # Built by CI and pulled from here, rather than built on the VPS. A server that builds its own image
@@ -42,6 +55,7 @@ services:
     # IMAGE_TAG pins it. Leave it alone for the newest build of main; set it to a version - 0.2.6 - or to
     # a full commit sha to go back to one, which is what a rollback is now.
     image: ${IMAGE:-ghcr.io/almightytank/streetsempire}:${IMAGE_TAG:-latest}
+    logging: *logging
     # Still here so the image can be built by hand - `up -d --build` - for testing a change that is not
     # pushed yet. It is not what a deploy does.
     build:
@@ -92,6 +106,7 @@ services:
   # keeping up is a day the backups stop without saying so.
   backup:
     image: postgres:17
+    logging: *logging
     # The script waits on pg_isready in a loop rather than being ordered after anything, which is what it
     # always did - compose only ever gated the first start, never a restart of this container on its own.
     restart: unless-stopped
@@ -120,6 +135,7 @@ services:
   # TLS, and the only thing on this stack the internet can reach.
   caddy:
     image: caddy:2-alpine
+    logging: *logging
     restart: unless-stopped
     depends_on:
       - api

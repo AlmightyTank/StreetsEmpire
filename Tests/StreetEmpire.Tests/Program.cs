@@ -192,6 +192,7 @@ var tests = new (string Name, Action Test)[]
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
+    ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2429,6 +2430,42 @@ static void EveryAlertKindAnswersToASwitch()
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
     AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+}
+
+static void TheSweepNeverTakesAFightInFlight()
+{
+    // The action log and the combat log are the two biggest tables here and were the only growing ones
+    // with no retention. Throwing away old rows is safe - nothing reads either over all time - with one
+    // exception, which is the whole reason this test exists.
+    //
+    // A Pending combat log is not history. It is a raid in flight waiting for CombatResolutionService
+    // to reach its ResolvesAtUtc, and deleting one would cancel somebody's attack with no error, no
+    // message, and nothing to find afterwards. An old one is the likeliest kind to exist: a raid that
+    // has been sitting unresolved is exactly the row a date cutoff would reach first.
+    var now = new DateTime(2026, 8, 28, 12, 0, 0, DateTimeKind.Utc);
+    var cutoff = now.AddDays(-90);
+    var sweepable = EmailVerificationSweep.SweepableCombat(cutoff).Compile();
+
+    AssertTrue(!sweepable(new CombatLog { CreatedAtUtc = cutoff.AddDays(-30), Outcome = "Pending" }),
+        "an unresolved raid is work, not history, however old the row is");
+    AssertTrue(sweepable(new CombatLog { CreatedAtUtc = cutoff.AddDays(-30), Outcome = "Won" }),
+        "a finished fight past the cutoff should go");
+    AssertTrue(!sweepable(new CombatLog { CreatedAtUtc = now.AddDays(-1), Outcome = "Won" }),
+        "a fight from yesterday is inside the window");
+
+    // Actions have no such exception: a row is finished the moment it is written and nothing waits on
+    // one. Asserted so that a later change adding one has somewhere to fail.
+    var actions = EmailVerificationSweep.SweepableActions(cutoff).Compile();
+    AssertTrue(actions(new GameActionLog { CreatedAtUtc = cutoff.AddDays(-1), Action = "STREET" }),
+        "an old action log row should go");
+    AssertTrue(!actions(new GameActionLog { CreatedAtUtc = now, Action = "STREET" }),
+        "today's should not");
+
+    // And the retention is long enough that the away digest is not the feature that discovers it: a
+    // player back after a season should still be told what happened while they were gone.
+    var options = new HistoryOptions();
+    AssertTrue(options.ActionLogRetentionDays >= 60, "a long absence should still find its history");
+    AssertTrue(options.CombatLogRetentionDays >= 60, "and the fights that happened during it");
 }
 
 static void ASessionOutlivesNothingItShould()

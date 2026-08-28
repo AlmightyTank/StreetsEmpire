@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Data;
@@ -58,6 +59,24 @@ public sealed class EmailVerificationSweep(
     /// </summary>
     private const int SessionRetentionDays = 30;
 
+    /// <summary>
+    /// Which fights may be thrown away: finished ones, old enough.
+    ///
+    /// Written as an expression and tested rather than inlined, because the dangerous half of it is the
+    /// exclusion. A Pending row is not history - it is a raid in flight, waiting for
+    /// CombatResolutionService to reach its ResolvesAtUtc - and deleting one would cancel somebody's
+    /// attack silently, with no error and nothing to find afterwards.
+    /// </summary>
+    internal static Expression<Func<CombatLog, bool>> SweepableCombat(DateTime cutoffUtc)
+        => log => log.CreatedAtUtc < cutoffUtc && log.Outcome != "Pending";
+
+    /// <summary>
+    /// Which actions may be thrown away. No exclusion to make here - an action log row is finished the
+    /// moment it is written; nothing waits on one.
+    /// </summary>
+    internal static Expression<Func<GameActionLog, bool>> SweepableActions(DateTime cutoffUtc)
+        => log => log.CreatedAtUtc < cutoffUtc;
+
     private async Task SweepAsync(CancellationToken ct)
     {
         try
@@ -65,6 +84,9 @@ public sealed class EmailVerificationSweep(
             // A scope of its own: this is a background loop, and the database context is scoped.
             using var scope = services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<GameDbContext>();
+            // Resolved from the scope rather than injected: the game options are a snapshot, which is
+            // scoped, and this class is a singleton that outlives every scope there is.
+            var game = scope.ServiceProvider.GetRequiredService<IOptionsSnapshot<GameOptions>>().Value;
 
             var days = Math.Max(1, options.Value.CodeRetentionDays);
             var cutoff = DateTime.UtcNow.AddDays(-days);
@@ -99,17 +121,36 @@ public sealed class EmailVerificationSweep(
                             || x.LastSeenAtUtc < sessionCutoff)
                 .ExecuteDeleteAsync(ct);
 
+            // The game's own history, and the two biggest tables in the database: every action by every
+            // player and bot, and every fight. Nothing reads either over all time - the pages take a
+            // recent handful, the admin oversight aggregates over a day, the world feed and the away
+            // digest work from a timestamp - so what goes is history no query could reach.
+            //
+            // The first run on a database that has been up for months will delete a great deal at once.
+            // That is safe rather than merely tolerable: this is a background loop, and in Postgres
+            // deleting old rows does not block inserting new ones.
+            var history = game.History;
+            var actionCutoff = DateTime.UtcNow.AddDays(-Math.Max(1, history.ActionLogRetentionDays));
+            var actions = await db.ActionLogs
+                .Where(SweepableActions(actionCutoff))
+                .ExecuteDeleteAsync(ct);
+
+            var combatCutoff = DateTime.UtcNow.AddDays(-Math.Max(1, history.CombatLogRetentionDays));
+            var fights = await db.CombatLogs
+                .Where(SweepableCombat(combatCutoff))
+                .ExecuteDeleteAsync(ct);
+
             // Pacts are deliberately not swept. A pact is state rather than history: an active one is
             // a truce being relied on right now, and a closed one is the record of a crew having broken
             // one, which is exactly the thing somebody will want to look up.
 
             // Only said when it did something. A daily line reporting zero is a line that trains
             // everybody to stop reading the log.
-            if (codes + calls + transfers + sessions > 0)
+            if (codes + calls + transfers + sessions + actions + fights > 0)
                 logger.LogInformation(
-                    "Swept {Codes} verification code(s), {Calls} closed assist call(s), {Transfers} transfer record(s) "
-                    + "and {Sessions} session(s).",
-                    codes, calls, transfers, sessions);
+                    "Swept {Codes} verification code(s), {Calls} closed assist call(s), {Transfers} transfer record(s), "
+                    + "{Sessions} session(s), {Actions} action log(s) and {Fights} combat log(s).",
+                    codes, calls, transfers, sessions, actions, fights);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

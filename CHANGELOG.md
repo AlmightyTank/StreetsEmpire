@@ -71,6 +71,20 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **The two biggest tables now have a retention.** Chat, verification codes, closed assist calls,
+  transfer records, standing snapshots and sessions were all being swept; the action log and the combat
+  log - every action by every player and bot, and every fight - were not, and they are the two that grow
+  fastest. Nothing reads either over all time: the pages take a recent handful, the admin oversight
+  aggregates over a day, and the world feed and the away digest work from a timestamp. Ninety days, so
+  that a player back from a long absence is not the one who discovers the limit.
+- The sweep never takes a fight that has not happened yet. A `Pending` combat log is a raid in flight
+  waiting to be resolved, not history, and an old one is exactly what a date cutoff reaches first -
+  deleting one would cancel somebody's attack with no error and nothing to find afterwards. The
+  exclusion is a tested expression rather than an inline condition for that reason.
+- **Container logs are bounded.** Docker's default driver keeps everything for ever, so on a box only
+  ever restarted for a deploy the logs are a slow leak with a full disk at the end of it - and a full
+  disk stops Postgres writing, which stops the game. Fifty megabytes a service, written once and
+  pointed at from each.
 - **The account page says where you are signed in**, and can end one of those places without ending the
   rest. The session cookie is stateless by design, so this needed the sessions written down and the
   ticket taught to carry the row's id - but it costs no extra round trip, because the cookie handler

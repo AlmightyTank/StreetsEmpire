@@ -217,6 +217,7 @@ public sealed class GameOptions
     public AntiFarmOptions AntiFarm { get; set; } = new();
     public WorldNewsOptions WorldNews { get; set; } = new();
     public ChatOptions Chat { get; set; } = new();
+    public HistoryOptions History { get; set; } = new();
     public TerritoryOptions Territory { get; set; } = new();
     public MarketOptions Market { get; set; } = new();
     public CityMarketOptions CityMarkets { get; set; } = new();
@@ -1883,6 +1884,33 @@ public sealed class ProductProductionOptions
 /// Talking. The limits here are the only thing standing between a chat panel and somebody who has
 /// worked out they can type faster than everybody else can read.
 /// </summary>
+/// <summary>
+/// How long the game keeps its own history.
+///
+/// Every other table here that grows was already swept - chat, verification codes, closed assist calls,
+/// transfer records, standing snapshots, sessions. These two were not, and they are the two that grow
+/// fastest: every action by every player and every bot, and every fight.
+///
+/// Nothing reads either of them over all time. The pages take a recent handful, the admin oversight
+/// aggregates over the last day, and the world feed and the away digest work from a timestamp - so what
+/// a retention throws away is history that no query could reach, on a table read on the dashboard, on
+/// every profile, and by the alert bell.
+///
+/// Ninety days rather than a fortnight, because the one thing that can genuinely reach back is a player
+/// returning from a long absence, and the away digest should not be the feature that discovers the
+/// retention.
+/// </summary>
+public sealed class HistoryOptions
+{
+    public int ActionLogRetentionDays { get; set; } = 90;
+
+    /// <summary>
+    /// Fights are kept as long as actions. A raid is the thing players argue about afterwards, and the
+    /// combat log is the only record of who did what to whom.
+    /// </summary>
+    public int CombatLogRetentionDays { get; set; } = 90;
+}
+
 public sealed class ChatOptions
 {
     /// <summary>Lines kept in a room's history. Enough to catch up on, few enough to load in one go.</summary>

@@ -1,12 +1,13 @@
 # TLS in front of the game.
 #
-# The site address is PUBLIC_URL verbatim - Caddy accepts a full URL as a site address, so there is one
-# variable rather than a domain and a URL that have to be kept in step and eventually will not be.
-#
-# With an https:// address and a real domain, Caddy gets a Let's Encrypt certificate on first boot and
-# renews it on its own: no certbot, no cron, no renewal that quietly stops. With http://localhost it
-# skips ACME entirely, which is what makes this file testable on a laptop.
-{$PUBLIC_URL} {
+# DOMAIN is the one name this file needs; everything else in the stack is built from it in the compose
+# file. It used to take PUBLIC_URL - the whole URL - which read tidily and could not have www prefixed
+# onto it, so www.<domain> was a name Caddy had never heard of. A browser asking for a name Caddy holds
+# no certificate for does not get a 404, it gets a failed TLS handshake:
+# ERR_SSL_VERSION_OR_CIPHER_MISMATCH, which reads like a broken server rather than a missing site.
+
+# The game itself.
+{$DOMAIN} {
 	# Compression is free here and nowhere else - the client bundle is around half a megabyte of
 	# JavaScript, and it is the one thing every player downloads before they can do anything.
 	encode zstd gzip
@@ -17,11 +18,23 @@
 	# marked Secure and the rate limiter counting real callers instead of counting Caddy.
 	reverse_proxy api:8080
 
-	# Requests that took a while, and anything that failed. Not every request: an access log of a game
-	# that polls every five seconds is a log nobody reads and a disk that fills.
+	# Anything that failed. Not every request: an access log of a game that polls every five seconds is
+	# a log nobody reads and a disk that fills.
 	log {
 		output stderr
 		format console
 		level WARN
 	}
+}
+
+# www, redirected rather than served.
+#
+# Serving the game on both names would mean two origins for one game: a session cookie set on one is not
+# sent to the other, so signing in on www and then following a link to the apex would look like being
+# signed out. One canonical origin also means one address to register with Discord.
+#
+# This block is what gets www its own certificate. Remove it if www does not point at this machine -
+# Caddy will otherwise keep asking Let's Encrypt for a certificate it cannot prove it owns.
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
 }

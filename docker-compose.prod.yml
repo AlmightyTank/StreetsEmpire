@@ -13,6 +13,10 @@
 # two stacks. Compose names them from the project instead, and `docker compose -f docker-compose.prod.yml
 # logs -f api` reaches them whatever it called them.
 
+# DOMAIN is the one value the rest is built from: the certificates Caddy asks for, the origin the app
+# calls its own, and both Discord addresses. PUBLIC_URL is derived from it as https://$DOMAIN, and is
+# only worth setting by hand when testing somewhere that is not on TLS.
+
 services:
   postgres:
     image: postgres:17
@@ -60,14 +64,14 @@ services:
       DataProtection__KeyPath: /keys
 
       # One origin now that the client is served from here, so this is only still read by the Discord
-      # return-url guard. Set it to the address players actually type.
-      Cors__AllowedOrigins__0: ${PUBLIC_URL:?set PUBLIC_URL in .env, e.g. https://streetsempire.dev}
+      # return-url guard.
+      Cors__AllowedOrigins__0: ${PUBLIC_URL:-https://${DOMAIN}}
 
       Auth__Discord__ClientId: ${DISCORD_CLIENT_ID:-}
       Auth__Discord__ClientSecret: ${DISCORD_CLIENT_SECRET:-}
       # Must match the Discord application character for character.
-      Auth__Discord__RedirectUri: ${PUBLIC_URL}/api/auth/discord/callback
-      Auth__Discord__ReturnUrl: ${PUBLIC_URL}/
+      Auth__Discord__RedirectUri: ${PUBLIC_URL:-https://${DOMAIN}}/api/auth/discord/callback
+      Auth__Discord__ReturnUrl: ${PUBLIC_URL:-https://${DOMAIN}}/
 
       Auth__Email__ApiKey: ${RESEND_API_KEY:-}
       Auth__Email__FromAddress: ${MAIL_FROM:-Street Empire <onboarding@resend.dev>}
@@ -115,7 +119,9 @@ services:
     depends_on:
       - api
     environment:
-      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env, e.g. https://streetsempire.dev}
+      # The bare hostname, not a URL. Caddy builds both the apex and the www redirect from it, and it
+      # cannot prefix "www." onto something that starts with https://.
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, e.g. streetsempire.dev}
     ports:
       - "80:80"
       - "443:443"

@@ -460,11 +460,17 @@ out every player and quietly void every code in flight. Nothing errors; it simpl
 at deploy time. `DataProtection__KeyPath` points at a mounted volume, which was tested by replacing the
 container and confirming an existing session still worked.
 
-Set `PUBLIC_URL` to the address players actually type - `https://yourdomain` - and point that domain's
-DNS at the VPS before starting, because Caddy proves ownership over port 80 to get the certificate.
-One variable drives all of it: the certificate Caddy asks for, the CORS entry, the Discord callback and
-the Discord return address. Then register `$PUBLIC_URL/api/auth/discord/callback` with the Discord
+Set `DOMAIN` to the bare hostname - `streetsempire.dev`, no scheme and no slash - and point its DNS at
+the VPS before starting, because Caddy proves ownership over port 80 to get each certificate. That one
+value builds the rest: the certificates for the apex and for www, the origin the app calls its own, and
+both Discord addresses. Then register `https://$DOMAIN/api/auth/discord/callback` with the Discord
 application; the server prints the exact string it expects at startup.
+
+**Point `www` at the machine too, or delete the www block from `ops/Caddyfile`.** Caddy only holds
+certificates for names it is configured for, and a browser asking for a name it has none for does not
+get a 404 - it gets a failed handshake, `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`, which reads like a broken
+server rather than a site that was never set up. www redirects to the apex rather than serving the game,
+because two origins for one game means a session cookie set on one is not sent to the other.
 
 Discord will not accept an `http://` callback for anything but localhost, so TLS is what makes Discord
 sign-in possible at all rather than merely advisable.

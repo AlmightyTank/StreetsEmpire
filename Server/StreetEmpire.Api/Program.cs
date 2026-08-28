@@ -25,6 +25,11 @@ using static StreetEmpire.Api.Support.Formatting;
 using static StreetEmpire.Api.Support.LiveOpsStore;
 using static StreetEmpire.Api.Support.PlayerRanking;
 
+// First line of the program, because every string this game writes is formatted against it and the
+// container it runs in sets no LANG - which would otherwise leave the invariant culture in charge and
+// print prices as ¤94. See GameCulture; the wiring is checked by a test, since nothing here fails.
+GameCulture.Apply();
+
 // Before anything else, because CreateBuilder reads the environment as it goes and a value that
 // arrives afterwards arrives too late. Values already in the real environment are left alone; see
 // DotEnv for why that way round.

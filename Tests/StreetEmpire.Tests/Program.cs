@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,6 +15,11 @@ using StreetEmpire.Api.Services;
 using StreetEmpire.Api.Support;
 using static StreetEmpire.Api.Mapping.ResponseMappers;
 using static StreetEmpire.Api.Support.BotSeeding;
+
+// What Program.cs does on its first line, done here for the same reason: these tests read strings the
+// game shows players, and without this they would pass on a machine whose locale happens to be American
+// and fail on Linux - which is precisely how the ¤94 bug was found, by CI, rather than by anybody here.
+GameCulture.Apply();
 
 var tests = new (string Name, Action Test)[]
 {
@@ -180,6 +186,7 @@ var tests = new (string Name, Action Test)[]
     ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
     ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
     ("one box on the form is one name underneath", OneBoxOnTheFormIsOneNameUnderneath),
+    ("money is dollars wherever the server happens to be", MoneyIsDollarsWhereverTheServerIs),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2343,6 +2350,43 @@ static void ALostRaceIsAnAnswerNotAStackTrace()
     AssertEqual(AccountSetup.NameTaken, DatabaseErrors.DescribeConstraint("IX_Players_Name", oneName: true));
     AssertEqual("That email is already on an account.",
         DatabaseErrors.DescribeConstraint("IX_Accounts_Email", oneName: true));
+}
+
+static void MoneyIsDollarsWhereverTheServerIs()
+{
+    // Thirty-eight player-facing strings format money with :C0, which asks the ambient culture what a
+    // currency looks like. A developer's Windows machine answers "$"; a container answers with the
+    // generic currency sign, because the runtime image sets no LANG and the invariant culture takes
+    // over. The game told a player they sold their coke for ¤94, and only one of those thirty-eight
+    // had a test looking at it.
+    //
+    // Set deliberately hostile first. Passing because the machine running the tests is American is the
+    // failure this is here to stop.
+    CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+    GameCulture.Apply();
+    AssertEqual("$1,234", 1234m.ToString("C0"));
+    AssertEqual("$94", 94m.ToString("C0"));
+
+    // The invariant culture is the one a container actually falls back to, and the one that produced
+    // the bug. Naming it explicitly is what makes this test fail if Apply ever stops working - a build
+    // with InvariantGlobalization turned on, say, where GetCultureInfo hands back invariant in silence.
+    AssertTrue(!1234m.ToString("C0").Contains('\u00a4'),
+        "money formatted with the generic currency sign - the culture did not take");
+
+    // And the wiring, checked at the source: the suite cannot boot the app, so what it asserts is that
+    // the app still asks. Without this the thirty-eight sites would be correct in every test and wrong
+    // in production, which is the state they were already in.
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    // A line that calls it, not a line that mentions it. ReadAllText plus Contains was the first
+    // attempt, and a commented-out call satisfied it - which is the one way this is actually likely
+    // to be lost.
+    var program = File.ReadAllLines(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Program.cs"));
+    AssertTrue(program.Any(line => line.TrimStart().StartsWith("GameCulture.Apply()", StringComparison.Ordinal)),
+        "Program.cs no longer sets the culture - money will print as \u00a4 on any server without a locale");
 }
 
 static void OneBoxOnTheFormIsOneNameUnderneath()

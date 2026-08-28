@@ -72,6 +72,18 @@
   was never affected, which is exactly what would have made it hard to find.
 
 ### Fixed
+- **The server was about to start quoting prices in a currency that does not exist.** Thirty-eight
+  player-facing strings format money with `:C0`, which asks the ambient culture what a currency looks
+  like. On a developer's Windows machine that culture is American and the answer is `$1,234`. In a
+  container it is nothing at all - the runtime images set no `LANG`, so the invariant culture takes over
+  and its currency symbol is the generic sign: "it fetched ¤94 against ¤188 for clean". The culture is
+  decided once now, at the top of `Program.cs`, rather than inherited from whatever the machine happens
+  to be. Fixing the call sites instead would have been thirty-eight chances to miss one, and a
+  thirty-ninth written next week.
+- It was caught by CI failing on Linux, which is luck: exactly one of those thirty-eight strings had a
+  test looking at it. The test suite now sets the same culture the app does - it was previously passing
+  because the machine running it happened to be American - and asserts that `Program.cs` still makes the
+  call, since the suite cannot boot the app and everything else here would stay green without it.
 - **www failed to load with a TLS error rather than a redirect.** Caddy was configured with exactly one
   site address, so `www.` was a name it held no certificate for - and a browser asking for such a name
   does not get a 404, it gets a failed handshake, `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`, which reads

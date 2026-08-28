@@ -14,6 +14,22 @@ public enum DirectMessagePolicy
     Nobody,
 }
 
+/// <summary>
+/// The strip behind the name on a profile. Presets rather than an upload, and that is a storage
+/// decision rather than a taste one: a custom avatar is a small square already sitting in a column on
+/// this table, and a banner is ten to twenty times the bytes for something seen once per visit. These
+/// are gradients defined in the stylesheet, so they cost a string.
+/// </summary>
+public enum ProfileBanner
+{
+    None,
+    Neon,
+    Smoke,
+    Chrome,
+    Rust,
+    Velvet,
+}
+
 public enum ProfileAccent
 {
     Gold,
@@ -90,12 +106,20 @@ public sealed class PlayerAccount
     public string? ProfilePronouns { get; set; }
     public string? ProfileLocation { get; set; }
     public ProfileAccent ProfileAccent { get; set; } = ProfileAccent.Gold;
+    public ProfileBanner ProfileBanner { get; set; } = ProfileBanner.None;
     public bool ShowDiscordOnProfile { get; set; }
     public DirectMessagePolicy DirectMessagePolicy { get; set; } = DirectMessagePolicy.Everyone;
     public bool SyncDiscordAvatar { get; set; }
     public bool EmailSecurityNotices { get; set; } = true;
     public bool EmailCombatNotices { get; set; } = true;
     public bool EmailAllianceNotices { get; set; } = true;
+
+    /// <summary>
+    /// When Discord was last asked what this account is called, which is not the same question as when
+    /// it was connected. Stamped whether or not anything had moved: "we asked and nothing had changed"
+    /// is the answer the account page needs, and an unstamped one reads as never having asked.
+    /// </summary>
+    public DateTime? DiscordSyncedAtUtc { get; set; }
 
     public DateTime? DiscordLinkedAtUtc { get; set; }
 

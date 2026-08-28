@@ -678,9 +678,24 @@ export type PlayerTarget = {
   messageBlockedReason: string | null
 }
 
+/** Preset gradients behind the name on a profile. The stylesheet decides what each one looks like. */
+export type ProfileBanner = 'None' | 'Neon' | 'Smoke' | 'Chrome' | 'Rust' | 'Velvet'
+
+export const profileBanners: { key: ProfileBanner; label: string }[] = [
+  { key: 'None', label: 'None' },
+  { key: 'Neon', label: 'Neon' },
+  { key: 'Smoke', label: 'Smoke' },
+  { key: 'Chrome', label: 'Chrome' },
+  { key: 'Rust', label: 'Rust' },
+  { key: 'Velvet', label: 'Velvet' },
+]
+
 export type PlayerProfile = PlayerTarget & {
   /** Why each strike cannot be thrown at this person, keyed by method. Absent when it can. */
   strikeBlockers: Record<string, string | undefined>
+  profileBanner: ProfileBanner
+  /** When they started. Only on the profile somebody opened, never on a leaderboard row. */
+  joinedAtUtc: string
   cash: number
   bankCash: number
   /** What they are armed with, not merely how many. A house of rifles is a different fight. */
@@ -1086,6 +1101,8 @@ export type Account = {
   discordUsername: string | null
   discordAvatarUrl: string | null
   discordLinkedAtUtc: string | null
+  /** When Discord was last asked, which is not when it was connected. Null until it has been. */
+  discordSyncedAtUtc: string | null
   avatarSource: 'None' | 'Discord' | 'Custom'
   avatarUrl: string | null
   customAvatarUrl: string | null
@@ -1093,6 +1110,7 @@ export type Account = {
   profilePronouns: string | null
   profileLocation: string | null
   profileAccent: 'Gold' | 'Teal' | 'Rose' | 'Steel'
+  profileBanner: ProfileBanner
   showDiscordOnProfile: boolean
   directMessagePolicy: 'Everyone' | 'Alliance' | 'Nobody'
   syncDiscordAvatar: boolean
@@ -1175,7 +1193,13 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ source }),
     }),
-  setProfile: (tagline: string, pronouns: string, location: string, accent: Account['profileAccent']) =>
+  setProfile: (
+    tagline: string,
+    pronouns: string,
+    location: string,
+    accent: Account['profileAccent'],
+    banner: ProfileBanner,
+  ) =>
     request<Account>('/api/account/profile', {
       method: 'PUT',
       body: JSON.stringify({
@@ -1183,6 +1207,7 @@ export const api = {
         pronouns: pronouns || null,
         location: location || null,
         accent,
+        banner,
       }),
     }),
   setPrivacy: (showDiscordOnProfile: boolean, directMessagePolicy: Account['directMessagePolicy']) =>

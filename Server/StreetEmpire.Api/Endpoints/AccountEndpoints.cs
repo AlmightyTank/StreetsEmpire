@@ -276,6 +276,7 @@ internal static class AccountEndpoints
             var pronouns = NormalizeProfileText(request.Pronouns);
             var location = NormalizeProfileText(request.Location);
             var accent = ParseAccent(request.Accent);
+            var banner = ParseBanner(request.Banner);
             if (tagline?.Length > MaxTaglineLength)
                 return Results.BadRequest(new { error = $"Tagline must be {MaxTaglineLength} characters or less." });
             if (pronouns?.Length > MaxPronounsLength)
@@ -284,12 +285,16 @@ internal static class AccountEndpoints
                 return Results.BadRequest(new { error = $"Profile location must be {MaxLocationLength} characters or less." });
             if (!string.IsNullOrWhiteSpace(request.Accent) && accent is null)
                 return Results.BadRequest(new { error = "Pick one of: gold, teal, rose, steel." });
+            if (!string.IsNullOrWhiteSpace(request.Banner) && banner is null)
+                return Results.BadRequest(new { error = "Pick one of: none, neon, smoke, chrome, rust, velvet." });
 
             current.ProfileTagline = tagline;
             current.ProfilePronouns = pronouns;
             current.ProfileLocation = location;
             if (accent is { } selectedAccent)
                 current.ProfileAccent = selectedAccent;
+            if (banner is { } selectedBanner)
+                current.ProfileBanner = selectedBanner;
             await db.SaveChangesAsync(ct);
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
@@ -509,6 +514,19 @@ internal static class AccountEndpoints
             _ => null,
         };
 
+    private static ProfileBanner? ParseBanner(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" => null,
+            "none" => ProfileBanner.None,
+            "neon" => ProfileBanner.Neon,
+            "smoke" => ProfileBanner.Smoke,
+            "chrome" => ProfileBanner.Chrome,
+            "rust" => ProfileBanner.Rust,
+            "velvet" => ProfileBanner.Velvet,
+            _ => null,
+        };
+
     private static string? ImageContentType(byte[] bytes)
     {
         if (bytes.Length >= 8
@@ -572,6 +590,7 @@ internal static class AccountEndpoints
             account.DiscordUsername,
             discordAvatarUrl,
             account.DiscordLinkedAtUtc,
+            account.DiscordSyncedAtUtc,
             account.AvatarSource.ToString(),
             avatarUrl,
             customAvatarUrl,
@@ -579,6 +598,7 @@ internal static class AccountEndpoints
             account.ProfilePronouns,
             account.ProfileLocation,
             account.ProfileAccent.ToString(),
+            account.ProfileBanner.ToString(),
             account.ShowDiscordOnProfile,
             account.DirectMessagePolicy.ToString(),
             account.SyncDiscordAvatar,

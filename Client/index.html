@@ -22,6 +22,20 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#0e1111" />
     <title>Street Empire 0.2.6</title>
+    <!--
+      Display preferences, applied before the bundle loads. They are read again properly in
+      preferences.ts; this exists only so a compact layout does not arrive a frame late as a visible
+      jump. It is wrapped because localStorage throws rather than returns nothing in a private window.
+    -->
+    <script>
+      try {
+        var p = JSON.parse(localStorage.getItem('se.preferences') || '{}');
+        if (p.compact === true) document.documentElement.setAttribute('data-density', 'compact');
+        var reduced = p.reduceMotion === true || (p.reduceMotion == null
+          && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        if (reduced) document.documentElement.setAttribute('data-motion', 'reduced');
+      } catch (e) { /* storage refused; the bundle applies them a frame later */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>

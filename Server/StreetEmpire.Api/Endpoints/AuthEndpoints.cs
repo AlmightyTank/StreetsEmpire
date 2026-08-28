@@ -242,9 +242,10 @@ internal static class AuthEndpoints
                 if (linked.IsLockedOut(DateTime.UtcNow))
                     return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "locked"));
 
-                var refreshed = ApplyDiscordProfile(linked, profile);
-                if (refreshed)
-                    await db.SaveChangesAsync(ct);
+                // Saved every time now rather than only when something moved, because the sync time
+                // moves even when the handle and the avatar did not.
+                ApplyDiscordProfile(linked, profile);
+                await db.SaveChangesAsync(ct);
 
                 var currentId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
                 var refreshingCurrentAccount = string.Equals(currentId, linked.Id.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -393,30 +394,30 @@ internal static class AuthEndpoints
         }).RequireRateLimiting("sign-in");
     }
 
-    private static bool ApplyDiscordProfile(PlayerAccount account, DiscordProfile profile)
+    /// <summary>
+    /// Takes whatever Discord currently says about this account: the handle, the avatar, and the fact
+    /// that it was asked at all. Every Discord sign-in runs through here, so the handle has always kept
+    /// itself in step - what was missing was any record of when, which is what the refresh button on
+    /// the account page reports.
+    /// </summary>
+    private static void ApplyDiscordProfile(PlayerAccount account, DiscordProfile profile)
     {
-        var changed = false;
-        if (account.DiscordUsername != profile.DisplayName)
-        {
-            account.DiscordUsername = profile.DisplayName;
-            changed = true;
-        }
-        if (account.DiscordAvatarHash != profile.AvatarHash)
-        {
-            account.DiscordAvatarHash = profile.AvatarHash;
-            changed = true;
-        }
-        if (account.SyncDiscordAvatar && profile.AvatarHash is not null && account.AvatarSource != AccountAvatarSource.Discord)
-        {
+        // Before anything else and unconditionally. The page is answering "when did we last ask", and
+        // a sync that found nothing new is still a sync.
+        account.DiscordSyncedAtUtc = DateTime.UtcNow;
+
+        account.DiscordUsername = profile.DisplayName;
+        account.DiscordAvatarHash = profile.AvatarHash;
+
+        // Following the Discord picture was asked for, so follow it - onto an account that has one to
+        // follow. These two used to be guarded against writing the same value back, which mattered only
+        // while the caller was deciding whether to save at all; it always saves now.
+        if (account.SyncDiscordAvatar && profile.AvatarHash is not null)
             account.AvatarSource = AccountAvatarSource.Discord;
-            changed = true;
-        }
+
+        // And dropped when Discord no longer has one, or the profile shows a broken image.
         if (profile.AvatarHash is null && account.AvatarSource == AccountAvatarSource.Discord)
-        {
             account.AvatarSource = AccountAvatarSource.None;
-            changed = true;
-        }
-        return changed;
     }
 
     /// <summary>

@@ -1,0 +1,75 @@
+// =============================================================================
+// Display preferences
+// =============================================================================
+// Two attributes on <html>, set by preferences.ts before React mounts, and the
+// rules that answer them. Both are per-device on purpose: which of your screens
+// wants tighter rows, and whether this machine should stop moving things, are
+// questions about the machine rather than about the account.
+//
+// Colour is not here. The palette is a compile-time Sass map in _theme.scss and
+// a light one is a real piece of work rather than a variable - see the note at
+// the top of that file.
+
+// -- Compact ------------------------------------------------------------------
+// Density only: padding, gaps and row heights. Nothing changes size that carries
+// meaning, and nothing changes below the point where a touch target stops being
+// one - 44px stays 44px, which is why the tab bar and the buttons are untouched.
+[data-density="compact"] {
+  .card { padding: .625rem !important; }
+
+  // The dense screens this exists for: the leaderboard, the feed, the market and
+  // the crew lists, all of which are rows of one line that were spaced for a
+  // phone and read as a ledger on a monitor.
+  .leader,
+  .feed-item,
+  .list-group-item { padding-top: .3rem !important; padding-bottom: .3rem !important; }
+
+  .table > :not(caption) > * > * { padding-top: .25rem; padding-bottom: .25rem; }
+
+  .panel-title { margin-bottom: .5rem; }
+
+  // Grid gaps come down one step each, which is most of the space on a wide
+  // screen. The .g-0 rows have nothing to give and are left alone.
+  .gap-3 { gap: .5rem !important; }
+  .gap-2 { gap: .35rem !important; }
+  .mb-3 { margin-bottom: .5rem !important; }
+}
+
+// -- Reduced motion -----------------------------------------------------------
+// Set from the OS by default and overridable per device, because the OS switch
+// is a blunt one: somebody who turns it on system-wide for a screen recording
+// still wants it back afterwards, and somebody it makes ill wants it on here
+// whatever their OS says.
+//
+// Near-zero rather than none. `transition: none` makes Bootstrap's components
+// that wait for transitionend - collapse, offcanvas, the modal backdrop - hang
+// half open, because the event never fires.
+[data-motion="reduced"] {
+  &,
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+// -- Profile banners ----------------------------------------------------------
+// The strip behind a name on a profile. Presets rather than uploads: a banner is
+// ten to twenty times the bytes of the avatar already sitting in a column on the
+// accounts table, for something seen once a visit.
+//
+// Each is a gradient over the surface colour rather than an opaque block, so a
+// banner sits in the page instead of on top of it.
+.profile-banner {
+  border-radius: var(--bs-border-radius);
+  min-height: 4.5rem;
+}
+
+.profile-banner-neon   { background: linear-gradient(120deg, #1b2f4d 0%, #3d2148 55%, #101314 100%); }
+.profile-banner-smoke  { background: linear-gradient(120deg, #24282a 0%, #14181a 60%, #0d1011 100%); }
+.profile-banner-chrome { background: linear-gradient(120deg, #3a4145 0%, #59636a 45%, #232a2e 100%); }
+.profile-banner-rust   { background: linear-gradient(120deg, #4a2a17 0%, #6b3b1c 50%, #1c1512 100%); }
+.profile-banner-velvet { background: linear-gradient(120deg, #3a1430 0%, #571d3c 55%, #17101a 100%); }

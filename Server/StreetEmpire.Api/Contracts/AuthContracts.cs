@@ -42,6 +42,7 @@ public sealed record AccountResponse(
     string? DiscordUsername,
     string? DiscordAvatarUrl,
     DateTime? DiscordLinkedAtUtc,
+    DateTime? DiscordSyncedAtUtc,
     string AvatarSource,
     string? AvatarUrl,
     string? CustomAvatarUrl,
@@ -49,6 +50,7 @@ public sealed record AccountResponse(
     string? ProfilePronouns,
     string? ProfileLocation,
     string ProfileAccent,
+    string ProfileBanner,
     bool ShowDiscordOnProfile,
     string DirectMessagePolicy,
     bool SyncDiscordAvatar,
@@ -89,7 +91,7 @@ public sealed record ChangeEmailRequest(string? Email, string? CurrentPassword);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
 public sealed record ChangeAvatarRequest(string? Source);
-public sealed record ChangeProfileRequest(string? Tagline, string? Pronouns, string? Location, string? Accent);
+public sealed record ChangeProfileRequest(string? Tagline, string? Pronouns, string? Location, string? Accent, string? Banner = null);
 public sealed record ChangePrivacyRequest(bool? ShowDiscordOnProfile, string? DirectMessagePolicy);
 public sealed record ChangeNotificationPreferencesRequest(
     bool? SyncDiscordAvatar,

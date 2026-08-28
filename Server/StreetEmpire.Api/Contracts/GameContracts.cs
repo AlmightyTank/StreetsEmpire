@@ -594,6 +594,14 @@ public sealed record PlayerProfileResponse(
     string? ProfilePronouns,
     string? ProfileLocation,
     string ProfileAccent,
+    /// <summary>A preset gradient, named. The stylesheet decides what each one looks like.</summary>
+    string ProfileBanner,
+    /// <summary>
+    /// When they started. Public on purpose and only here, on the profile somebody chose to open,
+    /// rather than on every leaderboard row - it says how long somebody has been at this, which is
+    /// context for the numbers beside it.
+    /// </summary>
+    DateTime JoinedAtUtc,
     string? PublicDiscordUsername,
     string City,
     bool IsBot,

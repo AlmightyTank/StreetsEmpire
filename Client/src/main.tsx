@@ -2,6 +2,8 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
+import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
+import { profileBanners, type ProfileBanner } from './api'
 import type { Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
@@ -906,6 +908,15 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
 }
 
 function App() {
+  // The inline script in index.html has already put these on <html>, so this is not what applies them
+  // for the first time - it is what keeps following the system while nothing here has overridden it.
+  // Somebody who turns reduced motion on mid-session should see the game stop moving without a reload.
+  useEffect(() => {
+    const preferences = loadPreferences()
+    applyPreferences(preferences)
+    return watchSystemMotion(loadPreferences)
+  }, [])
+
   // Shown once unasked, then only when somebody wants it. A walkthrough that reappears is a nag.
   const [tourStep, setTourStep] = useState<number | null>(null)
   const tourOffered = useRef(false)
@@ -4352,6 +4363,8 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         </button>)}
       </div>
       {profile && <div className="border rounded bg-body-secondary p-3">
+        {profile.profileBanner !== 'None'
+          && <div className={`profile-banner ${bannerClass(profile.profileBanner)} mb-3`} aria-hidden="true" />}
         <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
           <div className="d-flex align-items-center gap-3 min-w-0">
             <PlayerAvatar name={profile.name} avatarUrl={profile.avatarUrl} size={56} />
@@ -4361,6 +4374,10 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
                 {[profile.city, profile.profilePronouns, profile.profileLocation].filter(Boolean).join(' / ')}
                 {profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}
               </span>
+              {/* How long somebody has been at this, which is context for the numbers beside it. */}
+              <small className="d-block text-body-tertiary">
+                Playing since {new Date(profile.joinedAtUtc).toLocaleDateString([], { month: 'long', year: 'numeric' })}
+              </small>
               {profile.publicDiscordUsername && <small className="d-block text-primary">
                 <i className="bi bi-discord me-1" aria-hidden="true" />
                 {profile.publicDiscordUsername}
@@ -5787,11 +5804,12 @@ function formatBreakdownValue(key: string, value: unknown) {
   return String(value)
 }
 
-const ACCOUNT_TABS = ['profile', 'signin', 'privacy', 'alerts', 'security'] as const
+const ACCOUNT_TABS = ['profile', 'display', 'signin', 'privacy', 'alerts', 'security'] as const
 type AccountTab = typeof ACCOUNT_TABS[number]
 
 const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = {
   profile: { label: 'Profile', kicker: 'Who you are here' },
+  display: { label: 'Display', kicker: 'How this device shows it' },
   signin: { label: 'Sign-in', kicker: 'Email, password, Discord' },
   privacy: { label: 'Privacy', kicker: 'Discord and messages' },
   alerts: { label: 'Alerts', kicker: 'Email and sync' },
@@ -5799,6 +5817,87 @@ const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = 
 }
 
 const PROFILE_ACCENTS: Account['profileAccent'][] = ['Gold', 'Teal', 'Rose', 'Steel']
+
+function bannerClass(banner: ProfileBanner) {
+  return banner === 'None' ? 'border' : `profile-banner-${banner.toLowerCase()}`
+}
+
+/**
+ * How this device shows the game, which is not a fact about the account: a phone and a monitor want
+ * different densities, and reduced motion belongs to the machine that is doing the moving. Kept in
+ * localStorage for that reason - see preferences.ts.
+ */
+function AccountDisplayPanel() {
+  const [preferences, setPreferences] = useState<Preferences>(loadPreferences)
+
+  const change = (next: Preferences) => {
+    setPreferences(next)
+    savePreferences(next)
+    applyPreferences(next)
+  }
+
+  const systemReduced = systemPrefersReducedMotion()
+
+  return <section className="card p-3 gcol-xl-full">
+    <div className="panel-title"><h2>Display</h2><span>This device only</span></div>
+    <p className="text-body-secondary">
+      Kept on this device rather than on your account, because the answers are usually different on a
+      phone and on a monitor. Signing in somewhere else starts from that machine's own settings.
+    </p>
+
+    <div className="d-grid gap-3">
+      <label className="form-check form-switch d-flex align-items-start gap-2 m-0">
+        <input
+          className="form-check-input flex-shrink-0"
+          type="checkbox"
+          role="switch"
+          checked={preferences.compact}
+          onChange={event => change({ ...preferences, compact: event.target.checked })}
+        />
+        <span className="min-w-0">
+          <strong className="d-block">Compact</strong>
+          <small className="text-body-tertiary">
+            Tighter rows and padding on the long lists - the leaderboard, the feed, the market. Buttons
+            and the tab bar keep their size, since a smaller target is a harder one to hit.
+          </small>
+        </span>
+      </label>
+
+      <label className="form-check form-switch d-flex align-items-start gap-2 m-0">
+        <input
+          className="form-check-input flex-shrink-0"
+          type="checkbox"
+          role="switch"
+          checked={preferences.reduceMotion ?? systemReduced}
+          onChange={event => change({ ...preferences, reduceMotion: event.target.checked })}
+        />
+        <span className="min-w-0">
+          <strong className="d-block">Reduce animations</strong>
+          <small className="text-body-tertiary">
+            {preferences.reduceMotion === null
+              ? `Following this device, which currently asks for ${systemReduced ? 'reduced' : 'full'} motion.`
+              : 'Set here, ignoring what this device asks for.'}
+          </small>
+        </span>
+      </label>
+
+      {preferences.reduceMotion !== null && <div>
+        <button
+          className="btn btn-link p-0 text-body-secondary"
+          type="button"
+          onClick={() => change({ ...preferences, reduceMotion: null })}
+        >Follow this device instead</button>
+      </div>}
+    </div>
+
+    <hr className="my-3" />
+    <p className="text-body-tertiary small mb-0">
+      The game is dark and only dark for now. A light theme is not a switch here: every panel, input and
+      table colour is compiled into the stylesheet as a dark value, so light means authoring a second
+      palette rather than flipping one.
+    </p>
+  </section>
+}
 
 function profileAccentClass(accent: Account['profileAccent'] | PlayerTarget['profileAccent']) {
   return accent === 'Teal'
@@ -5944,6 +6043,7 @@ function AccountPage(ctx: PageContext) {
         <AccountPasswordPanel {...panel} />
         <AccountDiscordPanel {...panel} />
       </>}
+      {tab === 'display' && <AccountDisplayPanel />}
       {tab === 'privacy' && <AccountPrivacyPanel {...panel} />}
       {tab === 'alerts' && <AccountAlertsPanel {...panel} />}
       {tab === 'security' && <AccountSecurityPanel {...panel} onTab={setTab} />}
@@ -5968,16 +6068,18 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
   const [pronouns, setPronouns] = useState(account.profilePronouns ?? '')
   const [location, setLocation] = useState(account.profileLocation ?? '')
   const [accent, setAccent] = useState<Account['profileAccent']>(account.profileAccent)
+  const [banner, setBanner] = useState<ProfileBanner>(account.profileBanner)
   useEffect(() => {
     setTagline(account.profileTagline ?? '')
     setPronouns(account.profilePronouns ?? '')
     setLocation(account.profileLocation ?? '')
     setAccent(account.profileAccent)
-  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent])
+    setBanner(account.profileBanner)
+  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent, account.profileBanner])
 
   const saveProfile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    void run(() => api.setProfile(tagline.trim(), pronouns.trim(), location.trim(), accent), 'Profile saved.')
+    void run(() => api.setProfile(tagline.trim(), pronouns.trim(), location.trim(), accent, banner), 'Profile saved.')
   }
 
   const uploadAvatar = (event: FormEvent<HTMLFormElement>) => {
@@ -6050,23 +6152,41 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
               />
             </label>
           </div>
-          <label className="field">
-            Accent
-            <select
-              className="form-select"
-              value={accent}
-              onChange={event => setAccent(event.target.value as Account['profileAccent'])}
-            >
-              {PROFILE_ACCENTS.map(option => <option value={option} key={option}>{option}</option>)}
-            </select>
-          </label>
+          <div className="d-grid gtc-1 gtc-md-2 gap-3">
+            <label className="field">
+              Accent
+              <select
+                className="form-select"
+                value={accent}
+                onChange={event => setAccent(event.target.value as Account['profileAccent'])}
+              >
+                {PROFILE_ACCENTS.map(option => <option value={option} key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              Banner
+              <select
+                className="form-select"
+                value={banner}
+                onChange={event => setBanner(event.target.value as ProfileBanner)}
+              >
+                {profileBanners.map(option => <option value={option.key} key={option.key}>{option.label}</option>)}
+              </select>
+              <small className="form-text">Behind your name when somebody opens your profile.</small>
+            </label>
+          </div>
+          {/* Shown rather than described. A named gradient means nothing until you see it. */}
+          <div className={`profile-banner ${bannerClass(banner)} d-flex align-items-end p-2`}>
+            <strong className={`${profileAccentClass(accent)} text-truncate`}>{account.playerName}</strong>
+          </div>
           <button
             className="btn btn-primary"
             disabled={busy
               || (tagline.trim() === (account.profileTagline ?? '')
                 && pronouns.trim() === (account.profilePronouns ?? '')
                 && location.trim() === (account.profileLocation ?? '')
-                && accent === account.profileAccent)}
+                && accent === account.profileAccent
+                && banner === account.profileBanner)}
           >
             {busy ? 'Working...' : 'Save Profile'}
           </button>
@@ -6589,6 +6709,32 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
             : 'Connect Discord before turning this on.'}
         </small>
       </label>
+      {/*
+        Refreshing is a trip back through Discord rather than a call the server can make on its own,
+        because no Discord token is kept here - only the account id it handed over. That is the more
+        private arrangement of the two and this is the cost of it: one click, and Discord asks nothing
+        again if you are still signed in there.
+
+        The handle has always refreshed itself on every Discord sign-in. What was missing was any
+        record of when, which is the half this reports.
+      */}
+      {account.discordConnected && <div className="border rounded bg-body-secondary p-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div className="min-w-0">
+          <strong className="d-block text-truncate">
+            <i className="bi bi-discord me-1" aria-hidden="true" />
+            {account.discordUsername ?? 'Connected'}
+          </strong>
+          <small className="text-body-tertiary">
+            {account.discordSyncedAtUtc
+              ? `Last checked ${new Date(account.discordSyncedAtUtc).toLocaleString()}.`
+              : 'Not checked since this was added - refresh to pull your current handle and avatar.'}
+          </small>
+        </div>
+        <a className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2" href={discordStartUrl()}>
+          <i className="bi bi-arrow-clockwise" aria-hidden="true" />
+          Refresh from Discord
+        </a>
+      </div>}
       <div className="d-grid gtc-1 gtc-md-3 gap-2">
         <NoticeToggle
           label="Security"

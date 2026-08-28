@@ -71,6 +71,28 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **Display preferences, per device.** Compact tightens rows and padding on the screens that are lists -
+  the leaderboard, the feed, the market - without touching a button or a tab bar, since a smaller target
+  is a harder one to hit. Reduce animations starts from what the device asks for in
+  `prefers-reduced-motion` and can be overridden either way, because the system switch is blunt: somebody
+  who turned it on for a screen recording wants it back, and somebody it makes ill wants it on here
+  whatever their OS says. Both live in the browser rather than on the account, because a phone and a
+  monitor want different answers to both. Applied by a small inline script before the bundle loads, so a
+  compact layout does not arrive a frame late as a visible jump.
+- **Preset profile banners** - none, neon, smoke, chrome, rust or velvet - shown behind your name on the
+  profile, and previewed live while you pick. Presets rather than uploads: a banner is ten to twenty
+  times the bytes of the avatar already sitting in a column on the accounts table, for something seen
+  once a visit.
+- **Profiles say how long somebody has been playing.** Only on the profile somebody chose to open, never
+  on a leaderboard row, where it would be a payload on every line for something nobody reads.
+- **A refresh button for Discord, and a record of when it last ran.** The handle and avatar have always
+  refreshed themselves on every Discord sign-in; what was missing was any way to ask, or any sign of
+  when it last happened. Refreshing is a trip back through Discord rather than a call the server makes,
+  because no Discord token is kept here - only the account id it handed over, which is the more private
+  arrangement and this is what it costs.
+- The sync time is stamped whether or not anything moved, since "we asked and nothing had changed" is
+  the answer the page is reporting.
+
 ### Fixed
 - **The server was about to start quoting prices in a currency that does not exist.** Thirty-eight
   player-facing strings format money with `:C0`, which asks the ambient culture what a currency looks

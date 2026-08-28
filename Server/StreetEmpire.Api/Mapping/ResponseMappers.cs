@@ -173,6 +173,8 @@ internal static class ResponseMappers
             player.Account.ProfilePronouns,
             player.Account.ProfileLocation,
             player.Account.ProfileAccent.ToString(),
+            player.Account.ProfileBanner.ToString(),
+            player.Account.CreatedAtUtc,
             PublicDiscordUsername(player.Account),
             player.City,
             player.Account.IsBot,

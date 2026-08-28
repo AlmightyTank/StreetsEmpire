@@ -410,17 +410,18 @@ person who was banned last week - it is the only one of the two worth anything.
 
 ### Putting it on a server
 
-Two containers: the app, and a database it reaches over a private network. The app image carries the
-built client inside it, so one origin serves both.
+Three containers - the app, Caddy in front of it, and a job that takes dumps - talking to a Postgres
+installed on the VPS itself. The app image carries the built client inside it, so one origin serves both.
 
 ```bash
 git clone <your-repo> streetsempire && cd streetsempire
-cp .env.example .env    # fill in PUBLIC_URL, POSTGRES_PASSWORD, and the keys you have
+cp .env.example .env    # fill in DOMAIN, POSTGRES_HOST, POSTGRES_PASSWORD, and the keys you have
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-That is the whole of it. The app migrates the database on the way up - a fresh server applies all 58
-migrations before it serves a request - so there is no separate step and no `dotnet ef` on the box.
+Set the database up first - see below - because there is nothing to connect to until it exists. After
+that the app migrates on the way up, a fresh database taking all 58 migrations before the first request
+is served, so there is no separate step and no `dotnet ef` on the box.
 
 **One image, not two.** The client is a bundle of static files rather than a service, so it ships inside
 the API image and is served from the same origin. That is worth more than the tidiness: CORS has
@@ -432,8 +433,8 @@ afternoon.
 
 **Only Caddy faces the internet.** It terminates TLS, gets a Let's Encrypt certificate on first boot
 and renews it on its own - no certbot, no cron, no renewal that quietly stops - and redirects plain
-HTTP to HTTPS. Neither the app nor the database publishes a host port; both are reachable over the
-compose network and nowhere else. A 5432 open to the internet is found by a scanner within the hour.
+HTTP to HTTPS. The app publishes no host port at all, and Postgres is configured below to listen on
+loopback and the Docker bridge only. A 5432 open to the internet is found by a scanner within the hour.
 
 TLS here is not tidiness. The session cookie *is* the login - fourteen days, sliding - so anybody who
 reads one in transit becomes that player without a password, and none of the account work in this
@@ -475,12 +476,97 @@ because two origins for one game means a session cookie set on one is not sent t
 Discord will not accept an `http://` callback for anything but localhost, so TLS is what makes Discord
 sign-in possible at all rather than merely advisable.
 
+### Postgres on the host
+
+Postgres runs on the VPS rather than as a container, and the data was not the reason. It was a container
+once, on a named volume, and that data was already permanent: a volume is a separate object with its own
+lifetime, so it outlives every container that ever mounts it. That was demonstrated rather than assumed -
+the container destroyed outright, the volume left alone, and the same eleven accounts counted afterwards.
+Only `down -v` or an explicit `docker volume rm` destroys it.
+
+What running it on the host buys is different. It keeps running when Docker does not, so `docker compose
+down` at the wrong moment is no longer a decision about the database. It is upgraded and security-patched
+by the same `apt` that patches everything else on the box. And its data sits in a directory you can look
+at, back up and reason about without going through Docker to reach it.
+
+**Install it, and make it reachable from the containers but from nothing else.** Match the major version
+to the `postgres:` tag on the backup service - `pg_dump` refuses to dump a server newer than itself, so a
+drift there is a backup that stops silently.
+
+```bash
+sudo apt install -y postgresql-17
+sudo -u postgres createuser --pwprompt street_empire
+sudo -u postgres createdb --owner=street_empire street_empire
+```
+
+Two files then decide who can reach it. In `/etc/postgresql/17/main/postgresql.conf`:
+
+```
+listen_addresses = 'localhost,172.28.0.1'
+```
+
+and in `/etc/postgresql/17/main/pg_hba.conf`, above the local rules:
+
+```
+host    street_empire    street_empire    172.28.0.0/16    scram-sha-256
+```
+
+`172.28.0.1` is the VPS as a container sees it - the gateway of the compose network, which
+`docker-compose.prod.yml` pins to that subnet for exactly this reason. Docker would otherwise be free to
+pick a different range whenever a network is recreated, and this file would be quietly wrong afterwards.
+Pinning it means one line here naming one range, rather than `0.0.0.0/0` and a firewall rule carrying the
+whole argument. `sudo systemctl restart postgresql` and it is listening.
+
+The same address goes in `.env` as `POSTGRES_HOST`, which has no default in the compose file on purpose:
+an address that appears in two files is an address that drifts, and the way you find out is a database
+that stopped being reachable some time after a reboot.
+
+**Moving an existing database off the volume.** Do this with the app stopped, and do not delete anything
+until the new one has answered a real request.
+
+```bash
+# 1. A dump of what is in the volume, taken from the container that is about to stop.
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_dump --username=street_empire --dbname=street_empire --format=custom \
+  > /tmp/final.dump
+
+# 2. Everything down. The dump is on the host now, not in a container.
+docker compose -f docker-compose.prod.yml down
+
+# 3. Into the new one. --clean --if-exists makes it repeatable if step 4 sends you back here.
+sudo -u postgres pg_restore --clean --if-exists --no-owner --role=street_empire \
+  --dbname=street_empire /tmp/final.dump
+
+# 4. Count something you recognise before trusting it.
+sudo -u postgres psql -d street_empire -c 'select count(*) from "Accounts";'
+
+# 5. Then bring it up against the host database and sign in as a real player.
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Only once you have signed in should you remove the old volume, and it is worth keeping for a week rather
+than a minute:
+
+```bash
+docker volume rm streetsempire_street-empire-data
+```
+
+That command is the one irreversible step in this whole page. There is no undo and no confirmation.
+
 ### Backups
 
-A third container takes a dump of the database, checks it, and prunes the old ones. It runs from the
-same `postgres:17` image the server does, which is not incidental: `pg_dump` refuses to dump a server
-newer than itself, so a backup pinned to a different major version stops working the day the database
-is upgraded - and stops working quietly, because nobody looks at a job that has been fine for a year.
+A third container takes a dump of the database, checks it, and prunes the old ones. It is still a container even
+though the database is not, because the script is the tested one and the image tag pins the `pg_dump`
+that takes the dumps. That pin matters more now, not less: `pg_dump` refuses to dump a server newer than
+itself, so `postgres:17` here has to keep up with whatever `apt` installs on the host, and the day it
+stops keeping up is the day the backups stop - quietly, because nobody looks at a job that has been fine
+for a year.
+
+It connects to the host at `POSTGRES_HOST:POSTGRES_PORT`, and passes that port explicitly rather than
+letting libpq default it. That is not tidiness either. On a host, 5432 is whatever answered first: during
+testing it turned out to be an unrelated Postgres, which `pg_isready` called alive without hesitation
+because it does not authenticate. A dump aimed at the wrong server is worse than no dump, because it
+looks like one.
 
 Three things about it matter more than the dump.
 
@@ -509,7 +595,7 @@ docker compose -f docker-compose.prod.yml exec backup \
 # One table back, with the app stopped so nothing writes underneath it
 docker compose -f docker-compose.prod.yml stop api
 docker compose -f docker-compose.prod.yml exec backup \
-  pg_restore --host=postgres --username=street_empire --dbname=street_empire \
+  pg_restore --host="$POSTGRES_HOST" --port=5432 --username=street_empire --dbname=street_empire \
              --data-only --table=Accounts --disable-triggers \
              /backups/street_empire-20260827-140346.dump
 docker compose -f docker-compose.prod.yml start api
@@ -527,7 +613,8 @@ the account back.
 git pull && docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-New migrations apply on the way up. The database volume, and the key ring, are left alone.
+New migrations apply on the way up. The database is not part of this stack any more and is not touched
+by it, and the key ring volume is left alone.
 
 ### Bumping the version
 

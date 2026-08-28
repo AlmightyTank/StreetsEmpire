@@ -1,6 +1,14 @@
-# Street Empire on a server: the app, and a database it talks to over a private network.
+# Street Empire on a server: the app, TLS in front of it, and dumps of a database that lives outside
+# this file.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Postgres is installed on the VPS itself and is deliberately not a service here. It was one, on a named
+# volume, and the data was permanent that way - a volume outlives every container that mounts it, which
+# was demonstrated by destroying the container and counting the rows afterwards. Running it on the host
+# buys something else: it keeps running when Docker does not, it is patched by the same apt that patches
+# the rest of the box, and its data sits in a directory you can look at rather than inside a volume you
+# have to go through Docker to reach. The README section "Postgres on the host" is the move itself.
 #
 # Every value that matters comes from a .env file sitting beside this one. There is nothing secret in
 # here, which is what makes it safe to commit; see .env.example for what to put next to it.
@@ -8,56 +16,40 @@
 # The plain docker-compose.yml is the development database on its own, and is left alone - running
 # `docker compose up` on a laptop should keep doing what it always did.
 
-# No container_name anywhere below, deliberately. Fixed names collide with the development compose file
-# - which already claims street-empire-postgres - so a laptop running both gets a conflict rather than
-# two stacks. Compose names them from the project instead, and `docker compose -f docker-compose.prod.yml
-# logs -f api` reaches them whatever it called them.
+# No container_name anywhere below, deliberately. A fixed name is claimed globally rather than per
+# project, so two stacks that both want it get a collision rather than two stacks - which is what
+# happened when this file and the development one both named a postgres container. Compose names them
+# from the project instead, and `docker compose -f docker-compose.prod.yml logs -f api` reaches them
+# whatever it called them.
 
 # DOMAIN is the one value the rest is built from: the certificates Caddy asks for, the origin the app
 # calls its own, and both Discord addresses. PUBLIC_URL is derived from it as https://$DOMAIN, and is
 # only worth setting by hand when testing somewhere that is not on TLS.
 
-services:
-  postgres:
-    image: postgres:17
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-street_empire}
-      POSTGRES_USER: ${POSTGRES_USER:-street_empire}
-      # No default. A database that comes up with a password from a public file is a database with no
-      # password, so compose refuses to start rather than choosing one for you.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-    volumes:
-      - street-empire-data:/var/lib/postgresql/data
-    networks:
-      - street-empire
-    # Deliberately no `ports:`. The database is reachable from the app over the private network and
-    # from nowhere else - a published 5432 on a public VPS is found by a scanner within the hour.
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-street_empire} -d ${POSTGRES_DB:-street_empire}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+# POSTGRES_HOST is the other one, and it has no default on purpose. From inside a container the VPS is
+# the gateway of the network at the bottom of this file - 172.28.0.1, pinned there so that the address
+# is fixed and pg_hba.conf on the host can name this range in one line rather than guess at it. Written
+# down once, in .env, because the alternative is a default in here that has to agree with a hand-edited
+# file on the host, and two copies of an address is how a database ends up unreachable after a reboot.
 
+services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
     image: street-empire:latest
+    # Nothing left in this file to depend on, and the ordering that used to buy is covered by the restart
+    # policy instead. The app migrates on boot, so if Docker comes back from a reboot before Postgres
+    # does, the migration fails, the container exits, and this brings it straight back until the database
+    # is answering.
     restart: unless-stopped
-    depends_on:
-      postgres:
-        # Not just "started". The app migrates on boot, and a migration against a database still
-        # opening its files fails the whole startup by design.
-        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       # Behind Caddy, so believe it about the caller's scheme and address. Without this the session
       # cookie loses its Secure flag and every anonymous caller shares one rate-limit bucket.
       Proxy__TrustForwardedHeaders: "true"
       ConnectionStrings__GameDatabase: >-
-        Host=postgres;Port=5432;Database=${POSTGRES_DB:-street_empire};Username=${POSTGRES_USER:-street_empire};Password=${POSTGRES_PASSWORD}
+        Host=${POSTGRES_HOST:?set POSTGRES_HOST in .env, e.g. 172.28.0.1};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-street_empire};Username=${POSTGRES_USER:-street_empire};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
 
       # The key ring, on a volume. Without this every deploy silently signs out every player and voids
       # every outstanding verification and reset code - see the comment in Program.cs.
@@ -84,16 +76,20 @@ services:
     # To reach it directly while debugging:
     #   docker compose -f docker-compose.prod.yml exec api curl -s localhost:8080/api/health
 
-  # Dumps of the game database, on a schedule, checked and pruned. Same image as the server because
-  # pg_dump refuses to dump a server newer than itself, and a version drift here fails silently.
+  # Dumps of the game database, on a schedule, checked and pruned. Still a container even though the
+  # database is not: the script it runs is the tested one, and the tag pins the pg_dump that takes the
+  # dumps. That pin matters more now rather than less - pg_dump refuses to dump a server newer than
+  # itself, so this has to keep up with the major version apt installs on the host, and the day it stops
+  # keeping up is a day the backups stop without saying so.
   backup:
     image: postgres:17
+    # The script waits on pg_isready in a loop rather than being ordered after anything, which is what it
+    # always did - compose only ever gated the first start, never a restart of this container on its own.
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      POSTGRES_HOST: postgres
+      # No :? here; the api above already refuses to start without it.
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-street_empire}
       POSTGRES_USER: ${POSTGRES_USER:-street_empire}
       # On the container rather than only inside the script, so that a pg_restore run by hand through
@@ -138,7 +134,6 @@ services:
       - street-empire
 
 volumes:
-  street-empire-data:
   caddy-data:
   caddy-config:
   street-empire-keys:
@@ -146,3 +141,14 @@ volumes:
 networks:
   street-empire:
     driver: bridge
+    # Pinned, rather than taken from Docker's pool. Two things have to agree on an address that Docker
+    # would otherwise be free to change whenever a network is recreated: the containers, which reach the
+    # database at the gateway, and pg_hba.conf on the host, which decides who is allowed to connect at
+    # all. A fixed subnet turns the second into one line naming this range and nothing else.
+    #
+    # If 172.28.0.0/16 collides with something already on the box, compose says so at startup rather
+    # than half-working. Change it here, in POSTGRES_HOST, and in pg_hba.conf - all three or none.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1

@@ -35,6 +35,27 @@
   more characters than the server will take: it inherited a 254-character limit from the sign-in box,
   where the same field can hold an email address, and names stop at 32.
 
+- **Postgres runs on the VPS rather than in the compose stack.** Not for the data's sake - it was on a
+  named volume, and a volume outlives every container that mounts it, which was demonstrated by
+  destroying the container and counting the same eleven accounts afterwards. What moving it buys is that
+  the database keeps running when Docker does not, gets patched by the same apt as the rest of the box,
+  and keeps its data somewhere you can reach without going through Docker. The README has the move
+  itself, and it ends with the one irreversible command on the page.
+- The compose network is pinned to a fixed subnet, because two things now have to agree on an address
+  Docker would otherwise be free to change: the containers, which reach the database at the gateway, and
+  `pg_hba.conf` on the host, which decides who may connect. Pinning turns that file into one line naming
+  one range. `POSTGRES_HOST` has no default in the compose file for the same reason - an address written
+  in two places is an address that drifts, and you find out after a reboot.
+- **The backup job passes the port explicitly**, which it never did while the database was a service
+  named `postgres`. On a host, 5432 is whatever answered first: in testing that turned out to be an
+  unrelated Postgres, and `pg_isready` called it alive without hesitation because it does not
+  authenticate. A dump aimed at the wrong server is worse than no dump, because it looks like one.
+- **Shell scripts are pinned to LF in the working tree**, not only in the repository. The backup script
+  is bind-mounted into its container straight from the checkout, and a Windows checkout with
+  `core.autocrlf=true` hands `/bin/sh` a file it cannot read - it dies on the shebang line, and
+  `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
+  was never affected, which is exactly what would have made it hard to find.
+
 ### Fixed
 - **www failed to load with a TLS error rather than a redirect.** Caddy was configured with exactly one
   site address, so `www.` was a name it held no certificate for - and a browser asking for such a name

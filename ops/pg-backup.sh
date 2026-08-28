@@ -21,6 +21,11 @@
 set -eu
 
 : "${POSTGRES_HOST:=postgres}"
+# Passed on every command below rather than left to libpq's default, and that is not tidiness. The
+# database is on the host now, where port 5432 is whatever answered first - during testing that turned
+# out to be an unrelated Postgres, which pg_isready happily called alive because it does not
+# authenticate. A dump aimed at the wrong server is worse than no dump, because it looks like one.
+: "${POSTGRES_PORT:=5432}"
 : "${POSTGRES_DB:=street_empire}"
 : "${POSTGRES_USER:=street_empire}"
 : "${BACKUP_DIR:=/backups}"
@@ -40,7 +45,8 @@ take_one() {
 
     # -Fc is the custom format: compressed, and restorable a table at a time rather than all or
     # nothing, which is what you want when the thing you are undoing is one bad migration.
-    if ! pg_dump --host="$POSTGRES_HOST" --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
+    if ! pg_dump --host="$POSTGRES_HOST" --port="$POSTGRES_PORT" \
+                 --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" \
                  --format=custom --compress=6 --file="$partial" 2>&1
     then
         say "FAILED: pg_dump would not complete. Nothing was written."
@@ -71,14 +77,16 @@ prune() {
 
 mkdir -p "$BACKUP_DIR"
 
-# The database may still be starting. Compose waits for its healthcheck, but a restart of this
-# container alone would not.
-until pg_isready --host="$POSTGRES_HOST" --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" > /dev/null 2>&1; do
-    say "waiting for ${POSTGRES_HOST}"
+# The database may still be starting, or still be down after a reboot of the host it now lives on.
+# Nothing orders this container after it any more - and nothing ever ordered a restart of this container
+# on its own - so waiting is this loop's job.
+until pg_isready --host="$POSTGRES_HOST" --port="$POSTGRES_PORT" \
+                 --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" > /dev/null 2>&1; do
+    say "waiting for ${POSTGRES_HOST}:${POSTGRES_PORT}"
     sleep 5
 done
 
-say "every ${BACKUP_INTERVAL_HOURS}h into ${BACKUP_DIR}, keeping ${BACKUP_RETENTION_DAYS} day(s)"
+say "${POSTGRES_HOST}:${POSTGRES_PORT} every ${BACKUP_INTERVAL_HOURS}h into ${BACKUP_DIR}, keeping ${BACKUP_RETENTION_DAYS} day(s)"
 
 while true; do
     # Never fatal. A failed dump is loud in the log and tries again next time; exiting would take the

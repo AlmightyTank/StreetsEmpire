@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Anything bind-mounted into a container keeps LF in the working tree as well as in the repository.
+# The repository was already storing LF, so a clone on the VPS was always fine - but this machine has
+# core.autocrlf=true, which rewrites the checkout, and compose mounts the checkout rather than a copy
+# from git. /bin/sh does not read CRLF: it fails on the shebang line with "set: Illegal option -", the
+# backup container exits, and `restart: unless-stopped` turns that into a restart loop that takes no
+# backups. Nothing else notices, which is the worst property a backup job can have.
+*.sh text eol=lf
+ops/Caddyfile text eol=lf

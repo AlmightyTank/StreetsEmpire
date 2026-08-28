@@ -11,6 +11,10 @@
 #
 # The repository is still pulled, because three files are read from the checkout rather than from the
 # image: this compose file, the Caddyfile, and the backup script.
+#
+# If this ever comes back "command not found" from a shell that can plainly see the file, the executable
+# bit did not survive the trip: it is recorded in git as a file mode, and a Windows checkout with
+# core.filemode=false does not record a chmod at all. `sh ops/deploy.sh` runs it either way.
 
 set -eu
 

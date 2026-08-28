@@ -179,6 +179,7 @@ var tests = new (string Name, Action Test)[]
     ("every new account arrives with a way back in", EveryNewAccountArrivesWithAWayBackIn),
     ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
     ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
+    ("one box on the form is one name underneath", OneBoxOnTheFormIsOneNameUnderneath),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2333,6 +2334,38 @@ static void ALostRaceIsAnAnswerNotAStackTrace()
     // would turn a real fault into a polite conflict and hide it.
     AssertEqual(null, DatabaseErrors.DescribeUniqueViolation(new InvalidOperationException("something else")));
     AssertEqual(null, DatabaseErrors.DescribeUniqueViolation(new DbUpdateException("no inner cause")));
+
+    // Both name constraints answer as one when the form only asked once. Naming the column that lost
+    // would name a box the player never filled in, and "player name" is not a phrase the sign-up form
+    // uses any more. The other two are unchanged - the player did type an address, and did click
+    // Discord, so those are still worth telling apart.
+    AssertEqual(AccountSetup.NameTaken, DatabaseErrors.DescribeConstraint("IX_Accounts_Username", oneName: true));
+    AssertEqual(AccountSetup.NameTaken, DatabaseErrors.DescribeConstraint("IX_Players_Name", oneName: true));
+    AssertEqual("That email is already on an account.",
+        DatabaseErrors.DescribeConstraint("IX_Accounts_Email", oneName: true));
+}
+
+static void OneBoxOnTheFormIsOneNameUnderneath()
+{
+    // The forms used to ask for a username and a player name, 3-32 characters each, and said nothing
+    // about how they differed - so everybody typed the same word twice. They ask once now, and the
+    // player name follows the username.
+    var (name, fromUsername) = AccountSetup.PlayerNameFor("kim", null);
+    AssertEqual("kim", name);
+    AssertTrue(fromUsername, "a sign-up that sent no player name took the username");
+
+    // Blank and whitespace are the same as absent. A form field that exists but was never filled in
+    // arrives as an empty string, not as null, and an empty player name would fail the length check
+    // with a message about a box that is not on the screen.
+    AssertEqual("kim", AccountSetup.PlayerNameFor("kim", "").Name);
+    AssertEqual("kim", AccountSetup.PlayerNameFor("kim", "   ").Name);
+    AssertTrue(AccountSetup.PlayerNameFor("kim", "  ").FromUsername, "whitespace is not a player name");
+
+    // The columns stay separate underneath, so a caller that wants them apart still gets them apart -
+    // which is what keeps the admin rename meaningful. Trimmed, like every other name here.
+    var (apart, asked) = AccountSetup.PlayerNameFor("kim", "  Kimberly  ");
+    AssertEqual("Kimberly", apart);
+    AssertTrue(!asked, "a player name that was asked for is not the username");
 }
 
 static void OneInboxCanOnlyBeAimedAtSoManyTimes()

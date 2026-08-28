@@ -24,9 +24,14 @@ internal static class DatabaseErrors
     /// exception carry on being an exception. Named by constraint, because "already taken" is no use
     /// to somebody who cannot tell which of the three things they typed was the problem.
     /// </summary>
-    internal static string? DescribeUniqueViolation(Exception exception)
+    /// <param name="oneName">
+    /// True when the caller asked for a name once and let the player name follow it, which is what the
+    /// sign-up forms do. Both name constraints then answer with the one message, because naming the
+    /// column that lost would name a box the player never filled in.
+    /// </param>
+    internal static string? DescribeUniqueViolation(Exception exception, bool oneName = false)
         => exception is DbUpdateException { InnerException: PostgresException { SqlState: UniqueViolation } inner }
-            ? DescribeConstraint(inner.ConstraintName)
+            ? DescribeConstraint(inner.ConstraintName, oneName)
             : null;
 
     /// <summary>
@@ -39,17 +44,17 @@ internal static class DatabaseErrors
     /// Matched loosely on purpose. A renamed index would otherwise fall back to a 500 silently, and the
     /// fallback still says something true.
     /// </summary>
-    internal static string DescribeConstraint(string? constraintName)
+    internal static string DescribeConstraint(string? constraintName, bool oneName = false)
     {
         var constraint = constraintName ?? string.Empty;
         if (constraint.Contains("Username", StringComparison.OrdinalIgnoreCase))
-            return "Username is already taken.";
+            return oneName ? AccountSetup.NameTaken : "Username is already taken.";
         if (constraint.Contains("Email", StringComparison.OrdinalIgnoreCase))
             return "That email is already on an account.";
         if (constraint.Contains("DiscordUserId", StringComparison.OrdinalIgnoreCase))
             return "That Discord account is already on an empire. Sign in with it instead.";
         if (constraint.Contains("Players_Name", StringComparison.OrdinalIgnoreCase))
-            return "Player name is already taken.";
+            return oneName ? AccountSetup.NameTaken : "Player name is already taken.";
 
         return "Somebody just took one of those names. Try again.";
     }

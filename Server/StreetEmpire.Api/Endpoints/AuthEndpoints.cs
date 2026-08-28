@@ -42,7 +42,7 @@ internal static class AuthEndpoints
             CancellationToken ct) =>
         {
             var username = request.Username?.Trim() ?? string.Empty;
-            var playerName = request.PlayerName?.Trim() ?? string.Empty;
+            var (playerName, oneName) = AccountSetup.PlayerNameFor(username, request.PlayerName);
 
             if (username.Length is < 3 or > 32)
                 return Results.BadRequest(new { error = "Username must be 3-32 characters." });
@@ -79,11 +79,11 @@ internal static class AuthEndpoints
                 return Results.BadRequest(new { error = $"Pick one of: {string.Join(", ", cities)}." });
 
             if (await db.Accounts.AnyAsync(x => x.Username == username, ct))
-                return Results.Conflict(new { error = "Username is already taken." });
+                return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Username is already taken." });
             if (await db.Accounts.AnyAsync(x => x.Email == email, ct))
                 return Results.Conflict(new { error = "That email is already on an account." });
             if (await db.Players.AnyAsync(x => x.Name == playerName, ct))
-                return Results.Conflict(new { error = "Player name is already taken." });
+                return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Player name is already taken." });
 
             var opts = gameOptions.Value;
             var isFirstAccount = !await db.Accounts.AnyAsync(ct);
@@ -99,7 +99,7 @@ internal static class AuthEndpoints
             {
                 await db.SaveChangesAsync(ct);
             }
-            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex) is { } taken)
+            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex, oneName) is { } taken)
             {
                 // Somebody took one of these names between the checks above and this line. Rare enough
                 // to be worth no more than an honest 409, and common enough that it must not be a 500.
@@ -320,8 +320,8 @@ internal static class AuthEndpoints
             if (profile is null)
                 return Results.BadRequest(new { error = "That Discord sign-up has expired. Start again." });
 
-            var playerName = request.PlayerName?.Trim() ?? string.Empty;
             var username = request.Username?.Trim() ?? string.Empty;
+            var (playerName, oneName) = AccountSetup.PlayerNameFor(username, request.PlayerName);
             if (username.Length is < 3 or > 32)
                 return Results.BadRequest(new { error = "Username must be 3-32 characters." });
             if (AccountSetup.LooksLikeAnAttemptAtEmail(username))
@@ -346,11 +346,11 @@ internal static class AuthEndpoints
             if (await db.Accounts.AnyAsync(x => x.DiscordUserId == profile.Id, ct))
                 return Results.Conflict(new { error = "That Discord account is already on an empire. Sign in with it instead." });
             if (await db.Accounts.AnyAsync(x => x.Username == username, ct))
-                return Results.Conflict(new { error = "Username is already taken." });
+                return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Username is already taken." });
             if (email is not null && await db.Accounts.AnyAsync(x => x.Email == email, ct))
                 return Results.Conflict(new { error = "That email is already on an account." });
             if (await db.Players.AnyAsync(x => x.Name == playerName, ct))
-                return Results.Conflict(new { error = "Player name is already taken." });
+                return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Player name is already taken." });
 
             var isFirstAccount = !await db.Accounts.AnyAsync(ct);
             var account = new PlayerAccount
@@ -374,7 +374,7 @@ internal static class AuthEndpoints
             {
                 await db.SaveChangesAsync(ct);
             }
-            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex) is { } taken)
+            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex, oneName) is { } taken)
             {
                 return Results.Conflict(new { error = taken });
             }

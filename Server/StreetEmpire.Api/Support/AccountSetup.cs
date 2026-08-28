@@ -95,6 +95,29 @@ internal static partial class AccountSetup
     }
 
     /// <summary>
+    /// What a collision on either name is called now that the forms ask for one.
+    /// </summary>
+    internal const string NameTaken = "That name is already taken.";
+
+    /// <summary>
+    /// The player name a sign-up ends up with, and whether it came from the username.
+    ///
+    /// Both doors used to ask twice - a username and a player name, 3-32 characters each, with no word
+    /// anywhere saying how they differed. Every account ever made here answered both with the same
+    /// string, which is what people do when asked the same question twice. So the forms ask once and
+    /// send it as the username, and the player name follows.
+    ///
+    /// The two columns stay separate underneath, because they are not the same thing: an admin rename
+    /// moves the player name and leaves the sign-in name alone, and nothing renames a username at all.
+    /// A caller that wants them apart still can, by sending a player name of its own.
+    ///
+    /// The flag comes back because it decides what a collision can be told. "Player name is already
+    /// taken" names a box that is no longer on the form.
+    /// </summary>
+    internal static (string Name, bool FromUsername) PlayerNameFor(string username, string? requested)
+        => string.IsNullOrWhiteSpace(requested) ? (username, true) : (requested.Trim(), false);
+
+    /// <summary>
     /// Turns a Discord handle into something the username rules will accept: 3-32 characters of the
     /// alphabet the register form allows, with a number stuck on the end if the plain form is taken.
     /// A suggestion only - the finish-signing-up form shows it and the player can type over it.

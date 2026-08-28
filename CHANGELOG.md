@@ -22,6 +22,28 @@
   somebody working.
 - **The health endpoint reports the commit** as well as the version, because "is the thing I deployed
   the thing running" is what a health endpoint gets asked from a server.
+- **Signing up asks for one name instead of two.** It asked for a username and a player name, 3-32
+  characters each, and said nothing anywhere about how they differed - so everybody typed the same word
+  twice, and every account in the game had them set to the same string. The form asks once now: the
+  name is the sign-in name and the name other players see. The Discord door did the same thing and got
+  the same treatment. The two columns stay separate underneath, because they are not the same thing -
+  an admin rename moves the player name and leaves the sign-in name alone, nothing renames a username
+  at all, and a caller that wants them apart can still send its own player name.
+- A collision on either of them now says "that name is already taken" rather than naming the column
+  that lost, since "player name is already taken" would name a box no longer on the form. A caller that
+  did send its own player name still gets told which one it was. The sign-up box also stops accepting
+  more characters than the server will take: it inherited a 254-character limit from the sign-in box,
+  where the same field can hold an email address, and names stop at 32.
+
+### Fixed
+- **www failed to load with a TLS error rather than a redirect.** Caddy was configured with exactly one
+  site address, so `www.` was a name it held no certificate for - and a browser asking for such a name
+  does not get a 404, it gets a failed handshake, `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`, which reads
+  like a broken certificate on a site that was simply never set up. The Caddyfile took the whole URL,
+  which read tidily and made www impossible to express, so it takes the bare domain and the compose
+  file derives the rest from it. www redirects to the apex rather than serving the game: two origins
+  for one game means a session cookie set on one is not sent to the other, and Discord's callback can
+  only be registered against one of them anyway.
 
 ## 0.2.6
 

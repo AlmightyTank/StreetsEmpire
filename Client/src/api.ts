@@ -1099,10 +1099,11 @@ export const discordStartUrl = () =>
 export const api = {
   cities: () => request<string[]>('/api/auth/cities'),
   providers: () => request<AuthProviders>('/api/auth/providers'),
-  register: (username: string, password: string, playerName: string, city: string, email?: string) =>
+  /** One name: the server uses it for the sign-in name and the name on the leaderboard alike. */
+  register: (username: string, password: string, city: string, email?: string) =>
     request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, playerName, city, email: email || null }),
+      body: JSON.stringify({ username, password, city, email: email || null }),
     }),
   /** `identifier` is a username or an email address; the server decides which by the @. */
   login: (identifier: string, password: string) =>
@@ -1153,10 +1154,10 @@ export const api = {
   discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
   discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),
   /** `email` is optional and the only way a Discord-made account gets a second way back in. */
-  completeDiscordSignUp: (username: string, playerName: string, city: string, email?: string) =>
+  completeDiscordSignUp: (username: string, city: string, email?: string) =>
     request('/api/auth/discord/complete', {
       method: 'POST',
-      body: JSON.stringify({ username, playerName, city, email: email || null }),
+      body: JSON.stringify({ username, city, email: email || null }),
     }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   leaderboard: (city?: string) => request<LeaderboardEntry[]>(

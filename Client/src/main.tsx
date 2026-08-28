@@ -1104,7 +1104,7 @@ function App() {
     setBusy(true); setError('')
     try {
       if (authMode === 'register')
-        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('playerName')), String(form.get('city')), String(form.get('email') ?? ''))
+        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('city')), String(form.get('email') ?? ''))
       else
         await api.login(String(form.get('username')), String(form.get('password')))
       await refresh()
@@ -1122,7 +1122,6 @@ function App() {
     try {
       await api.completeDiscordSignUp(
         String(form.get('username')),
-        String(form.get('playerName')),
         String(form.get('city')),
         String(form.get('email') ?? ''))
       sessionStorage.removeItem(discordPendingKey)
@@ -1283,11 +1282,12 @@ function App() {
             </p>
             <form className="d-grid gap-3 mt-4" onSubmit={finishDiscordSignUp}>
               <label className="field">
-                Username
+                Name
                 <input className="form-control" name="username" defaultValue={discordTicket.suggestedUsername} minLength={3} maxLength={32} required />
-                <small className="form-text">What you would sign in as if you ever set a password.</small>
+                <small className="form-text">
+                  What other players see, and what you would sign in as if you ever set a password.
+                </small>
               </label>
-              <label className="field">Player Name<input className="form-control" name="playerName" minLength={3} maxLength={32} required /></label>
               <label className="field">
                 Town
                 <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
@@ -1341,12 +1341,26 @@ function App() {
               </li>
             </ul>
             <form className="d-grid gap-3" onSubmit={auth}>
-              {/* One box either way. Which kind of name is in it gets decided by the @, server-side. */}
+              {/*
+                One box either way, and for two different reasons. Signing in, what is in it is decided
+                by the @, server-side - which is why the limit there is an address's rather than a
+                name's. Signing up, it is the only name asked for: it becomes the sign-in name and the
+                name on the leaderboard, which every account here had set to the same string anyway
+                back when the form asked twice and never said how the two differed.
+              */}
               <label className="field">
-                {authMode === 'login' ? 'Username or Email' : 'Username'}
-                <input className="form-control" name="username" minLength={3} maxLength={254} required />
+                {authMode === 'login' ? 'Username or Email' : 'Name'}
+                <input
+                  className="form-control"
+                  name="username"
+                  minLength={3}
+                  maxLength={authMode === 'login' ? 254 : 32}
+                  required
+                />
+                {authMode === 'register' && <small className="form-text">
+                  What you sign in with, and the name other players see on the leaderboard.
+                </small>}
               </label>
-              {authMode === 'register' && <label className="field">Player Name<input className="form-control" name="playerName" minLength={3} maxLength={32} required /></label>}
               {/*
                 Required on this door, and the helper says why rather than just marking it with a star.
                 An account made here has one way in and one way back, and the way back is a code to this

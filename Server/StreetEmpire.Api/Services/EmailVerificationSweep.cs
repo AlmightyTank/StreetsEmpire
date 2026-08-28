@@ -52,6 +52,12 @@ public sealed class EmailVerificationSweep(
         }
     }
 
+    /// <summary>
+    /// Longer than the fourteen days a session cookie lives, so a live session is never swept out from
+    /// under a player who is still using it. Shorter than for ever, because these rows hold an address.
+    /// </summary>
+    private const int SessionRetentionDays = 30;
+
     private async Task SweepAsync(CancellationToken ct)
     {
         try
@@ -83,16 +89,27 @@ public sealed class EmailVerificationSweep(
                 .Where(x => x.CreatedAtUtc < transferCutoff)
                 .ExecuteDeleteAsync(ct);
 
+            // Sessions, which are the only rows here holding personal data - an address and a browser
+            // string. Two cutoffs rather than one: a revoked session is finished business and goes on the
+            // short clock, while a live one is only removed once it is older than the cookie it belongs
+            // to, since a row that outlives its ticket is a session nobody can see or end.
+            var sessionCutoff = DateTime.UtcNow.AddDays(-Math.Max(days, SessionRetentionDays));
+            var sessions = await db.Sessions
+                .Where(x => (x.RevokedAtUtc != null && x.RevokedAtUtc < cutoff)
+                            || x.LastSeenAtUtc < sessionCutoff)
+                .ExecuteDeleteAsync(ct);
+
             // Pacts are deliberately not swept. A pact is state rather than history: an active one is
             // a truce being relied on right now, and a closed one is the record of a crew having broken
             // one, which is exactly the thing somebody will want to look up.
 
             // Only said when it did something. A daily line reporting zero is a line that trains
             // everybody to stop reading the log.
-            if (codes + calls + transfers > 0)
+            if (codes + calls + transfers + sessions > 0)
                 logger.LogInformation(
-                    "Swept {Codes} verification code(s), {Calls} closed assist call(s) and {Transfers} transfer record(s).",
-                    codes, calls, transfers);
+                    "Swept {Codes} verification code(s), {Calls} closed assist call(s), {Transfers} transfer record(s) "
+                    + "and {Sessions} session(s).",
+                    codes, calls, transfers, sessions);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

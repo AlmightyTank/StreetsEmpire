@@ -113,7 +113,7 @@ internal static class AuthEndpoints
             if (verification.Options.SendOnSignUp)
                 await verification.SendAsync(account, VerificationPurpose.ConfirmAddress, ct);
 
-            await SignInAsync(http, account);
+            await SignInAsync(http, db, account, cancellationToken: ct);
             return Results.Ok(new AuthResponse(player.Id, player.Name, account.Username));
         }).RequireRateLimiting("sign-in");
 
@@ -159,7 +159,7 @@ internal static class AuthEndpoints
             if (account.IsLockedOut(nowUtc))
                 return Results.Json(new { error = account.LockoutMessage(nowUtc) }, statusCode: StatusCodes.Status403Forbidden);
 
-            await SignInAsync(http, account);
+            await SignInAsync(http, db, account, cancellationToken: ct);
             return Results.Ok(new AuthResponse(account.Player!.Id, account.Player.Name, account.Username));
         }).RequireRateLimiting("sign-in");
 
@@ -249,7 +249,7 @@ internal static class AuthEndpoints
 
                 var currentId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
                 var refreshingCurrentAccount = string.Equals(currentId, linked.Id.ToString(), StringComparison.OrdinalIgnoreCase);
-                await SignInAsync(http, linked);
+                await SignInAsync(http, db, linked, cancellationToken: ct);
 
                 // The only notice that is not about a setting. A connected Discord signs in without a
                 // password, so this is the single event that tells somebody another person is in their
@@ -389,7 +389,7 @@ internal static class AuthEndpoints
                 await verification.SendAsync(account, VerificationPurpose.ConfirmAddress, ct);
 
             http.Response.Cookies.Delete(DiscordTickets.SignUpCookie, SignUpCookieOptions(http));
-            await SignInAsync(http, account);
+            await SignInAsync(http, db, account, cancellationToken: ct);
             return Results.Ok(new AuthResponse(player.Id, player.Name, account.Username));
         }).RequireRateLimiting("sign-in");
     }
@@ -400,6 +400,9 @@ internal static class AuthEndpoints
     /// itself in step - what was missing was any record of when, which is what the refresh button on
     /// the account page reports.
     /// </summary>
+    private static string? Truncate(string? value, int max)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Length <= max ? value : value[..max];
+
     private static void ApplyDiscordProfile(PlayerAccount account, DiscordProfile profile)
     {
         // Before anything else and unconditionally. The page is answering "when did we last ask", and
@@ -452,13 +455,40 @@ internal static class AuthEndpoints
     /// the others except by the moment it was issued - so that moment is stated rather than left to
     /// whatever the clock reads a few milliseconds later.
     /// </param>
-    internal static async Task SignInAsync(HttpContext http, PlayerAccount account, DateTimeOffset? issuedUtc = null)
+    /// <summary>The claim that carries the session row's id back on every request.</summary>
+    internal const string SessionClaim = "sid";
+
+    /// <summary>
+    /// Signs somebody in and writes down that it happened.
+    ///
+    /// The row is what makes "where am I signed in" answerable and what makes one session endable
+    /// without ending them all. It is saved here rather than left to the caller because every door into
+    /// this game goes through this method, and a door that forgot would be a session that cannot be
+    /// seen or revoked - which is the failure nobody would notice until it mattered.
+    /// </summary>
+    internal static async Task SignInAsync(
+        HttpContext http, GameDbContext db, PlayerAccount account, DateTimeOffset? issuedUtc = null,
+        CancellationToken cancellationToken = default)
     {
+        var session = new PlayerSession
+        {
+            AccountId = account.Id,
+            CreatedAtUtc = DateTime.UtcNow,
+            LastSeenAtUtc = DateTime.UtcNow,
+            IpAddress = http.Connection.RemoteIpAddress?.ToString(),
+            // Truncated on the way in rather than on the way out: it is attacker-controlled and
+            // unbounded, and the column would be the thing that refused the sign-in.
+            UserAgent = Truncate(http.Request.Headers.UserAgent.ToString(), 256),
+        };
+        db.Sessions.Add(session);
+        await db.SaveChangesAsync(cancellationToken);
+
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, account.Id.ToString()),
             new(ClaimTypes.Name, account.Username),
-            new("is_admin", account.IsAdmin ? "true" : "false")
+            new("is_admin", account.IsAdmin ? "true" : "false"),
+            new(SessionClaim, session.Id.ToString())
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await http.SignInAsync(

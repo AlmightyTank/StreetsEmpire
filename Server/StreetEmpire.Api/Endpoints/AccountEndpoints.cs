@@ -213,16 +213,72 @@ internal static class AccountEndpoints
         // The same machinery as a password change, offered on its own. Somebody who left themselves
         // signed in on a machine they no longer have should not have to change their password to get
         // out of it.
+        // Where you are signed in. Active only: a revoked row is not somewhere you are signed in, and
+        // the sweep is what eventually removes it.
+        account.MapGet("/sessions", async (
+            HttpContext http,
+            GameDbContext db,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            Guid.TryParse(http.User.FindFirstValue(AuthEndpoints.SessionClaim), out var currentSessionId);
+            var sessions = await db.Sessions.AsNoTracking()
+                .Where(x => x.AccountId == current.Id && x.RevokedAtUtc == null)
+                .OrderByDescending(x => x.LastSeenAtUtc)
+                .Select(x => new SessionResponse(
+                    x.Id, x.IpAddress, x.UserAgent, x.CreatedAtUtc, x.LastSeenAtUtc, x.Id == currentSessionId))
+                .ToListAsync(ct);
+
+            return Results.Ok(sessions);
+        });
+
+        // One of them, by id. The watermark could only ever end all of them at once, which made
+        // "somebody else is signed in on a machine I do not recognise" cost you every tab you had open.
+        account.MapPost("/sessions/{sessionId:guid}/revoke", async (
+            Guid sessionId,
+            RevokeSessionsRequest request,
+            HttpContext http,
+            GameDbContext db,
+            IPasswordHasher<PlayerAccount> passwordHasher,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+            if (current.HasPassword && !Verifies(passwordHasher, current, request.CurrentPassword))
+                return Results.BadRequest(new { error = "That password is not right." });
+
+            var session = await db.Sessions
+                .SingleOrDefaultAsync(x => x.Id == sessionId && x.AccountId == current.Id, ct);
+            if (session is null)
+                return Results.NotFound(new { error = "That session is already gone." });
+            if (session.RevokedAtUtc is not null)
+                return Results.Ok(new { revoked = true });
+
+            session.RevokedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            // Signing yourself out through this door is allowed and works: the cookie handler checks
+            // this row on the next request and refuses it, which is the same path a stolen session
+            // takes. Nothing special is needed to make the current browser notice.
+            return Results.Ok(new { revoked = true });
+        });
+
         account.MapPost("/sessions/revoke", async (
+            RevokeSessionsRequest request,
             HttpContext http,
             GameDbContext db,
             DiscordAuthService discord,
             EmailVerificationService verification,
             AccountNotices notices,
+            IPasswordHasher<PlayerAccount> passwordHasher,
             CancellationToken ct) =>
         {
             var current = await LoadAsync(http, db, ct);
             if (current is null) return Results.Unauthorized();
+            if (current.HasPassword && !Verifies(passwordHasher, current, request.CurrentPassword))
+                return Results.BadRequest(new { error = "That password is not right." });
 
             await EndOtherSessionsAsync(http, db, current, ct);
             await notices.TellAccountAsync(current, AccountChange.SessionsSignedOut, null, ct);
@@ -424,16 +480,28 @@ internal static class AccountEndpoints
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
 
-        account.MapDelete("/discord", async (
+        // POST rather than DELETE, and not by preference: this now carries the current password, and
+        // minimal APIs refuse to infer a body on DELETE - "Body was inferred but the method does not
+        // allow inferred body parameters", at startup. [FromBody] would force it, but a DELETE with a
+        // body is the sort of request intermediaries feel free to strip, and a password is not a thing
+        // to send down a path like that.
+        account.MapPost("/discord/disconnect", async (
+            RevokeSessionsRequest request,
             HttpContext http,
             GameDbContext db,
             DiscordAuthService discord,
             EmailVerificationService verification,
             AccountNotices notices,
+            IPasswordHasher<PlayerAccount> passwordHasher,
             CancellationToken ct) =>
         {
             var current = await LoadAsync(http, db, ct);
             if (current is null) return Results.Unauthorized();
+            // Same rule as changing the address: taking away a way in costs the password, which a stolen
+            // session does not have. An account with no password has nothing to prove with and is
+            // already proving itself with the cookie - the same exemption the password form makes.
+            if (current.HasPassword && !Verifies(passwordHasher, current, request.CurrentPassword))
+                return Results.BadRequest(new { error = "That password is not right." });
             if (current.DiscordUserId is null)
                 return Results.BadRequest(new { error = "There is no Discord account connected." });
             if (!current.HasAnotherWayIn(withoutDiscord: true))
@@ -493,8 +561,18 @@ internal static class AccountEndpoints
     {
         var now = AuthEndpoints.ToSessionMoment(DateTime.UtcNow);
         account.SessionsValidAfterUtc = now;
+
+        // All of them, including this browser's - the sign-in below writes it a fresh one. Both halves
+        // are needed and neither replaces the other: the watermark is what ends tickets issued before
+        // sessions were recorded and carry no row at all, and the rows are what the page can list.
+        var live = await db.Sessions
+            .Where(x => x.AccountId == account.Id && x.RevokedAtUtc == null)
+            .ToListAsync(ct);
+        foreach (var session in live)
+            session.RevokedAtUtc = now;
+
         await db.SaveChangesAsync(ct);
-        await AuthEndpoints.SignInAsync(http, account, now);
+        await AuthEndpoints.SignInAsync(http, db, account, now, ct);
     }
 
     private static async Task<PlayerAccount?> LoadAsync(HttpContext http, GameDbContext db, CancellationToken ct)

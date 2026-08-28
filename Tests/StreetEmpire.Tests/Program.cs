@@ -191,6 +191,7 @@ var tests = new (string Name, Action Test)[]
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
+    ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2428,6 +2429,39 @@ static void EveryAlertKindAnswersToASwitch()
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
     AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+}
+
+static void ASessionOutlivesNothingItShould()
+{
+    // Sessions are the first rows in this database that hold personal data - an address and a browser
+    // string - so the shape that matters is what makes one stop counting, and what eventually removes
+    // it. Both are decisions rather than accidents and both are easy to lose in a refactor.
+    var now = new DateTime(2026, 8, 28, 12, 0, 0, DateTimeKind.Utc);
+    var live = new PlayerSession { CreatedAtUtc = now.AddDays(-3), LastSeenAtUtc = now.AddMinutes(-2) };
+    AssertTrue(live.IsActive(now), "a session nobody has revoked is a session you are signed in on");
+
+    // Revoked is a moment rather than a flag, so the sweep can tell a session ended an hour ago from
+    // one ended a month ago and keep the recent one visible on the page that ended it.
+    live.RevokedAtUtc = now;
+    AssertTrue(!live.IsActive(now), "a revoked session is not somewhere you are signed in");
+
+    // The cascade is what stops a deleted account leaving its addresses behind. Asserted on the model
+    // rather than trusted, because the default for an optional relationship is not Cascade and nothing
+    // else here would notice.
+    using var world = NewCrewWorld();
+    var sessions = world.Db.Model.FindEntityType(typeof(PlayerSession))!;
+    var toAccount = sessions.GetForeignKeys().Single();
+    AssertEqual(DeleteBehavior.Cascade, toAccount.DeleteBehavior);
+
+    // And the two columns holding personal data are bounded. A user agent is attacker-controlled and
+    // unbounded, and this one is written on every sign-in.
+    AssertEqual(45, sessions.FindProperty(nameof(PlayerSession.IpAddress))!.GetMaxLength());
+    AssertEqual(256, sessions.FindProperty(nameof(PlayerSession.UserAgent))!.GetMaxLength());
+
+    // Read by account on both paths that touch this table, so that is the index.
+    AssertTrue(sessions.GetIndexes().Any(x => x.Properties.Count == 1
+            && x.Properties[0].Name == nameof(PlayerSession.AccountId)),
+        "sessions should be indexed by the account that owns them");
 }
 
 static void ANewColumnDoesNotSwitchAnythingOff()

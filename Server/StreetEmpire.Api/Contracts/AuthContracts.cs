@@ -94,6 +94,31 @@ public sealed record ChangeEmailRequest(string? Email, string? CurrentPassword);
 /// sign-up has nothing to prove with, and is already proving itself with the session cookie.</param>
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
+/// <summary>
+/// One signed-in browser, as the account page shows it.
+/// </summary>
+/// <param name="IsCurrent">
+/// The one asking. Named rather than left to be worked out, because "which of these is me" is the first
+/// thing anybody wants from this list and the client cannot tell from an address - two tabs on one
+/// machine share it.
+/// </param>
+/// <param name="UserAgent">
+/// Raw, as the browser sent it. Attacker-controlled and rendered as text, never as markup.
+/// </param>
+public sealed record SessionResponse(
+    Guid Id,
+    string? IpAddress,
+    string? UserAgent,
+    DateTime CreatedAtUtc,
+    DateTime LastSeenAtUtc,
+    bool IsCurrent);
+
+/// <param name="CurrentPassword">
+/// Required by an account that has one. Ending sessions is how somebody who has stolen one locks the
+/// owner out, so it costs the password - which a stolen cookie does not carry.
+/// </param>
+public sealed record RevokeSessionsRequest(string? CurrentPassword);
+
 public sealed record ChangeAvatarRequest(string? Source);
 public sealed record ChangeProfileRequest(string? Tagline, string? Pronouns, string? Location, string? Accent, string? Banner = null);
 public sealed record ChangePrivacyRequest(

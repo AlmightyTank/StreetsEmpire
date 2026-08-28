@@ -173,7 +173,31 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
                 && ctx.Properties.IssuedUtc is { } issued
                 && issued.UtcDateTime < validAfter;
 
-            if (lockedOut || staleSession)
+            // The named session, if this ticket carries one. Tickets issued before sessions were
+            // recorded do not, and are deliberately left alone rather than rejected: turning that into
+            // a sign-out would sign out every player in the game on the deploy that shipped it, to no
+            // benefit. They simply are not listed, and the next sign-in writes a row like any other.
+            var revoked = false;
+            if (Guid.TryParse(ctx.Principal?.FindFirstValue(AuthEndpoints.SessionClaim), out var sessionId))
+            {
+                var session = await db.Sessions
+                    .SingleOrDefaultAsync(x => x.Id == sessionId && x.AccountId == id);
+
+                // Gone as well as revoked. A row the sweep has removed is a session nobody can see or
+                // end any more, and a ticket outliving its record should not be the way back in.
+                revoked = session is null || session.RevokedAtUtc is not null;
+
+                // Moved at most every five minutes. Honest to the second would be a write per session
+                // per poll, which on a game that asks every five seconds makes this the busiest table
+                // in the database to answer a question asked once a month.
+                if (!revoked && session is not null && session.LastSeenAtUtc < now.AddMinutes(-5))
+                {
+                    session.LastSeenAtUtc = now;
+                    await db.SaveChangesAsync();
+                }
+            }
+
+            if (lockedOut || staleSession || revoked)
             {
                 ctx.RejectPrincipal();
                 await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

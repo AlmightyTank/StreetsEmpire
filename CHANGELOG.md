@@ -71,6 +71,25 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **The account page says where you are signed in**, and can end one of those places without ending the
+  rest. The session cookie is stateless by design, so this needed the sessions written down and the
+  ticket taught to carry the row's id - but it costs no extra round trip, because the cookie handler
+  already read the account on every request to check for a ban, a suspension and the sign-out watermark.
+  This rides along in that query.
+- Last-seen moves at most once every five minutes rather than on every request. The game polls every
+  five seconds, so an honest timestamp would make this the busiest table in the database to answer a
+  question asked once a month.
+- The watermark stays alongside the rows and neither replaces the other: it is what ends tickets issued
+  before this release, which carry no session id at all. Those keep working rather than being rejected -
+  turning the deploy into a mass sign-out would have cost every player their session for no benefit -
+  and they simply are not listed until the next sign-in.
+- **Ending a session, and disconnecting Discord, now cost the current password.** Both are how somebody
+  who has taken a session would lock the owner out of their own account, and a stolen cookie does not
+  carry a password. An account that has never set one is not asked, the same exemption the password form
+  already makes.
+- Sessions are the first rows here holding personal data - an address and a browser string - so they are
+  swept: revoked ones on the short clock, live ones only once they are older than the fourteen-day cookie
+  they belong to. Deleting an account takes its sessions with it.
 - **Direct messages can be opened to allies, not just crew.** A new setting sits between "my crew" and
   "everyone": crews yours has a standing pact with. The rule itself was written twice - once in
   ChatService refusing the send, once in ResponseMappers deciding whether the button was drawn - and

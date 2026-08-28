@@ -851,6 +851,18 @@ export type Alerts = {
   alerts: Alert[]
 }
 
+/** One signed-in browser, as the account page lists it. */
+export type PlayerSession = {
+  id: string
+  ipAddress: string | null
+  /** Raw, as the browser sent it. Rendered as text, never as markup. */
+  userAgent: string | null
+  createdAtUtc: string
+  lastSeenAtUtc: string
+  /** The one asking. Worked out on the server - two tabs on one machine share an address. */
+  isCurrent: boolean
+}
+
 export type ActionResult = {
   summary: string
   turnsRemaining: number
@@ -1252,13 +1264,27 @@ export const api = {
     return request<Account>('/api/account/avatar/custom', { method: 'POST', body: form })
   },
   deleteCustomAvatar: () => request<Account>('/api/account/avatar/custom', { method: 'DELETE' }),
-  disconnectDiscord: () => request<Account>('/api/account/discord', { method: 'DELETE' }),
+  disconnectDiscord: (currentPassword: string) =>
+    request<Account>('/api/account/discord/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: currentPassword || null }),
+    }),
   /** Issues a fresh code and retires whatever was outstanding. Refused inside the resend cooldown. */
   sendEmailCode: () => request<Account>('/api/account/email/verify/send', { method: 'POST' }),
   confirmEmail: (code: string) =>
     request<Account>('/api/account/email/verify', { method: 'POST', body: JSON.stringify({ code }) }),
   /** Ends every session on this account except the one asking. */
-  revokeSessions: () => request<Account>('/api/account/sessions/revoke', { method: 'POST' }),
+  sessions: () => request<PlayerSession[]>('/api/account/sessions'),
+  revokeSession: (sessionId: string, currentPassword: string) =>
+    request<{ revoked: boolean }>(`/api/account/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: currentPassword || null }),
+    }),
+  revokeSessions: (currentPassword: string) =>
+    request<Account>('/api/account/sessions/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: currentPassword || null }),
+    }),
 
   discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
   discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),

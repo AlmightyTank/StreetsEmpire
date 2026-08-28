@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { profileBanners, type ProfileBanner } from './api'
-import type { Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -6526,6 +6526,9 @@ function AccountPasswordPanel({ account, busy, run, fail }: AccountPanel) {
 }
 
 function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
+  // Disconnecting takes away a way in, which is the same kind of act as changing the address, so it
+  // costs the same thing. An account with no password has nothing to prove with and is not asked.
+  const [password, setPassword] = useState('')
   // Two separate reasons the connection might be stuck, and they are not the same reason - one is
   // about getting in at all, the other about getting back in after forgetting the password.
   const discordIsTheOnlyWayIn = account.discordConnected && !account.hasPassword
@@ -6597,12 +6600,27 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
             This is the only way back into your empire if you forget your password. Confirm an email
             address before disconnecting it.
           </div>
-          : <button
-            className="btn btn-outline-danger"
-            type="button"
-            disabled={busy}
-            onClick={() => void run(() => api.disconnectDiscord(), 'Discord disconnected.')}
-          >Disconnect Discord</button>}
+          : <div className="d-grid gap-2">
+            {account.hasPassword && <label className="field">
+              Current password
+              <input
+                className="form-control"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+              />
+              <small className="form-text">Taking away a way in costs the password, as changing your address does.</small>
+            </label>}
+            <button
+              className="btn btn-outline-danger"
+              type="button"
+              disabled={busy || (account.hasPassword && password.length === 0)}
+              onClick={() => void run(
+                async () => { const a = await api.disconnectDiscord(password); setPassword(''); return a },
+                'Discord disconnected.')}
+            >Disconnect Discord</button>
+          </div>}
       </>
       : account.discordConfigured
         ? <>
@@ -6867,25 +6885,109 @@ function NoticeToggle({ label, detail, checked, onChange }: {
   </label>
 }
 
+/**
+ * Where you are signed in, and the ability to end one of them.
+ *
+ * The list is loaded here rather than arriving with the account, because it is the one thing on this
+ * page that changes without anybody touching it - a session moves every few minutes as somebody plays -
+ * and folding it into the account payload would make every other panel refetch it for nothing.
+ */
+function SessionsCard({ account, busy, run }: { account: Account, busy: boolean, run: AccountPanel['run'] }) {
+  const [sessions, setSessions] = useState<PlayerSession[] | null>(null)
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    try { setSessions(await api.sessions()) } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [])
+
+  // Only an account with a password can be asked for one. A Discord-only account has nothing to prove
+  // with and is already proving itself with the cookie, which is the same exemption the password form
+  // makes rather than a hole opened here.
+  const needsPassword = account.hasPassword
+
+  const revokeOne = async (session: PlayerSession) => {
+    setError('')
+    try {
+      await api.revokeSession(session.id, password)
+      setPassword('')
+      await load()
+    } catch (e) { setError((e as Error).message) }
+  }
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      <h2>Sessions</h2>
+      <span>{sessions === null ? 'Reading' : `${sessions.length} signed in`}</span>
+    </div>
+    <p>
+      A sign-in lasts a fortnight and renews itself while you play, which is convenient right up until
+      you leave yourself signed in on a machine you no longer have.
+    </p>
+
+    {needsPassword && <label className="field mb-3">
+      Current password
+      <input
+        className="form-control"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={event => setPassword(event.target.value)}
+      />
+      <small className="form-text">
+        Ending a session is how somebody who has taken one would lock you out of your own account, so it
+        costs the password - which a stolen cookie does not carry.
+      </small>
+    </label>}
+
+    {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+
+    {sessions !== null && <div className="d-grid gap-2 mb-3">
+      {sessions.length === 0 && <p className="text-body-tertiary small mb-0">
+        Nothing recorded yet. Sessions from before this was added are not listed - they still work, and
+        signing out everywhere ends them.
+      </p>}
+      {sessions.map(session => <div
+        key={session.id}
+        className={`border rounded p-2 d-flex flex-wrap align-items-center justify-content-between gap-2 ${session.isCurrent ? 'border-primary' : 'bg-body-secondary'}`}
+      >
+        <div className="min-w-0">
+          <strong className="d-block text-truncate">
+            {session.isCurrent ? 'This device' : session.ipAddress ?? 'Unknown address'}
+          </strong>
+          <small className="d-block text-body-tertiary text-truncate">{session.userAgent ?? 'Unknown browser'}</small>
+          <small className="d-block text-body-tertiary">
+            Last seen {new Date(session.lastSeenAtUtc).toLocaleString()}
+            {session.isCurrent ? '' : ` / signed in ${new Date(session.createdAtUtc).toLocaleDateString()}`}
+          </small>
+        </div>
+        <button
+          className="btn btn-outline-danger btn-sm"
+          type="button"
+          disabled={busy}
+          onClick={() => void revokeOne(session)}
+        >{session.isCurrent ? 'Sign out here' : 'End it'}</button>
+      </div>)}
+    </div>}
+
+    <button
+      className="btn btn-outline-danger"
+      type="button"
+      disabled={busy}
+      onClick={() => void run(
+        async () => { const a = await api.revokeSessions(password); setPassword(''); await load(); return a },
+        'Every other session has been signed out.')}
+    >{busy ? 'Working...' : 'Sign out everywhere else'}</button>
+  </section>
+}
+
 function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { onTab: (tab: AccountTab) => void }) {
   const open = waysIn(account)
   const back = waysBackIn(account)
   const enoughOfBoth = open.length > 1 && back.length > 1
   return <>
-    <section className="card p-3">
-      <div className="panel-title"><h2>Sessions</h2><span>Signed in for 14 days</span></div>
-      <p>
-        A sign-in lasts a fortnight and renews itself while you play, which is convenient right up until
-        you leave yourself signed in on a machine you no longer have. This ends every session but this
-        one, everywhere, immediately.
-      </p>
-      <button
-        className="btn btn-outline-danger"
-        type="button"
-        disabled={busy}
-        onClick={() => void run(() => api.revokeSessions(), 'Every other session has been signed out.')}
-      >{busy ? 'Working...' : 'Sign out everywhere else'}</button>
-    </section>
+    <SessionsCard account={account} busy={busy} run={run} />
 
     {/*
       Two counters rather than one, because the panel used to answer one question and imply the other.

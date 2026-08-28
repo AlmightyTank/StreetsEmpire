@@ -97,7 +97,7 @@ internal static class PasswordResetEndpoints
 
             // Signed in on the way out. The code already proved control of the mailbox, and the password
             // is one they just chose, so there is nothing left for a second sign-in to establish.
-            await AuthEndpoints.SignInAsync(http, account, now);
+            await AuthEndpoints.SignInAsync(http, db, account, now, ct);
             return Results.Ok(new AuthResponse(account.Player!.Id, account.Player.Name, account.Username));
         }).RequireRateLimiting("sign-in");
     }

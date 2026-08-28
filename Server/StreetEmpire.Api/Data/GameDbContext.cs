@@ -7,6 +7,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
 {
     public DbSet<PlayerAccount> Accounts => Set<PlayerAccount>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
+    public DbSet<PlayerSession> Sessions => Set<PlayerSession>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GameActionLog> ActionLogs => Set<GameActionLog>();
     public DbSet<CombatLog> CombatLogs => Set<CombatLog>();
@@ -75,6 +76,21 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithOne(x => x.Account)
                 .HasForeignKey<Player>(x => x.AccountId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlayerSession>(entity =>
+        {
+            entity.HasOne(x => x.Account)
+                .WithMany()
+                .HasForeignKey(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Every read of this table is "the sessions belonging to one account" - the page listing
+            // them, and the sweep clearing them out.
+            entity.HasIndex(x => x.AccountId);
+
+            entity.Property(x => x.IpAddress).HasMaxLength(45);
+            entity.Property(x => x.UserAgent).HasMaxLength(256);
         });
 
         modelBuilder.Entity<EmailVerification>(entity =>

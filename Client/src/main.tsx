@@ -181,6 +181,7 @@ const discordPendingKey = 'street-empire.discord.pending'
  */
 const discordOutcomes: Partial<Record<DiscordOutcome, { text: string, bad?: boolean }>> = {
   connected: { text: 'Discord connected.' },
+  synced: { text: 'Discord profile refreshed.' },
   'already-connected': { text: 'This account already has a Discord connected. Disconnect that one first.', bad: true },
   cancelled: { text: 'Discord sign-in was cancelled.' },
   failed: { text: 'Discord could not finish signing you in. Try again.', bad: true },
@@ -1034,7 +1035,7 @@ function App() {
       if (said?.bad) setError(said.text)
       else if (said) setNotice(said.text)
       // Connecting is something you were doing on the account page, so that is where you come back to.
-      if (outcome === 'connected' || outcome === 'already-connected') setActivePage('account')
+      if (outcome === 'connected' || outcome === 'synced' || outcome === 'already-connected') setActivePage('account')
     }
 
     if (sessionStorage.getItem(discordPendingKey) === null) return
@@ -4341,18 +4342,24 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           onClick={() => onInspect(target.playerId)}
         >
           <span className="text-primary fw-bolder">#{target.rank}</span>
-          <strong className="min-w-0 text-truncate">{target.name}</strong>
+          <span className="d-flex align-items-center gap-2 min-w-0">
+            <PlayerAvatar name={target.name} avatarUrl={target.avatarUrl} size={32} />
+            <strong className="min-w-0 text-truncate">{target.name}</strong>
+          </span>
           <small className="text-body-secondary small">{target.city}{target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}</small>
           <em className={`eyebrow fst-normal ${target.combatStatus.mismatchReason ? 'text-warning-emphasis' : ''}`}>{target.titles.length > 0 ? target.titles.join(', ') : `${target.combatStatus.eligibility} / ${target.combatReadiness.riskBand}`}{target.rides > 0 ? ` / ${target.rides} parked` : ''}</em>
           <b className="text-body">{money.format(target.netWorth)}</b>
         </button>)}
       </div>
       {profile && <div className="border rounded bg-body-secondary p-3">
-        <div className="d-flex justify-content-between align-items-baseline gap-3 mb-3">
-          <div className="d-grid gap-1">
-            <strong className="text-body fs-5">{profile.name}</strong>
-            <span className="eyebrow">{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span>
-            {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
+        <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <PlayerAvatar name={profile.name} avatarUrl={profile.avatarUrl} size={56} />
+            <div className="d-grid gap-1 min-w-0">
+              <strong className="text-body fs-5 text-truncate">{profile.name}</strong>
+              <span className="eyebrow">{profile.city}{profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}</span>
+              {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
+            </div>
           </div>
           {/* The only place a conversation can start. Everywhere else in chat you are answering
               somebody; this is where you pick who to write to in the first place. */}
@@ -5600,7 +5607,10 @@ function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], 
       key={l.rank}
     >
       <span className="text-body-secondary">#{l.rank}</span>
-      <strong className="min-w-0 text-truncate">{l.playerName}</strong>
+      <span className="d-flex align-items-center gap-2 min-w-0">
+        <PlayerAvatar name={l.playerName} avatarUrl={l.avatarUrl} size={30} />
+        <strong className="min-w-0 text-truncate">{l.playerName}</strong>
+      </span>
       <span className="text-body-secondary">{money.format(l.netWorth)}</span>
     </div>)}
   </div>
@@ -5927,7 +5937,15 @@ function AccountProfilePanel({ account, dashboard, onTab }: { account: Account, 
   const open = waysIn(account)
   return <>
     <section className="card p-3 gcol-xl-full">
-      <div className="panel-title"><h2>{account.playerName}</h2><span>{dashboard.city} / Rank #{dashboard.rank}</span></div>
+      <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
+        <AccountAvatar account={account} size={72} />
+        <div className="min-w-0 flex-fill">
+          <div className="panel-title mb-0"><h2>{account.playerName}</h2><span>{dashboard.city} / Rank #{dashboard.rank}</span></div>
+          <small className="text-body-tertiary">
+            {account.avatarSource === 'Discord' ? 'Using Discord avatar' : 'Using default avatar'}
+          </small>
+        </div>
+      </div>
       <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
         <AdminMetric label="Player name" value={account.playerName} />
         <AdminMetric label="Username" value={account.username} />
@@ -5978,6 +5996,38 @@ function AccountProfilePanel({ account, dashboard, onTab }: { account: Account, 
       </div>
     </section>
   </>
+}
+
+function AccountAvatar({ account, size = 56 }: { account: Account, size?: number }) {
+  return <PlayerAvatar name={account.playerName} username={account.username} avatarUrl={account.avatarUrl} size={size} />
+}
+
+function PlayerAvatar({ name, username = name, avatarUrl, size = 36 }: { name: string, username?: string, avatarUrl?: string | null, size?: number }) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || username.slice(0, 2).toUpperCase()
+  const style = {
+    width: size,
+    height: size,
+    borderRadius: '50%',
+  }
+
+  return avatarUrl
+    ? <img
+      src={avatarUrl}
+      alt=""
+      className="border border-primary object-fit-cover flex-shrink-0"
+      style={style}
+      referrerPolicy="no-referrer"
+    />
+    : <div
+      className="d-inline-grid place-items-center border border-primary bg-body-secondary text-primary fw-bold flex-shrink-0 tnum"
+      style={{ ...style, fontSize: Math.max(16, Math.floor(size * 0.34)) }}
+      aria-hidden="true"
+    >{initials}</div>
 }
 
 /**
@@ -6214,6 +6264,50 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
           {account.discordLinkedAtUtc && <> since {new Date(account.discordLinkedAtUtc).toLocaleDateString()}</>}.
           That Discord account signs straight in, on any browser, without a password.
         </p>
+        <div className="border rounded bg-body-secondary p-3 mb-3 d-grid gap-3">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            {account.discordAvatarUrl
+              ? <img
+                src={account.discordAvatarUrl}
+                alt=""
+                className="border border-primary object-fit-cover flex-shrink-0"
+                style={{ width: 56, height: 56, borderRadius: '50%' }}
+                referrerPolicy="no-referrer"
+              />
+              : <AccountAvatar account={account} />}
+            <div className="min-w-0">
+              <span className="eyebrow d-block">Avatar</span>
+              <strong className="d-block text-truncate">
+                {account.avatarSource === 'Discord' ? 'Synced from Discord' : 'Default'}
+              </strong>
+              <small className="text-body-tertiary">
+                {account.discordAvatarUrl ? 'Refresh after changing it on Discord.' : 'No custom Discord avatar found.'}
+              </small>
+            </div>
+          </div>
+          <div className="d-flex flex-wrap gap-2">
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={busy || !account.discordAvatarUrl || account.avatarSource === 'Discord'}
+              onClick={() => void run(() => api.setAvatarSource('Discord'), 'Discord avatar selected.')}
+            >
+              Use Discord avatar
+            </button>
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              disabled={busy || account.avatarSource === 'None'}
+              onClick={() => void run(() => api.setAvatarSource('None'), 'Default avatar selected.')}
+            >
+              Use default
+            </button>
+            <a className="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href={discordStartUrl()}>
+              <i className="bi bi-arrow-repeat" aria-hidden="true" />
+              Refresh from Discord
+            </a>
+          </div>
+        </div>
         {discordIsTheOnlyWayIn
           ? <div className="alert alert-warning mb-0">
             This is the only way into your empire. Set a password before disconnecting it.

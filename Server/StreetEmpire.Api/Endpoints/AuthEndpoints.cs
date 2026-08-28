@@ -242,22 +242,22 @@ internal static class AuthEndpoints
                 if (linked.IsLockedOut(DateTime.UtcNow))
                     return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "locked"));
 
-                // The handle is refreshed on the way through, so the settings page does not go on
-                // showing a name its owner stopped using months ago.
-                if (linked.DiscordUsername != profile.DisplayName)
-                {
-                    linked.DiscordUsername = profile.DisplayName;
+                var refreshed = ApplyDiscordProfile(linked, profile);
+                if (refreshed)
                     await db.SaveChangesAsync(ct);
-                }
 
+                var currentId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+                var refreshingCurrentAccount = string.Equals(currentId, linked.Id.ToString(), StringComparison.OrdinalIgnoreCase);
                 await SignInAsync(http, linked);
 
                 // The only notice that is not about a setting. A connected Discord signs in without a
                 // password, so this is the single event that tells somebody another person is in their
                 // account - and nothing else would ever mention it.
-                await notices.TellAccountAsync(linked, AccountChange.SignedInWithDiscord, profile.DisplayName, ct);
+                if (!refreshingCurrentAccount)
+                    await notices.TellAccountAsync(linked, AccountChange.SignedInWithDiscord, profile.DisplayName, ct);
 
-                return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "signed-in"));
+                var outcome = refreshingCurrentAccount ? "synced" : "signed-in";
+                return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, outcome));
             }
 
             // Nobody's yet, and somebody is signed in: this is the connect button on the account page.
@@ -270,7 +270,7 @@ internal static class AuthEndpoints
                     return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "already-connected"));
 
                 current.DiscordUserId = profile.Id;
-                current.DiscordUsername = profile.DisplayName;
+                ApplyDiscordProfile(current, profile);
                 current.DiscordLinkedAtUtc = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
 
@@ -362,6 +362,8 @@ internal static class AuthEndpoints
                 IsAdmin = isFirstAccount,
                 DiscordUserId = profile.Id,
                 DiscordUsername = profile.DisplayName,
+                DiscordAvatarHash = profile.AvatarHash,
+                AvatarSource = profile.AvatarHash is null ? AccountAvatarSource.None : AccountAvatarSource.Discord,
                 DiscordLinkedAtUtc = DateTime.UtcNow,
             };
             account.SetEmail(email);
@@ -388,6 +390,27 @@ internal static class AuthEndpoints
             await SignInAsync(http, account);
             return Results.Ok(new AuthResponse(player.Id, player.Name, account.Username));
         }).RequireRateLimiting("sign-in");
+    }
+
+    private static bool ApplyDiscordProfile(PlayerAccount account, DiscordProfile profile)
+    {
+        var changed = false;
+        if (account.DiscordUsername != profile.DisplayName)
+        {
+            account.DiscordUsername = profile.DisplayName;
+            changed = true;
+        }
+        if (account.DiscordAvatarHash != profile.AvatarHash)
+        {
+            account.DiscordAvatarHash = profile.AvatarHash;
+            changed = true;
+        }
+        if (profile.AvatarHash is null && account.AvatarSource == AccountAvatarSource.Discord)
+        {
+            account.AvatarSource = AccountAvatarSource.None;
+            changed = true;
+        }
+        return changed;
     }
 
     /// <summary>

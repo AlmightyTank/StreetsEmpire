@@ -542,6 +542,7 @@ public sealed record ActivityResponse(
 public sealed record LeaderboardEntryResponse(
     int Rank,
     string PlayerName,
+    string? AvatarUrl,
     string City,
     long NetWorth,
     long Cash,
@@ -553,6 +554,7 @@ public sealed record LeaderboardEntryResponse(
 public sealed record PlayerTargetResponse(
     Guid PlayerId,
     string Name,
+    string? AvatarUrl,
     string City,
     bool IsBot,
     string? AiPersonality,
@@ -579,6 +581,7 @@ public sealed record PlayerProfileResponse(
     IReadOnlyDictionary<string, string> StrikeBlockers,
     Guid PlayerId,
     string Name,
+    string? AvatarUrl,
     string City,
     bool IsBot,
     string? AiPersonality,

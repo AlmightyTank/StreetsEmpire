@@ -1618,7 +1618,7 @@ static void ADiscordHandleAlwaysSuggestsAUsableUsername()
 static void ADiscordTicketCannotBeForged()
 {
     var tickets = new DiscordTickets(DataProtectionProvider.Create("StreetEmpire.Tests"));
-    var profile = new DiscordProfile("1234567890", "sam", "Sam");
+    var profile = new DiscordProfile("1234567890", "sam", "Sam", "avatar-hash");
 
     // What goes round the loop comes back unchanged, which is the only reason a signed cookie can
     // stand in for the server remembering anything across a trip through somebody else's site.
@@ -1627,6 +1627,7 @@ static void ADiscordTicketCannotBeForged()
     AssertTrue(read is not null, "a ticket this server wrote should be readable by it");
     AssertEqual(profile.Id, read!.Id);
     AssertEqual("Sam", read.DisplayName);
+    AssertEqual("avatar-hash", read.AvatarHash);
 
     // The identity is not in the browser's hands: a ticket is opaque, and one bad character voids it.
     AssertTrue(!ticket.Contains("1234567890"), "the Discord id should not be sitting in the cookie in the clear");

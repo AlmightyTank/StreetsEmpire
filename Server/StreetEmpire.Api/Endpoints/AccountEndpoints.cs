@@ -224,6 +224,35 @@ internal static class AccountEndpoints
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
 
+        account.MapPut("/avatar", async (
+            ChangeAvatarRequest request,
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            var source = request.Source?.Trim().ToLowerInvariant() switch
+            {
+                null or "" or "none" => AccountAvatarSource.None,
+                "discord" => AccountAvatarSource.Discord,
+                _ => (AccountAvatarSource?)null,
+            };
+            if (source is null)
+                return Results.BadRequest(new { error = "Pick one of: none, discord." });
+            if (source == AccountAvatarSource.Discord && current.DiscordUserId is null)
+                return Results.BadRequest(new { error = "Connect Discord before using its avatar." });
+            if (source == AccountAvatarSource.Discord && DiscordAuthService.AvatarUrl(current.DiscordUserId, current.DiscordAvatarHash) is null)
+                return Results.BadRequest(new { error = "That Discord account does not have a custom avatar to use." });
+
+            current.AvatarSource = source.Value;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        });
+
         account.MapDelete("/discord", async (
             HttpContext http,
             GameDbContext db,
@@ -253,6 +282,9 @@ internal static class AccountEndpoints
             var wasConnectedTo = current.DiscordUsername;
             current.DiscordUserId = null;
             current.DiscordUsername = null;
+            current.DiscordAvatarHash = null;
+            if (current.AvatarSource == AccountAvatarSource.Discord)
+                current.AvatarSource = AccountAvatarSource.None;
             current.DiscordLinkedAtUtc = null;
             await db.SaveChangesAsync(ct);
             await notices.TellAccountAsync(current, AccountChange.DiscordDisconnected, wasConnectedTo, ct);
@@ -299,6 +331,9 @@ internal static class AccountEndpoints
                 Math.Max(0, verification.Options.MaxAttempts - pending.Attempts),
                 await verification.ResendableAtAsync(account.Id, VerificationPurpose.ConfirmAddress, account.Email, ct));
 
+        var discordAvatarUrl = DiscordAuthService.AvatarUrl(account.DiscordUserId, account.DiscordAvatarHash);
+        var avatarUrl = account.AvatarSource == AccountAvatarSource.Discord ? discordAvatarUrl : null;
+
         return new AccountResponse(
             account.Username,
             account.Player?.Name ?? account.Username,
@@ -310,7 +345,10 @@ internal static class AccountEndpoints
             account.HasPassword,
             account.DiscordUserId is not null,
             account.DiscordUsername,
+            discordAvatarUrl,
             account.DiscordLinkedAtUtc,
+            account.AvatarSource.ToString(),
+            avatarUrl,
             discord.Options.IsConfigured,
             account.CreatedAtUtc);
     }

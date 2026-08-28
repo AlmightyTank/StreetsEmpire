@@ -45,6 +45,7 @@ internal static class WorldEndpoints
             // Ordered and capped by the database: rank is the row's position within whatever is asked
             // for, so a city board reads 1..n for that town rather than showing global positions.
             var top = await db.Players.AsNoTracking()
+                .Include(x => x.Account)
                 .Where(x => scope == null || x.City == scope)
                 .OrderByDescending(economy.NetWorthExpression)
                 .ThenBy(x => x.CreatedAtUtc)
@@ -54,6 +55,7 @@ internal static class WorldEndpoints
                 .Select((x, index) => new LeaderboardEntryResponse(
                     index + 1,
                     x.Name,
+                    AvatarUrl(x.Account),
                     x.City,
                     economy.CalculateNetWorth(x),
                     x.Cash,

@@ -40,7 +40,10 @@ public sealed record AccountResponse(
     bool HasPassword,
     bool DiscordConnected,
     string? DiscordUsername,
+    string? DiscordAvatarUrl,
     DateTime? DiscordLinkedAtUtc,
+    string AvatarSource,
+    string? AvatarUrl,
     bool DiscordConfigured,
     DateTime CreatedAtUtc);
 
@@ -73,6 +76,8 @@ public sealed record ChangeEmailRequest(string? Email, string? CurrentPassword);
 /// <param name="CurrentPassword">Not required by an account that has never set one - a Discord
 /// sign-up has nothing to prove with, and is already proving itself with the session cookie.</param>
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+
+public sealed record ChangeAvatarRequest(string? Source);
 
 /// <summary>The half of a Discord sign-up the game needs and Discord cannot answer.</summary>
 /// <param name="Email">

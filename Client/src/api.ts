@@ -600,6 +600,7 @@ export type MoraleTrend = {
 export type LeaderboardEntry = {
   rank: number
   playerName: string
+  avatarUrl: string | null
   city: string
   netWorth: number
   cash: number
@@ -651,6 +652,7 @@ export type CombatCrew = {
 export type PlayerTarget = {
   playerId: string
   name: string
+  avatarUrl: string | null
   city: string
   isBot: boolean
   aiPersonality?: string | null
@@ -1071,7 +1073,10 @@ export type Account = {
   hasPassword: boolean
   discordConnected: boolean
   discordUsername: string | null
+  discordAvatarUrl: string | null
   discordLinkedAtUtc: string | null
+  avatarSource: 'None' | 'Discord'
+  avatarUrl: string | null
   /** False when the server has no Discord credentials, which hides the connect button entirely. */
   discordConfigured: boolean
   createdAtUtc: string
@@ -1086,7 +1091,7 @@ export type DiscordSignUpTicket = { suggestedUsername: string, discordUsername: 
  */
 export type DiscordOutcome =
   | 'signed-in' | 'connected' | 'sign-up' | 'cancelled'
-  | 'failed' | 'locked' | 'already-connected' | 'unavailable'
+  | 'failed' | 'locked' | 'already-connected' | 'unavailable' | 'synced'
 
 /**
  * A full-page navigation, not a fetch: the browser has to be handed to Discord and handed back, and
@@ -1142,6 +1147,11 @@ export const api = {
     request<Account>('/api/account/password', {
       method: 'PUT',
       body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  setAvatarSource: (source: Account['avatarSource']) =>
+    request<Account>('/api/account/avatar', {
+      method: 'PUT',
+      body: JSON.stringify({ source }),
     }),
   disconnectDiscord: () => request<Account>('/api/account/discord', { method: 'DELETE' }),
   /** Issues a fresh code and retires whatever was outstanding. Refused inside the resend cooldown. */

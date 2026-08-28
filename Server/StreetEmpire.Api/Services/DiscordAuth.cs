@@ -40,8 +40,8 @@ public sealed class DiscordOptions
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
 }
 
-/// <summary>The only three facts the game takes from Discord.</summary>
-public sealed record DiscordProfile(string Id, string Username, string? GlobalName)
+/// <summary>The few display facts the game takes from Discord.</summary>
+public sealed record DiscordProfile(string Id, string Username, string? GlobalName, string? AvatarHash)
 {
     /// <summary>The handle as a person would recognise it, preferring the display name they set.</summary>
     public string DisplayName => string.IsNullOrWhiteSpace(GlobalName) ? Username : GlobalName!;
@@ -58,6 +58,15 @@ public sealed class DiscordAuthService(HttpClient http, IOptions<DiscordOptions>
     private const string CurrentUserEndpoint = "https://discord.com/api/users/@me";
 
     public DiscordOptions Options => options.Value;
+
+    public static string? AvatarUrl(string? userId, string? avatarHash, int size = 128)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(avatarHash))
+            return null;
+
+        var extension = avatarHash.StartsWith("a_", StringComparison.Ordinal) ? "gif" : "png";
+        return $"https://cdn.discordapp.com/avatars/{Uri.EscapeDataString(userId)}/{Uri.EscapeDataString(avatarHash)}.{extension}?size={size}";
+    }
 
     /// <summary>
     /// Only <c>identify</c> is asked for. Discord will hand over an email address for the asking, and
@@ -116,10 +125,13 @@ public sealed class DiscordAuthService(HttpClient http, IOptions<DiscordOptions>
             var globalName = user.RootElement.TryGetProperty("global_name", out var globalValue) && globalValue.ValueKind == JsonValueKind.String
                 ? globalValue.GetString()
                 : null;
+            var avatarHash = user.RootElement.TryGetProperty("avatar", out var avatarValue) && avatarValue.ValueKind == JsonValueKind.String
+                ? avatarValue.GetString()
+                : null;
 
             return string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(username)
                 ? null
-                : new DiscordProfile(id!, username!, globalName);
+                : new DiscordProfile(id!, username!, globalName, avatarHash);
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
         {
@@ -175,7 +187,9 @@ public sealed class DiscordTickets(IDataProtectionProvider provider)
     }
 
     public string ProtectSignUp(DiscordProfile profile)
-        => _signUp.Protect($"{profile.Id}\n{profile.Username}\n{profile.GlobalName ?? string.Empty}", SignUpLifetime);
+        => _signUp.Protect(
+            $"{profile.Id}\n{profile.Username}\n{profile.GlobalName ?? string.Empty}\n{profile.AvatarHash ?? string.Empty}",
+            SignUpLifetime);
 
     public DiscordProfile? ReadSignUp(string? protectedTicket)
     {
@@ -183,8 +197,12 @@ public sealed class DiscordTickets(IDataProtectionProvider provider)
         try
         {
             var parts = _signUp.Unprotect(protectedTicket).Split('\n');
-            return parts.Length == 3
-                ? new DiscordProfile(parts[0], parts[1], string.IsNullOrEmpty(parts[2]) ? null : parts[2])
+            return parts.Length is 3 or 4
+                ? new DiscordProfile(
+                    parts[0],
+                    parts[1],
+                    string.IsNullOrEmpty(parts[2]) ? null : parts[2],
+                    parts.Length == 4 && !string.IsNullOrEmpty(parts[3]) ? parts[3] : null)
                 : null;
         }
         catch (System.Security.Cryptography.CryptographicException)

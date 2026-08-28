@@ -1,5 +1,11 @@
 namespace StreetEmpire.Api.Models;
 
+public enum AccountAvatarSource
+{
+    None,
+    Discord,
+}
+
 public sealed class PlayerAccount
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -54,6 +60,11 @@ public sealed class PlayerAccount
 
     /// <summary>What to show on the settings page so a player can tell which Discord this is. Display only.</summary>
     public string? DiscordUsername { get; set; }
+
+    /// <summary>Discord's avatar hash. Display only; the user id is what says whose account it is.</summary>
+    public string? DiscordAvatarHash { get; set; }
+
+    public AccountAvatarSource AvatarSource { get; set; }
 
     public DateTime? DiscordLinkedAtUtc { get; set; }
 

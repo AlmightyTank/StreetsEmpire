@@ -19,6 +19,10 @@ namespace StreetEmpire.Api.Mapping;
 /// <summary>Turns entities into the response contracts the browser client consumes.</summary>
 internal static class ResponseMappers
 {
+    internal static string? AvatarUrl(PlayerAccount account)
+        => account.AvatarSource == AccountAvatarSource.Discord
+            ? DiscordAuthService.AvatarUrl(account.DiscordUserId, account.DiscordAvatarHash)
+            : null;
 
     internal static AdminPlayerSummaryResponse ToAdminSummary(Player player, EconomyService economy)
         => new(
@@ -97,6 +101,7 @@ internal static class ResponseMappers
         return new PlayerTargetResponse(
             player.Id,
             player.Name,
+            AvatarUrl(player.Account),
             player.City,
             player.Account.IsBot,
             player.Account.IsBot ? BotBrain.For(player).Name : null,
@@ -134,6 +139,7 @@ internal static class ResponseMappers
             strikeBlockers ?? new Dictionary<string, string>(),
             player.Id,
             player.Name,
+            AvatarUrl(player.Account),
             player.City,
             player.Account.IsBot,
             player.Account.IsBot ? BotBrain.For(player).Name : null,

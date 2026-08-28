@@ -46,6 +46,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasIndex(x => x.DiscordUserId).IsUnique();
             entity.Property(x => x.DiscordUserId).HasMaxLength(32);
             entity.Property(x => x.DiscordUsername).HasMaxLength(64);
+            entity.Property(x => x.DiscordAvatarHash).HasMaxLength(128);
+            entity.Property(x => x.AvatarSource).HasConversion<string>().HasMaxLength(16);
             entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)

@@ -33,6 +33,18 @@ internal static class ActionLogging
         player.HoeHappiness,
         player.ThugHappiness);
 
+    /// <summary>
+    /// What an action charged, read back off its own breakdown.
+    ///
+    /// For the actions that decide their own turn cost rather than being handed one - travel prices
+    /// the distance, a trip to the bank is free inside its grace window - the resolved cost is only
+    /// knowable after the fact, and the log row has to carry the number that was actually taken.
+    /// </summary>
+    internal static int TurnsSpentIn(ActionResultResponse result)
+        => result.Breakdown is not null && result.Breakdown.TryGetValue("turnsSpent", out var spent) && spent is not null
+            ? Convert.ToInt32(spent, CultureInfo.InvariantCulture)
+            : 0;
+
     /// <param name="createdAtUtc">
     /// Stamp the row with the caller's clock instead of the moment the object happens to be built.
     /// A row left to default sits a few ticks after the request's own "now", which is enough for a

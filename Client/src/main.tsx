@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
+import { routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
 import type { PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
@@ -233,8 +234,8 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
     target: 'market-trade',
     title: 'Buying and selling',
     body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
-      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not, which is the cheapest '
-      + 'insurance in the game.',
+      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not. '
+      + 'The trip costs turns, so it is a move you make with a full safe rather than after every shift.',
   },
   {
     page: 'recon',
@@ -947,7 +948,19 @@ function App() {
   const [combatMissions, setCombatMissions] = useState<CombatMission[]>([])
   const [worldNews, setWorldNews] = useState<WorldNews>({ headlines: [], feed: [] })
   const [targetQuery, setTargetQuery] = useState('')
-  const [activePage, setActivePage] = useState<AppPage>('overview')
+  const [activePage, setPage] = useState<AppPage>(() => {
+    const asked = routePage()
+    return asked in pageMeta ? asked as AppPage : 'overview'
+  })
+  /*
+    The page is written here, from whatever moved it, rather than from an effect like the tabs.
+
+    Effects run children before parents, so a shell that wrote its page in one would be writing it
+    after the tab that had just mounted underneath - and since the tab writes the pair, the page it
+    named would be the one being left rather than the one being opened. Writing on the way in puts
+    the two in the only order that reads correctly.
+  */
+  const setActivePage = (page: AppPage) => { setPage(page); writeRoute(page) }
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   // Fetched rather than hardcoded: the towns come from the territory map, so a city with no ground
   // could never be offered as somewhere to set up.
@@ -1058,7 +1071,7 @@ function App() {
     if (outcome) {
       params.delete('discord')
       const query = params.toString()
-      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : ''))
+      window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash)
       if (outcome === 'sign-up') sessionStorage.setItem(discordPendingKey, '1')
       const said = discordOutcomes[outcome]
       if (said?.bad) setError(said.text)
@@ -1086,6 +1099,18 @@ function App() {
     if (activePage === 'admin' && !adminOverview)
       setActivePage('overview')
   }, [activePage, adminOverview])
+  useEffect(() => {
+    /*
+      Tidies up an address that asked for somewhere that is not here - a link from an older build, a
+      typo, a first visit with no hash at all. The page itself has already fallen back; this is only
+      the bar catching up, so that reloading again lands where the screen says rather than repeating
+      the same wrong guess.
+
+      Guarded rather than unconditional because this runs after the tabs underneath have written
+      themselves, and their write is what makes the address valid again.
+    */
+    if (!(routePage() in pageMeta)) writeRoute(activePage)
+  }, [])
   useEffect(() => {
     if (!dashboard || dashboard.turns >= dashboard.maxTurns) return
     const timer = window.setInterval(() => {
@@ -3219,11 +3244,41 @@ function TradingPanel(ctx: PageContext) {
   </>
 }
 
-function SectionTabs({ label, tabs, active, onActive }: {
+/**
+ * A tab that survives a reload.
+ *
+ * Ordinary useState with the address bar underneath it: the same pair back, so every call site keeps
+ * reading like the useState it replaced. The page it belongs to is passed in rather than read back,
+ * because a tab is only ever meaningful under one page - 'hideout' means nothing on the Account page,
+ * and a tab restored under the wrong one would be a tab nobody could see to close.
+ *
+ * Anything the hash asks for that this page does not have falls back silently. The address bar is
+ * typed into, shared, and left over from an older build, so it is a request rather than an
+ * instruction, and a stale link should open the page rather than an error.
+ */
+function useRouteTab<T extends string>(page: AppPage, allowed: readonly T[], fallback: T): [T, (next: T) => void] {
+  const [tab, setTab] = useState<T>(() => {
+    const asked = routeTab(page) as T
+    return allowed.includes(asked) ? asked : fallback
+  })
+
+  // Written from an effect rather than from the click, so that a tab arrived at any other way - the
+  // Fix this button on the account warning, a page opened straight onto its default - is written down
+  // too. A player who cannot see how the address bar got there can still reload onto it.
+  useEffect(() => { writeRoute(page, tab) }, [page, tab])
+
+  return [tab, setTab]
+}
+
+// Generic over the tab keys so the strip and the state that answers it cannot drift: a key listed
+// here that the page has no branch for is now a compile error rather than a tab that opens nothing.
+// NoInfer keeps the list from widening T back to string - the keys are decided by the state, and the
+// strip only draws them.
+function SectionTabs<T extends string>({ label, tabs, active, onActive }: {
   label: string
-  tabs: { key: string, label: string }[]
-  active: string
-  onActive: (key: string) => void
+  tabs: { key: NoInfer<T>, label: string }[]
+  active: T
+  onActive: (key: T) => void
 }) {
   return <nav className="nav nav-pills gap-2" aria-label={label}>
     {tabs.map(tab => <button
@@ -3238,8 +3293,10 @@ function SectionTabs({ label, tabs, active, onActive }: {
   </nav>
 }
 
+const MARKET_TABS = ['trade', 'hideout', 'production', 'routes'] as const
+
 function MarketPage(ctx: PageContext) {
-  const [tab, setTab] = useState('trade')
+  const [tab, setTab] = useRouteTab('market', MARKET_TABS, 'trade')
   return <div className="d-grid gap-3">
     <SectionTabs
       label="Business sections"
@@ -3417,8 +3474,10 @@ function CityPrice({ price, base, showDelta }: { price: number, base: number | u
   </div>
 }
 
+const COMBAT_TABS = ['targets', 'ground'] as const
+
 function CombatPage(ctx: PageContext) {
-  const [tab, setTab] = useState('targets')
+  const [tab, setTab] = useRouteTab('recon', COMBAT_TABS, 'targets')
   return <div className="d-grid gap-3">
     <SectionTabs
       label="Raids and map sections"
@@ -3573,7 +3632,7 @@ const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
  * Those are three different jobs, so they now live with the things they belong to.
  */
 function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
-  const [tab, setTab] = useState<AdminTab>('overview')
+  const [tab, setTab] = useRouteTab('admin', ADMIN_TABS, 'overview')
   /*
     One column, said once.
 
@@ -6276,14 +6335,67 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className,
    */
   wide?: boolean
 }) {
+  /*
+    Free while the player is still at the counter from a trip they have already paid for.
+
+    The window closes on the clock rather than on a refetch, so this is decided here against a live
+    reading rather than by the field merely being present. The server only sends it while it is still
+    standing, but the dashboard it arrived on is cached between refreshes: trusting the field alone
+    left the panel offering free moves, and hiding the fare from the buttons, for as long as nothing
+    else happened to refresh the page.
+
+    The second hand runs only while there is something to count, and stops itself the moment the
+    window is gone - at which point this flips back to the charged case on its own.
+  */
+  const freeUntil = dashboard.bankTripFreeUntilUtc
+  const free = !!freeUntil && new Date(freeUntil).getTime() > Date.now()
+  const now = useSecondsTicker(free)
+  const secondsFree = secondsUntil(freeUntil, now)
+  const fare = free ? 0 : dashboard.bankTripTurnCost
+  const cannotAfford = dashboard.turns < fare
+
+  /*
+    What the safe has room for, which is a different limit from what the bank is holding.
+
+    The server refuses a withdrawal that would not fit rather than clamping it, so offering the whole
+    balance here would be offering a button that cannot work - and now that the trip is charged before
+    the money moves, finding that out costs turns. The bank page is also the one place a player meets
+    their safe as a wall rather than as a line on the hideout screen, so it is worth naming.
+  */
+  const safeRoom = Math.max(0, dashboard.hideout.maxCash - dashboard.cash)
+
+  const fareLabel = fare === 0 ? '' : ` (${fare} ${fare === 1 ? 'turn' : 'turns'})`
+  // The charge is a live setting an admin can turn off, and a panel announcing "0 turns a trip" would
+  // be reporting a rule that is not running. With it off this reads exactly as it did before.
+  const charged = dashboard.bankTripTurnCost > 0
+
   return <section className={`card p-3 ${wide ? 'gcol-full' : ''} ${className ?? ''}`}>
-    <div className="panel-title"><h2>Bank</h2><span>Cash handling</span></div>
+    <div className="panel-title"><h2>Bank</h2><span>{!charged ? 'Cash handling' : free ? 'Still at the counter' : `${dashboard.bankTripTurnCost} turns a trip`}</span></div>
     <div className={wide ? 'd-grid gtc-1 gtc-lg-2 gap-3 align-items-center' : ''}>
-      <p className={wide ? 'mb-0' : ''}>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+      <div className={wide ? 'mb-0' : ''}>
+        <p className="mb-1">Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+        <p className="text-body-tertiary small mb-0">
+          {!charged
+            ? <>Your safe has room for {money.format(safeRoom)} more cash on hand.</>
+            : free
+              ? <>You are still at the bank, so moves are free for another {countdown(secondsFree)}.</>
+              : <>A trip costs {dashboard.bankTripTurnCost} {dashboard.bankTripTurnCost === 1 ? 'turn' : 'turns'}, and everything you move while you are there is on the same trip. Your safe has room for {money.format(safeRoom)} more.</>}
+        </p>
+      </div>
       <div className="control-row">
         <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
-        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
-        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+        <button
+          className="btn btn-secondary"
+          disabled={busy || cannotAfford || bankAmount < 1 || bankAmount > dashboard.cash}
+          title={cannotAfford ? `A trip to the bank costs ${fare} turns.` : undefined}
+          onClick={() => void act(() => api.deposit(bankAmount))}>Deposit{fareLabel}</button>
+        <button
+          className="btn btn-secondary"
+          disabled={busy || cannotAfford || bankAmount < 1 || bankAmount > dashboard.bankCash || bankAmount > safeRoom}
+          title={cannotAfford
+            ? `A trip to the bank costs ${fare} turns.`
+            : bankAmount > safeRoom ? `Your safe only has room for ${money.format(safeRoom)} more.` : undefined}
+          onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw{fareLabel}</button>
       </div>
     </div>
   </section>
@@ -6969,7 +7081,7 @@ function countdown(seconds: number) {
  * through the dashboard refresh would only throw away the one sentence worth reading.
  */
 function AccountPage(ctx: PageContext) {
-  const [tab, setTab] = useState<AccountTab>('profile')
+  const [tab, setTab] = useRouteTab('account', ACCOUNT_TABS, 'profile')
   const [account, setAccount] = useState<Account | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')

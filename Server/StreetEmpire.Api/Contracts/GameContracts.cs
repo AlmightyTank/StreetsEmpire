@@ -398,6 +398,13 @@ public sealed record DashboardResponse(
     TravelStatusResponse Travel,
     long Cash,
     long BankCash,
+    /// <summary>What a trip to the bank costs, so the panel can price the button rather than guess.</summary>
+    int BankTripTurnCost,
+    /// <summary>
+    /// While this stands, the player is still at the counter and moves are free. Null when the next
+    /// one will be charged, which is most of the time.
+    /// </summary>
+    DateTime? BankTripFreeUntilUtc,
     long NetWorth,
     int Rank,
     /// <summary>Standing among the players in your own town, and how many that is.</summary>

@@ -3,6 +3,41 @@
 ## 0.2.7 (in progress)
 
 ### Changed
+- **A trip to the bank costs turns.** Banking was free, instant and unlimited, which made the bank
+  strictly better than the safe in every case: cash on hand is what a raid and a roadblock take, bank
+  cash is what neither can, and moving between them cost nothing at all. A player with any discipline
+  therefore never carried anything, the risk the safe exists to hold never bit, and the top level of it
+  was five million dollars for a convenience.
+- The charge is on the **visit**, not on the amount or the direction. Pricing the amount would tax being
+  rich, which the turn bank already does by being the same size for everybody. Pricing the direction
+  means picking which half to break: charge withdrawals alone and depositing stays free, so nobody ever
+  carries and the risk still never bites; charge deposits alone and the game is taxing the careful move.
+  Charging the trip does both at once - banking after every shift is expensive, banking at the end of a
+  session is not.
+- It is also what finally gives the safe ladder something to sell. A withdrawal is capped by the safe,
+  so a small safe means more trips to fund the same buy: two million of coke is six trips on a level 3
+  safe and one on a level 5.
+- Everything you move on one visit is on one fare. A five-minute window after a paid trip is free, so
+  depositing and then realising you overshot is not charged twice. The window is fixed rather than
+  sliding - it opens when the trip is paid for and the free moves inside it do not push it along, or a
+  single payment would be permanent free banking for anyone willing to move a dollar every few minutes.
+- Cash swept over the safe is still banked for nothing. Money over the safe is money you could not hold,
+  and billing turns for failing to hold it would be a fee on earning well. It leaves a door open - a
+  safe kept full banks its overflow free - but a full safe is also the most a raid can ever take, so
+  the trade pays for itself and is a strategy rather than a hole.
+- Paying for a room is not a trip to the bank. Upgrades, mule runs and founding a crew still draw on the
+  bank first and are charged nothing, because that is settling an invoice rather than going to fetch
+  cash.
+- **Rivals price the walk against their own crew.** Every personality carried a flat sum it would bank
+  above, tuned when banking was free, and every one of them was pocket change to a grown house - so a
+  rival banked each loose note and would now have paid a fare each time to do it. What a trip is worth
+  is a multiple of its own fare now, and the fare is what those turns would have earned on the street,
+  so it scales with the crew. A Banker still walks for a quarter of what a Hard Charger demands. They
+  hold a float as a result, which is worth having on its own: a house with nothing on the premises is a
+  house nobody has any reason to raid.
+- The bank panel prices its own buttons, greys them out when the turns are not there, and stops offering
+  a withdrawal the safe has no room for - the server refuses that one rather than clamping it, and now
+  that the fare is charged before the money moves, finding out by clicking would cost turns.
 - **The version is written down once.** It was typed by hand in five places - VERSION, the client's
   package.json, the README title, the health endpoint and the number in the app's sidebar. They agreed,
   which is what hand-copied numbers do right up until somebody bumps four of them. MSBuild reads

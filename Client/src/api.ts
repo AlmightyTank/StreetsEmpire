@@ -291,6 +291,10 @@ export type Dashboard = {
   travel: TravelStatus
   cash: number
   bankCash: number
+  /** What a trip to the bank costs in turns. */
+  bankTripTurnCost: number
+  /** While this stands, the player is still at the counter and moves are free. Null once it has passed. */
+  bankTripFreeUntilUtc: string | null
   netWorth: number
   rank: number
   cityRank: number

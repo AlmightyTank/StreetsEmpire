@@ -53,6 +53,11 @@ var tests = new (string Name, Action Test)[]
     ("everything you can hold is worth something", EverythingYouCanHoldIsWorthSomething),
     ("the bench never makes an attack cheaper than its answer", DefenceIsNeverDearerThanAttack),
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
+    ("a trip to the bank costs turns", ATripToTheBankCostsTurns),
+    ("a second move on the same trip is free", ASecondMoveOnTheSameTripIsFree),
+    ("the free bank window does not slide", TheFreeBankWindowDoesNotSlide),
+    ("a bank trip you cannot afford moves no money", ABankTripYouCannotAffordMovesNoMoney),
+    ("every rival prices a trip to the bank against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
     ("a stopped run takes a share of the load but never the bank", StoppedRunTakesAShareOfTheLoadButNeverTheBank),
@@ -1255,6 +1260,7 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
     {
         Cash = 49_000,
         BankCash = 0,
+        Turns = 20,
         Weed = 60,
         Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
     };
@@ -1266,6 +1272,129 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
     AssertEqual(1_400L, player.BankCash);
     AssertEqual(1_400L, Value<long>(RequiredBreakdown(result), "cashBankedByOverflow"));
     AssertTrue(result.Summary.Contains("safe was full"), "the summary should explain the transfer");
+
+    // The sweep is not a trip to the bank and is never charged for. This is deliberate rather than an
+    // oversight: money over the safe is money the player could not hold, and billing them turns for
+    // failing to hold it would be a fee on earning well. It leaves a door open - a safe kept full
+    // banks its overflow for nothing - but a full safe is also the most a raid can ever take, so the
+    // trade pays for itself and is a strategy rather than a hole.
+    AssertEqual(20, player.Turns);
+    AssertTrue(player.LastBankedAtUtc is null, "an overflow sweep should not open the free window either");
+}
+
+static void ATripToTheBankCostsTurns()
+{
+    var service = CreateEconomy(new GameOptions { Bank = new BankOptions { TripTurnCost = 2, TripGraceMinutes = 5 } });
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout() };
+
+    var result = service.Deposit(player, 4_000, now);
+
+    AssertEqual(6_000L, player.Cash);
+    AssertEqual(4_000L, player.BankCash);
+    AssertEqual(18, player.Turns);
+    AssertEqual(2, Value<int>(RequiredBreakdown(result), "turnsSpent"));
+    AssertEqual(now, player.LastBankedAtUtc);
+}
+
+/// <summary>
+/// One visit is one charge, however many times money changes hands during it. Without this a player
+/// who deposited and then realised they had overshot would pay twice, which is the game charging for
+/// a typo.
+/// </summary>
+static void ASecondMoveOnTheSameTripIsFree()
+{
+    var service = CreateEconomy(new GameOptions { Bank = new BankOptions { TripTurnCost = 2, TripGraceMinutes = 5 } });
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout() };
+
+    service.Deposit(player, 5_000, now);
+    AssertEqual(18, player.Turns);
+
+    var result = service.Withdraw(player, 3_000, now.AddMinutes(4));
+
+    AssertEqual(18, player.Turns);
+    AssertEqual(0, Value<int>(RequiredBreakdown(result), "turnsSpent"));
+    AssertTrue(Value<bool>(RequiredBreakdown(result), "freeTrip"), "a move inside the window is a free one");
+    AssertTrue(result.Summary.Contains("still at the bank"), "the summary should say why it was free");
+    AssertEqual(now, player.LastBankedAtUtc);
+}
+
+/// <summary>
+/// The window is fixed, not sliding: it opens when a trip is paid for and the free moves inside it do
+/// not push it along. This is the whole difference between a grace window and no charge at all - a
+/// sliding one would let anyone willing to move a dollar every few minutes hold a single payment open
+/// forever, and the fare would be a formality.
+/// </summary>
+static void TheFreeBankWindowDoesNotSlide()
+{
+    var service = CreateEconomy(new GameOptions { Bank = new BankOptions { TripTurnCost = 2, TripGraceMinutes = 5 } });
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Cash = 10_000, Turns = 20, Hideout = new Hideout() };
+
+    service.Deposit(player, 1_000, now);
+    AssertEqual(18, player.Turns);
+
+    // Inside the window, so free - and it leaves the window where the paid trip put it.
+    service.Deposit(player, 1_000, now.AddMinutes(4));
+    AssertEqual(18, player.Turns);
+    AssertEqual(now, player.LastBankedAtUtc);
+
+    // Six minutes after the trip that was paid for, which is outside it. Were the stamp sliding, this
+    // would sit four minutes after the free move and still be free.
+    service.Deposit(player, 1_000, now.AddMinutes(6));
+    AssertEqual(16, player.Turns);
+    AssertEqual(now.AddMinutes(6), player.LastBankedAtUtc);
+}
+
+static void ABankTripYouCannotAffordMovesNoMoney()
+{
+    var service = CreateEconomy(new GameOptions { Bank = new BankOptions { TripTurnCost = 2, TripGraceMinutes = 5 } });
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Cash = 10_000, Turns = 1, Hideout = new Hideout() };
+
+    AssertRuleError(() => service.Deposit(player, 4_000, now), "the trip costs more turns than the player has");
+
+    AssertEqual(10_000L, player.Cash);
+    AssertEqual(0L, player.BankCash);
+    AssertEqual(1, player.Turns);
+    AssertTrue(player.LastBankedAtUtc is null, "a refused trip should not open the free window");
+}
+
+/// <summary>
+/// What a rival thinks a trip is worth is a multiple of its own fare, and the fare is what those turns
+/// would have earned on the street - so the bar scales with the crew instead of being a flat sum that
+/// is a wall to a new house and pocket change to a full one.
+///
+/// The brains are built from a positional constructor with more than fifty arguments, so this also
+/// guards the thing that is genuinely easy to get wrong: a value dropped into the wrong slot.
+/// </summary>
+static void EveryRivalPricesATripAgainstItsCrew()
+{
+    var focuses = Enum.GetValues<BotBrainFocus>();
+    var seen = new Dictionary<BotBrainFocus, BotBrain>();
+    // The focus is hashed out of the player's identity rather than chosen, so the personalities are
+    // collected by walking names until every one of them has turned up.
+    for (var i = 0; seen.Count < focuses.Length && i < 500; i++)
+    {
+        var brain = BotBrain.For(new Player { Name = $"Rival {i}" });
+        seen[brain.Focus] = brain;
+    }
+
+    AssertEqual(focuses.Length, seen.Count);
+    foreach (var (focus, brain) in seen)
+    {
+        AssertTrue(brain.DepositTripWorthMultiple is > 0 and <= 100,
+            $"{focus} should price a trip at a plausible number of fares, not {brain.DepositTripWorthMultiple}");
+        AssertTrue(brain.DepositShare is > 0 and <= 1,
+            $"{focus} should bank a share of the excess, not {brain.DepositShare}");
+    }
+
+    // Character survives the change of units: a Banker reaches for the bank before anything else, and
+    // a Hard Charger would rather be doing almost anything than walking to it.
+    AssertTrue(
+        seen[BotBrainFocus.Banker].DepositTripWorthMultiple < seen[BotBrainFocus.MoraleNeglecter].DepositTripWorthMultiple,
+        "a Banker should walk to the bank for less than a Hard Charger will");
 }
 
 static void CityMarketsChangeProductSalePrices()
@@ -3740,6 +3869,10 @@ static void EveryHideoutUpgradeIsReachable()
     AssertEqual(options.Hideout.WeedLab.Max(x => x.Level), player.Hideout.WeedLabLevel);
     AssertEqual(options.Hideout.CokeLab.Max(x => x.Level), player.Hideout.CokeLabLevel);
     AssertTrue(player.Cash >= 0 && player.BankCash >= 0, "nothing should have been bought on credit");
+    // Paying an invoice from the bank is not a trip to the bank. Were an upgrade ever routed through
+    // a withdrawal it would be charged a fare and capped by the safe, and this walk - two hundred
+    // turns against the whole ladder - is exactly the thing that would start failing.
+    AssertTrue(player.LastBankedAtUtc is null, "buying a room should never charge a trip to the bank");
 }
 
 static void LabsProduceWhileAway()
@@ -5734,7 +5867,7 @@ static void TravelIsAFlightYouCannotActFrom()
     // Every way of acting runs through a service that checks this, so none of them work in the air.
     var economy = CreateEconomy();
     AssertRuleError(() => economy.Scout(flyer, 1), "You are in the air");
-    AssertRuleError(() => economy.Deposit(flyer, 1), "You are in the air");
+    AssertRuleError(() => economy.Deposit(flyer, 1, DateTime.UtcNow), "You are in the air");
     AssertRuleError(() => economy.Travel(flyer, "Detroit"), "You are in the air");
 
     // Landed is landed, whether the clock cleared it or the moment simply passed.

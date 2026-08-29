@@ -148,7 +148,9 @@ public sealed record AllianceAssistCallResponse(
 
 public sealed record AllianceTransferResponse(
     long Id,
+    Guid FromPlayerId,
     string FromPlayerName,
+    Guid ToPlayerId,
     string ToPlayerName,
     string Item,
     string Label,
@@ -541,6 +543,8 @@ public sealed record ActivityResponse(
 
 public sealed record LeaderboardEntryResponse(
     int Rank,
+    /// <summary>Beside the name, so the name can be opened. A name with no id is a name that is dead text.</summary>
+    Guid PlayerId,
     string PlayerName,
     string? AvatarUrl,
     string? ProfileTagline,
@@ -773,6 +777,11 @@ public sealed record ContractBoardResponse(string City, IReadOnlyList<ContractRe
 /// <summary>One line in a room, as it is shown.</summary>
 public sealed record ChatMessageResponse(
     long Id,
+    /// <summary>
+    /// Null for anything the game said rather than a player. The room carries both, and only one of
+    /// them is somebody you can go and look at.
+    /// </summary>
+    Guid? AuthorId,
     string Author,
     bool Yours,
     string Body,
@@ -1131,6 +1140,7 @@ public sealed record WorldHeadlineResponse(
 
 public sealed record WorldNewsEntryResponse(
     long Id,
+    Guid PlayerId,
     string PlayerName,
     string City,
     string Action,

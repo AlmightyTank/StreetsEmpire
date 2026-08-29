@@ -242,6 +242,7 @@ internal static class ChatEndpoints
     private static ChatMessageResponse ToResponse(ChatMessage message, Player viewer)
         => new(
             message.Id,
+            message.AuthorId,
             message.AuthorName,
             message.AuthorId == viewer.Id,
             message.Body,

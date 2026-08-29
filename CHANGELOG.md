@@ -71,6 +71,15 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **A name is something you can open.** Anywhere another player is named - the leaderboard, the news
+  feed, a chat line, a crew roster, a transfer record, the titles board - clicking the name opens their
+  card over whatever you were looking at. The same card the combat screen shows, from the same endpoint,
+  so there is one answer to "who is this" rather than a summary here and the real thing somewhere else.
+- Several of those places were showing a name with no id behind it, which is what made them dead text -
+  the leaderboard, the news feed, chat and transfer records all carry the player id now.
+- The card is split in two around the attack controls, which is the one thing the pop-up does not want.
+  Everything else - who they are, what they hit for, what they have been doing - is one component used
+  in both places.
 - **Recovery codes.** Ten one-time codes, made from the account page behind the current password, shown
   once and never again - they are stored hashed exactly as a password is, so there is no endpoint that
   could say them twice and no column that would hand somebody with database access a way into every

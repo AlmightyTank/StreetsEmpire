@@ -54,6 +54,7 @@ internal static class WorldEndpoints
             var result = top
                 .Select((x, index) => new LeaderboardEntryResponse(
                     index + 1,
+                    x.Id,
                     x.Name,
                     AvatarUrl(x.Account),
                     x.Account.ProfileTagline,
@@ -149,14 +150,14 @@ internal static class WorldEndpoints
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ThenByDescending(x => x.Id)
                 .Take(Math.Max(1, options.FeedSize))
-                .Select(x => new { x.Id, x.Player.Name, x.Player.City, x.Action, x.Summary, x.TurnsSpent, x.CreatedAtUtc })
+                .Select(x => new { x.Id, x.PlayerId, x.Player.Name, x.Player.City, x.Action, x.Summary, x.TurnsSpent, x.CreatedAtUtc })
                 .ToListAsync(ct);
 
             return Results.Ok(new WorldNewsResponse(
                 await HeadlinesAsync(db, economy, since, ct),
                 feed
                     .Select(x => new WorldNewsEntryResponse(
-                        x.Id, x.Name, x.City, x.Action, WorldNews.Category(x.Action), x.Summary, x.TurnsSpent, x.CreatedAtUtc))
+                        x.Id, x.PlayerId, x.Name, x.City, x.Action, WorldNews.Category(x.Action), x.Summary, x.TurnsSpent, x.CreatedAtUtc))
                     .ToList()));
         }).RequireAuthorization();
     }

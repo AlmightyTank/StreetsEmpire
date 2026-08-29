@@ -78,6 +78,8 @@ export type ChatChannelKey = 'Global' | 'City' | 'Alliance'
 /** One line in a room, as it is shown. */
 export type ChatMessage = {
   id: number
+  /** Null for anything the game said rather than a player. */
+  authorId: string | null
   author: string
   /** Your own lines are marked so the eye can find them without reading the names. */
   yours: boolean
@@ -510,7 +512,9 @@ export type AllianceAssistCall = {
 
 export type AllianceTransfer = {
   id: number
+  fromPlayerId: string
   fromPlayerName: string
+  toPlayerId: string
   toPlayerName: string
   item: string
   label: string
@@ -599,6 +603,7 @@ export type MoraleTrend = {
 
 export type LeaderboardEntry = {
   rank: number
+  playerId: string
   playerName: string
   avatarUrl: string | null
   profileTagline: string | null
@@ -726,6 +731,7 @@ export type CatchUp = {
 
 export type WorldNewsEntry = {
   id: number
+  playerId: string
   playerName: string
   city: string
   action: string

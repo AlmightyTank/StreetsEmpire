@@ -656,7 +656,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
               {current?.blockedReason ?? 'Nobody has said anything here yet.'}
             </p>}
             {board?.messages.map(line => <div className="chat-line d-grid gap-2 align-items-baseline small" key={line.id}>
-              <strong className={`text-nowrap ${line.yours ? 'text-body' : 'text-primary'}`}>{line.author}</strong>
+              <strong className={`text-nowrap ${line.yours ? 'text-body' : 'text-primary'}`}><PlayerName playerId={line.authorId}>{line.author}</PlayerName></strong>
               <span className="text-body text-break">{line.body}</span>
               <small className="text-body-tertiary small text-nowrap">{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
             </div>)}
@@ -883,7 +883,7 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
         {!talk && <p className="text-body-tertiary small m-0">Looking.</p>}
         {talk && talk.messages.length === 0 && <p className="text-body-tertiary small m-0">Nothing said yet. Say something.</p>}
         {talk?.messages.map(line => <div className="chat-line d-grid gap-2 align-items-baseline small" key={line.id}>
-          <strong className={`text-nowrap ${line.yours ? 'text-body' : 'text-primary'}`}>{line.author}</strong>
+          <strong className={`text-nowrap ${line.yours ? 'text-body' : 'text-primary'}`}><PlayerName playerId={line.authorId}>{line.author}</PlayerName></strong>
           <span className="text-body text-break">{line.body}</span>
           <small className="text-body-tertiary small text-nowrap">{new Date(line.sentAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>
         </div>)}
@@ -908,6 +908,18 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
 }
 
 function App() {
+  // Whichever name was last clicked, from anywhere in the app. See PlayerName for why this arrives on
+  // the window rather than through props.
+  const [openProfileId, setOpenProfileId] = useState<string | null>(null)
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ playerId?: string }>).detail
+      if (detail?.playerId) setOpenProfileId(detail.playerId)
+    }
+    window.addEventListener('street-empire:profile', onOpen)
+    return () => window.removeEventListener('street-empire:profile', onOpen)
+  }, [])
+
   // The inline script in index.html has already put these on <html>, so this is not what applies them
   // for the first time - it is what keeps following the system while nothing here has overridden it.
   // Somebody who turns reduced motion on mid-session should see the game stop moving without a reload.
@@ -1553,6 +1565,11 @@ function App() {
 
   return <main className="game-shell d-grid">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
+    {openProfileId && dashboard && <PlayerProfileDialog
+      playerId={openProfileId}
+      currentPlayerId={dashboard.playerId}
+      onClose={() => setOpenProfileId(null)}
+    />}
     <ChatWindows dashboard={dashboard} busy={busy} />
     <Walkthrough
       active={tourStep !== null}
@@ -4337,6 +4354,214 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
   </section>
 }
 
+
+/**
+ * A name you can open.
+ *
+ * A button rather than a link, because it goes nowhere - it opens a dialog over whatever you were
+ * looking at, and a link would promise an address that does not exist.
+ *
+ * The click is announced on the window rather than handed down through props. Names appear in a dozen
+ * places that have nothing else in common - a leaderboard row, a chat line, a transfer record, the
+ * news feed - and threading a callback from the top of the app through every one of them would be a
+ * prop passed through components that have no other interest in it. The app is already using window
+ * events for exactly this shape of thing: opening a conversation, and blocking somebody.
+ */
+function PlayerName({ playerId, children, className }: {
+  playerId: string | null | undefined
+  children: ReactNode
+  className?: string
+}) {
+  // Anything the game said rather than a player has no id, and stays plain text.
+  if (!playerId) return <>{children}</>
+
+  return <button
+    type="button"
+    className={`btn btn-link p-0 border-0 align-baseline text-start lh-inherit ${className ?? ''}`}
+    onClick={event => {
+      // The row underneath is often clickable too. This is the more specific intent.
+      event.stopPropagation()
+      window.dispatchEvent(new CustomEvent('street-empire:profile', { detail: { playerId } }))
+    }}
+  >{children}</button>
+}
+
+/**
+ * That dialog. Fetched when it opens rather than held ready, because it is the same call the combat
+ * screen makes and the answer is only wanted when somebody asks for it.
+ */
+function PlayerProfileDialog({ playerId, currentPlayerId, onClose }: {
+  playerId: string
+  currentPlayerId: string
+  onClose: () => void
+}) {
+  const [profile, setProfile] = useState<PlayerProfile | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let stale = false
+    setProfile(null); setError('')
+    void (async () => {
+      try {
+        const found = await api.playerProfile(playerId)
+        if (!stale) setProfile(found)
+      } catch (e) { if (!stale) setError((e as Error).message) }
+    })()
+    // Guards the race where somebody opens two names quickly: the slower answer must not land last.
+    return () => { stale = true }
+  }, [playerId])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return <>
+    <div className="modal-backdrop show" />
+    <div className="modal d-block" role="dialog" aria-modal="true" aria-label="Player profile" onClick={onClose}>
+      <div className="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable" onClick={event => event.stopPropagation()}>
+        <div className="modal-content p-3">
+          {error
+            ? <p className="text-danger mb-0">{error}</p>
+            : !profile
+              ? <p className="text-body-tertiary mb-0">Looking them up.</p>
+              : <>
+                <PlayerCardHeader profile={profile} isSelf={profile.playerId === currentPlayerId} />
+                <PlayerCardStats profile={profile} isSelf={profile.playerId === currentPlayerId} />
+              </>}
+          <button className="btn btn-secondary mt-3" type="button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  </>
+}
+
+/**
+ * One player, as everybody else sees them.
+ *
+ * Split in two rather than one component, because the combat screen puts the whole attack apparatus
+ * between the two halves and the pop-up puts nothing there at all. Everything else about them - who
+ * they are, what they hit for, what they have been doing - is the same card in both places, which is
+ * the point: a name should open the same thing wherever it is clicked.
+ */
+function PlayerCardHeader({ profile, isSelf }: { profile: PlayerProfile, isSelf: boolean }) {
+  return <>
+      {profile.profileBanner !== 'None'
+        && <div className={`profile-banner ${bannerClass(profile.profileBanner)} mb-3`} aria-hidden="true" />}
+      <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div className="d-flex align-items-center gap-3 min-w-0">
+          <PlayerAvatar name={profile.name} avatarUrl={profile.avatarUrl} size={56} />
+          <div className="d-grid gap-1 min-w-0">
+            <strong className={`${profileAccentClass(profile.profileAccent)} fs-5 text-truncate`}>{profile.name}</strong>
+            <span className="eyebrow">
+              {[profile.city, profile.profilePronouns, profile.profileLocation].filter(Boolean).join(' / ')}
+              {profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}
+            </span>
+            {/* How long somebody has been at this, which is context for the numbers beside it. */}
+            <small className="d-block text-body-tertiary">
+              Playing since {new Date(profile.joinedAtUtc).toLocaleDateString([], { month: 'long', year: 'numeric' })}
+            </small>
+            {profile.publicDiscordUsername && <small className="d-block text-primary">
+              <i className="bi bi-discord me-1" aria-hidden="true" />
+              {profile.publicDiscordUsername}
+            </small>}
+            {profile.profileTagline && <small className={`d-block ${profileAccentClass(profile.profileAccent)}`}>{profile.profileTagline}</small>}
+            {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
+          </div>
+        </div>
+        {/* The only place a conversation can start. Everywhere else in chat you are answering
+            somebody; this is where you pick who to write to in the first place. */}
+        <button
+          className="btn btn-secondary btn-sm"
+          type="button"
+          disabled={!profile.canMessage}
+          title={profile.messageBlockedReason ?? 'Start a direct conversation'}
+          onClick={() => void (async () => {
+            try {
+              const { id } = await api.openDirect(profile.playerId)
+              window.dispatchEvent(new CustomEvent('street-empire:conversation', { detail: { conversationId: id } }))
+            } catch { /* the profile shows its own errors elsewhere */ }
+          })()}
+        >{profile.canMessage ? 'Message' : 'Closed'}</button>
+        {/* Silences them. Says so plainly, because a player who thinks this also keeps them from
+            raiding the house will find out the hard way and blame the button. */}
+        {!isSelf && <button
+          className="btn btn-secondary btn-sm"
+          type="button"
+          title="Stops them writing to you and hides them from your rooms. It does not stop them attacking you."
+          onClick={() => void (async () => {
+            try {
+              await api.block(profile.playerId)
+              window.dispatchEvent(new CustomEvent('street-empire:blocked'))
+            } catch { /* the profile shows its own errors elsewhere */ }
+          })()}
+        >Block</button>}
+        <b className="text-primary fs-5">#{profile.rank}</b>
+      </div>
+      {isSelf && <p className="text-body-tertiary small">
+        This is your own card, exactly as anybody who looks you up sees it - which is also what the
+        privacy settings on your account page decide.
+      </p>}
+  </>
+}
+
+function PlayerCardStats({ profile, isSelf }: { profile: PlayerProfile, isSelf: boolean }) {
+  return <>
+      <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
+        <AdminMetric label="Net worth" value={money.format(profile.netWorth)} />
+        <AdminMetric label="Cash" value={money.format(profile.cash)} />
+        <AdminMetric label="Bank" value={money.format(profile.bankCash)} />
+        <AdminMetric label="Attack" value={number.format(profile.combatReadiness.attackPower)} />
+        <AdminMetric label="Defence" value={number.format(profile.combatReadiness.defensePower)} />
+        <AdminMetric label="Risk" value={profile.combatReadiness.riskBand} />
+        <AdminMetric label="Combat" value={profile.combatStatus.eligibility} />
+      </div>
+      <div className="mt-3 border-top">
+        <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
+        <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
+        {/* Coverage says how many are armed; the rack says how hard that is going to hit back. */}
+        <StatusRow label={isSelf ? 'Your guns' : 'Their guns'} value={rackSummary(profile.weaponRack)} />
+        <StatusRow
+          label="Firepower"
+          value={`${profile.combatReadiness.firepower} pistols`}
+          warn={profile.combatReadiness.firepower > profile.combatReadiness.armedThugs * 1.5}
+        />
+        <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
+        <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
+        <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defences`} />
+        {profile.combatStatus.mismatchReason && <StatusRow label="Blocked" value={profile.combatStatus.mismatchReason} warn />}
+        {/* What each strike is aimed at. A garage with cars in it and a house with no medicine are
+            the reads that turn the menu into a decision rather than a list. */}
+        <StatusRow label="Rides" value={profile.rides > 0 ? `${number.format(profile.rides)} parked` : 'None'} />
+        <StatusRow label="Medicine" value={profile.medicine > 0 ? `${number.format(profile.medicine)} crate(s)` : 'None'} />
+        <StatusRow
+          label="Hoe morale"
+          value={`${profile.hoeHappiness.toFixed(0)}%${profile.hoeHappiness >= 90 ? ' - paid too well to poach' : ''}`}
+          warn={profile.hoeHappiness < 50}
+        />
+        <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
+        <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
+      </div>
+      <div className="mt-3 border-top pt-3">
+        <strong className="d-block mb-1 text-primary">Public Activity</strong>
+        {/*
+          Turned off and never done anything are different facts, and an empty list with no
+          explanation reads as a broken profile rather than a choice. Saying which gives away nothing
+          they did not choose to say.
+        */}
+        {profile.activityHidden
+          ? <p className="text-body-tertiary small mt-3 mb-0">
+            {isSelf
+              ? 'You keep your recent activity private, so nobody else sees this list.'
+              : 'They keep their recent activity private.'}
+          </p>
+          : profile.publicActivity.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No public activity yet.</p>}
+        <ActivityList entries={profile.publicActivity} />
+      </div>
+  </>
+}
+
 function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerId, combatMissions, dashboard, attackCrew, setAttackCrew, commanderId, setCommanderId, attackMethod, setAttackMethod, poachCoke, setPoachCoke, borrowedThugs, setBorrowedThugs, onQuery, onSearch, onInspect, onAttack }: {
   targets: PlayerTarget[]
   selectedTarget: PlayerProfile | null
@@ -4428,58 +4653,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         </button>)}
       </div>
       {profile && (() => { const isSelf = profile.playerId === currentPlayerId; return <div className="border rounded bg-body-secondary p-3">
-        {profile.profileBanner !== 'None'
-          && <div className={`profile-banner ${bannerClass(profile.profileBanner)} mb-3`} aria-hidden="true" />}
-        <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            <PlayerAvatar name={profile.name} avatarUrl={profile.avatarUrl} size={56} />
-            <div className="d-grid gap-1 min-w-0">
-              <strong className={`${profileAccentClass(profile.profileAccent)} fs-5 text-truncate`}>{profile.name}</strong>
-              <span className="eyebrow">
-                {[profile.city, profile.profilePronouns, profile.profileLocation].filter(Boolean).join(' / ')}
-                {profile.aiPersonality ? ` / ${profile.aiPersonality}` : profile.isBot ? ' / AI rival' : ''}
-              </span>
-              {/* How long somebody has been at this, which is context for the numbers beside it. */}
-              <small className="d-block text-body-tertiary">
-                Playing since {new Date(profile.joinedAtUtc).toLocaleDateString([], { month: 'long', year: 'numeric' })}
-              </small>
-              {profile.publicDiscordUsername && <small className="d-block text-primary">
-                <i className="bi bi-discord me-1" aria-hidden="true" />
-                {profile.publicDiscordUsername}
-              </small>}
-              {profile.profileTagline && <small className={`d-block ${profileAccentClass(profile.profileAccent)}`}>{profile.profileTagline}</small>}
-              {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
-            </div>
-          </div>
-          {/* The only place a conversation can start. Everywhere else in chat you are answering
-              somebody; this is where you pick who to write to in the first place. */}
-          <button
-            className="btn btn-secondary btn-sm"
-            type="button"
-            disabled={!profile.canMessage}
-            title={profile.messageBlockedReason ?? 'Start a direct conversation'}
-            onClick={() => void (async () => {
-              try {
-                const { id } = await api.openDirect(profile.playerId)
-                window.dispatchEvent(new CustomEvent('street-empire:conversation', { detail: { conversationId: id } }))
-              } catch { /* the profile shows its own errors elsewhere */ }
-            })()}
-          >{profile.canMessage ? 'Message' : 'Closed'}</button>
-          {/* Silences them. Says so plainly, because a player who thinks this also keeps them from
-              raiding the house will find out the hard way and blame the button. */}
-          {!isSelf && <button
-            className="btn btn-secondary btn-sm"
-            type="button"
-            title="Stops them writing to you and hides them from your rooms. It does not stop them attacking you."
-            onClick={() => void (async () => {
-              try {
-                await api.block(profile.playerId)
-                window.dispatchEvent(new CustomEvent('street-empire:blocked'))
-              } catch { /* the profile shows its own errors elsewhere */ }
-            })()}
-          >Block</button>}
-          <b className="text-primary fs-5">#{profile.rank}</b>
-        </div>
+        <PlayerCardHeader profile={profile} isSelf={isSelf} />
         {isSelf
           ? <p className="text-body-tertiary small">
             This is your own card, exactly as anybody who looks you up sees it - which is also what the
@@ -4566,57 +4740,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
                   methodReady))}</span>
         </div>
         </>}
-        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
-          <AdminMetric label="Net worth" value={money.format(profile.netWorth)} />
-          <AdminMetric label="Cash" value={money.format(profile.cash)} />
-          <AdminMetric label="Bank" value={money.format(profile.bankCash)} />
-          <AdminMetric label="Attack" value={number.format(profile.combatReadiness.attackPower)} />
-          <AdminMetric label="Defence" value={number.format(profile.combatReadiness.defensePower)} />
-          <AdminMetric label="Risk" value={profile.combatReadiness.riskBand} />
-          <AdminMetric label="Combat" value={profile.combatStatus.eligibility} />
-        </div>
-        <div className="mt-3 border-top">
-          <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
-          <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
-          {/* Coverage says how many are armed; the rack says how hard that is going to hit back. */}
-          <StatusRow label={isSelf ? 'Your guns' : 'Their guns'} value={rackSummary(profile.weaponRack)} />
-          <StatusRow
-            label="Firepower"
-            value={`${profile.combatReadiness.firepower} pistols`}
-            warn={profile.combatReadiness.firepower > profile.combatReadiness.armedThugs * 1.5}
-          />
-          <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
-          <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
-          <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defences`} />
-          {profile.combatStatus.mismatchReason && <StatusRow label="Blocked" value={profile.combatStatus.mismatchReason} warn />}
-          {/* What each strike is aimed at. A garage with cars in it and a house with no medicine are
-              the reads that turn the menu into a decision rather than a list. */}
-          <StatusRow label="Rides" value={profile.rides > 0 ? `${number.format(profile.rides)} parked` : 'None'} />
-          <StatusRow label="Medicine" value={profile.medicine > 0 ? `${number.format(profile.medicine)} crate(s)` : 'None'} />
-          <StatusRow
-            label="Hoe morale"
-            value={`${profile.hoeHappiness.toFixed(0)}%${profile.hoeHappiness >= 90 ? ' - paid too well to poach' : ''}`}
-            warn={profile.hoeHappiness < 50}
-          />
-          <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
-          <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
-        </div>
-        <div className="mt-3 border-top pt-3">
-          <strong className="d-block mb-1 text-primary">Public Activity</strong>
-          {/*
-            Turned off and never done anything are different facts, and an empty list with no
-            explanation reads as a broken profile rather than a choice. Saying which gives away nothing
-            they did not choose to say.
-          */}
-          {profile.activityHidden
-            ? <p className="text-body-tertiary small mt-3 mb-0">
-              {isSelf
-                ? 'You keep your recent activity private, so nobody else sees this list.'
-                : 'They keep their recent activity private.'}
-            </p>
-            : profile.publicActivity.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No public activity yet.</p>}
-          <ActivityList entries={profile.publicActivity} />
-        </div>
+        <PlayerCardStats profile={profile} isSelf={isSelf} />
       </div> })()}
     </div>
   </div>
@@ -4796,7 +4920,7 @@ function TitleBoardPanel({ currentPlayerId }: { currentPlayerId: string }) {
         key={title.key}
       >
         <strong className="text-primary">{title.title}</strong>
-        <b className="text-body">{title.playerName}</b>
+        <b className="text-body"><PlayerName playerId={title.playerId}>{title.playerName}</PlayerName></b>
         <small className="gcol-full text-body-tertiary small">{title.detail}</small>
       </div>)}
     </div>
@@ -4987,7 +5111,7 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
 
   return <div className={`alliance-member d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${member.isYou ? 'border-primary' : ''}`}>
     <div className="min-w-0">
-      <strong className="d-block text-truncate">{member.name}</strong>
+      <strong className="d-block text-truncate"><PlayerName playerId={member.playerId}>{member.name}</PlayerName></strong>
       <small className="d-block text-body-secondary">{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
     </div>
     <b className="tnum">{money.format(member.netWorth)}</b>
@@ -5208,7 +5332,11 @@ function AllianceTransfersPanel({ transfers }: { transfers: AllianceTransfer[] }
     <strong className="d-block mb-1 text-primary small">Recent sends</strong>
     {transfers.slice(0, 6).map(transfer => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={transfer.id}>
       <div>
-        <strong>{transfer.fromPlayerName} to {transfer.toPlayerName}</strong>
+        <strong>
+          <PlayerName playerId={transfer.fromPlayerId}>{transfer.fromPlayerName}</PlayerName>
+          {' to '}
+          <PlayerName playerId={transfer.toPlayerId}>{transfer.toPlayerName}</PlayerName>
+        </strong>
         <small>{transfer.quantity.toLocaleString()} {transfer.label.toLowerCase()}</small>
       </div>
       <em>{new Date(transfer.createdAtUtc).toLocaleString()}</em>
@@ -5719,7 +5847,7 @@ function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], 
       <span className="d-flex align-items-center gap-2 min-w-0">
         <PlayerAvatar name={l.playerName} avatarUrl={l.avatarUrl} size={30} />
         <span className="d-grid min-w-0">
-          <strong className="min-w-0 text-truncate">{l.playerName}</strong>
+          <strong className="min-w-0 text-truncate"><PlayerName playerId={l.playerId}>{l.playerName}</PlayerName></strong>
           {l.profileTagline && <small className="text-body-tertiary text-truncate">{l.profileTagline}</small>}
         </span>
       </span>
@@ -5802,7 +5930,7 @@ function WorldNewsPanel({ news, currentPlayer }: { news: WorldNews, currentPlaye
           <span className="text-body-tertiary small text-sm-end">{new Date(entry.createdAtUtc).toLocaleString()}</span>
         </div>
         <p className="my-1">{entry.summary}</p>
-        <small className="text-body-tertiary small">{entry.playerName} / {entry.city}{entry.turnsSpent > 0 ? ` / ${entry.turnsSpent} turn${entry.turnsSpent === 1 ? '' : 's'}` : ''}</small>
+        <small className="text-body-tertiary small"><PlayerName playerId={entry.playerId}>{entry.playerName}</PlayerName> / {entry.city}{entry.turnsSpent > 0 ? ` / ${entry.turnsSpent} turn${entry.turnsSpent === 1 ? '' : 's'}` : ''}</small>
       </div>)}
     </div>
   </div>

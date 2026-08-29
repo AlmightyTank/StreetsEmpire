@@ -73,3 +73,21 @@
 .profile-banner-chrome { background: linear-gradient(120deg, #3a4145 0%, #59636a 45%, #232a2e 100%); }
 .profile-banner-rust   { background: linear-gradient(120deg, #4a2a17 0%, #6b3b1c 50%, #1c1512 100%); }
 .profile-banner-velvet { background: linear-gradient(120deg, #3a1430 0%, #571d3c 55%, #17101a 100%); }
+
+// -- A name you can open ------------------------------------------------------
+// PlayerName is a button so that it announces itself as one, but it sits inside a
+// sentence or a table cell and has to read as the text it replaced. Bootstrap's
+// .btn sets its own line height and colour; these hand both back to whatever the
+// name was inheriting before it became clickable.
+.lh-inherit {
+  line-height: inherit;
+  color: inherit;
+  text-decoration: none;
+  vertical-align: baseline;
+
+  &:hover,
+  &:focus-visible {
+    color: inherit;
+    text-decoration: underline;
+  }
+}

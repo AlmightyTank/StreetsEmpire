@@ -751,7 +751,9 @@ internal static class AllianceEndpoints
     private static AllianceTransferResponse ToTransferResponse(AllianceTransfer transfer)
         => new(
             transfer.Id,
+            transfer.FromPlayerId,
             transfer.FromPlayer.Name,
+            transfer.ToPlayerId,
             transfer.ToPlayer.Name,
             transfer.Item,
             ResourceLabel(transfer.Item),

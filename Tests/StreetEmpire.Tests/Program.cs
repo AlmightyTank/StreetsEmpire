@@ -194,6 +194,7 @@ var tests = new (string Name, Action Test)[]
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
+    ("a recovery code is read the way it looks on paper", ARecoveryCodeIsReadTheWayItLooks),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2431,6 +2432,46 @@ static void EveryAlertKindAnswersToASwitch()
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
     AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+}
+
+static void ARecoveryCodeIsReadTheWayItLooks()
+{
+    // These are typed off a sheet of paper by somebody who has already lost their password and their
+    // mailbox, which is not the moment to be strict about a dash. Everything that is not a letter or a
+    // digit goes, and case does not count.
+    AssertEqual("QV3FWM9TFX", RecoveryCodes.Normalise("QV3FW-M9TFX"));
+    AssertEqual("QV3FWM9TFX", RecoveryCodes.Normalise("qv3fwm9tfx"));
+    AssertEqual("QV3FWM9TFX", RecoveryCodes.Normalise("  qv3fw - m9tfx  "));
+    AssertEqual("", RecoveryCodes.Normalise(null));
+    AssertEqual("", RecoveryCodes.Normalise("---"));
+
+    // The alphabet leaves out the characters that are the same character to somebody reading their own
+    // handwriting back. If a generated code could contain one of these, the normalising above would not
+    // save them - the two would simply be different codes.
+    using var world = NewCrewWorld();
+    var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<PlayerAccount>();
+    var account = new PlayerAccount { Id = Guid.NewGuid(), Username = "kim", PasswordHash = "hashed" };
+    world.Db.Accounts.Add(account);
+    world.Db.SaveChanges();
+
+    var codes = new RecoveryCodes(world.Db, hasher).IssueAsync(account, default).GetAwaiter().GetResult();
+    AssertEqual(RecoveryCodes.SetSize, codes.Count);
+    AssertEqual(codes.Count, codes.Distinct().Count());
+
+    foreach (var code in codes)
+    {
+        AssertEqual(11, code.Length);
+        AssertEqual('-', code[5]);
+        AssertTrue(!code.Any(c => c is 'I' or 'L' or 'O' or 'U' or '0' or '1'),
+            $"'{code}' contains a character somebody will copy down as another one");
+    }
+
+    // And what is stored is not what was issued. A column that could be read back would be a way into
+    // every account in the game for anybody who reached the database.
+    var stored = world.Db.RecoveryCodes.Select(x => x.CodeHash).ToList();
+    AssertEqual(RecoveryCodes.SetSize, stored.Count);
+    AssertTrue(!stored.Any(hash => codes.Any(code => hash.Contains(code, StringComparison.OrdinalIgnoreCase))),
+        "a recovery code should never be recoverable from what is stored");
 }
 
 static void AChosenTitleLeadsAndSurvivesLosingIt()

@@ -28,6 +28,7 @@ public enum AccountChange
     DiscordConnected,
     DiscordDisconnected,
     SessionsSignedOut,
+    RecoveryCodesIssued,
 }
 
 /// <summary>
@@ -194,6 +195,13 @@ public static class AccountNoticeEmail
         AccountChange.SessionsSignedOut => (
             "you were signed out everywhere",
             "Every session on your account except one was signed out."),
+
+        // Worth a notice even though the player asked for it standing right there. Issuing a set voids
+        // the old one, so somebody else doing it takes away a way back in and hands themselves one -
+        // and this note is the only place the real owner would ever hear about it.
+        AccountChange.RecoveryCodesIssued => (
+            "new recovery codes were made",
+            "A new set of recovery codes was made for your account. Any codes from before now no longer work."),
 
         _ => ("your account changed", "Something on your account changed."),
     };

@@ -8,6 +8,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<PlayerAccount> Accounts => Set<PlayerAccount>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<PlayerSession> Sessions => Set<PlayerSession>();
+    public DbSet<RecoveryCode> RecoveryCodes => Set<RecoveryCode>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GameActionLog> ActionLogs => Set<GameActionLog>();
     public DbSet<CombatLog> CombatLogs => Set<CombatLog>();
@@ -92,6 +93,19 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
 
             entity.Property(x => x.IpAddress).HasMaxLength(45);
             entity.Property(x => x.UserAgent).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<RecoveryCode>(entity =>
+        {
+            entity.HasOne(x => x.Account)
+                .WithMany()
+                .HasForeignKey(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Every read is "the unused codes for this account", which is both what redeeming walks and
+            // what the page counts.
+            entity.HasIndex(x => new { x.AccountId, x.UsedAtUtc });
+            entity.Property(x => x.CodeHash).HasMaxLength(256);
         });
 
         modelBuilder.Entity<EmailVerification>(entity =>

@@ -62,6 +62,42 @@ internal static class PasswordResetEndpoints
             return Results.Ok(new { message = SameAnswerForEverybody });
         }).RequireRateLimiting("sign-in");
 
+        // The other way back in: a code off the sheet rather than one sent to a mailbox. The same
+        // shape, the same limiter, the same refusal to say whether the account exists - and the same
+        // three things done together at the end, because a recovery that left the thief signed in
+        // would have recovered nothing.
+        app.MapPost("/api/auth/reset/recovery-code", async (
+            UseRecoveryCodeRequest request,
+            GameDbContext db,
+            IPasswordHasher<PlayerAccount> passwordHasher,
+            RecoveryCodes recovery,
+            AccountNotices notices,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrEmpty(request.NewPassword) || request.NewPassword.Length < 8)
+                return Results.BadRequest(new { error = "Password must be at least 8 characters." });
+
+            var account = await FindAsync(db, request.Identifier, ct);
+            if (account is null || account.IsBot || account.IsLockedOut(DateTime.UtcNow))
+                return Results.BadRequest(new { error = "That code is not right, or it has been used." });
+
+            if (!await recovery.RedeemAsync(account, request.Code, ct))
+                return Results.BadRequest(new { error = "That code is not right, or it has been used." });
+
+            var now = AuthEndpoints.ToSessionMoment(DateTime.UtcNow);
+            account.PasswordHash = passwordHasher.HashPassword(account, request.NewPassword);
+            account.SessionsValidAfterUtc = now;
+
+            // One save for the spent code and the new password together, so a code cannot be spent by a
+            // request that then fails to change anything.
+            await db.SaveChangesAsync(ct);
+            await notices.TellAccountAsync(account, AccountChange.PasswordReset, null, ct);
+
+            await AuthEndpoints.SignInAsync(http, db, account, now, ct);
+            return Results.Ok(new AuthResponse(account.Player!.Id, account.Player.Name, account.Username));
+        }).RequireRateLimiting("sign-in");
+
         app.MapPost("/api/auth/reset/confirm", async (
             ConfirmPasswordResetRequest request,
             GameDbContext db,

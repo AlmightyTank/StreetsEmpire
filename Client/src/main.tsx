@@ -948,7 +948,7 @@ function App() {
     identifier is carried between them rather than re-typed, since it is the thing the server matches
     the code against.
   */
-  const [resetStep, setResetStep] = useState<'off' | 'asking' | 'confirming'>('off')
+  const [resetStep, setResetStep] = useState<'off' | 'asking' | 'confirming' | 'code'>('off')
   const [resetIdentifier, setResetIdentifier] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1172,6 +1172,23 @@ function App() {
     finally { setBusy(false) }
   }
 
+  // The other way back in. Nothing is sent anywhere: the code is already on a sheet of paper, so this
+  // is one form rather than two steps.
+  const useRecoveryCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const next = String(form.get('newPassword') ?? '')
+    if (next !== String(form.get('confirmPassword') ?? '')) { setError('The two passwords do not match.'); return }
+    setBusy(true); setError('')
+    try {
+      await api.useRecoveryCode(
+        String(form.get('identifier') ?? ''), String(form.get('code') ?? ''), next)
+      setResetStep('off'); setResetIdentifier(''); setNotice('')
+      await refresh()
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
   const leaveReset = () => { setResetStep('off'); setResetIdentifier(''); setError(''); setNotice('') }
 
   const abandonDiscordSignUp = () => {
@@ -1240,11 +1257,36 @@ function App() {
         {resetStep !== 'off'
           ? <>
             <p className="text-body-secondary">
-              {resetStep === 'asking'
+              {resetStep === 'code'
+                ? 'A recovery code is one of the ten you were given on the account page. It works without any email at all, and is spent the moment it is used.'
+                : resetStep === 'asking'
                 ? 'A code goes to the confirmed email address on the account. Without one there is no way back in - which is what confirming an address is for.'
                 : 'Type the code from that email and pick a new password. Every other session on the account will be signed out.'}
             </p>
-            {resetStep === 'asking'
+            {resetStep === 'code'
+              ? <form className="d-grid gap-3 mt-4" onSubmit={useRecoveryCode}>
+                <label className="field">
+                  Username or Email
+                  <input className="form-control" name="identifier" required />
+                </label>
+                <label className="field">
+                  Recovery code
+                  <input className="form-control" name="code" placeholder="ABCDE-FGHJK" required />
+                  <small className="form-text">One of the ten off your sheet. It is spent once used.</small>
+                </label>
+                <label className="field">
+                  New password
+                  <input className="form-control" name="newPassword" type="password" minLength={8} required />
+                </label>
+                <label className="field">
+                  Confirm password
+                  <input className="form-control" name="confirmPassword" type="password" minLength={8} required />
+                </label>
+                {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Use This Code'}</button>
+                <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
+              </form>
+              : resetStep === 'asking'
               ? <form className="d-grid gap-3 mt-4" onSubmit={startReset}>
                 <label className="field">
                   Username or Email
@@ -1402,11 +1444,20 @@ function App() {
               <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
               {/* Only on the login side. Offering it while somebody is creating an account is offering
                   to reset a password they have not chosen yet. */}
-              {authMode === 'login' && <button
-                className="btn btn-link text-body-secondary"
-                type="button"
-                onClick={() => { setResetStep('asking'); setError(''); setNotice('') }}
-              >Forgotten your password?</button>}
+              {authMode === 'login' && <>
+                <button
+                  className="btn btn-link text-body-secondary"
+                  type="button"
+                  onClick={() => { setResetStep('asking'); setError(''); setNotice('') }}
+                >Forgotten your password?</button>
+                {/* The way in for somebody who has lost the mailbox as well as the password, which is
+                    the case the emailed code cannot answer at all. */}
+                <button
+                  className="btn btn-link text-body-secondary"
+                  type="button"
+                  onClick={() => { setResetStep('code'); setError(''); setNotice('') }}
+                >Use a recovery code</button>
+              </>}
             </form>
             {/*
               A real link rather than a button, because this is a full-page navigation to somebody
@@ -7039,12 +7090,100 @@ function SessionsCard({ account, busy, run }: { account: Account, busy: boolean,
   </section>
 }
 
+/**
+ * Ten single-use ways back in, shown once.
+ *
+ * Once is not a limitation to work around - it is the reason these are safe to have. What the server
+ * keeps is a hash, exactly as it does for a password, so there is no endpoint that could say them again
+ * and no column that hands somebody with database access a way into every account in the game.
+ */
+function RecoveryCodesCard({ account, busy }: { account: Account, busy: boolean }) {
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [password, setPassword] = useState('')
+  const [codes, setCodes] = useState<string[] | null>(null)
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  const load = async () => {
+    try { setRemaining((await api.recoveryCodesLeft()).remaining) } catch { /* the count is not the point */ }
+  }
+  useEffect(() => { void load() }, [])
+
+  const issue = async () => {
+    setWorking(true); setError('')
+    try {
+      setCodes((await api.issueRecoveryCodes(password)).codes)
+      setPassword('')
+      await load()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      <h2>Recovery codes</h2>
+      <span>{remaining === null ? 'Reading' : remaining === 0 ? 'None made' : `${remaining} left`}</span>
+    </div>
+    <p>
+      Ten one-time codes. Any of them gets you back in without an email and without Discord, which is the
+      case neither of the other two doors can answer - a lost mailbox, or a Discord account you no longer
+      have. Each one works once.
+    </p>
+    <p className="text-body-tertiary small">
+      They do not replace your email or your Discord: you still cannot remove your last way back in. A
+      sheet of paper is the thing most easily lost, so it is a spare set of keys rather than the door.
+    </p>
+
+    {codes
+      ? <>
+        <div className="alert alert-warning">
+          Written down now or not at all. They are stored hashed, exactly as your password is, so this is
+          the only time they can be shown.
+        </div>
+        <pre className="border rounded bg-body-tertiary p-3 mb-3 tnum">{codes.join('\n')}</pre>
+        <button
+          className="btn btn-secondary"
+          type="button"
+          onClick={() => void navigator.clipboard?.writeText(codes.join('\n'))}
+        >Copy them</button>
+        <button className="btn btn-link text-body-secondary" type="button" onClick={() => setCodes(null)}>
+          I have written them down
+        </button>
+      </>
+      : <div className="d-grid gap-3">
+        {account.hasPassword && <label className="field">
+          Current password
+          <input
+            className="form-control"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+          />
+        </label>}
+        {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+        <div>
+          <button
+            className="btn btn-outline-primary"
+            type="button"
+            disabled={busy || working || (account.hasPassword && password.length === 0)}
+            onClick={() => void issue()}
+          >{working ? 'Working...' : remaining ? 'Make a new set' : 'Make my codes'}</button>
+        </div>
+        {remaining !== null && remaining > 0 && <small className="text-body-tertiary">
+          Making a new set voids the old one, so any sheet you already have stops working.
+        </small>}
+      </div>}
+  </section>
+}
+
 function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { onTab: (tab: AccountTab) => void }) {
   const open = waysIn(account)
   const back = waysBackIn(account)
   const enoughOfBoth = open.length > 1 && back.length > 1
   return <>
     <SessionsCard account={account} busy={busy} run={run} />
+    <RecoveryCodesCard account={account} busy={busy} />
 
     {/*
       Two counters rather than one, because the panel used to answer one question and imply the other.

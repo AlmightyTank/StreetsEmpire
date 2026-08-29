@@ -71,6 +71,20 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **Recovery codes.** Ten one-time codes, made from the account page behind the current password, shown
+  once and never again - they are stored hashed exactly as a password is, so there is no endpoint that
+  could say them twice and no column that would hand somebody with database access a way into every
+  account in the game. Any one of them gets a player back in with no email and no Discord, which is the
+  case neither of the other two doors can answer: a lost mailbox, or a Discord account they no longer
+  have.
+- They are additive on purpose. Holding codes does not let you remove your address or disconnect your
+  Discord - the two-door rule stands, because a sheet of paper is the thing most easily lost, and being
+  a spare set of keys rather than a replacement door is what makes them safe to add at all.
+- The alphabet leaves out I, L, O, U, 0 and 1, and the code is read the way it looks: case does not
+  count and the dash is optional. Somebody typing one has already lost their password and their mailbox,
+  which is not the moment to be strict about punctuation.
+- Making a new set voids the old one, and is worth a notice even though the player asked for it standing
+  right there: somebody else doing it takes away a way back in and hands themselves one.
 - **You can choose which title leads.** Titles are worked out fresh from the day's fighting, so the
   choice is remembered whether or not you hold it today - one taken from you this afternoon is one you
   may hold again tomorrow, and forgetting it every time would make this a setting nobody could keep. It

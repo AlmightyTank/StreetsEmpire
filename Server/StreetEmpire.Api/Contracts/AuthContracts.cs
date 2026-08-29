@@ -125,6 +125,16 @@ public sealed record SessionResponse(
 /// </param>
 public sealed record RevokeSessionsRequest(string? CurrentPassword);
 
+/// <param name="Codes">
+/// In the clear, and for the only time they ever will be. What the server keeps is a hash, so this
+/// response is the codes - there is no second chance to read them and no endpoint that will say them
+/// again.
+/// </param>
+public sealed record RecoveryCodesResponse(IReadOnlyList<string> Codes);
+
+/// <param name="Code">One of the ten. Case and the dash do not matter; it is read the way it looks.</param>
+public sealed record UseRecoveryCodeRequest(string? Identifier, string? Code, string? NewPassword);
+
 public sealed record ChangeAvatarRequest(string? Source);
 /// <param name="FeaturedTitle">A title key, or an empty string to lead with whatever the board hands you.</param>
 public sealed record ChangeProfileRequest(

@@ -213,6 +213,40 @@ internal static class AccountEndpoints
         // The same machinery as a password change, offered on its own. Somebody who left themselves
         // signed in on a machine they no longer have should not have to change their password to get
         // out of it.
+        // A fresh set, replacing whatever was there. Behind the current password, because a set of
+        // codes is a way into the account and somebody holding a stolen session should not be able to
+        // mint themselves one - nor to silently void the owner's sheet, which issuing also does.
+        account.MapPost("/recovery-codes", async (
+            RevokeSessionsRequest request,
+            HttpContext http,
+            GameDbContext db,
+            RecoveryCodes recovery,
+            IPasswordHasher<PlayerAccount> passwordHasher,
+            AccountNotices notices,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+            if (current.HasPassword && !Verifies(passwordHasher, current, request.CurrentPassword))
+                return Results.BadRequest(new { error = "That password is not right." });
+
+            var codes = await recovery.IssueAsync(current, ct);
+            await notices.TellAccountAsync(current, AccountChange.RecoveryCodesIssued, null, ct);
+            return Results.Ok(new RecoveryCodesResponse(codes));
+        });
+
+        // How many are left. Never the codes - there is no endpoint that says those twice.
+        account.MapGet("/recovery-codes", async (
+            HttpContext http,
+            GameDbContext db,
+            RecoveryCodes recovery,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+            return Results.Ok(new { remaining = await recovery.RemainingAsync(current.Id, ct) });
+        });
+
         // What this player holds today, which is what the featured-title picker may offer. Its own
         // endpoint rather than a field on the account, because it is a live answer worked out from the
         // day's fighting - and folding it in would mean handing a title service to every endpoint that

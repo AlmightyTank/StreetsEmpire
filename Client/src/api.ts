@@ -1280,6 +1280,18 @@ export const api = {
   /** Ends every session on this account except the one asking. */
   /** What this player holds right now, which is what the featured-title picker may offer. */
   myTitles: () => request<PlayerTitle[]>('/api/account/titles'),
+  /** Returns the codes in the clear, for the only time they ever will be. */
+  issueRecoveryCodes: (currentPassword: string) =>
+    request<{ codes: string[] }>('/api/account/recovery-codes', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: currentPassword || null }),
+    }),
+  recoveryCodesLeft: () => request<{ remaining: number }>('/api/account/recovery-codes'),
+  useRecoveryCode: (identifier: string, code: string, newPassword: string) =>
+    request('/api/auth/reset/recovery-code', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, code, newPassword }),
+    }),
   sessions: () => request<PlayerSession[]>('/api/account/sessions'),
   revokeSession: (sessionId: string, currentPassword: string) =>
     request<{ revoked: boolean }>(`/api/account/sessions/${encodeURIComponent(sessionId)}/revoke`, {

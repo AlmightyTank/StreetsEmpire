@@ -88,6 +88,7 @@ builder.Services.AddScoped<IPasswordHasher<PlayerAccount>, PasswordHasher<Player
 // Discord sign-in. Registered unconditionally so the endpoints exist and can say "not set up" for
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
 // false until a client id and secret arrive from user-secrets or the environment.
+builder.Services.AddScoped<RecoveryCodes>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection("Auth:Discord"));
 builder.Services.AddHttpClient<DiscordAuthService>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<DiscordTickets>();

@@ -1199,20 +1199,30 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             });
     }
 
-    public ActionResultResponse Deposit(Player player, long amount)
+    public ActionResultResponse Deposit(Player player, long amount, DateTime nowUtc)
     {
         TravelGate.EnsureLanded(player);
         ValidateMoneyAmount(amount);
         if (player.Cash < amount) throw new GameRuleException($"You are carrying {player.Cash:C0}.");
+
+        // Charged after the money has been checked and before any of it moves, so a refused amount
+        // costs nothing and a charged trip always did something.
+        var trip = ChargeBankTrip(player, nowUtc);
         player.Cash -= amount;
         player.BankCash += amount;
         return new ActionResultResponse(
-            $"Deposited ${amount:N0} into the bank.",
+            TripSummary($"Deposited ${amount:N0} into the bank.", trip),
             player.Turns,
-            new Dictionary<string, object?> { ["amount"] = amount, ["direction"] = "deposit" });
+            new Dictionary<string, object?>
+            {
+                ["amount"] = amount,
+                ["direction"] = "deposit",
+                ["turnsSpent"] = trip,
+                ["freeTrip"] = trip == 0
+            });
     }
 
-    public ActionResultResponse Withdraw(Player player, long amount)
+    public ActionResultResponse Withdraw(Player player, long amount, DateTime nowUtc)
     {
         TravelGate.EnsureLanded(player);
         ValidateMoneyAmount(amount);
@@ -1226,12 +1236,19 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ? $"Your safe is full at ${safeCap:N0} cash on hand. Upgrade it to hold more."
                 : $"Your safe only has room for ${room:N0} more cash on hand.");
 
+        var trip = ChargeBankTrip(player, nowUtc);
         player.BankCash -= amount;
         player.Cash += amount;
         return new ActionResultResponse(
-            $"Withdrew ${amount:N0} from the bank.",
+            TripSummary($"Withdrew ${amount:N0} from the bank.", trip),
             player.Turns,
-            new Dictionary<string, object?> { ["amount"] = amount, ["direction"] = "withdraw" });
+            new Dictionary<string, object?>
+            {
+                ["amount"] = amount,
+                ["direction"] = "withdraw",
+                ["turnsSpent"] = trip,
+                ["freeTrip"] = trip == 0
+            });
     }
 
     public ActionResultResponse HireCrew(Player player, string? role, int quantity)
@@ -1478,6 +1495,37 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         if (player.Turns < turns)
             throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
     }
+
+    /// <summary>
+    /// Charges a trip to the bank, unless the player is still at the counter from the last one, and
+    /// returns what it cost so the caller can log and report it.
+    ///
+    /// Only a paid trip writes the stamp. Refreshing it on the free moves inside the window would let
+    /// anyone willing to move money every few minutes hold one payment open forever, which is the
+    /// difference between a grace window and no charge at all.
+    /// </summary>
+    private int ChargeBankTrip(Player player, DateTime nowUtc)
+    {
+        var bank = _options.Bank;
+        var cost = Math.Max(0, bank.TripTurnCost);
+        if (cost == 0) return 0;
+        if (player.LastBankedAtUtc is { } last
+            && last.AddMinutes(Math.Max(0, bank.TripGraceMinutes)) > nowUtc)
+            return 0;
+
+        ValidateTurns(player, cost, _options.MaxActionTurns, "A trip to the bank");
+        player.Turns -= cost;
+        player.LastBankedAtUtc = nowUtc;
+        return cost;
+    }
+
+    /// <summary>
+    /// Names a free trip and says nothing about a charged one. The turn counter already reports what
+    /// a charge cost, but nothing would tell a player the window exists, and a rule nobody can see is
+    /// a rule that reads as the game losing count of their turns.
+    /// </summary>
+    private static string TripSummary(string summary, int trip)
+        => trip == 0 ? $"{summary} You were still at the bank, so the trip was free." : summary;
 
     private static void ValidateMoneyAmount(long amount)
     {

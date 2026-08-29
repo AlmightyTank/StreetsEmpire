@@ -142,6 +142,13 @@ internal static class GameEndpoints
                 travel,
                 player.Cash,
                 player.BankCash,
+                opts.Bank.TripTurnCost,
+                // Only sent while it is still standing. A window that has already closed is not a fact
+                // about the player any more, and the panel would have to do the comparison anyway.
+                player.LastBankedAtUtc?.AddMinutes(Math.Max(0, opts.Bank.TripGraceMinutes)) is { } freeUntil
+                    && freeUntil > now
+                        ? freeUntil
+                        : null,
                 netWorth,
                 rank,
                 cityRank,
@@ -222,11 +229,7 @@ internal static class GameEndpoints
             try
             {
                 var result = economy.Travel(player, request.City);
-                AddLog(db, player, before, "TRAVEL", result.Breakdown is not null && result.Breakdown.TryGetValue("turnsSpent", out var turnsSpent)
-                    ? Convert.ToInt32(turnsSpent)
-                    : 0,
-                    result.Summary,
-                    now);
+                AddLog(db, player, before, "TRAVEL", TurnsSpentIn(result), result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
             }
@@ -477,17 +480,22 @@ internal static class GameEndpoints
             BankRequest request,
             CurrentPlayerService current,
             GameDbContext db,
+            PlayerClock clock,
             EconomyService economy,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
+            // A trip to the bank costs turns, so the clock has to be brought forward first. Without
+            // this the player is refused for turns they have already earned and cannot see.
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.Deposit(player, request.Amount);
-                AddLog(db, player, before, "BANK", 0, result.Summary);
+                var result = economy.Deposit(player, request.Amount, now);
+                AddLog(db, player, before, "BANK", TurnsSpentIn(result), result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
             }
@@ -502,17 +510,20 @@ internal static class GameEndpoints
             BankRequest request,
             CurrentPlayerService current,
             GameDbContext db,
+            PlayerClock clock,
             EconomyService economy,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.Withdraw(player, request.Amount);
-                AddLog(db, player, before, "BANK", 0, result.Summary);
+                var result = economy.Withdraw(player, request.Amount, now);
+                AddLog(db, player, before, "BANK", TurnsSpentIn(result), result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
             }

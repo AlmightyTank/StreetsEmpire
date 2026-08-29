@@ -111,7 +111,8 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         if (player.Cash > capacity.MaxCash * 3 / 4 && player.Cash > 0)
         {
             Add(31, "Bank your cash",
-                "Cash on hand is what a raid takes. Money in the bank cannot be stolen.",
+                "Cash on hand is what a raid takes. Money in the bank cannot be stolen. The trip costs "
+                + "turns, so go with a full safe rather than after every shift.",
                 "market");
         }
 
@@ -187,7 +188,8 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         [
             Step("Work the streets", "Spend turns for cash, and pick up crew while you are out.",
                 "street", actionsTaken.Contains("STREET")),
-            Step("Bank what you make", "Cash on hand is stolen in a raid. Cash in the bank is not.",
+            Step("Bank what you make", "Cash on hand is stolen in a raid. Cash in the bank is not, and the "
+                + "trip there costs turns - so it is worth making with a full safe rather than a few notes.",
                 "market", actionsTaken.Contains("BANK")),
             Step("Build the weed lab", "The cheapest thing you can own that earns while you are away.",
                 "hideout", (hideout?.WeedLabLevel ?? 0) > 0),

@@ -223,6 +223,7 @@ public sealed class GameOptions
     public CityMarketOptions CityMarkets { get; set; } = new();
     public MuleOptions Mules { get; set; } = new();
     public ContractOptions Contracts { get; set; } = new();
+    public BankOptions Bank { get; set; } = new();
 }
 
 /// <summary>
@@ -1436,6 +1437,43 @@ public sealed class ContractOptions
     /// <summary>How long an order stands. Long enough to go and make the goods, short enough to matter.</summary>
     public int MinLifetimeHours { get; set; } = 4;
     public int MaxLifetimeHours { get; set; } = 14;
+}
+
+/// <summary>
+/// What it costs to go and move money.
+///
+/// The bank used to be free, which made it strictly better than the safe in every case: cash on hand
+/// is what a raid and a roadblock take, bank cash is what neither can, and moving between them cost
+/// nothing at all. A disciplined player therefore never carried anything, the safe never held a risk
+/// worth pricing, and the top level of it was five million dollars for a convenience.
+///
+/// The charge is on the visit rather than on the amount or the direction. Pricing the amount would
+/// tax being rich, which the turn bank already does by being the same size for everybody. Pricing the
+/// direction would mean picking which half to break: charging withdrawals alone leaves depositing
+/// free, so nobody ever carries and the risk still never bites, while charging deposits alone taxes
+/// the careful move and reads as a punishment for playing well. Charging the trip does both at once -
+/// banking after every shift is expensive, banking at the end of a session is not - and it is what
+/// gives the safe ladder something to sell, since a withdrawal is capped by the safe and a small safe
+/// therefore means more trips to fund the same buy.
+/// </summary>
+public sealed class BankOptions
+{
+    /// <summary>
+    /// Turns for one trip. Two against a twenty-turn shift is roughly a tenth on top of banking after
+    /// every action and nothing at all on banking twice a night, which is the difference the charge
+    /// exists to create.
+    /// </summary>
+    public int TripTurnCost { get; set; } = 2;
+
+    /// <summary>
+    /// How long you are still counted as standing at the counter. Without it, depositing and then
+    /// realising you overshot costs two trips, and the game charges a player for a typo.
+    ///
+    /// The window is fixed rather than sliding: it opens when a trip is paid for and is not pushed
+    /// along by the free moves inside it. A sliding one would turn a single payment into permanent
+    /// free banking for anyone willing to move money every few minutes.
+    /// </summary>
+    public int TripGraceMinutes { get; set; } = 5;
 }
 
 public sealed class MuleOptions

@@ -193,8 +193,8 @@ public sealed class BotSimulationService(
             "buy" => ("STORE", 0, economy.BuyStoreItem(bot, request.Item, Quantity(request))),
             "hire" => ("CREW", 0, economy.HireCrew(bot, request.Role, Quantity(request))),
             "fire" => ("CREW", 0, economy.FireCrew(bot, request.Role, Quantity(request))),
-            "deposit" => ("BANK", 0, economy.Deposit(bot, request.Amount ?? 0)),
-            "withdraw" => ("BANK", 0, economy.Withdraw(bot, request.Amount ?? 0)),
+            "deposit" => ("BANK", 0, economy.Deposit(bot, request.Amount ?? 0, nowUtc)),
+            "withdraw" => ("BANK", 0, economy.Withdraw(bot, request.Amount ?? 0, nowUtc)),
             "recover" => ("HIDEOUT", 0, economy.RecoverCrewMorale(bot, request.Strategy)),
             "upgrade" => ("HIDEOUT", 0, hideouts.Upgrade(bot, request.Room, nowUtc)),
             "attack" => ("ATTACK", 0, await AttackAsync(bot, request, nowUtc, ct)),
@@ -203,7 +203,10 @@ public sealed class BotSimulationService(
         };
 
         // Marked as directed rather than "AI:", so the activity trail does not claim the brain chose it.
-        AddLog(bot, before, logAction, turnsSpent, nowUtc, $"AI (directed): {result.Summary}");
+        // A zero here means the action did not know its cost up front rather than that it was free: a
+        // trip to the bank prices itself, and the breakdown is where the number it settled on lives.
+        AddLog(bot, before, logAction, turnsSpent == 0 ? Support.ActionLogging.TurnsSpentIn(result) : turnsSpent,
+            nowUtc, $"AI (directed): {result.Summary}");
         await db.SaveChangesAsync(ct);
         return result;
 
@@ -1223,10 +1226,35 @@ public sealed class BotSimulationService(
     {
         var reserve = Math.Max(3_000, (long)(bot.Hoes + bot.Thugs) * 250);
         var excess = bot.Cash - reserve;
-        if (excess < brain.DepositMinimumExcess)
+        if (excess < WorthATripToTheBank(bot, brain))
             return 0;
 
-        return TryAction(bot, "BANK", 0, actionTimeUtc, () => economy.Deposit(bot, Math.Max(1, (long)Math.Round(excess * brain.DepositShare))));
+        return TryAction(bot, "BANK", 0, actionTimeUtc, () => economy.Deposit(bot, Math.Max(1, (long)Math.Round(excess * brain.DepositShare)), actionTimeUtc));
+    }
+
+    /// <summary>
+    /// The least a pile has to be worth before a rival will spend turns banking it.
+    ///
+    /// Priced at a multiple of its own fare, which the personality decides: a Banker walks for four
+    /// times the cost of the walk and a Hard Charger will not move for less than twenty-two. The fare
+    /// is what those turns would have earned on the street instead, so it scales with the crew for
+    /// the same reason a turn does - a house with two hundred hoes earns it back in a moment and one
+    /// with three does not.
+    ///
+    /// Computed from the trip cost rather than written down beside it, so that an admin moving
+    /// Bank.TripTurnCost moves what the rivals think a trip is worth along with it. The flat sums
+    /// this replaced went stale the moment banking stopped being free, and would have gone stale
+    /// again the first time that setting was touched.
+    ///
+    /// What falls out of it is that rivals hold a float now rather than banking every loose note,
+    /// which is worth having on its own: a house with nothing on the premises is a house nobody has
+    /// any reason to raid.
+    /// </summary>
+    private long WorthATripToTheBank(Player bot, BotBrain brain)
+    {
+        var street = _options.StreetAction;
+        var perTurn = street.BaseGrossPerTurn + (long)bot.Hoes * street.HoeGrossPerTurn.Min;
+        return Math.Max(0, _options.Bank.TripTurnCost) * perTurn * Math.Max(1, brain.DepositTripWorthMultiple);
     }
 
     private int AvailableTurnBudget(Player bot, BotBrain brain)
@@ -1264,7 +1292,8 @@ public sealed class BotSimulationService(
         try
         {
             var result = resolve();
-            AddLog(bot, before, action, turnsSpent, actionTimeUtc, $"AI: {result.Summary}");
+            AddLog(bot, before, action, turnsSpent == 0 ? Support.ActionLogging.TurnsSpentIn(result) : turnsSpent,
+                actionTimeUtc, $"AI: {result.Summary}");
             return 1;
         }
         catch (GameRuleException)

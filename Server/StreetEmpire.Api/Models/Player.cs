@@ -13,6 +13,16 @@ public sealed class Player
     public long Cash { get; set; }
     public long BankCash { get; set; }
 
+    /// <summary>
+    /// When this player last paid for a trip to the bank, or null for one who has never been.
+    ///
+    /// Moves within the grace window after it are free, so one visit is one charge however many times
+    /// money changes hands during it. Only a paid trip writes this: refreshing it on the free moves
+    /// inside the window would turn a single payment into permanent free banking for anyone willing
+    /// to move money every few minutes.
+    /// </summary>
+    public DateTime? LastBankedAtUtc { get; set; }
+
     // Turn bank
     public int Turns { get; set; }
     public DateTime LastTurnUpdateUtc { get; set; } = DateTime.UtcNow;

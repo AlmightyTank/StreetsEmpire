@@ -1893,6 +1893,7 @@ The configurable tables now include:
 - `Combat` turn costs, travel timers, cooldowns, defender protection, power randomness, loot rates, and loss rates
 - `AntiFarm` net worth floor and ratio, loot decay, protection escalation, and the incoming attack cap
 - `Hideout` tiers, storage rooms, safes, labs, and the offline production ceiling
+- `Bank` what a trip to the bank costs in turns, and how long after a paid one moves are still free
 - `WorldNews` feed size, window, and the money and crew thresholds that make an action newsworthy
 
 ## Verification

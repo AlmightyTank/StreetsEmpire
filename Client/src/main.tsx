@@ -234,8 +234,8 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
     target: 'market-trade',
     title: 'Buying and selling',
     body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
-      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not, which is the cheapest '
-      + 'insurance in the game.',
+      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not. '
+      + 'The trip costs turns, so it is a move you make with a full safe rather than after every shift.',
   },
   {
     page: 'recon',
@@ -6335,14 +6335,56 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className,
    */
   wide?: boolean
 }) {
+  // Free while the player is still at the counter from a trip they have already paid for. Read as a
+  // value rather than asserted non-null at the point of use, so a response without the field renders
+  // the charged case rather than a countdown to an invalid date.
+  const freeUntil = dashboard.bankTripFreeUntilUtc
+  const free = !!freeUntil
+  const fare = free ? 0 : dashboard.bankTripTurnCost
+  const cannotAfford = dashboard.turns < fare
+
+  /*
+    What the safe has room for, which is a different limit from what the bank is holding.
+
+    The server refuses a withdrawal that would not fit rather than clamping it, so offering the whole
+    balance here would be offering a button that cannot work - and now that the trip is charged before
+    the money moves, finding that out costs turns. The bank page is also the one place a player meets
+    their safe as a wall rather than as a line on the hideout screen, so it is worth naming.
+  */
+  const safeRoom = Math.max(0, dashboard.hideout.maxCash - dashboard.cash)
+
+  const fareLabel = fare === 0 ? '' : ` (${fare} ${fare === 1 ? 'turn' : 'turns'})`
+  // The charge is a live setting an admin can turn off, and a panel announcing "0 turns a trip" would
+  // be reporting a rule that is not running. With it off this reads exactly as it did before.
+  const charged = dashboard.bankTripTurnCost > 0
+
   return <section className={`card p-3 ${wide ? 'gcol-full' : ''} ${className ?? ''}`}>
-    <div className="panel-title"><h2>Bank</h2><span>Cash handling</span></div>
+    <div className="panel-title"><h2>Bank</h2><span>{!charged ? 'Cash handling' : free ? 'Still at the counter' : `${dashboard.bankTripTurnCost} turns a trip`}</span></div>
     <div className={wide ? 'd-grid gtc-1 gtc-lg-2 gap-3 align-items-center' : ''}>
-      <p className={wide ? 'mb-0' : ''}>Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+      <div className={wide ? 'mb-0' : ''}>
+        <p className="mb-1">Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
+        <p className="text-body-tertiary small mb-0">
+          {!charged
+            ? <>Your safe has room for {money.format(safeRoom)} more cash on hand.</>
+            : freeUntil
+              ? <>You are still at the bank, so moves are free for another {timeUntil(freeUntil)}.</>
+              : <>A trip costs {dashboard.bankTripTurnCost} {dashboard.bankTripTurnCost === 1 ? 'turn' : 'turns'}, and everything you move while you are there is on the same trip. Your safe has room for {money.format(safeRoom)} more.</>}
+        </p>
+      </div>
       <div className="control-row">
         <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
-        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.cash} onClick={() => void act(() => api.deposit(bankAmount))}>Deposit</button>
-        <button className="btn btn-secondary" disabled={busy || bankAmount < 1 || bankAmount > dashboard.bankCash} onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw</button>
+        <button
+          className="btn btn-secondary"
+          disabled={busy || cannotAfford || bankAmount < 1 || bankAmount > dashboard.cash}
+          title={cannotAfford ? `A trip to the bank costs ${fare} turns.` : undefined}
+          onClick={() => void act(() => api.deposit(bankAmount))}>Deposit{fareLabel}</button>
+        <button
+          className="btn btn-secondary"
+          disabled={busy || cannotAfford || bankAmount < 1 || bankAmount > dashboard.bankCash || bankAmount > safeRoom}
+          title={cannotAfford
+            ? `A trip to the bank costs ${fare} turns.`
+            : bankAmount > safeRoom ? `Your safe only has room for ${money.format(safeRoom)} more.` : undefined}
+          onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw{fareLabel}</button>
       </div>
     </div>
   </section>

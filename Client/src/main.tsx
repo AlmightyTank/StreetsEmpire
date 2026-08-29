@@ -4338,9 +4338,23 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     && (method.key !== 'poach' || (poachCoke > 0 && poachCoke <= dashboard.coke))
   return <div className="card p-3 gcol-full">
     <div className="panel-title" data-tour="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
-    <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
+    <form className="d-grid gtc-1 gtc-md-1-auto-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
       <label className="field">Search<input className="form-control" value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
       <button className="btn btn-secondary btn-sm" disabled={busy}>Search</button>
+      {/*
+        Your own card, from the one screen where the numbers on it mean something. Attack and defence
+        were readable for every player in the game except the one reading them, which made judging a
+        target a matter of guessing at your own half of the comparison.
+
+        The same endpoint and the same card - the server already knew what this was, answering with an
+        eligibility of "Self" and every strike blocked, and nothing had ever asked it.
+      */}
+      <button
+        className="btn btn-outline-secondary btn-sm"
+        type="button"
+        disabled={busy}
+        onClick={() => onInspect(currentPlayerId)}
+      >Your card</button>
     </form>
     <div className="d-grid gtc-1 gtc-xl-split-80 gap-3 align-items-start">
       <div className="d-grid gap-2">
@@ -4362,7 +4376,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <b className="text-body">{money.format(target.netWorth)}</b>
         </button>)}
       </div>
-      {profile && <div className="border rounded bg-body-secondary p-3">
+      {profile && (() => { const isSelf = profile.playerId === currentPlayerId; return <div className="border rounded bg-body-secondary p-3">
         {profile.profileBanner !== 'None'
           && <div className={`profile-banner ${bannerClass(profile.profileBanner)} mb-3`} aria-hidden="true" />}
         <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
@@ -4402,7 +4416,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           >{profile.canMessage ? 'Message' : 'Closed'}</button>
           {/* Silences them. Says so plainly, because a player who thinks this also keeps them from
               raiding the house will find out the hard way and blame the button. */}
-          <button
+          {!isSelf && <button
             className="btn btn-secondary btn-sm"
             type="button"
             title="Stops them writing to you and hides them from your rooms. It does not stop them attacking you."
@@ -4412,10 +4426,15 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
                 window.dispatchEvent(new CustomEvent('street-empire:blocked'))
               } catch { /* the profile shows its own errors elsewhere */ }
             })()}
-          >Block</button>
+          >Block</button>}
           <b className="text-primary fs-5">#{profile.rank}</b>
         </div>
-        <AttackMethodPicker
+        {isSelf
+          ? <p className="text-body-tertiary small">
+            This is your own card, exactly as anybody who looks you up sees it - which is also what the
+            privacy settings on your account page decide.
+          </p>
+          : <><AttackMethodPicker
           methods={dashboard.attackMethods}
           selected={attackMethod}
           turns={dashboard.turns}
@@ -4495,6 +4514,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
                   activeOutgoingMissions[0],
                   methodReady))}</span>
         </div>
+        </>}
         <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
           <AdminMetric label="Net worth" value={money.format(profile.netWorth)} />
           <AdminMetric label="Cash" value={money.format(profile.cash)} />
@@ -4508,7 +4528,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
           <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
           {/* Coverage says how many are armed; the rack says how hard that is going to hit back. */}
-          <StatusRow label="Their guns" value={rackSummary(profile.weaponRack)} />
+          <StatusRow label={isSelf ? 'Your guns' : 'Their guns'} value={rackSummary(profile.weaponRack)} />
           <StatusRow
             label="Firepower"
             value={`${profile.combatReadiness.firepower} pistols`}
@@ -4538,11 +4558,15 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
             they did not choose to say.
           */}
           {profile.activityHidden
-            ? <p className="text-body-tertiary small mt-3 mb-0">They keep their recent activity private.</p>
+            ? <p className="text-body-tertiary small mt-3 mb-0">
+              {isSelf
+                ? 'You keep your recent activity private, so nobody else sees this list.'
+                : 'They keep their recent activity private.'}
+            </p>
             : profile.publicActivity.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No public activity yet.</p>}
           <ActivityList entries={profile.publicActivity} />
         </div>
-      </div>}
+      </div> })()}
     </div>
   </div>
 }

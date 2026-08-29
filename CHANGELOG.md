@@ -71,6 +71,12 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **You can look at your own card.** Attack and defence were readable for every player in the game
+  except the one reading them, so judging a target meant guessing at your own half of the comparison.
+  "Your card" on the combat screen opens the same card, from the same endpoint, showing exactly what
+  anybody looking you up sees - which is also what the privacy settings now decide. The attack machinery
+  and the block button are not drawn on it: the server already answers with an eligibility of "Self" and
+  every strike blocked, so a picker that exists only to be refused would be a worse answer than none.
 - **The two biggest tables now have a retention.** Chat, verification codes, closed assist calls,
   transfer records, standing snapshots and sessions were all being swept; the action log and the combat
   log - every action by every player and bot, and every fight - were not, and they are the two that grow

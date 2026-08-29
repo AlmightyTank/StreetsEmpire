@@ -90,6 +90,7 @@ internal static class CombatEndpoints
             CombatResolutionService combatResolver,
             StreetStrikeService strikes,
             TitleService titles,
+            IntelService intel,
             CancellationToken ct) =>
         {
             var viewer = await current.GetAsync(ct);
@@ -151,6 +152,7 @@ internal static class CombatEndpoints
             return Results.Ok(ToProfileResponse(
                 target, activity, now, viewer, gameOptions.Value,
                 await DirectMessages.PactAlliesAsync(db, viewer?.AllianceId, ct),
+                await DescribeIntelAsync(intel, gameOptions.Value, viewer, playerId, now, ct),
                 recentAttacksMade, recentDefenses, laneReadyAt,
                 // Plunder, not net worth: this is the anti-farm gate, and it weighs what can be taken.
                 // It said CalculateNetWorth here, so a profile judged the viewer on a sum that included
@@ -162,6 +164,34 @@ internal static class CombatEndpoints
                 blockers));
         }).RequireAuthorization();
 
+
+        // Sending somebody to look at a house. Costs turns, and what comes back is decided by the
+        // intelligence centre at the moment of looking - see IntelService.
+        app.MapPost("/api/game/players/{playerId:guid}/scout", async (
+            Guid playerId,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            IntelService intel,
+            CancellationToken ct) =>
+        {
+            var viewer = await current.GetAsync(ct);
+            if (viewer is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            // Turns accrue on a clock, so they are brought up to date before any are spent.
+            await clock.AdvanceAsync(viewer, now, db, ct);
+
+            var subject = await db.Players.AsNoTracking().SingleOrDefaultAsync(x => x.Id == playerId, ct);
+            if (subject is null) return Results.NotFound(new { error = "Player not found." });
+
+            if (await intel.ScoutAsync(viewer, subject, now, ct) is { } refusal)
+                return Results.BadRequest(new { error = refusal });
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new ActionResultResponse(
+                $"Your people had a look at {subject.Name}'s place.", viewer.Turns, null));
+        }).RequireAuthorization();
 
         app.MapGet("/api/game/combat/logs", async (
             CurrentPlayerService current,
@@ -552,4 +582,26 @@ internal static class CombatEndpoints
             }
         }).RequireAuthorization();
     }
+
+    /// <summary>
+    /// What this viewer knows, and what a fresh look would be worth. Both numbers, because the gap
+    /// between them is the entire argument for spending the turns on another one.
+    /// </summary>
+    private static async Task<IntelResponse> DescribeIntelAsync(
+        IntelService intel, GameOptions options, Player? viewer, Guid subjectId, DateTime nowUtc, CancellationToken ct)
+    {
+        var cost = options.Hideout.Intel.ScoutTurnCost;
+        var hours = options.Hideout.Intel.FreshHours;
+        if (viewer is null) return new IntelResponse(0, 0, null, false, cost, hours);
+
+        var known = await intel.KnownLevelAsync(viewer, subjectId, nowUtc, ct);
+        return new IntelResponse(
+            known,
+            options.Hideout.LevelOfIntelligence(viewer.Hideout),
+            await intel.LastLookedAtUtcAsync(viewer.Id, subjectId, ct),
+            known > 0,
+            cost,
+            hours);
+    }
 }
+

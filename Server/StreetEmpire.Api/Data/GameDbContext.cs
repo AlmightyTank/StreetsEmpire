@@ -9,6 +9,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<PlayerSession> Sessions => Set<PlayerSession>();
     public DbSet<RecoveryCode> RecoveryCodes => Set<RecoveryCode>();
+    public DbSet<HideoutIntel> HideoutIntel => Set<HideoutIntel>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GameActionLog> ActionLogs => Set<GameActionLog>();
     public DbSet<CombatLog> CombatLogs => Set<CombatLog>();
@@ -93,6 +94,26 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
 
             entity.Property(x => x.IpAddress).HasMaxLength(45);
             entity.Property(x => x.UserAgent).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<HideoutIntel>(entity =>
+        {
+            // One row per pair, overwritten each time somebody looks again. The unique index is the rule
+            // rather than a hint: two rows for one pair would be two answers to a question with one.
+            entity.HasIndex(x => new { x.ViewerId, x.SubjectId }).IsUnique();
+
+            entity.HasOne(x => x.Viewer)
+                .WithMany()
+                .HasForeignKey(x => x.ViewerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The subject's deletion must not cascade into the viewer's rows twice over - Postgres
+            // refuses two cascade paths to the same table - so the notes somebody kept on a player who
+            // has left are cleared rather than cascaded.
+            entity.HasOne(x => x.Subject)
+                .WithMany()
+                .HasForeignKey(x => x.SubjectId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<RecoveryCode>(entity =>

@@ -89,6 +89,7 @@ builder.Services.AddScoped<IPasswordHasher<PlayerAccount>, PasswordHasher<Player
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
 // false until a client id and secret arrive from user-secrets or the environment.
 builder.Services.AddScoped<RecoveryCodes>();
+builder.Services.AddScoped<IntelService>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection("Auth:Discord"));
 builder.Services.AddHttpClient<DiscordAuthService>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<DiscordTickets>();

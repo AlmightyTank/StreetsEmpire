@@ -4367,6 +4367,22 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
  * prop passed through components that have no other interest in it. The app is already using window
  * events for exactly this shape of thing: opening a conversation, and blocking somebody.
  */
+/** What a row says when nobody has been sent to look. A dash, not a zero: a zero is a claim. */
+const UNKNOWN = '—'
+
+/** What a strike's advice says when the house it describes has not been looked at. */
+const NOT_SCOUTED = 'You have not looked inside. Scout them to find out what is in there.'
+
+/**
+ * The rungs of the intelligence ladder, matching IntelLevels on the server.
+ *
+ * Two copies of a disclosure rule would be one that eventually shows something the server thought it
+ * was hiding - so the server nulls the field and this only decides what to write in the gap. The one
+ * place it needs the number is where a field is not nullable and the absence has to be inferred: the
+ * rack is an empty list either way, and protection and the day's fighting are on the status object.
+ */
+const INTEL = { fightingWeight: 1, armoury: 2, stock: 3, morale: 4 }
+
 function PlayerName({ playerId, children, className }: {
   playerId: string | null | undefined
   children: ReactNode
@@ -4397,6 +4413,9 @@ function PlayerProfileDialog({ playerId, currentPlayerId, onClose }: {
 }) {
   const [profile, setProfile] = useState<PlayerProfile | null>(null)
   const [error, setError] = useState('')
+  // Bumped when something the card describes has changed under it, which is the only way a refetch
+  // gets asked for while the same player stays open.
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let stale = false
@@ -4409,7 +4428,7 @@ function PlayerProfileDialog({ playerId, currentPlayerId, onClose }: {
     })()
     // Guards the race where somebody opens two names quickly: the slower answer must not land last.
     return () => { stale = true }
-  }, [playerId])
+  }, [playerId, reload])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -4428,7 +4447,11 @@ function PlayerProfileDialog({ playerId, currentPlayerId, onClose }: {
               ? <p className="text-body-tertiary mb-0">Looking them up.</p>
               : <>
                 <PlayerCardHeader profile={profile} isSelf={profile.playerId === currentPlayerId} />
-                <PlayerCardStats profile={profile} isSelf={profile.playerId === currentPlayerId} />
+                <PlayerCardStats
+                  profile={profile}
+                  isSelf={profile.playerId === currentPlayerId}
+                  onScouted={() => setReload(n => n + 1)}
+                />
               </>}
           <button className="btn btn-secondary mt-3" type="button" onClick={onClose}>Close</button>
         </div>
@@ -4506,42 +4529,124 @@ function PlayerCardHeader({ profile, isSelf }: { profile: PlayerProfile, isSelf:
   </>
 }
 
-function PlayerCardStats({ profile, isSelf }: { profile: PlayerProfile, isSelf: boolean }) {
+/**
+ * Why the card is half blank, and the button that fixes it.
+ *
+ * Both numbers are shown - what the last look was worth and what a look would be worth now - because
+ * neither means anything alone. "Level 1" is not an answer to "why can I not see their morale"; "level
+ * 1, and your centre is level 3" is.
+ */
+function IntelBand({ profile, onScouted }: { profile: PlayerProfile, onScouted?: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const { level, yourCentreLevel, gatheredAtUtc, fresh, scoutTurnCost, freshHours } = profile.intel
+
+  const scout = async () => {
+    setBusy(true); setError('')
+    try {
+      await api.scoutPlayer(profile.playerId)
+      onScouted?.()
+    } catch (e) { setError((e as Error).message) }
+    finally { setBusy(false) }
+  }
+
+  const said = yourCentreLevel < 1
+    ? 'You have no intelligence centre, so there is nobody to send. Build one at the hideout.'
+    : !fresh && gatheredAtUtc
+      ? `You looked on ${new Date(gatheredAtUtc).toLocaleDateString()} and it has gone cold. Intelligence keeps for ${freshHours} hours.`
+      : !fresh
+        ? 'Nobody has been inside. Everything below is guesswork until somebody has.'
+        : level < yourCentreLevel
+          ? `Scouted at level ${level}. Your centre is level ${yourCentreLevel} now - another look would bring back more.`
+          : `Scouted at level ${level}, good for ${freshHours} hours.`
+
+  return <div className={`d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded p-2 mb-3 ${fresh ? 'bg-body-tertiary' : 'border-warning-subtle'}`}>
+    <small className="min-w-0 text-body-secondary">{error || said}</small>
+    {yourCentreLevel >= 1 && <button
+      className="btn btn-outline-primary btn-sm"
+      type="button"
+      disabled={busy}
+      onClick={() => void scout()}
+    >{busy ? 'Looking...' : `Scout (${scoutTurnCost} turn${scoutTurnCost === 1 ? '' : 's'})`}</button>}
+  </div>
+}
+
+function PlayerCardStats({ profile, isSelf, onScouted }: { profile: PlayerProfile, isSelf: boolean, onScouted?: () => void }) {
+  // Null all the way down when nobody has looked, which is what turns every row below into a dash
+  // rather than a number somebody would act on.
+  const fight = profile.combatReadiness
   return <>
+    {!isSelf && <IntelBand profile={profile} onScouted={onScouted} />}
       <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
         <AdminMetric label="Net worth" value={money.format(profile.netWorth)} />
         <AdminMetric label="Cash" value={money.format(profile.cash)} />
         <AdminMetric label="Bank" value={money.format(profile.bankCash)} />
-        <AdminMetric label="Attack" value={number.format(profile.combatReadiness.attackPower)} />
-        <AdminMetric label="Defence" value={number.format(profile.combatReadiness.defensePower)} />
-        <AdminMetric label="Risk" value={profile.combatReadiness.riskBand} />
+        <AdminMetric label="Attack" value={fight ? number.format(fight.attackPower) : UNKNOWN} />
+        <AdminMetric label="Defence" value={fight ? number.format(fight.defensePower) : UNKNOWN} />
+        <AdminMetric label="Risk" value={fight ? fight.riskBand : UNKNOWN} />
         <AdminMetric label="Combat" value={profile.combatStatus.eligibility} />
       </div>
       <div className="mt-3 border-top">
+        {/* Crew sizes are on the leaderboard for the top fifty of every town, so hiding them here
+            would hide nothing. Everything below them is a house's own business. */}
         <StatusRow label="Crew" value={`${profile.pimps} P / ${profile.hoes} H / ${profile.thugs} T`} />
-        <StatusRow label="Weapons" value={`${profile.combatReadiness.armedThugs}/${profile.thugs} armed`} warn={profile.combatReadiness.uncoveredThugs > 0} />
+        <StatusRow
+          label="Weapons"
+          value={fight ? `${fight.armedThugs}/${profile.thugs} armed` : UNKNOWN}
+          warn={!!fight && fight.uncoveredThugs > 0}
+        />
         {/* Coverage says how many are armed; the rack says how hard that is going to hit back. */}
-        <StatusRow label={isSelf ? 'Your guns' : 'Their guns'} value={rackSummary(profile.weaponRack)} />
+        <StatusRow
+          label={isSelf ? 'Your guns' : 'Their guns'}
+          value={profile.intel.level >= INTEL.armoury ? rackSummary(profile.weaponRack) : UNKNOWN}
+        />
         <StatusRow
           label="Firepower"
-          value={`${profile.combatReadiness.firepower} pistols`}
-          warn={profile.combatReadiness.firepower > profile.combatReadiness.armedThugs * 1.5}
+          value={fight && profile.intel.level >= INTEL.armoury ? `${fight.firepower} pistols` : UNKNOWN}
+          warn={!!fight && profile.intel.level >= INTEL.armoury && fight.firepower > fight.armedThugs * 1.5}
         />
-        <StatusRow label="Weapon coverage" value={`${profile.combatReadiness.weaponCoveragePercent.toFixed(0)}%`} warn={profile.combatReadiness.weaponCoveragePercent < 75} />
-        <StatusRow label="Protection" value={combatProtectionText(profile.combatStatus)} warn={profile.combatStatus.isProtected} />
-        <StatusRow label="24h combat" value={`${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defences`} />
+        <StatusRow
+          label="Weapon coverage"
+          value={fight ? `${fight.weaponCoveragePercent.toFixed(0)}%` : UNKNOWN}
+          warn={!!fight && fight.weaponCoveragePercent < 75}
+        />
+        <StatusRow
+          label="Protection"
+          value={profile.intel.level >= INTEL.armoury ? combatProtectionText(profile.combatStatus) : UNKNOWN}
+          warn={profile.intel.level >= INTEL.armoury && profile.combatStatus.isProtected}
+        />
+        <StatusRow
+          label="24h combat"
+          value={profile.intel.level >= INTEL.armoury
+            ? `${profile.combatStatus.recentAttacksMade} attacks / ${profile.combatStatus.recentDefenses} defences`
+            : UNKNOWN}
+        />
+        {/* Not gated. It is the reason an attack would be refused, and a refusal you cannot see the
+            reason for is a bug rather than a secret. */}
         {profile.combatStatus.mismatchReason && <StatusRow label="Blocked" value={profile.combatStatus.mismatchReason} warn />}
         {/* What each strike is aimed at. A garage with cars in it and a house with no medicine are
-            the reads that turn the menu into a decision rather than a list. */}
-        <StatusRow label="Rides" value={profile.rides > 0 ? `${number.format(profile.rides)} parked` : 'None'} />
-        <StatusRow label="Medicine" value={profile.medicine > 0 ? `${number.format(profile.medicine)} crate(s)` : 'None'} />
+            the reads that turn the menu into a decision rather than a list - which is exactly why they
+            cost a scout. */}
+        <StatusRow label="Rides" value={profile.rides === null ? UNKNOWN : profile.rides > 0 ? `${number.format(profile.rides)} parked` : 'None'} />
+        <StatusRow label="Medicine" value={profile.medicine === null ? UNKNOWN : profile.medicine > 0 ? `${number.format(profile.medicine)} crate(s)` : 'None'} />
         <StatusRow
           label="Hoe morale"
-          value={`${profile.hoeHappiness.toFixed(0)}%${profile.hoeHappiness >= 90 ? ' - paid too well to poach' : ''}`}
-          warn={profile.hoeHappiness < 50}
+          value={profile.hoeHappiness === null
+            ? UNKNOWN
+            : `${profile.hoeHappiness.toFixed(0)}%${profile.hoeHappiness >= 90 ? ' - paid too well to poach' : ''}`}
+          warn={profile.hoeHappiness !== null && profile.hoeHappiness < 50}
         />
-        <StatusRow label="Thug morale" value={`${profile.thugHappiness.toFixed(0)}%`} warn={profile.thugHappiness < 50} />
-        <StatusRow label="Product" value={`${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`} />
+        <StatusRow
+          label="Thug morale"
+          value={profile.thugHappiness === null ? UNKNOWN : `${profile.thugHappiness.toFixed(0)}%`}
+          warn={profile.thugHappiness !== null && profile.thugHappiness < 50}
+        />
+        <StatusRow
+          label="Product"
+          value={profile.weed === null || profile.coke === null
+            ? UNKNOWN
+            : `${number.format(profile.weed)} weed / ${number.format(profile.coke)} coke`}
+        />
       </div>
       <div className="mt-3 border-top pt-3">
         <strong className="d-block mb-1 text-primary">Public Activity</strong>
@@ -4740,7 +4845,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
                   methodReady))}</span>
         </div>
         </>}
-        <PlayerCardStats profile={profile} isSelf={isSelf} />
+        <PlayerCardStats profile={profile} isSelf={isSelf} onScouted={() => onInspect(profile.playerId)} />
       </div> })()}
     </div>
   </div>
@@ -4797,12 +4902,16 @@ function strikeNote(method: AttackMethod, profile: PlayerProfile, dashboard: Das
       if (profile.rides === 0) return 'Nothing parked there to take.'
       // Both halves of the guard, because both stop you and they stop you differently: bodies are eyes
       // on the door, guns are what happens once you are seen.
+      // The advice is intelligence too. Describing their garage to somebody who has not looked in it
+      // would hand back through the narrative exactly what the card refuses to show.
+      if (!profile.combatReadiness || profile.rides === null) return NOT_SCOUTED
       const armed = profile.combatReadiness.armedThugs
       const heavy = profile.combatReadiness.firepower > armed
       const guns = heavy ? rackSummary(profile.weaponRack).toLowerCase() : 'sidearms'
       return `${profile.rides} parked behind ${armed} armed thug(s) carrying ${guns}. Room for ${Math.max(0, dashboard.hideout.maxRides - dashboard.rides)} more in your garage.`
     }
     case 'infest': {
+      if (profile.medicine === null) return NOT_SCOUTED
       const covered = profile.medicine * 3
       // Your own doses are half the arithmetic now: you reach as far as you brought poison for, so a
       // note that only described their medicine would be describing half the fight.
@@ -4814,6 +4923,7 @@ function strikeNote(method: AttackMethod, profile: PlayerProfile, dashboard: Das
         + `Your ${dashboard.poison} dose(s) reach ${reach} of them, and whatever the medicine cannot treat is gone.`
     }
     case 'poach':
+      if (profile.hoeHappiness === null) return NOT_SCOUTED
       return profile.hoeHappiness >= 90
         ? 'Their house is paid too well. Nobody is going anywhere at any price.'
         : `Their morale is ${profile.hoeHappiness.toFixed(0)}%, and yours is ${dashboard.cokePurityPercent}% pure. ${poachCoke > dashboard.coke ? 'You do not hold that much coke.' : 'The coke goes out whether or not anyone comes back with you.'}`

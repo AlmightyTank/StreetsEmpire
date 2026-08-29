@@ -421,6 +421,7 @@ public sealed record DashboardResponse(
     /// <summary>Guns of every kind, which is the coverage number: one gun covers one thug.</summary>
     int Weapons,
     /// <summary>And which guns they are, since that is what decides a fight.</summary>
+    /// <summary>Empty when the rack has not been scouted, which the intel block distinguishes from bare.</summary>
     IReadOnlyList<WeaponTierResponse> WeaponRack,
     int Medicine,
     /// <summary>Doses on the shelf. What it costs you to infest somebody else's house.</summary>
@@ -622,20 +623,23 @@ public sealed record PlayerProfileResponse(
     IReadOnlyList<WeaponTierResponse> WeaponRack,
     /// <summary>Names they have earned today. Empty for almost everybody, which is what makes them worth having.</summary>
     IReadOnlyList<string> Titles,
-    int Rides,
+    int? Rides,
     /// <summary>
     /// Their medicine, which decides whether infesting them would achieve anything. Public on purpose:
     /// a strike whose one counter is invisible is a coin flip, and the point of the menu is that each
     /// method is a read of what the target has left uncovered.
     /// </summary>
-    int Medicine,
-    int Weed,
-    int Coke,
-    double HoeHappiness,
-    double ThugHappiness,
-    double AverageMorale,
-    CombatReadinessResponse CombatReadiness,
+    int? Medicine,
+    int? Weed,
+    int? Coke,
+    double? HoeHappiness,
+    double? ThugHappiness,
+    double? AverageMorale,
+    /// <summary>Null until somebody has been sent to look. Everything on it is scouted, not published.</summary>
+    CombatReadinessResponse? CombatReadiness,
     CombatStatusResponse CombatStatus,
+    /// <summary>What this viewer knows about this house, and how they came to know it.</summary>
+    IntelResponse Intel,
     bool CanMessage,
     string? MessageBlockedReason,
     IReadOnlyList<ActivityResponse> PublicActivity,
@@ -980,6 +984,23 @@ public sealed record MoraleTrendResponse(
     string HoeDirection,
     string ThugDirection,
     int WindowHours);
+
+/// <summary>
+/// Why half this card is blank, in the terms the player can do something about.
+/// </summary>
+/// <param name="Level">What their last look was worth. Zero for never looked, or looked too long ago.</param>
+/// <param name="YourCentreLevel">
+/// What a fresh scout would be worth now. Said out loud because the gap between this and Level is the
+/// whole argument for scouting again, and neither number means anything without the other.
+/// </param>
+/// <param name="GatheredAtUtc">Null when they have never looked. Stale intel keeps its date and loses its level.</param>
+public sealed record IntelResponse(
+    int Level,
+    int YourCentreLevel,
+    DateTime? GatheredAtUtc,
+    bool Fresh,
+    int ScoutTurnCost,
+    int FreshHours);
 
 public sealed record CombatReadinessResponse(
     int AttackPower,

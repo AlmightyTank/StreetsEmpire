@@ -704,6 +704,15 @@ public sealed class HideoutOptions
     public List<IntelligenceLevelOptions> Intelligence { get; set; } = [];
     public List<LookoutLevelOptions> Lookout { get; set; } = [];
 
+    /// <summary>What scouting somebody else's house costs, and how long the answer is worth having.</summary>
+    public IntelOptions Intel { get; set; } = new();
+
+    /// <summary>
+    /// The intelligence centre level, or zero. Here rather than in the service that asks, because the
+    /// question "how much of a building does this player have" is the options' to answer.
+    /// </summary>
+    public int LevelOfIntelligence(Hideout? hideout) => hideout?.IntelligenceLevel ?? 0;
+
     /// <summary>
     /// How much notice each contraband good draws per unit held. Weighted rather than flat because
     /// they are not equally incriminating: a coke lab's output is the worst thing to be found with,

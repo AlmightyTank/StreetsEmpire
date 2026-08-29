@@ -695,6 +695,18 @@ export const profileBanners: { key: ProfileBanner; label: string }[] = [
   { key: 'Velvet', label: 'Velvet' },
 ]
 
+/** What a viewer knows about one house, and what another look would be worth. */
+export type Intel = {
+  /** What their last look was worth. 0 for never looked, or looked too long ago. */
+  level: number
+  /** What a look would be worth now, which is what their intelligence centre is. */
+  yourCentreLevel: number
+  gatheredAtUtc: string | null
+  fresh: boolean
+  scoutTurnCost: number
+  freshHours: number
+}
+
 export type PlayerProfile = PlayerTarget & {
   /** Why each strike cannot be thrown at this person, keyed by method. Absent when it can. */
   strikeBlockers: Record<string, string | undefined>
@@ -705,11 +717,19 @@ export type PlayerProfile = PlayerTarget & {
   bankCash: number
   /** What they are armed with, not merely how many. A house of rifles is a different fight. */
   weaponRack: WeaponTier[]
-  medicine: number
-  weed: number
-  coke: number
-  hoeHappiness: number
-  thugHappiness: number
+  /*
+    Null is "not scouted", not "none". A zero here would be a claim about their house that nobody has
+    earned the right to make, and it is the claim somebody would raid on.
+  */
+  medicine: number | null
+  weed: number | null
+  coke: number | null
+  hoeHappiness: number | null
+  thugHappiness: number | null
+  /** Null until somebody has been sent to look. Everything on it is scouted, not published. */
+  combatReadiness: CombatReadiness | null
+  /** Why half the card may be blank, in terms the player can act on. */
+  intel: Intel
   publicActivity: Activity[]
   /** True when they turned it off, as opposed to having done nothing yet. */
   activityHidden: boolean
@@ -1322,6 +1342,8 @@ export const api = {
   leaderboard: (city?: string) => request<LeaderboardEntry[]>(
     city ? `/api/game/leaderboard?city=${encodeURIComponent(city)}` : '/api/game/leaderboard'),
   targets: (query = '') => request<PlayerTarget[]>(`/api/game/targets${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+  scoutPlayer: (playerId: string) =>
+    request<ActionResult>(`/api/game/players/${encodeURIComponent(playerId)}/scout`, { method: 'POST' }),
   playerProfile: (playerId: string) => request<PlayerProfile>(`/api/game/players/${encodeURIComponent(playerId)}/profile`),
   combatLogs: () => request<CombatLog[]>('/api/game/combat/logs'),
   combatMissions: () => request<CombatMission[]>('/api/game/combat/missions'),

@@ -71,6 +71,21 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **A rival's numbers have to be scouted now.** Their guns, their morale, what is in the safe, what they
+  hit for - all of it was simply true and free, so a raid was arithmetic anybody could do off the target
+  list without spending anything. It costs turns and an intelligence centre, and it goes cold after six
+  hours, because a scout you can do once and read for ever is not a scout.
+- What comes back depends on the centre: level 1 is how hard they hit, 2 adds what they hit with, 3 adds
+  what is worth taking off them, and 4 adds where they are soft. Morale is last on purpose - it is what
+  a poach is aimed at, so it is the sharpest thing on the card.
+- The level is stamped at the moment of looking rather than read back live, so upgrading the building
+  does not retroactively sharpen a scout you ran last week. The card says so: it shows what your last
+  look was worth *and* what a look would be worth now, because neither number means anything alone.
+- Unknown is a dash, never a zero. A zero would be a claim about somebody's house - "they have no
+  medicine" - and it is exactly the claim an attacker would act on. The strike advice is gated the same
+  way, since describing their garage in a sentence would hand back what the table refuses to show.
+- This finally gives the intelligence centre something to do besides mule runs, which is what it had
+  been since it was built.
 - **A name is something you can open.** Anywhere another player is named - the leaderboard, the news
   feed, a chat line, a crew roster, a transfer record, the titles board - clicking the name opens their
   card over whatever you were looking at. The same card the combat screen shows, from the same endpoint,

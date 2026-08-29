@@ -195,6 +195,7 @@ var tests = new (string Name, Action Test)[]
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
     ("a recovery code is read the way it looks on paper", ARecoveryCodeIsReadTheWayItLooks),
+    ("intelligence goes cold, and your own house never does", IntelligenceGoesColdAndYourOwnHouseNever),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2432,6 +2433,39 @@ static void EveryAlertKindAnswersToASwitch()
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
     AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+}
+
+static void IntelligenceGoesColdAndYourOwnHouseNever()
+{
+    // A rival's card is blank until somebody has been sent to look, and goes blank again when what they
+    // brought back stops being current. The window is the whole mechanic: without it a single scout
+    // would buy a permanent read of somebody's house.
+    var options = new IntelOptions { FreshHours = 6 };
+    var now = new DateTime(2026, 8, 28, 12, 0, 0, DateTimeKind.Utc);
+
+    AssertTrue(IntelService.IsFresh(new HideoutIntel { GatheredAtUtc = now.AddHours(-1) }, now, options),
+        "an hour old is still worth having");
+    AssertTrue(IntelService.IsFresh(new HideoutIntel { GatheredAtUtc = now.AddHours(-5).AddMinutes(-59) }, now, options),
+        "just inside the window still counts");
+    AssertTrue(!IntelService.IsFresh(new HideoutIntel { GatheredAtUtc = now.AddHours(-6) }, now, options),
+        "at the window it has gone");
+    AssertTrue(!IntelService.IsFresh(new HideoutIntel { GatheredAtUtc = now.AddDays(-7) }, now, options),
+        "last week is a rumour, not intelligence");
+
+    // A misconfigured window must not become "for ever". Zero hours clamps to one rather than making
+    // every scout in the game permanent, which is the direction this fails safely in.
+    var zero = new IntelOptions { FreshHours = 0 };
+    AssertTrue(IntelService.IsFresh(new HideoutIntel { GatheredAtUtc = now.AddMinutes(-30) }, now, zero),
+        "clamped to an hour, so a fresh look still reads");
+    AssertTrue(!IntelService.IsFresh(new HideoutIntel { GatheredAtUtc = now.AddHours(-2) }, now, zero),
+        "and two hours is still gone");
+
+    // The ladder climbs, and a player's own house sits above all of it - your own numbers are never
+    // something you have to go and find out.
+    AssertTrue(IntelLevels.FightingWeight < IntelLevels.Armoury, "the rack costs more than the weight");
+    AssertTrue(IntelLevels.Armoury < IntelLevels.Stock, "what is in the house costs more than the guns");
+    AssertTrue(IntelLevels.Stock < IntelLevels.Morale, "and where they are soft costs the most");
+    AssertTrue(IntelLevels.Everything > IntelLevels.Morale, "your own house is above every rung");
 }
 
 static void ARecoveryCodeIsReadTheWayItLooks()

@@ -84,6 +84,29 @@ public sealed class TitleService(GameDbContext db, IOptionsSnapshot<GameOptions>
         => board.Where(x => x.PlayerId == playerId).Select(x => x.Title).ToList();
 
     /// <summary>
+    /// The same list with one title pulled to the front - the one this player chose to lead with, when
+    /// they still hold it.
+    ///
+    /// Pulled forward rather than shown alone. Holding four titles and displaying one would be hiding
+    /// three things the player earned today, and the board is small enough that all of them fit.
+    /// </summary>
+    public static IReadOnlyList<string> For(Guid playerId, IReadOnlyList<PlayerTitleResponse> board, string? featuredKey)
+    {
+        var held = board.Where(x => x.PlayerId == playerId).ToList();
+        if (featuredKey is null) return [.. held.Select(x => x.Title)];
+
+        return
+        [
+            .. held.Where(x => x.Key == featuredKey).Select(x => x.Title),
+            .. held.Where(x => x.Key != featuredKey).Select(x => x.Title),
+        ];
+    }
+
+    /// <summary>Whether a key is one this game hands out at all, for the endpoint that takes it.</summary>
+    public static bool IsTitleKey(string key)
+        => TitleCategories.All.Any(x => x.Key == key);
+
+    /// <summary>
     /// Whoever leads a category, if anybody does by enough to be worth naming.
     ///
     /// Ties break on the name rather than the value, which is arbitrary but stable: two players level on

@@ -1125,6 +1125,8 @@ export type Account = {
   profileLocation: string | null
   profileAccent: 'Gold' | 'Teal' | 'Rose' | 'Steel'
   profileBanner: ProfileBanner
+  /** The title key they lead with, held or not. What they hold today comes from `myTitles()`. */
+  featuredTitle: string | null
   showDiscordOnProfile: boolean
   directMessagePolicy: 'Everyone' | 'Alliance' | 'AllianceAndPacts' | 'Nobody'
   showActivityOnProfile: boolean
@@ -1218,6 +1220,7 @@ export const api = {
     location: string,
     accent: Account['profileAccent'],
     banner: ProfileBanner,
+    featuredTitle: string,
   ) =>
     request<Account>('/api/account/profile', {
       method: 'PUT',
@@ -1227,6 +1230,7 @@ export const api = {
         location: location || null,
         accent,
         banner,
+        featuredTitle,
       }),
     }),
   setPrivacy: (
@@ -1274,6 +1278,8 @@ export const api = {
   confirmEmail: (code: string) =>
     request<Account>('/api/account/email/verify', { method: 'POST', body: JSON.stringify({ code }) }),
   /** Ends every session on this account except the one asking. */
+  /** What this player holds right now, which is what the featured-title picker may offer. */
+  myTitles: () => request<PlayerTitle[]>('/api/account/titles'),
   sessions: () => request<PlayerSession[]>('/api/account/sessions'),
   revokeSession: (sessionId: string, currentPassword: string) =>
     request<{ revoked: boolean }>(`/api/account/sessions/${encodeURIComponent(sessionId)}/revoke`, {

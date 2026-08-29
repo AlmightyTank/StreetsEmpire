@@ -110,6 +110,17 @@ public sealed class PlayerAccount
     public string? ProfileLocation { get; set; }
     public ProfileAccent ProfileAccent { get; set; } = ProfileAccent.Gold;
     public ProfileBanner ProfileBanner { get; set; } = ProfileBanner.None;
+
+    /// <summary>
+    /// The title key this player would like shown first, or null for whatever the board hands them.
+    ///
+    /// A key rather than the title itself, because the words belong to TitleCategories and a copy here
+    /// would be a second place to rename them. Remembered even while it is not held: titles are worked
+    /// out fresh from the day's fighting and yours can be taken by somebody who had a better afternoon,
+    /// and forgetting the choice every time that happened would make this a setting nobody could keep.
+    /// It is simply not shown until you hold it again.
+    /// </summary>
+    public string? FeaturedTitle { get; set; }
     public bool ShowDiscordOnProfile { get; set; }
     public DirectMessagePolicy DirectMessagePolicy { get; set; } = DirectMessagePolicy.Everyone;
     public bool SyncDiscordAvatar { get; set; }

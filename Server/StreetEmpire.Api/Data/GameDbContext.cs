@@ -55,6 +55,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.ProfileLocation).HasMaxLength(64);
             entity.Property(x => x.ProfileAccent).HasConversion<string>().HasMaxLength(16).HasDefaultValue(ProfileAccent.Gold);
             entity.Property(x => x.ProfileBanner).HasConversion<string>().HasMaxLength(16).HasDefaultValue(ProfileBanner.None);
+            entity.Property(x => x.FeaturedTitle).HasMaxLength(32);
             // 24 rather than 16: AllianceAndPacts is sixteen characters exactly, and a column sized to
             // the longest value it has ever held is a column that refuses the next one.
             entity.Property(x => x.DirectMessagePolicy).HasConversion<string>().HasMaxLength(24);

@@ -193,6 +193,7 @@ var tests = new (string Name, Action Test)[]
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
+    ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
@@ -2430,6 +2431,43 @@ static void EveryAlertKindAnswersToASwitch()
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
     AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+}
+
+static void AChosenTitleLeadsAndSurvivesLosingIt()
+{
+    // Titles are worked out fresh from the day's fighting, so a chosen one comes and goes. The setting
+    // has to outlive that: forgetting it every time somebody had a better afternoon would make this a
+    // preference nobody could keep.
+    var me = Guid.NewGuid();
+    var somebodyElse = Guid.NewGuid();
+    var board = new List<PlayerTitleResponse>
+    {
+        new("killer", "Body Count", me, "Me", 4, "put four in the ground"),
+        new("wheelman", "Wheelman", me, "Me", 2, "drove off in two"),
+        new("robber", "Second Storey", somebodyElse, "Them", 9, "carried it out"),
+    };
+
+    // Held titles only - somebody else's is never mine, whatever I have chosen.
+    AssertEqual(2, TitleService.For(me, board, null).Count);
+
+    // No choice: whatever order the board came in.
+    AssertEqual("Body Count", TitleService.For(me, board, null)[0]);
+
+    // Chosen: it leads, and the rest still show. Holding four and displaying one would hide three
+    // things earned today, and the board is small enough that they all fit.
+    var led = TitleService.For(me, board, "wheelman");
+    AssertEqual("Wheelman", led[0]);
+    AssertEqual(2, led.Count);
+
+    // Chosen but not held today: the list is simply what is held, in its own order. Not empty, and not
+    // a gap where the missing one would have been.
+    var lost = TitleService.For(me, board, "poacher");
+    AssertEqual(2, lost.Count);
+    AssertEqual("Body Count", lost[0]);
+
+    // And the endpoint only takes keys this game hands out, since the value is stored and shown back.
+    AssertTrue(TitleService.IsTitleKey("killer"), "killer is a title");
+    AssertTrue(!TitleService.IsTitleKey("emperor"), "emperor is not");
 }
 
 static void TheSweepNeverTakesAFightInFlight()

@@ -99,8 +99,37 @@ public sealed class AllianceService(
             CreatedAtUtc = nowUtc
         };
         db.AllianceTransfers.Add(transfer);
+
+        // The receiver is told, for the same reason a market sale tells the seller: it happened to them
+        // rather than because of them. Guns and thugs arriving unannounced is the version of this that
+        // players notice a week later while wondering where their crew came from.
+        Tell(receiver, $"{sender.Name} sent you {quantity:N0} {key}.", nowUtc);
         return transfer;
     }
+
+    /// <summary>
+    /// A crew notice, for the bell. Only ever written to somebody who was not the one acting - a log of
+    /// your own doing belongs in your activity, and would make the crew switch on the account page a
+    /// switch for being told what you just did.
+    ///
+    /// Never to a bot. Ten minutes of a test world wrote 129 assist notices and 119 of them went to
+    /// accounts that will never open a bell.
+    /// </summary>
+    private void Tell(Player recipient, string summary, DateTime nowUtc)
+    {
+        if (recipient.Account?.IsBot == true) return;
+        Tell(recipient.Id, summary, nowUtc);
+    }
+
+    /// <summary>By id, for the caller that has already left the bots out of its query.</summary>
+    private void Tell(Guid recipientId, string summary, DateTime nowUtc)
+        => db.ActionLogs.Add(new GameActionLog
+        {
+            PlayerId = recipientId,
+            Action = "CREW",
+            Summary = summary,
+            CreatedAtUtc = nowUtc,
+        });
 
     /// <summary>
     /// Asks another crew for a truce. Nothing is agreed until they answer.
@@ -234,26 +263,18 @@ public sealed class AllianceService(
         // And somebody is told. The calls were being created and then waiting to be noticed: a player
         // in an allied crew had to happen to open the alliance board while the fight was still running,
         // which for most of them meant every call expired unanswered. This is the notice the bell shows.
-        // Humans only, and that is not a nicety. Ten minutes of a bot world produced 129 of these rows,
-        // 119 of them addressed to accounts that will never open a bell - permanent storage, and weight
-        // in every alert query afterwards, for nobody. Bots decide whether to answer a call by looking
-        // at the call.
+        // Humans only, and the bot filter is done in the query rather than left to Tell, because here it
+        // is the difference between fetching a handful of rows and fetching a whole world's worth. Ten
+        // minutes of a bot world produced 129 of these notices and 119 went to accounts that will never
+        // open a bell - permanent storage, and weight in every alert query afterwards, for nobody.
         var allyMembers = await db.Players.AsNoTracking()
             .Where(x => x.AllianceId != null && allyIds.Contains(x.AllianceId.Value) && !x.Account.IsBot)
-            .Select(x => new { x.Id, x.AllianceId })
+            .Select(x => new { x.Id })
             .ToListAsync(cancellationToken);
 
         foreach (var member in allyMembers)
-        {
-            db.ActionLogs.Add(new GameActionLog
-            {
-                PlayerId = member.Id,
-                Action = "CREW",
-                Summary = $"{mission.Defender.Name} is under attack and your crews have a pact. "
-                          + "Send thugs or guns from the alliance board.",
-                CreatedAtUtc = nowUtc,
-            });
-        }
+            Tell(member.Id, $"{mission.Defender.Name} is under attack and your crews have a pact. "
+                            + "Send thugs or guns from the alliance board.", nowUtc);
 
         return calls;
     }
@@ -658,6 +679,13 @@ public sealed class AllianceService(
             CreatedAtUtc = nowUtc
         };
         db.AllianceRequests.Add(request);
+
+        // Only an invitation. An application is the player walking up to the crew and asking, so telling
+        // them they did it would be telling them what they just typed - the crew's leaders are the ones
+        // who did not know, and their side of this is the alliance board.
+        if (kind == AllianceRequestKind.Invitation)
+            Tell(subject, $"{alliance.Name} invited you to join. Answer it on the alliance board.", nowUtc);
+
         return request;
     }
 

@@ -51,6 +51,12 @@ public sealed record AccountResponse(
     string? ProfileLocation,
     string ProfileAccent,
     string ProfileBanner,
+    /// <summary>
+    /// The key they chose, held or not - the picker shows it selected either way, because a title lost
+    /// this afternoon is one they may hold again tomorrow. What they currently hold is a live question
+    /// with a service behind it and is asked separately, at /api/account/titles.
+    /// </summary>
+    string? FeaturedTitle,
     bool ShowDiscordOnProfile,
     bool ShowActivityOnProfile,
     string DirectMessagePolicy,
@@ -120,7 +126,10 @@ public sealed record SessionResponse(
 public sealed record RevokeSessionsRequest(string? CurrentPassword);
 
 public sealed record ChangeAvatarRequest(string? Source);
-public sealed record ChangeProfileRequest(string? Tagline, string? Pronouns, string? Location, string? Accent, string? Banner = null);
+/// <param name="FeaturedTitle">A title key, or an empty string to lead with whatever the board hands you.</param>
+public sealed record ChangeProfileRequest(
+    string? Tagline, string? Pronouns, string? Location, string? Accent, string? Banner = null,
+    string? FeaturedTitle = null);
 public sealed record ChangePrivacyRequest(
     bool? ShowDiscordOnProfile,
     string? DirectMessagePolicy,

@@ -213,6 +213,23 @@ internal static class AccountEndpoints
         // The same machinery as a password change, offered on its own. Somebody who left themselves
         // signed in on a machine they no longer have should not have to change their password to get
         // out of it.
+        // What this player holds today, which is what the featured-title picker may offer. Its own
+        // endpoint rather than a field on the account, because it is a live answer worked out from the
+        // day's fighting - and folding it in would mean handing a title service to every endpoint that
+        // returns an account, which is most of them.
+        account.MapGet("/titles", async (
+            HttpContext http,
+            GameDbContext db,
+            TitleService titles,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current?.Player is null) return Results.Unauthorized();
+
+            var board = await titles.BoardAsync(DateTime.UtcNow, ct);
+            return Results.Ok(board.Where(x => x.PlayerId == current.Player.Id).ToList());
+        });
+
         // Where you are signed in. Active only: a revoked row is not somewhere you are signed in, and
         // the sweep is what eventually removes it.
         account.MapGet("/sessions", async (
@@ -351,6 +368,17 @@ internal static class AccountEndpoints
                 current.ProfileAccent = selectedAccent;
             if (banner is { } selectedBanner)
                 current.ProfileBanner = selectedBanner;
+
+            // An empty string clears it, which is how the picker says "whatever the board hands me".
+            // Only checked against the keys this game hands out - not against what they hold today,
+            // because holding one is a matter of the afternoon and the choice outlives it.
+            if (request.FeaturedTitle is { } featured)
+            {
+                var key = featured.Trim().ToLowerInvariant();
+                if (key.Length == 0) current.FeaturedTitle = null;
+                else if (TitleService.IsTitleKey(key)) current.FeaturedTitle = key;
+                else return Results.BadRequest(new { error = "That is not a title this game hands out." });
+            }
             await db.SaveChangesAsync(ct);
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
@@ -687,6 +715,7 @@ internal static class AccountEndpoints
             account.ProfileLocation,
             account.ProfileAccent.ToString(),
             account.ProfileBanner.ToString(),
+            account.FeaturedTitle,
             account.ShowDiscordOnProfile,
             account.ShowActivityOnProfile,
             account.DirectMessagePolicy.ToString(),

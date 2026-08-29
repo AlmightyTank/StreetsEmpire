@@ -6100,17 +6100,24 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
   const [location, setLocation] = useState(account.profileLocation ?? '')
   const [accent, setAccent] = useState<Account['profileAccent']>(account.profileAccent)
   const [banner, setBanner] = useState<ProfileBanner>(account.profileBanner)
+  const [featured, setFeatured] = useState(account.featuredTitle ?? '')
+  // What the picker may offer is what they hold today, which is a live answer rather than part of the
+  // account - see the endpoint. Empty for almost everybody, which is what makes a title worth having.
+  const [held, setHeld] = useState<PlayerTitle[]>([])
+  useEffect(() => { void (async () => { try { setHeld(await api.myTitles()) } catch { /* the picker just stays empty */ } })() }, [])
   useEffect(() => {
     setTagline(account.profileTagline ?? '')
     setPronouns(account.profilePronouns ?? '')
     setLocation(account.profileLocation ?? '')
     setAccent(account.profileAccent)
     setBanner(account.profileBanner)
-  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent, account.profileBanner])
+    setFeatured(account.featuredTitle ?? '')
+  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent,
+      account.profileBanner, account.featuredTitle])
 
   const saveProfile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    void run(() => api.setProfile(tagline.trim(), pronouns.trim(), location.trim(), accent, banner), 'Profile saved.')
+    void run(() => api.setProfile(tagline.trim(), pronouns.trim(), location.trim(), accent, banner, featured), 'Profile saved.')
   }
 
   const uploadAvatar = (event: FormEvent<HTMLFormElement>) => {
@@ -6206,6 +6213,31 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
               <small className="form-text">Behind your name when somebody opens your profile.</small>
             </label>
           </div>
+          {/*
+            Titles are worked out fresh from the day's fighting, so this offers what you hold now and
+            remembers the choice either way - one taken from you this afternoon is one you may hold
+            again tomorrow, and forgetting it every time would make this a setting nobody could keep.
+          */}
+          <label className="field">
+            Lead with
+            <select
+              className="form-select"
+              value={featured}
+              onChange={event => setFeatured(event.target.value)}
+            >
+              <option value="">Whatever I hold</option>
+              {held.map(title => <option value={title.key} key={title.key}>{title.title}</option>)}
+              {/* Their choice, still selectable, even on a day they have lost it. */}
+              {featured !== '' && !held.some(x => x.key === featured)
+                && <option value={featured}>{featured} (not held today)</option>}
+            </select>
+            <small className="form-text">
+              {held.length === 0
+                ? 'You hold no titles today. They are won by the day’s fighting, and most days nobody holds one.'
+                : 'Shown first on your card, ahead of the rest.'}
+            </small>
+          </label>
+
           {/* Shown rather than described. A named gradient means nothing until you see it. */}
           <div className={`profile-banner ${bannerClass(banner)} d-flex align-items-end p-2`}>
             <strong className={`${profileAccentClass(accent)} text-truncate`}>{account.playerName}</strong>
@@ -6217,7 +6249,8 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
                 && pronouns.trim() === (account.profilePronouns ?? '')
                 && location.trim() === (account.profileLocation ?? '')
                 && accent === account.profileAccent
-                && banner === account.profileBanner)}
+                && banner === account.profileBanner
+                && featured === (account.featuredTitle ?? ''))}
           >
             {busy ? 'Working...' : 'Save Profile'}
           </button>

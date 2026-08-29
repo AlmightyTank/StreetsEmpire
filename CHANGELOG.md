@@ -71,6 +71,16 @@
   `restart: unless-stopped` turns that into a restart loop taking no backups at all. A clone on the VPS
   was never affected, which is exactly what would have made it hard to find.
 
+- **You can choose which title leads.** Titles are worked out fresh from the day's fighting, so the
+  choice is remembered whether or not you hold it today - one taken from you this afternoon is one you
+  may hold again tomorrow, and forgetting it every time would make this a setting nobody could keep. It
+  is pulled to the front of your titles rather than shown alone: holding four and displaying one would
+  hide three things you earned.
+- **The crew switch on the bell now governs more than assist calls.** An invitation and a transfer both
+  arrive at somebody who was not there when they were sent, which is the whole definition of a
+  notification - and both used to sit unannounced until you happened to open the alliance board. An
+  application is not one: walking up to a crew and asking is something you did, and telling you about it
+  would be telling you what you just typed.
 - **You can look at your own card.** Attack and defence were readable for every player in the game
   except the one reading them, so judging a target meant guessing at your own half of the comparison.
   "Your card" on the combat screen opens the same card, from the same endpoint, showing exactly what

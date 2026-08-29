@@ -191,6 +191,8 @@ var tests = new (string Name, Action Test)[]
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
+    ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
+    ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
@@ -2019,6 +2021,7 @@ static void TheCommittedExampleHoldsNoSecrets()
         $"Auth__Discord__{nameof(DiscordOptions.ClientId)}",
         $"Auth__Discord__{nameof(DiscordOptions.ClientSecret)}",
         $"Auth__Discord__{nameof(DiscordOptions.RedirectUri)}",
+        $"Announcements__{nameof(AnnouncementOptions.DiscordWebhookUrl)}",
         $"Auth__Email__{nameof(EmailOptions.ApiKey)}",
         $"Auth__Email__{nameof(EmailOptions.FromAddress)}",
         $"Auth__Email__{nameof(EmailOptions.CodeLifetimeMinutes)}",
@@ -2637,6 +2640,133 @@ static void ANewColumnDoesNotSwitchAnythingOff()
     var fresh = new PlayerAccount();
     AssertTrue(fresh.ShowActivityOnProfile, "a new account shows its activity");
     AssertTrue(fresh.NoticeCombat && fresh.NoticeCrew && fresh.NoticeMarket, "a new account hears everything");
+}
+
+static void GameUpdatesShowWhatIsVisibleAndStillNew()
+{
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"updates-{Guid.NewGuid()}")
+        .Options);
+    db.GameAnnouncements.AddRange(
+        new GameAnnouncement
+        {
+            Title = "Old work",
+            Body = "Already read by the whole city.",
+            Category = "Patch",
+            IsPinned = true,
+            PublishedAtUtc = now.AddDays(-3),
+            CreatedByUsername = "admin",
+            CreatedByAccountId = Guid.NewGuid()
+        },
+        new GameAnnouncement
+        {
+            Title = "New work",
+            Body = "This is the change players need to see.",
+            Category = "Balance",
+            Severity = "Warning",
+            Version = "v0.4.0",
+            ShowOnce = true,
+            ActionLabel = "Open Account",
+            ActionUrl = "/account",
+            Added = "Account tools",
+            Changed = "Rivals need recon now",
+            PublishedAtUtc = now.AddMinutes(-5),
+            CreatedByUsername = "admin",
+            CreatedByAccountId = Guid.NewGuid()
+        },
+        new GameAnnouncement
+        {
+            Title = "Archived",
+            Body = "This should no longer be shown.",
+            Category = "Info",
+            PublishedAtUtc = now.AddMinutes(-4),
+            ArchivedAtUtc = now.AddMinutes(-1),
+            CreatedByUsername = "admin",
+            CreatedByAccountId = Guid.NewGuid()
+        },
+        new GameAnnouncement
+        {
+            Title = "Expired",
+            Body = "This should have disappeared.",
+            Category = "Event",
+            PublishedAtUtc = now.AddDays(-2),
+            ExpiresAtUtc = now.AddMinutes(-1),
+            CreatedByUsername = "admin",
+            CreatedByAccountId = Guid.NewGuid()
+        },
+        new GameAnnouncement
+        {
+            Title = "Draft",
+            Body = "This should wait until an admin publishes it.",
+            Category = "Patch",
+            IsDraft = true,
+            PublishedAtUtc = now.AddMinutes(-2),
+            CreatedByUsername = "admin",
+            CreatedByAccountId = Guid.NewGuid()
+        },
+        new GameAnnouncement
+        {
+            Title = "Future",
+            Body = "This should wait until publish time.",
+            Category = "Maintenance",
+            PublishedAtUtc = now.AddHours(1),
+            CreatedByUsername = "admin",
+            CreatedByAccountId = Guid.NewGuid()
+        });
+    db.SaveChanges();
+
+    var feed = UpdateEndpoints.UpdatesForAsync(db, now.AddDays(-1), now, 10, default).GetAwaiter().GetResult();
+
+    AssertEqual(2, feed.Updates.Count);
+    AssertEqual(1, feed.UnreadCount);
+    AssertEqual("Old work", feed.Updates[0].Title);
+    AssertTrue(feed.Updates[0].IsPinned, "pinned updates should stay at the top");
+    AssertTrue(!feed.Updates[0].IsNew, "the older visible update was already seen");
+    AssertEqual("New work", feed.Updates[1].Title);
+    AssertTrue(feed.Updates[1].IsNew, "the recent visible update should be marked new");
+    AssertTrue(feed.Updates[1].ShowOnce, "meaningful changes can drive the login modal");
+    AssertEqual("Warning", feed.Updates[1].Severity);
+    AssertEqual("v0.4.0", feed.Updates[1].Version);
+    AssertEqual("Account tools", feed.Updates[1].Added);
+    AssertEqual("/account", feed.Updates[1].ActionUrl);
+}
+
+static void AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"announcement-delivery-{Guid.NewGuid()}")
+        .Options);
+    db.GameSettings.Add(new GameSetting
+    {
+        Id = 1,
+        DiscordAnnouncementUsername = "Street Wire",
+        UpdatedBy = "admin",
+        UpdatedAtUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc)
+    });
+    db.SaveChanges();
+
+    var fallback = new AnnouncementOptions
+    {
+        DiscordWebhookUrl = "https://discord.com/api/webhooks/config/token",
+        DiscordUsername = "Config Name"
+    };
+    var fromConfig = DiscordAnnouncementSender.SettingsResponseAsync(db, fallback, default).GetAwaiter().GetResult();
+    AssertTrue(fromConfig.DiscordConfigured, "config should provide a usable webhook before an admin saves one");
+    AssertTrue(!fromConfig.DiscordUsesStoredWebhook, "the first response should still be using config");
+    AssertEqual("discord.com", fromConfig.DiscordWebhookHost);
+    AssertEqual("Street Wire", fromConfig.DiscordUsername);
+
+    var row = db.GameSettings.Single(x => x.Id == 1);
+    row.DiscordAnnouncementWebhookUrl = "https://discordapp.com/api/webhooks/saved/token";
+    db.SaveChanges();
+
+    var fromDb = DiscordAnnouncementSender.SettingsResponseAsync(db, fallback, default).GetAwaiter().GetResult();
+    AssertTrue(fromDb.DiscordUsesStoredWebhook, "a saved webhook should beat the configured fallback");
+    AssertEqual("discordapp.com", fromDb.DiscordWebhookHost);
+    AssertTrue(DiscordAnnouncementSender.IsAllowedWebhookUrl("https://discord.com/api/webhooks/123/abc"), "Discord webhooks should be allowed");
+    AssertTrue(!DiscordAnnouncementSender.IsAllowedWebhookUrl("http://discord.com/api/webhooks/123/abc"), "Discord webhooks must use https");
+    AssertTrue(!DiscordAnnouncementSender.IsAllowedWebhookUrl("https://example.com/hook"), "only Discord webhook hosts should be allowed");
 }
 
 static void MoneyIsDollarsWhereverTheServerIs()

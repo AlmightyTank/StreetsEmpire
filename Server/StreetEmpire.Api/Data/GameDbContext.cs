@@ -34,6 +34,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<PlayerBlock> PlayerBlocks => Set<PlayerBlock>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
+    public DbSet<GameAnnouncement> GameAnnouncements => Set<GameAnnouncement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -427,6 +428,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             entity.Property(x => x.MaintenanceMessage).HasMaxLength(400);
             entity.Property(x => x.Announcement).HasMaxLength(400);
+            entity.Property(x => x.DiscordAnnouncementWebhookUrl).HasMaxLength(512);
+            entity.Property(x => x.DiscordAnnouncementUsername).HasMaxLength(80);
             entity.Property(x => x.UpdatedBy).HasMaxLength(32);
             // Seeded so the single row always exists and readers never have to cope with its absence.
             entity.HasData(new GameSetting { Id = 1, UpdatedAtUtc = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc) });
@@ -446,6 +449,21 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         modelBuilder.Entity<PlayerAccount>(entity =>
         {
             entity.Property(x => x.EnforcementReason).HasMaxLength(400);
+        });
+
+        modelBuilder.Entity<GameAnnouncement>(entity =>
+        {
+            entity.Property(x => x.Title).HasMaxLength(96);
+            entity.Property(x => x.Category).HasMaxLength(24);
+            entity.Property(x => x.Severity).HasMaxLength(24).HasDefaultValue("Info");
+            entity.Property(x => x.Version).HasMaxLength(32);
+            entity.Property(x => x.ActionLabel).HasMaxLength(40);
+            entity.Property(x => x.ActionUrl).HasMaxLength(240);
+            entity.Property(x => x.CreatedByUsername).HasMaxLength(32);
+            entity.Property(x => x.UpdatedByUsername).HasMaxLength(32);
+            entity.HasIndex(x => new { x.IsDraft, x.ArchivedAtUtc, x.IsPinned, x.PublishedAtUtc })
+                .HasDatabaseName("IX_GameAnnouncements_VisibleFeed");
+            entity.HasIndex(x => x.ExpiresAtUtc);
         });
 
         modelBuilder.Entity<Pimp>(entity =>

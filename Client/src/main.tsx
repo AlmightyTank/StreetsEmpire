@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { profileBanners, type ProfileBanner } from './api'
-import type { PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -35,7 +35,7 @@ window.bootstrap = bootstrap
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
 
-type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'alliance' | 'account' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'updates' | 'alliance' | 'account' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -69,14 +69,19 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
   market: { label: 'Business', short: 'BZ', kicker: 'Shop, rooms, craft, runs' },
   recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
+  updates: { label: 'Updates', short: 'UP', kicker: 'Patch notes and events' },
   alliance: { label: 'Alliance', short: 'AL', kicker: 'Who you run with' },
   account: { label: 'Account', short: 'AC', kicker: 'How you get in' },
   admin: { label: 'Admin', short: 'AD', kicker: 'Control centre' },
 }
 
+const updateCategories: GameAnnouncement['category'][] = ['Info', 'Patch', 'Balance', 'Event', 'Maintenance']
+const updateSeverities: GameAnnouncement['severity'][] = ['Info', 'Warning', 'Event', 'Maintenance']
+
 function flowPage(page: string): AppPage {
   if (page === 'hideout' || page === 'mules') return 'market'
   if (page === 'territory') return 'recon'
+  if (page === 'patch-notes' || page === 'news') return 'updates'
   return page in pageMeta ? page as AppPage : 'overview'
 }
 
@@ -985,6 +990,7 @@ function App() {
   const [sellQty, setSellQty] = useState<Record<'weed' | 'coke', number>>({ weed: 10, coke: 5 })
   const [tickSeconds, setTickSeconds] = useState(0)
   const [catchUp, setCatchUp] = useState<CatchUp | null>(null)
+  const [dismissedUpdateStamp, setDismissedUpdateStamp] = useState<string | null>(null)
 
   /**
    * Full reload after an action. `pollMissions` instead re-reads only what a running mission changes,
@@ -1072,6 +1078,9 @@ function App() {
     if (!dashboard || catchUpFetched.current) return
     catchUpFetched.current = true
     void api.catchUp().then(news => { if (news.hasNews) setCatchUp(news) }).catch(() => {})
+  }, [dashboard?.playerId])
+  useEffect(() => {
+    setDismissedUpdateStamp(null)
   }, [dashboard?.playerId])
   useEffect(() => {
     if (activePage === 'admin' && !adminOverview)
@@ -1498,6 +1507,20 @@ function App() {
   const totalCrew = dashboard.pimps + dashboard.hoes + dashboard.thugs
   const weaponCoverage = dashboard.thugs === 0 ? 100 : Math.min(100, (dashboard.weapons / dashboard.thugs) * 100)
   const managementCapacity = dashboard.crewReport.managementCapacity
+  const modalUpdates = dashboard.updates.updates.filter(update => update.isNew && update.showOnce)
+  const modalUpdateStamp = modalUpdates[0]?.publishedAtUtc ?? null
+  const contextualUpdate = activePage === 'updates'
+    ? null
+    : dashboard.updates.updates.find(update =>
+      (update.isNew || update.isPinned)
+      && update.actionUrl
+      && updateActionPage(update.actionUrl) === activePage) ?? null
+  const showUpdatesDialog = Boolean(
+    modalUpdates.length > 0
+    && modalUpdateStamp
+    && modalUpdateStamp !== dismissedUpdateStamp
+    && !catchUp
+    && tourStep === null)
   const visiblePages = (Object.keys(pageMeta) as AppPage[]).filter(page => page !== 'admin' || adminOverview)
   const contentContext: PageContext = {
     dashboard,
@@ -1565,6 +1588,25 @@ function App() {
 
   return <main className="game-shell d-grid">
     {catchUp && <CatchUpDialog news={catchUp} onClose={() => setCatchUp(null)} />}
+    {showUpdatesDialog && modalUpdateStamp && <UpdatesDialog
+      updates={modalUpdates}
+      unread={modalUpdates.length}
+      busy={busy}
+      onClose={() => setDismissedUpdateStamp(modalUpdateStamp)}
+      onRead={() => {
+        setDismissedUpdateStamp(modalUpdateStamp)
+        void act(api.markUpdatesSeen)
+      }}
+      onViewAll={() => {
+        setDismissedUpdateStamp(modalUpdateStamp)
+        setActivePage('updates')
+      }}
+      onOpenAction={page => {
+        setDismissedUpdateStamp(modalUpdateStamp)
+        setActivePage(page)
+      }}
+      onPage={setActivePage}
+    />}
     {openProfileId && dashboard && <PlayerProfileDialog
       playerId={openProfileId}
       currentPlayerId={dashboard.playerId}
@@ -1588,7 +1630,9 @@ function App() {
       <div className="nav-brand d-grid gap-1 border-bottom p-1 pb-3">
         <span className="d-grid place-items-center text-dark bg-primary fw-bolder rounded">SE</span>
         <strong className="">Street Empire</strong>
-        <small className="text-body-tertiary">{__APP_VERSION__}</small>
+        <button className="btn btn-link btn-sm text-body-tertiary p-0 text-start" type="button" onClick={() => setActivePage('updates')}>
+          StreetEmpire {__APP_VERSION__}
+        </button>
       </div>
       <nav className="d-grid gap-1 align-content-start">
         {visiblePages.map(page => <button
@@ -1623,6 +1667,7 @@ function App() {
       </header>
 
       <StatusStrip dashboard={dashboard} nextTurn={nextTurn} />
+      {contextualUpdate && <ContextualUpdateCallout update={contextualUpdate} onPage={setActivePage} />}
 
       <section className="d-grid gap-2">
         {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
@@ -1711,6 +1756,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
     case 'crew': return <CrewPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
     case 'recon': return <CombatPage {...ctx} />
+    case 'updates': return <UpdatesPage {...ctx} />
     case 'alliance': return <AlliancePage {...ctx} />
     case 'account': return <AccountPage {...ctx} />
     case 'admin': return ctx.adminOverview
@@ -1741,6 +1787,7 @@ function OverviewPage(ctx: PageContext) {
       </section>
 
       <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
+      <UpdatesPanel updates={dashboard.updates.updates} unread={dashboard.updates.unreadCount} busy={busy} act={act} onPage={setActivePage} />
       <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} onTour={ctx.openTour} />
 
       <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
@@ -1782,6 +1829,250 @@ function OverviewPage(ctx: PageContext) {
 
     <WorldNewsPanel news={worldNews} currentPlayer={dashboard.name} />
   </div>
+}
+
+function UpdatesPage(ctx: PageContext) {
+  const { dashboard, busy, act, setActivePage } = ctx
+  const [feed, setFeed] = useState<GameUpdates | null>(null)
+  const [category, setCategory] = useState<GameAnnouncement['category'] | 'All'>('All')
+  const [severity, setSeverity] = useState<GameAnnouncement['severity'] | 'All'>('All')
+  const [newOnly, setNewOnly] = useState(false)
+  const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
+  const source = feed ?? dashboard.updates
+
+  const load = async () => {
+    try {
+      setFeed(await api.updates())
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  useEffect(() => { void load() }, [])
+
+  const updates = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return source.updates.filter(update =>
+      (category === 'All' || update.category === category)
+      && (severity === 'All' || update.severity === severity)
+      && (!newOnly || update.isNew)
+      && (needle.length === 0
+        || update.title.toLowerCase().includes(needle)
+        || update.body.toLowerCase().includes(needle)
+        || (update.version ?? '').toLowerCase().includes(needle)
+        || (update.added ?? '').toLowerCase().includes(needle)
+        || (update.changed ?? '').toLowerCase().includes(needle)
+        || (update.fixed ?? '').toLowerCase().includes(needle)
+        || (update.knownIssues ?? '').toLowerCase().includes(needle)))
+  }, [source.updates, category, severity, newOnly, query])
+
+  const markRead = async () => {
+    await act(api.markUpdatesSeen)
+    await load()
+  }
+
+  return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
+    <section className="card p-3">
+      <div className="panel-title">
+        <h2>Updates</h2>
+        <span>{source.unreadCount > 0 ? `${source.unreadCount} new` : 'Caught up'}</span>
+      </div>
+      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+      <div className="d-grid gap-3">
+        {updates.length === 0
+          ? <p className="text-body-tertiary small mb-0">Nothing matches those filters.</p>
+          : updates.map(update => <UpdateArticle update={update} onPage={setActivePage} key={update.id} />)}
+      </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Filter</h2><span>{updates.length} shown</span></div>
+      <label className="field">
+        Search
+        <input className="form-control" value={query} onChange={event => setQuery(event.target.value)} placeholder="Patch, rival, raid..." />
+      </label>
+      <div className="d-grid gtc-1 gtc-md-2 gap-3 mt-3">
+        <label className="field">
+          Category
+          <select className="form-select" value={category} onChange={event => setCategory(event.target.value as GameAnnouncement['category'] | 'All')}>
+            {(['All', ...updateCategories] as const).map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          Severity
+          <select className="form-select" value={severity} onChange={event => setSeverity(event.target.value as GameAnnouncement['severity'] | 'All')}>
+            {(['All', ...updateSeverities] as const).map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="form-check form-switch d-flex align-items-center gap-2 mt-3">
+        <input className="form-check-input" type="checkbox" checked={newOnly} onChange={event => setNewOnly(event.target.checked)} />
+        <span>New only</span>
+      </label>
+      <div className="d-flex flex-wrap gap-2 mt-3">
+        <button className="btn btn-secondary btn-sm" type="button" disabled={busy || source.unreadCount === 0} onClick={() => void markRead()}>
+          Mark all read
+        </button>
+        <button className="btn btn-secondary btn-sm" type="button" onClick={() => void load()}>
+          Refresh
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+function UpdatesDialog({ updates, unread, busy, onClose, onRead, onViewAll, onOpenAction, onPage }: {
+  updates: GameAnnouncement[]
+  unread: number
+  busy: boolean
+  onClose: () => void
+  onRead: () => void
+  onViewAll: () => void
+  onOpenAction: (page: AppPage) => void
+  onPage: (page: AppPage) => void
+}) {
+  const actionUpdate = updates.find(update => update.actionUrl && updateActionPage(update.actionUrl))
+  const actionPage = actionUpdate?.actionUrl ? updateActionPage(actionUpdate.actionUrl) : null
+  return <div className="modal-backdrop-soft d-grid place-items-center position-fixed top-0 bottom-0 start-0 end-0 p-3" role="presentation">
+    <section className="card p-3 shadow-lg update-dialog" role="dialog" aria-modal="true" aria-labelledby="updates-dialog-title">
+      <div className="panel-title">
+        <h2 id="updates-dialog-title">What Changed</h2>
+        <span>{unread} new</span>
+      </div>
+      <div className="d-grid gap-3 mt-2">
+        {updates.slice(0, 2).map(update => <UpdateArticle update={update} compact onPage={onPage} key={update.id} />)}
+      </div>
+      <div className="d-flex flex-wrap justify-content-between gap-2 mt-3">
+        <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>Later</button>
+        <div className="d-flex flex-wrap gap-2">
+          <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={onRead}>Got it</button>
+          {actionUpdate && actionPage && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenAction(actionPage)}>{actionUpdate.actionLabel ?? 'Open'}</button>}
+          <button className="btn btn-primary btn-sm" type="button" onClick={onViewAll}>View all</button>
+        </div>
+      </div>
+    </section>
+  </div>
+}
+
+function UpdatesPanel({ updates, unread, busy, act, onPage }: {
+  updates: GameAnnouncement[]
+  unread: number
+  busy: boolean
+  act: PageContext['act']
+  onPage: (page: AppPage) => void
+}) {
+  return <section className={`card p-3 ${unread > 0 ? 'border-primary' : ''}`}>
+    <div className="panel-title">
+      <h2>Street Wire</h2>
+      <span>{unread > 0 ? `${unread} new` : 'Caught up'}</span>
+    </div>
+    {updates.length === 0
+      ? <p className="text-body-tertiary small mb-0">No updates posted yet.</p>
+      : <div className="d-grid">
+        {updates.map(update => <UpdateArticle update={update} compact onPage={onPage} key={update.id} />)}
+      </div>}
+    <div className="d-flex flex-wrap gap-2 mt-3">
+      {unread > 0 && <button
+        className="btn btn-secondary btn-sm"
+        type="button"
+        disabled={busy}
+        onClick={() => void act(api.markUpdatesSeen)}
+      >Mark read</button>}
+      <button className="btn btn-secondary btn-sm" type="button" onClick={() => onPage('updates')}>View all updates</button>
+    </div>
+  </section>
+}
+
+function UpdateArticle({ update, compact = false, onPage }: {
+  update: GameAnnouncement
+  compact?: boolean
+  onPage: (page: AppPage) => void
+}) {
+  const sections = updateSections(update)
+  return <article className={`feed-item py-3 border-top ${update.isPinned ? 'border-primary' : ''}`}>
+    <div className="d-flex flex-wrap justify-content-between gap-2">
+      <strong className={update.isNew ? 'text-primary' : 'text-body'}>{update.title}</strong>
+      <span className="d-flex flex-wrap gap-1">
+        {update.isNew && <span className="badge rounded-pill text-bg-light border">New</span>}
+        {update.isPinned && <span className="badge rounded-pill text-bg-primary">Pinned</span>}
+        <span className={`badge rounded-pill ${updateCategoryClass(update.category)}`}>{update.category}</span>
+        <span className={`badge rounded-pill ${updateSeverityClass(update.severity)}`}>{update.severity}</span>
+      </span>
+    </div>
+    <div className="d-flex flex-wrap gap-2 mt-1">
+      {update.version && <small className="eyebrow text-body-tertiary">{update.version}</small>}
+      <small className="text-body-tertiary">{new Date(update.publishedAtUtc).toLocaleString()}</small>
+    </div>
+    <p className={`${compact ? 'small' : ''} mt-1 mb-2 text-body-secondary preserve-lines`}>{compact ? clampText(update.body, 260) : update.body}</p>
+    {!compact && sections.length > 0 && <div className="d-grid gtc-1 gtc-md-2 gap-2 my-2">
+      {sections.map(section => <div className="border rounded bg-body-tertiary p-2" key={section.label}>
+        <strong className="eyebrow d-block mb-1">{section.label}</strong>
+        <p className="small mb-0 preserve-lines">{section.value}</p>
+      </div>)}
+    </div>}
+    <div className="d-flex flex-wrap align-items-center gap-2">
+      <UpdateAction update={update} onPage={onPage} />
+    </div>
+  </article>
+}
+
+function ContextualUpdateCallout({ update, onPage }: { update: GameAnnouncement, onPage: (page: AppPage) => void }) {
+  return <div className={`alert d-flex flex-wrap align-items-center justify-content-between gap-2 ${update.severity === 'Maintenance' ? 'alert-danger' : update.severity === 'Warning' ? 'alert-warning' : 'alert-info'}`}>
+    <span><strong>{update.version ?? 'Street Wire'}:</strong> {update.title}</span>
+    <button className="btn btn-sm btn-secondary" type="button" onClick={() => onPage('updates')}>Read update</button>
+  </div>
+}
+
+function UpdateAction({ update, onPage }: { update: GameAnnouncement, onPage: (page: AppPage) => void }) {
+  if (!update.actionLabel || !update.actionUrl) return null
+  const page = updateActionPage(update.actionUrl)
+  if (page)
+    return <button className="btn btn-secondary btn-sm" type="button" onClick={() => onPage(page)}>{update.actionLabel}</button>
+  return <a className="btn btn-secondary btn-sm" href={update.actionUrl}>{update.actionLabel}</a>
+}
+
+function updateActionPage(url: string): AppPage | null {
+  if (!url.startsWith('/')) return null
+  const name = url.slice(1).split(/[/?#]/)[0] || 'overview'
+  if (name === 'hideout' || name === 'mules' || name === 'territory' || name === 'patch-notes' || name === 'news' || name in pageMeta)
+    return flowPage(name)
+  return null
+}
+
+function clampText(value: string, max: number) {
+  return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1)).trimEnd()}...`
+}
+
+function updateSections(update: GameAnnouncement) {
+  return [
+    ['Added', update.added],
+    ['Changed', update.changed],
+    ['Fixed', update.fixed],
+    ['Known issues', update.knownIssues],
+  ].flatMap(([label, value]) => typeof value === 'string' && value.trim().length > 0 ? [{ label, value }] : [])
+}
+
+function updateCategoryClass(category: GameAnnouncement['category']) {
+  return category === 'Patch'
+    ? 'text-bg-primary'
+    : category === 'Balance'
+      ? 'text-bg-warning'
+      : category === 'Event'
+        ? 'text-bg-success'
+        : category === 'Maintenance'
+          ? 'text-bg-danger'
+          : 'text-bg-secondary'
+}
+
+function updateSeverityClass(severity: GameAnnouncement['severity']) {
+  return severity === 'Warning'
+    ? 'text-bg-warning'
+    : severity === 'Event'
+      ? 'text-bg-success'
+      : severity === 'Maintenance'
+        ? 'text-bg-danger'
+        : 'text-bg-light border'
 }
 
 function StreetPage(ctx: PageContext) {
@@ -3263,7 +3554,7 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
   </div>
 }
 
-const ADMIN_TABS = ['overview', 'players', 'ai', 'config', 'liveops', 'audit'] as const
+const ADMIN_TABS = ['overview', 'players', 'ai', 'config', 'updates', 'liveops', 'audit'] as const
 type AdminTab = typeof ADMIN_TABS[number]
 
 const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
@@ -3271,6 +3562,7 @@ const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
   players: { label: 'Players', kicker: 'Search and enforcement' },
   ai: { label: 'AI Rivals', kicker: 'Seed, run, automate' },
   config: { label: 'Tuning', kicker: 'Runtime values' },
+  updates: { label: 'Updates', kicker: 'Patch notes and events' },
   liveops: { label: 'Live Ops', kicker: 'Maintenance and banners' },
   audit: { label: 'Audit', kicker: 'Who changed what' }
 }
@@ -3313,6 +3605,7 @@ function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
     {tab === 'players' && <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />}
     {tab === 'ai' && <AdminAiTab ctx={ctx} />}
     {tab === 'config' && <><AdminConfigPanel busy={ctx.busy} /><AdminEconomyReadout overview={ctx.overview} /></>}
+    {tab === 'updates' && <AdminUpdatesPanel busy={ctx.busy} />}
     {tab === 'liveops' && <AdminLiveOpsPanel busy={ctx.busy} />}
     {tab === 'audit' && <AdminAuditPanel />}
   </div>
@@ -3355,6 +3648,407 @@ function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
       <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
     </div>
   </section>
+}
+
+function AdminUpdatesPanel({ busy }: { busy: boolean }) {
+  const [posts, setPosts] = useState<AdminGameAnnouncement[]>([])
+  const [delivery, setDelivery] = useState<AnnouncementDeliverySettings | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [draft, setDraft] = useState<AdminGameAnnouncementDraft>(() => emptyAnnouncementDraft())
+  const [includeArchived, setIncludeArchived] = useState(false)
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState('')
+  const [discordUsername, setDiscordUsername] = useState('')
+  const [reason, setReason] = useState('')
+  const [deliveryReason, setDeliveryReason] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [working, setWorking] = useState(false)
+  const selected = posts.find(post => post.id === selectedId) ?? null
+
+  const load = async () => {
+    try { setPosts(await opsApi.updates(includeArchived)) } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [includeArchived])
+
+  const loadDelivery = async () => {
+    try {
+      const next = await opsApi.updateDelivery()
+      setDelivery(next)
+      setDiscordUsername(next.discordUsername)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  useEffect(() => { void loadDelivery() }, [])
+
+  const edit = (post: AdminGameAnnouncement) => {
+    setSelectedId(post.id)
+    setDraft(draftFromAnnouncement(post))
+    setReason('')
+    setMessage('')
+    setError('')
+  }
+
+  const reset = () => {
+    setSelectedId(null)
+    setDraft(emptyAnnouncementDraft())
+    setReason('')
+    setMessage('')
+    setError('')
+  }
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const body = announcementPayload(draft, reason)
+      const saved = selected
+        ? await opsApi.updatePost(selected.id, body)
+        : await opsApi.createUpdate(body)
+      setSelectedId(saved.id)
+      setDraft(draftFromAnnouncement(saved))
+      setReason('')
+      setMessage(saved.isDraft ? 'Draft saved.' : selected ? 'Update saved.' : 'Update published.')
+      await load()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const archive = async (archived: boolean) => {
+    if (!selected) return
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const saved = await opsApi.archiveUpdate(selected.id, archived, reason)
+      setReason('')
+      setMessage(archived ? 'Update archived.' : 'Update restored.')
+      await load()
+      setSelectedId(saved.id)
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const saveDelivery = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const next = await opsApi.setUpdateDelivery({
+        discordWebhookUrl: discordWebhookUrl.trim() || null,
+        discordUsername: discordUsername.trim() || null,
+        reason: deliveryReason.trim() || null,
+      })
+      setDelivery(next)
+      setDiscordWebhookUrl('')
+      setDiscordUsername(next.discordUsername)
+      setDeliveryReason('')
+      setMessage('Discord announcement settings saved.')
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const clearDeliveryWebhook = async () => {
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const next = await opsApi.setUpdateDelivery({
+        clearDiscordWebhook: true,
+        discordUsername: discordUsername.trim() || null,
+        reason: deliveryReason.trim() || null,
+      })
+      setDelivery(next)
+      setDiscordWebhookUrl('')
+      setDiscordUsername(next.discordUsername)
+      setDeliveryReason('')
+      setMessage('Saved webhook cleared.')
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const locked = busy || working
+  return <div className="d-grid gtc-1 gtc-xl-split-80 gap-3 align-items-start gcol-full">
+    {/*
+      Two columns, and the left one is a stack rather than two cells of the same grid.
+
+      The list, the webhook and the editor were three children of a two-column grid, so they laid out
+      row by row: the list beside the webhook, and the editor underneath on its own. With the rows
+      sized to their tallest cell, that left the short list sitting at the top of a row as tall as the
+      webhook form, and several hundred pixels of nothing under it before the editor began.
+
+      The list and the editor belong together anyway - you pick an update in one and edit it in the
+      other - and the webhook is a setting that happens to live on this page.
+    */}
+    <div className="d-grid gap-3 align-content-start">
+      <section className="card p-3">
+        <div className="panel-title">
+          <h2>Updates</h2>
+          <span>{posts.length} shown</span>
+        </div>
+        {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+        {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
+        <div className="d-flex flex-wrap gap-2 mb-3">
+          <button className="btn btn-primary btn-sm" type="button" onClick={reset}>New update</button>
+          <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+            <input className="form-check-input" type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} />
+            <span className="small">Include archived</span>
+          </label>
+        </div>
+        <div className="d-grid gap-1">
+          {posts.length === 0 && <p className="text-body-tertiary small mb-0">No updates posted yet.</p>}
+          {posts.map(post => <button
+            className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${selectedId === post.id ? 'active border-primary' : ''}`}
+            type="button"
+            key={post.id}
+            onClick={() => edit(post)}
+          >
+            <span className="d-flex flex-wrap gap-2 align-items-center min-w-0">
+              <strong className="text-truncate">{post.title}</strong>
+              <span className={`badge rounded-pill ${updateCategoryClass(post.category)}`}>{post.category}</span>
+              <span className={`badge rounded-pill ${updateSeverityClass(post.severity)}`}>{post.severity}</span>
+              {post.version && <span className="badge rounded-pill text-bg-secondary">{post.version}</span>}
+              {post.isPinned && <span className="badge rounded-pill text-bg-primary">Pinned</span>}
+              {post.showOnce && <span className="badge rounded-pill text-bg-warning">Login</span>}
+              {post.isDraft && <span className="badge rounded-pill text-bg-light border">Draft</span>}
+              {!post.isDraft && !post.archivedAtUtc && <span className="badge rounded-pill text-bg-success">Live</span>}
+              {post.sendToDiscord && <span className={`badge rounded-pill ${post.discordSentAtUtc ? 'text-bg-info' : 'text-bg-light border'}`}>Discord</span>}
+              {post.archivedAtUtc && <span className="badge rounded-pill text-bg-secondary">Archived</span>}
+            </span>
+            <small className="text-body-tertiary text-truncate">
+              {post.isDraft ? 'Draft publish time ' : 'Published '}
+              {new Date(post.publishedAtUtc).toLocaleString()}
+            </small>
+          </button>)}
+        </div>
+      </section>
+
+      <section className="card p-3">
+        <div className="panel-title"><h2>{selected ? 'Edit Update' : 'New Update'}</h2><span>{draft.version || draft.category}</span></div>
+        <form className="d-grid gap-3" onSubmit={save}>
+          <div className="d-grid gtc-1 gtc-md-2 gap-2">
+            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                checked={!draft.isDraft}
+                onChange={event => setDraft({ ...draft, isDraft: !event.target.checked })}
+              />
+              <span>{draft.isDraft ? 'Save as draft' : 'Publish to players'}</span>
+            </label>
+            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+              <input className="form-check-input" type="checkbox" checked={Boolean(draft.isPinned)} onChange={event => setDraft({ ...draft, isPinned: event.target.checked })} />
+              <span>Pin in Street Wire</span>
+            </label>
+            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+              <input className="form-check-input" type="checkbox" checked={Boolean(draft.showOnce)} onChange={event => setDraft({ ...draft, showOnce: event.target.checked })} />
+              <span>Show once on login</span>
+            </label>
+            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+              <input className="form-check-input" type="checkbox" checked={Boolean(draft.sendToDiscord)} onChange={event => setDraft({ ...draft, sendToDiscord: event.target.checked })} />
+              <span>Send to Discord</span>
+            </label>
+          </div>
+          <label className="field">
+            Title
+            <input className="form-control" maxLength={96} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} required />
+          </label>
+          <label className="field">
+            Body
+            <textarea className="form-control" rows={7} maxLength={4000} value={draft.body} onChange={event => setDraft({ ...draft, body: event.target.value })} required />
+          </label>
+          <div className="d-grid gtc-1 gtc-md-3 gap-3">
+            <label className="field">
+              Category
+              <select className="form-select" value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value as GameAnnouncement['category'] })}>
+                {updateCategories.map(category =>
+                  <option key={category} value={category}>{category}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              Severity
+              <select className="form-select" value={draft.severity} onChange={event => setDraft({ ...draft, severity: event.target.value as GameAnnouncement['severity'] })}>
+                {updateSeverities.map(severity =>
+                  <option key={severity} value={severity}>{severity}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              Version
+              <input className="form-control" maxLength={32} value={draft.version ?? ''} onChange={event => setDraft({ ...draft, version: event.target.value })} placeholder={__APP_VERSION__} />
+            </label>
+          </div>
+          <div className="d-grid gtc-1 gtc-md-2 gap-3">
+            <label className="field">
+              Starts at
+              <input className="form-control" type="datetime-local" value={draft.publishedAtUtc ?? ''} onChange={event => setDraft({ ...draft, publishedAtUtc: event.target.value || null })} />
+            </label>
+            <label className="field">
+              Ends at
+              <input className="form-control" type="datetime-local" value={draft.expiresAtUtc ?? ''} onChange={event => setDraft({ ...draft, expiresAtUtc: event.target.value || null })} />
+            </label>
+          </div>
+          <div className="d-grid gtc-1 gtc-md-2 gap-3">
+            <label className="field">
+              Added
+              <textarea className="form-control" rows={3} maxLength={2000} value={draft.added ?? ''} onChange={event => setDraft({ ...draft, added: event.target.value })} />
+            </label>
+            <label className="field">
+              Changed
+              <textarea className="form-control" rows={3} maxLength={2000} value={draft.changed ?? ''} onChange={event => setDraft({ ...draft, changed: event.target.value })} />
+            </label>
+            <label className="field">
+              Fixed
+              <textarea className="form-control" rows={3} maxLength={2000} value={draft.fixed ?? ''} onChange={event => setDraft({ ...draft, fixed: event.target.value })} />
+            </label>
+            <label className="field">
+              Known issues
+              <textarea className="form-control" rows={3} maxLength={2000} value={draft.knownIssues ?? ''} onChange={event => setDraft({ ...draft, knownIssues: event.target.value })} />
+            </label>
+          </div>
+          <div className="d-grid gtc-1 gtc-md-2 gap-3">
+            <label className="field">
+              Action label
+              <input className="form-control" maxLength={40} value={draft.actionLabel ?? ''} onChange={event => setDraft({ ...draft, actionLabel: event.target.value })} placeholder="Optional" />
+            </label>
+            <label className="field">
+              Action URL
+              <input className="form-control" maxLength={240} value={draft.actionUrl ?? ''} onChange={event => setDraft({ ...draft, actionUrl: event.target.value })} placeholder="/account" />
+            </label>
+          </div>
+          <label className="field">
+            Audit reason
+            <input className="form-control" value={reason} onChange={event => setReason(event.target.value)} placeholder="Why this is being posted or changed" />
+          </label>
+          <div className="d-flex flex-wrap gap-2">
+            <button className="btn btn-primary" disabled={locked}>
+              {locked ? 'Working...' : draft.isDraft ? 'Save Draft' : selected ? 'Save and Publish' : 'Publish Update'}
+            </button>
+            {selected && <button className="btn btn-secondary" type="button" disabled={locked} onClick={reset}>Clear Form</button>}
+            {selected && <button
+              className="btn btn-outline-danger"
+              type="button"
+              disabled={locked}
+              onClick={() => void archive(!selected.archivedAtUtc)}
+            >{selected.archivedAtUtc ? 'Restore' : 'Archive'}</button>}
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <section className="card p-3">
+      <div className="panel-title">
+        <h2>Discord Webhook</h2>
+        <span>{delivery?.discordConfigured ? delivery.discordUsesStoredWebhook ? 'Saved in admin' : 'From config' : 'Not set'}</span>
+      </div>
+      <form className="d-grid gap-3" onSubmit={saveDelivery}>
+        <div className="d-flex flex-wrap gap-2">
+          <span className={`badge rounded-pill ${delivery?.discordConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>
+            {delivery?.discordConfigured ? 'Discord broadcast on' : 'Discord broadcast off'}
+          </span>
+          {delivery?.discordWebhookHost && <span className="badge rounded-pill text-bg-light border">{delivery.discordWebhookHost}</span>}
+        </div>
+        <label className="field">
+          New webhook URL
+          <input
+            className="form-control"
+            type="password"
+            value={discordWebhookUrl}
+            onChange={event => setDiscordWebhookUrl(event.target.value)}
+            placeholder={delivery?.discordConfigured ? 'Paste a replacement webhook' : 'https://discord.com/api/webhooks/...'}
+            autoComplete="off"
+          />
+          <small className="form-text">Saved URLs are not shown again. Leave blank to keep the current webhook.</small>
+        </label>
+        <label className="field">
+          Webhook name
+          <input className="form-control" maxLength={80} value={discordUsername} onChange={event => setDiscordUsername(event.target.value)} placeholder="Street Empire" />
+        </label>
+        <label className="field">
+          Audit reason
+          <input className="form-control" value={deliveryReason} onChange={event => setDeliveryReason(event.target.value)} placeholder="Moved announcements to #updates" />
+        </label>
+        <div className="d-flex flex-wrap gap-2">
+          <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Webhook Settings'}</button>
+          <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void loadDelivery()}>Refresh</button>
+          <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !delivery?.discordUsesStoredWebhook} onClick={() => void clearDeliveryWebhook()}>
+            Clear saved webhook
+          </button>
+        </div>
+        {delivery && <small className="text-body-tertiary">
+          Last changed {new Date(delivery.updatedAtUtc).toLocaleString()}{delivery.updatedBy ? ` by ${delivery.updatedBy}` : ''}.
+        </small>}
+      </form>
+    </section>
+  </div>
+}
+
+function emptyAnnouncementDraft(): AdminGameAnnouncementDraft {
+  return {
+    title: '',
+    body: '',
+    category: 'Info',
+    severity: 'Info',
+    version: __APP_VERSION__,
+    actionLabel: '',
+    actionUrl: '',
+    isDraft: true,
+    isPinned: false,
+    showOnce: false,
+    sendToDiscord: false,
+    publishedAtUtc: '',
+    expiresAtUtc: '',
+    added: '',
+    changed: '',
+    fixed: '',
+    knownIssues: '',
+  }
+}
+
+function draftFromAnnouncement(post: AdminGameAnnouncement): AdminGameAnnouncementDraft {
+  return {
+    title: post.title,
+    body: post.body,
+    category: post.category,
+    severity: post.severity,
+    version: post.version ?? '',
+    actionLabel: post.actionLabel ?? '',
+    actionUrl: post.actionUrl ?? '',
+    isDraft: post.isDraft,
+    isPinned: post.isPinned,
+    showOnce: post.showOnce,
+    sendToDiscord: post.sendToDiscord,
+    publishedAtUtc: toLocalDateTimeInput(post.publishedAtUtc),
+    expiresAtUtc: post.expiresAtUtc ? toLocalDateTimeInput(post.expiresAtUtc) : '',
+    added: post.added ?? '',
+    changed: post.changed ?? '',
+    fixed: post.fixed ?? '',
+    knownIssues: post.knownIssues ?? '',
+  }
+}
+
+function announcementPayload(draft: AdminGameAnnouncementDraft, reason: string): AdminGameAnnouncementDraft {
+  return {
+    title: draft.title.trim(),
+    body: draft.body.trim(),
+    category: draft.category,
+    severity: draft.severity,
+    version: draft.version?.trim() || null,
+    actionLabel: draft.actionLabel?.trim() || null,
+    actionUrl: draft.actionUrl?.trim() || null,
+    isDraft: draft.isDraft ?? false,
+    isPinned: draft.isPinned ?? false,
+    showOnce: draft.showOnce ?? false,
+    sendToDiscord: draft.sendToDiscord ?? false,
+    publishedAtUtc: draft.publishedAtUtc ? new Date(draft.publishedAtUtc).toISOString() : null,
+    expiresAtUtc: draft.expiresAtUtc ? new Date(draft.expiresAtUtc).toISOString() : null,
+    added: draft.added?.trim() || null,
+    changed: draft.changed?.trim() || null,
+    fixed: draft.fixed?.trim() || null,
+    knownIssues: draft.knownIssues?.trim() || null,
+    reason: reason.trim() || null,
+  }
+}
+
+function toLocalDateTimeInput(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
 }
 
 function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
@@ -6356,7 +7050,7 @@ function AccountPage(ctx: PageContext) {
       </button>}
     </div>}
 
-    <div className="d-grid gtc-1 gtc-xl-2 gap-3 align-items-start">
+    <div className="account-grid d-grid gtc-1 gtc-xl-2 gap-3 align-items-start min-w-0">
       {tab === 'profile' && <AccountProfilePanel {...panel} dashboard={ctx.dashboard} onTab={setTab} />}
       {tab === 'signin' && <>
         <AccountEmailPanel {...panel} email={email} setEmail={setEmail} />
@@ -7296,13 +7990,13 @@ function SessionsCard({ account, busy, run }: { account: Account, busy: boolean,
       </p>}
       {sessions.map(session => <div
         key={session.id}
-        className={`border rounded p-2 d-flex flex-wrap align-items-center justify-content-between gap-2 ${session.isCurrent ? 'border-primary' : 'bg-body-secondary'}`}
+        className={`session-row border rounded p-2 d-grid gap-2 align-items-center ${session.isCurrent ? 'border-primary' : 'bg-body-secondary'}`}
       >
         <div className="min-w-0">
           <strong className="d-block text-truncate">
             {session.isCurrent ? 'This device' : session.ipAddress ?? 'Unknown address'}
           </strong>
-          <small className="d-block text-body-tertiary text-truncate">{session.userAgent ?? 'Unknown browser'}</small>
+          <small className="session-user-agent d-block text-body-tertiary">{session.userAgent ?? 'Unknown browser'}</small>
           <small className="d-block text-body-tertiary">
             Last seen {new Date(session.lastSeenAtUtc).toLocaleString()}
             {session.isCurrent ? '' : ` / signed in ${new Date(session.createdAtUtc).toLocaleDateString()}`}

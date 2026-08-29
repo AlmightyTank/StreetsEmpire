@@ -269,6 +269,35 @@ input:focus-visible, textarea:focus-visible {
   height: 4px;
 }
 
+.modal-backdrop-soft {
+  z-index: 1070;
+  background: rgba($black, .64);
+}
+
+.update-dialog {
+  width: min(620px, 100%);
+  max-height: min(720px, calc(100vh - 32px));
+  overflow: auto;
+}
+
+.account-grid > * {
+  min-width: 0;
+}
+
+.session-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+
+  @include media-breakpoint-down(sm) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.session-user-agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // -----------------------------------------------------------------------------
 // The numbers along the top
 // -----------------------------------------------------------------------------

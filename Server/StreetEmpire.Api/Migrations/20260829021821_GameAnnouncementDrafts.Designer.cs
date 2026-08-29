@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829021821_GameAnnouncementDrafts")]
+    partial class GameAnnouncementDrafts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -977,9 +980,6 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(240)
                         .HasColumnType("character varying(240)");
 
-                    b.Property<string>("Added")
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("ArchivedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -992,9 +992,6 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)");
 
-                    b.Property<string>("Changed")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1006,39 +1003,14 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<DateTime?>("DiscordSentAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime?>("ExpiresAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Fixed")
-                        .HasColumnType("text");
 
                     b.Property<bool>("IsDraft")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsPinned")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("KnownIssues")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("PublishedAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("SendToDiscord")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(24)
-                        .HasColumnType("character varying(24)")
-                        .HasDefaultValue("Info");
-
-                    b.Property<bool>("ShowOnce")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -1052,16 +1024,11 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<string>("Version")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ExpiresAtUtc");
 
-                    b.HasIndex("IsDraft", "ArchivedAtUtc", "IsPinned", "PublishedAtUtc")
-                        .HasDatabaseName("IX_GameAnnouncements_VisibleFeed");
+                    b.HasIndex("IsDraft", "ArchivedAtUtc", "PublishedAtUtc");
 
                     b.ToTable("GameAnnouncements");
                 });
@@ -1089,14 +1056,6 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<string>("ConfigOverridesJson")
                         .HasColumnType("text");
-
-                    b.Property<string>("DiscordAnnouncementUsername")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<string>("DiscordAnnouncementWebhookUrl")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
 
                     b.Property<string>("MaintenanceMessage")
                         .HasMaxLength(400)

@@ -155,6 +155,12 @@ public sealed class PlayerAccount
     public DateTime? DiscordLinkedAtUtc { get; set; }
 
     /// <summary>
+    /// The newest durable game announcement this account has acknowledged. Null means everything
+    /// currently visible is new, which is right for an account made before the update system existed.
+    /// </summary>
+    public DateTime? LastSeenAnnouncementAtUtc { get; set; }
+
+    /// <summary>
     /// An account made through Discord has never chosen a password, and one that has unlinked Discord
     /// may have nothing else left. Both endpoints that can take a way in away check this first, so an
     /// account can never end up with no door.

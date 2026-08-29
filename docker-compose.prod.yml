@@ -88,6 +88,8 @@ services:
       Auth__Discord__RedirectUri: ${PUBLIC_URL:-https://${DOMAIN}}/api/auth/discord/callback
       Auth__Discord__ReturnUrl: ${PUBLIC_URL:-https://${DOMAIN}}/
 
+      Announcements__DiscordWebhookUrl: ${DISCORD_ANNOUNCEMENT_WEBHOOK:-}
+
       Auth__Email__ApiKey: ${RESEND_API_KEY:-}
       Auth__Email__FromAddress: ${MAIL_FROM:-Street Empire <onboarding@resend.dev>}
     volumes:

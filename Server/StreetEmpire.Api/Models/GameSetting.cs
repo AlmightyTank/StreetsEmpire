@@ -20,6 +20,14 @@ public sealed class GameSetting
     public string? Announcement { get; set; }
 
     /// <summary>
+    /// Optional Discord webhook override for update broadcasts. Null falls back to configuration.
+    /// </summary>
+    public string? DiscordAnnouncementWebhookUrl { get; set; }
+
+    /// <summary>Webhook display name override. Null falls back to configuration.</summary>
+    public string? DiscordAnnouncementUsername { get; set; }
+
+    /// <summary>
     /// Tuning overrides as a JSON object of dotted path to value, layered over appsettings at runtime.
     /// Stored as one blob rather than a row per key: it is always read and written whole.
     /// </summary>

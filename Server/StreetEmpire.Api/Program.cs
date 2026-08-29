@@ -85,6 +85,10 @@ builder.Services.AddHostedService<BotAutomationService>();
 builder.Services.AddSingleton<IGameRandom, GameRandom>();
 builder.Services.AddScoped<IPasswordHasher<PlayerAccount>, PasswordHasher<PlayerAccount>>();
 
+// Game updates are canonical in the database. Discord, when configured, is only the megaphone.
+builder.Services.Configure<AnnouncementOptions>(builder.Configuration.GetSection("Announcements"));
+builder.Services.AddHttpClient<DiscordAnnouncementSender>(client => client.Timeout = TimeSpan.FromSeconds(15));
+
 // Discord sign-in. Registered unconditionally so the endpoints exist and can say "not set up" for
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
 // false until a client id and secret arrive from user-secrets or the environment.
@@ -537,6 +541,7 @@ app.MapPasswordResetEndpoints();
 app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();
+app.MapUpdateEndpoints();
 app.MapAllianceEndpoints();
 app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();

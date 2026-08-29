@@ -194,6 +194,7 @@ internal static class GameEndpoints
                 player.Alliance is { } crew
                     ? new AllianceBriefResponse(crew.Id, crew.Name, crew.OffensiveThugs, crew.DefensiveThugs, allianceRules.BorrowLimit(player.Thugs), player.AllianceDefenders)
                     : null,
+                await UpdateEndpoints.UpdatesForAsync(db, player.Account.LastSeenAnnouncementAtUtc, now, 3, ct),
                 activity));
         }).RequireAuthorization();
 

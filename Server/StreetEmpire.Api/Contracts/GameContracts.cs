@@ -451,6 +451,7 @@ public sealed record DashboardResponse(
     IReadOnlyList<StreetDistrictResponse> Districts,
     /// <summary>The crew, or null when running alone.</summary>
     AllianceBriefResponse? Alliance,
+    GameUpdatesResponse Updates,
     IReadOnlyList<ActivityResponse> RecentActivity);
 
 public sealed record CityMarketResponse(
@@ -1175,6 +1176,30 @@ public sealed record ActionResultResponse(
     int TurnsRemaining,
     IReadOnlyDictionary<string, object?>? Breakdown = null);
 
+public sealed record GameAnnouncementResponse(
+    long Id,
+    string Title,
+    string Body,
+    string Category,
+    string Severity,
+    string? Version,
+    string? ActionLabel,
+    string? ActionUrl,
+    bool IsPinned,
+    bool ShowOnce,
+    DateTime PublishedAtUtc,
+    DateTime? ExpiresAtUtc,
+    string? Added,
+    string? Changed,
+    string? Fixed,
+    string? KnownIssues,
+    bool IsNew);
+
+public sealed record GameUpdatesResponse(
+    IReadOnlyList<GameAnnouncementResponse> Updates,
+    int UnreadCount,
+    DateTime? LastSeenAtUtc);
+
 public sealed record AdminOverviewResponse(
     DateTime GeneratedAtUtc,
     int TotalAccounts,
@@ -1327,6 +1352,68 @@ public sealed record LiveOpsResponse(
     string? Announcement,
     DateTime UpdatedAtUtc,
     string? UpdatedBy);
+
+public sealed record AnnouncementDeliverySettingsResponse(
+    bool DiscordConfigured,
+    bool DiscordUsesStoredWebhook,
+    string? DiscordWebhookHost,
+    string DiscordUsername,
+    DateTime UpdatedAtUtc,
+    string? UpdatedBy);
+
+public sealed record AnnouncementDeliverySettingsRequest(
+    string? DiscordWebhookUrl,
+    string? DiscordUsername,
+    bool ClearDiscordWebhook,
+    string? Reason);
+
+public sealed record AdminGameAnnouncementResponse(
+    long Id,
+    string Title,
+    string Body,
+    string Category,
+    string Severity,
+    string? Version,
+    string? ActionLabel,
+    string? ActionUrl,
+    bool IsDraft,
+    bool IsPinned,
+    bool ShowOnce,
+    bool SendToDiscord,
+    DateTime? DiscordSentAtUtc,
+    DateTime PublishedAtUtc,
+    DateTime? ExpiresAtUtc,
+    DateTime? ArchivedAtUtc,
+    string? Added,
+    string? Changed,
+    string? Fixed,
+    string? KnownIssues,
+    string CreatedByUsername,
+    DateTime CreatedAtUtc,
+    string? UpdatedByUsername,
+    DateTime? UpdatedAtUtc);
+
+public sealed record AdminGameAnnouncementRequest(
+    string? Title,
+    string? Body,
+    string? Category,
+    string? Severity,
+    string? Version,
+    string? ActionLabel,
+    string? ActionUrl,
+    bool? IsDraft,
+    bool? IsPinned,
+    bool? ShowOnce,
+    bool? SendToDiscord,
+    DateTime? PublishedAtUtc,
+    DateTime? ExpiresAtUtc,
+    string? Added,
+    string? Changed,
+    string? Fixed,
+    string? KnownIssues,
+    string? Reason);
+
+public sealed record AdminGameAnnouncementArchiveRequest(bool Archived, string? Reason);
 
 public sealed record AdminConfigChangeRequest(string? Path, string? Value, string? Reason);
 

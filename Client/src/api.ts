@@ -340,7 +340,34 @@ export type Dashboard = {
   districts: StreetDistrict[]
   /** The crew, or null when running alone. */
   alliance?: AllianceBrief | null
+  updates: GameUpdates
   recentActivity: Activity[]
+}
+
+export type GameAnnouncement = {
+  id: number
+  title: string
+  body: string
+  category: 'Info' | 'Patch' | 'Balance' | 'Event' | 'Maintenance'
+  severity: 'Info' | 'Warning' | 'Event' | 'Maintenance'
+  version?: string | null
+  actionLabel?: string | null
+  actionUrl?: string | null
+  isPinned: boolean
+  showOnce: boolean
+  publishedAtUtc: string
+  expiresAtUtc?: string | null
+  added?: string | null
+  changed?: string | null
+  fixed?: string | null
+  knownIssues?: string | null
+  isNew: boolean
+}
+
+export type GameUpdates = {
+  updates: GameAnnouncement[]
+  unreadCount: number
+  lastSeenAtUtc?: string | null
 }
 
 /** One entry on the attack menu, already priced and gated by the server. */
@@ -1339,6 +1366,8 @@ export const api = {
       body: JSON.stringify({ username, city, email: email || null }),
     }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
+  updates: () => request<GameUpdates>('/api/game/updates'),
+  markUpdatesSeen: () => request<GameUpdates>('/api/game/updates/seen', { method: 'POST' }),
   leaderboard: (city?: string) => request<LeaderboardEntry[]>(
     city ? `/api/game/leaderboard?city=${encodeURIComponent(city)}` : '/api/game/leaderboard'),
   targets: (query = '') => request<PlayerTarget[]>(`/api/game/targets${query ? `?query=${encodeURIComponent(query)}` : ''}`),
@@ -1764,6 +1793,47 @@ export type LiveOps = {
   updatedBy?: string | null
 }
 
+export type AdminGameAnnouncement = Omit<GameAnnouncement, 'isNew'> & {
+  isDraft: boolean
+  sendToDiscord: boolean
+  discordSentAtUtc?: string | null
+  archivedAtUtc?: string | null
+  createdByUsername: string
+  createdAtUtc: string
+  updatedByUsername?: string | null
+  updatedAtUtc?: string | null
+}
+
+export type AdminGameAnnouncementDraft = {
+  title: string
+  body: string
+  category: GameAnnouncement['category']
+  severity: GameAnnouncement['severity']
+  version?: string | null
+  actionLabel?: string | null
+  actionUrl?: string | null
+  isDraft?: boolean | null
+  isPinned?: boolean | null
+  showOnce?: boolean | null
+  sendToDiscord?: boolean | null
+  publishedAtUtc?: string | null
+  expiresAtUtc?: string | null
+  added?: string | null
+  changed?: string | null
+  fixed?: string | null
+  knownIssues?: string | null
+  reason?: string | null
+}
+
+export type AnnouncementDeliverySettings = {
+  discordConfigured: boolean
+  discordUsesStoredWebhook: boolean
+  discordWebhookHost?: string | null
+  discordUsername: string
+  updatedAtUtc: string
+  updatedBy?: string | null
+}
+
 export const opsApi = {
   oversight: () => request<AdminOversight>('/api/admin/oversight'),
   setBotPaused: (playerId: string, paused: boolean) =>
@@ -1777,6 +1847,20 @@ export const opsApi = {
   liveOps: () => request<LiveOps>('/api/game/live-ops'),
   setLiveOps: (body: { maintenanceMode?: boolean, maintenanceMessage?: string, announcement?: string, reason?: string }) =>
     request<LiveOps>('/api/admin/live-ops', { method: 'PUT', body: JSON.stringify(body) }),
+  updates: (includeArchived = false) =>
+    request<AdminGameAnnouncement[]>(`/api/admin/updates${includeArchived ? '?includeArchived=true' : ''}`),
+  updateDelivery: () => request<AnnouncementDeliverySettings>('/api/admin/updates/delivery'),
+  setUpdateDelivery: (body: { discordWebhookUrl?: string | null, discordUsername?: string | null, clearDiscordWebhook?: boolean, reason?: string | null }) =>
+    request<AnnouncementDeliverySettings>('/api/admin/updates/delivery', { method: 'PUT', body: JSON.stringify(body) }),
+  createUpdate: (body: AdminGameAnnouncementDraft) =>
+    request<AdminGameAnnouncement>('/api/admin/updates', { method: 'POST', body: JSON.stringify(body) }),
+  updatePost: (id: number, body: AdminGameAnnouncementDraft) =>
+    request<AdminGameAnnouncement>(`/api/admin/updates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  archiveUpdate: (id: number, archived: boolean, reason?: string) =>
+    request<AdminGameAnnouncement>(`/api/admin/updates/${id}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ archived, reason }),
+    }),
 }
 
 export type AdminConfigEntry = {

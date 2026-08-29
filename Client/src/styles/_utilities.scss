@@ -127,3 +127,7 @@ $utilities: map-merge(
     ),
   )
 );
+
+.preserve-lines {
+  white-space: pre-line;
+}

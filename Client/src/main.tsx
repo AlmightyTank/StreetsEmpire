@@ -6335,11 +6335,22 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className,
    */
   wide?: boolean
 }) {
-  // Free while the player is still at the counter from a trip they have already paid for. Read as a
-  // value rather than asserted non-null at the point of use, so a response without the field renders
-  // the charged case rather than a countdown to an invalid date.
+  /*
+    Free while the player is still at the counter from a trip they have already paid for.
+
+    The window closes on the clock rather than on a refetch, so this is decided here against a live
+    reading rather than by the field merely being present. The server only sends it while it is still
+    standing, but the dashboard it arrived on is cached between refreshes: trusting the field alone
+    left the panel offering free moves, and hiding the fare from the buttons, for as long as nothing
+    else happened to refresh the page.
+
+    The second hand runs only while there is something to count, and stops itself the moment the
+    window is gone - at which point this flips back to the charged case on its own.
+  */
   const freeUntil = dashboard.bankTripFreeUntilUtc
-  const free = !!freeUntil
+  const free = !!freeUntil && new Date(freeUntil).getTime() > Date.now()
+  const now = useSecondsTicker(free)
+  const secondsFree = secondsUntil(freeUntil, now)
   const fare = free ? 0 : dashboard.bankTripTurnCost
   const cannotAfford = dashboard.turns < fare
 
@@ -6366,8 +6377,8 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className,
         <p className="text-body-tertiary small mb-0">
           {!charged
             ? <>Your safe has room for {money.format(safeRoom)} more cash on hand.</>
-            : freeUntil
-              ? <>You are still at the bank, so moves are free for another {timeUntil(freeUntil)}.</>
+            : free
+              ? <>You are still at the bank, so moves are free for another {countdown(secondsFree)}.</>
               : <>A trip costs {dashboard.bankTripTurnCost} {dashboard.bankTripTurnCost === 1 ? 'turn' : 'turns'}, and everything you move while you are there is on the same trip. Your safe has room for {money.format(safeRoom)} more.</>}
         </p>
       </div>

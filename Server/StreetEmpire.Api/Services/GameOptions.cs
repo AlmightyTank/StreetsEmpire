@@ -224,6 +224,7 @@ public sealed class GameOptions
     public MuleOptions Mules { get; set; } = new();
     public ContractOptions Contracts { get; set; } = new();
     public BankOptions Bank { get; set; } = new();
+    public ArrestOptions Arrests { get; set; } = new();
 }
 
 /// <summary>
@@ -1474,6 +1475,74 @@ public sealed class BankOptions
     /// free banking for anyone willing to move money every few minutes.
     /// </summary>
     public int TripGraceMinutes { get; set; } = 5;
+}
+
+/// <summary>
+/// Getting swept up working the streets, and what it costs to get people back.
+///
+/// The street had no downside event at all. It draws heat, but heat only ever answered for what was
+/// held, so a house holding nothing worked for ever at no risk - and because recruits and finds are
+/// both flat per turn, the shift was pure upside that quietly stopped mattering as the crew grew. A
+/// sweep that scales with the crew on the street is the counterweight: it turns a flat trickle of
+/// recruits back into churn, and gives a grown empire something to spend money on.
+///
+/// The choice it creates is the point. Bail is priced above what the same head costs to hire, so for
+/// anonymous crew it is deliberately the worse deal in cash - you pay it to keep the morale, not to
+/// save money. For a named pimp it is plainly worth paying, because another pimp is not that pimp.
+/// </summary>
+public sealed class ArrestOptions
+{
+    /// <summary>
+    /// Crew on the street below which nobody is ever taken.
+    ///
+    /// The same idea as the heat floor, and for the same stated reason: a floor is what makes a small
+    /// operation safe and stops the game punishing a player for existing. A Trap House holds fifty
+    /// hoes, so a house working its opening crew is never swept.
+    /// </summary>
+    public int FreeCrewOnStreet { get; set; } = 20;
+
+    /// <summary>
+    /// How fast the odds climb with each exposed head. Feeds a curve rather than a straight line, so
+    /// the ceiling below is approached rather than reached: a flat line hit the cap by the second tier
+    /// and made every size and district above it identical.
+    /// </summary>
+    public double ChancePerCrewPerShift { get; set; } = 0.004;
+
+    /// <summary>The most any one shift can risk, before the lookout takes its share off.</summary>
+    public double MaxChancePerShift { get; set; } = 0.5;
+
+    /// <summary>Heat lifts the odds rather than gating them: the law is already looking, not newly told.</summary>
+    public double HeatScaleDivisor { get; set; } = 100;
+
+    /// <summary>How much of the crew on the street a sweep takes. A share, so a big house loses more.</summary>
+    public double MinTakenPercent { get; set; } = 0.01;
+    public double MaxTakenPercent { get; set; } = 0.03;
+
+    /// <summary>The chance a sweep also picks up a named pimp, who is the decision worth having.</summary>
+    public double PimpTakenChance { get; set; } = 0.12;
+
+    public int BailWindowHours { get; set; } = 6;
+
+    public long BailPerHoe { get; set; } = 900;
+    public long BailPerThug { get; set; } = 1_800;
+    public long BailPerPimp { get; set; } = 6_000;
+
+    /// <summary>
+    /// What leaving people inside costs the ones who are still out. Capped, because the hiring floor
+    /// sits at 35 morale: an uncapped penalty could drop a player below the line that lets them
+    /// replace the crew they just lost, which is a hole rather than a consequence.
+    /// </summary>
+    public double AbandonMoralePerHead { get; set; } = 0.8;
+    public double MaxAbandonMoralePenalty { get; set; } = 20;
+    public double AbandonLoyaltyPenalty { get; set; } = 6;
+
+    /// <summary>
+    /// Whether the one you left talks. Loyalty is frozen at the arrest and decides it, which is the
+    /// only place in the game where loyalty you never spent buys you something.
+    /// </summary>
+    public double TalkLoyaltyThreshold { get; set; } = 50;
+    public double TalkChance { get; set; } = 0.4;
+    public double TalkHeat { get; set; } = 12;
 }
 
 public sealed class MuleOptions

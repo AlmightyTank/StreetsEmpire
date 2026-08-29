@@ -27,7 +27,12 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
     /// is what is actively costing them - morale bleeding, product they cannot store, a stash drawing
     /// the law - ahead of what merely would pay.
     /// </summary>
-    public IReadOnlyList<NextMoveResponse> NextMoves(Player player, double heat)
+    /// <param name="held">
+    /// Anybody in a cell right now, and what the bond would total. Passed in rather than read here,
+    /// because this runs off a loaded player and arrests are rows - the same reason heat arrives as a
+    /// number rather than being recomputed.
+    /// </param>
+    public IReadOnlyList<NextMoveResponse> NextMoves(Player player, double heat, HeldCrew? held = null)
     {
         var moves = new List<(int Rank, NextMoveResponse Move)>();
         var report = economy.GetCrewReport(player);
@@ -37,7 +42,19 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         void Add(int rank, string label, string why, string page, long cost = 0)
             => moves.Add((rank, new NextMoveResponse(label, why, page, cost, rank <= 20)));
 
-        // Bleeding first. These are not opportunities, they are things quietly taking money off the
+        // Ahead of the bleeding, because everything below is a tap left running and this is the only
+        // one with a clock on it. A player who never opens the crew page would otherwise find out that
+        // somebody was taken by noticing, later, that they are not there any more.
+        if (held is { Heads: > 0 })
+        {
+            var hours = Math.Max(1, (int)Math.Ceiling((held.SoonestDeadlineUtc - DateTime.UtcNow).TotalHours));
+            Add(5, $"Bail out {held.Heads:N0} of your crew",
+                $"The law is holding them and will let them go in about {hours} hour(s). "
+                + "Leaving them costs the morale of everybody still out, and a pimp with little to lose talks.",
+                "crew", held.TotalBail);
+        }
+
+        // Bleeding next. These are not opportunities, they are things quietly taking money off the
         // table every shift the player works.
         var unarmed = Math.Max(0, player.Thugs - player.Weapons);
         if (unarmed > 0)

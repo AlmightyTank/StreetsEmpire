@@ -1894,6 +1894,8 @@ The configurable tables now include:
 - `AntiFarm` net worth floor and ratio, loot decay, protection escalation, and the incoming attack cap
 - `Hideout` tiers, storage rooms, safes, labs, and the offline production ceiling
 - `Bank` what a trip to the bank costs in turns, and how long after a paid one moves are still free
+- `Arrests` the odds of a sweep and how they scale with the crew, what bail costs a head, how long
+  there is to pay it, and what leaving people inside costs in morale, loyalty and heat
 - `WorldNews` feed size, window, and the money and crew thresholds that make an action newsworthy
 
 ## Verification

@@ -34,10 +34,31 @@ public sealed class Pimp
     /// <summary>Null while still on the payroll.</summary>
     public DateTime? LostAtUtc { get; set; }
 
-    /// <summary>How they left: Fired, Killed in action, Killed defending, or Walked out.</summary>
+    /// <summary>How they left: Fired, Killed in action, Killed defending, Walked out, or Left in County.</summary>
     public string? LostReason { get; set; }
 
-    public bool IsActive => LostAtUtc is null;
+    /// <summary>
+    /// Null unless they are sitting in a cell.
+    ///
+    /// A third state, and not the same as being lost. Lost is for ever and is what the fallen list is
+    /// made of; jail is a held position somebody can still be bought out of. Kept separate rather than
+    /// borrowing LostAtUtc because clearing that on a bail would be a resurrection, and because a
+    /// reason of "Arrested" sitting in the fallen list would be reporting a death that has not
+    /// happened.
+    ///
+    /// Left set when an abandoned pimp finally becomes lost, so the record still says where they went.
+    /// </summary>
+    public DateTime? JailedAtUtc { get; set; }
+
+    /// <summary>
+    /// On the payroll and available. Excluding the jailed here is what makes the rest of the game
+    /// handle them for free: they stop earning, stop counting toward management capacity and cannot be
+    /// picked to lead, at every call site, without any of those sites knowing jail exists.
+    /// </summary>
+    public bool IsActive => LostAtUtc is null && JailedAtUtc is null;
+
+    /// <summary>Inside, and still gettable. Not lost, and deliberately not in the fallen list.</summary>
+    public bool IsJailed => LostAtUtc is null && JailedAtUtc is not null;
 }
 
 public static class PimpSpecialties

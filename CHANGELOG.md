@@ -2,6 +2,34 @@
 
 ## 0.2.7 (in progress)
 
+### Added
+- **The law takes people off the street.** Working a shift had no downside event at all. It draws heat,
+  but heat only ever answered for what was held, so a house holding nothing worked for ever at no risk.
+  A sweep can now pick up hoes, thugs, and occasionally a pimp by name, and they sit in a cell with six
+  hours on them.
+- The choice is bail or leave them, and it is a real one because bail is deliberately dearer than
+  hiring the same head again. For anonymous crew you are not buying the body back, you are buying the
+  morale of everybody who watched; for a pimp you are buying a specialty and a loyalty history that
+  hiring cannot replace. Leaving them costs morale, costs every pimp some loyalty, and if the one you
+  left had little enough to lose, they talk and your heat goes up. That is the only place in the game
+  where loyalty a player never spent buys them something.
+- The odds scale with the crew actually on the street, which is the point of it. Recruits and finds are
+  both flat per turn, so a shift was pure upside that quietly stopped mattering as the house grew - at
+  three hoes the street doubles you every shift, at two hundred it moves you 1.2%. A risk that grows
+  with the operation turns a flat trickle back into churn, and gives a grown empire something to spend
+  money on. Nobody under twenty crew is ever touched, on the same floor the heat rules keep.
+- Where you work decides it too. The Casino runs at nearly double the Wino Slums for the same crew, so
+  the district table finally trades gross against something. The lookout post cuts the odds the same way
+  it cuts a contraband raid, which is the second reason that room has ever had to exist.
+- Rivals are swept up on the same rules and answer on their own character: a Resource Manager posts the
+  bond to keep a house steady, a Hard Charger leaves them and takes the hit it was always going to take.
+  Every one of them goes for a named pimp. A rival that will not pay simply lets the window run out, the
+  same way a player does by doing nothing.
+- Somebody in a cell is a third thing a pimp can be, and not the same as being lost. They stop earning,
+  stop counting toward management, and cannot lead - and they stay out of the fallen list, because
+  telling a player they lost somebody they can still go and get would be reporting a death that has not
+  happened.
+
 ### Changed
 - **A trip to the bank costs turns.** Banking was free, instant and unlimited, which made the bank
   strictly better than the safe in every case: cash on hand is what a raid and a roadblock take, bank

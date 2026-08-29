@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -2156,6 +2156,9 @@ function CrewPage(ctx: PageContext) {
   const { dashboard, busy, crewQty, totalCrew, weaponCoverage, managementCapacity, setCrewQty, act } = ctx
   const combatCrew = dashboard.combatCrew
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start">
+    {/* First on the page, and only when there is one. A cell has a clock on it and nothing else here
+        does, so it goes above the crew it is holding rather than under them. */}
+    <ArrestPanel dashboard={dashboard} busy={busy} act={act} />
     <ShrinePanel busy={busy} act={act} />
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
@@ -5691,6 +5694,96 @@ function strikeNote(method: AttackMethod, profile: PlayerProfile, dashboard: Das
  * Fetched on its own rather than folded into the dashboard because it is a weekly errand, not a live
  * figure: nothing on this panel changes between page loads except when the player acts on it.
  */
+/**
+ * The cell.
+ *
+ * Draws nothing at all when nobody is being held, which is almost always - a panel that sat there
+ * empty would be a standing reminder of a thing that is not happening, on the page a player opens to
+ * look at the crew they still have.
+ *
+ * The clock is the whole reason this is urgent, so it runs live off the same ticker the bank window
+ * uses, and the row re-reads itself when the window closes so a bond is never offered on somebody the
+ * server has already written off.
+ */
+function ArrestPanel({ dashboard, busy, act }: {
+  dashboard: Dashboard
+  busy: boolean
+  act: PageContext['act']
+}) {
+  const [board, setBoard] = useState<ArrestBoard | null>(null)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    try {
+      setBoard(await api.arrests())
+      setError('')
+    } catch (e) { setError((e as Error).message) }
+  }
+  // Re-read when the crew or the money moves, which covers both answering a cell and coming back from
+  // a shift that filled one.
+  useEffect(() => { void load() }, [dashboard.hoes, dashboard.thugs, dashboard.pimps, dashboard.cash])
+
+  const held = board?.held ?? []
+  // A window that has closed since the page was drawn is not a bond any more; the server has already
+  // settled it and will refuse. Hidden rather than greyed out, because there is nothing left to decide.
+  //
+  // Filtered against a live reading rather than the ticker's last value: a render caused by anything
+  // other than the tick - the parent refreshing, a sibling changing - would otherwise be judged on a
+  // clock up to a second stale, and offer a bond the server has already written off. The ticker only
+  // has to drive the redraw and stop itself once the last window is gone.
+  const open = held.filter(x => new Date(x.bailDeadlineUtc).getTime() > Date.now())
+  const ticking = useSecondsTicker(open.length > 0)
+
+  if (open.length === 0) return null
+
+  return <section className="card p-3 gcol-full border-warning">
+    <div className="panel-title">
+      <h2>In County</h2>
+      <span>{number.format(open.reduce((n, x) => n + x.heads, 0))} held</span>
+    </div>
+    {error && <div className="alert alert-danger"><span>{error}</span></div>}
+    <p className="mb-2">
+      Bail draws on your bank first. Leaving them costs the morale of everybody still out, and a pimp
+      with little left to lose talks to the law on the way in.
+    </p>
+    <div className="d-grid gap-2">
+      {open.map(arrest => {
+        const seconds = secondsUntil(arrest.bailDeadlineUtc, ticking)
+        const who = [
+          arrest.hoes > 0 ? `${number.format(arrest.hoes)} hoe${arrest.hoes === 1 ? '' : 's'}` : null,
+          arrest.thugs > 0 ? `${number.format(arrest.thugs)} thug${arrest.thugs === 1 ? '' : 's'}` : null,
+          arrest.pimpName,
+        ].filter(Boolean).join(' and ')
+        return <div className="d-grid gap-1 border rounded px-3 py-2" key={arrest.id}>
+          <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <strong>{who}</strong>
+            <span className={seconds < 3600 ? 'text-danger' : 'text-body-secondary'}>Released in {countdown(seconds)}</span>
+          </div>
+          <small className="text-body-tertiary">
+            Swept up in {arrest.city}{arrest.district ? ` / ${arrest.district}` : ''} on a {arrest.chancePercent}% shift.
+          </small>
+          <div className="control-row">
+            <button
+              className="btn btn-primary"
+              disabled={busy || !arrest.canAffordBail}
+              title={arrest.canAffordBail ? undefined : `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)}.`}
+              onClick={() => void act(async () => { const r = await api.bailArrest(arrest.id); await load(); return r })}>
+              Bail out ({money.format(arrest.bailAmount)})
+            </button>
+            <button
+              className="btn btn-outline-secondary"
+              disabled={busy}
+              title="They are gone, and the crew still out will notice."
+              onClick={() => void act(async () => { const r = await api.abandonArrest(arrest.id); await load(); return r })}>
+              Leave them
+            </button>
+          </div>
+        </div>
+      })}
+    </div>
+  </section>
+}
+
 function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) {
   const [board, setBoard] = useState<PrayerBoard | null>(null)
   const [offered, setOffered] = useState(0)

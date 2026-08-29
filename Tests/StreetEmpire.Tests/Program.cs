@@ -53,11 +53,13 @@ var tests = new (string Name, Action Test)[]
     ("everything you can hold is worth something", EverythingYouCanHoldIsWorthSomething),
     ("the bench never makes an attack cheaper than its answer", DefenceIsNeverDearerThanAttack),
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
+    ("crew are swept up, bailed out, or left inside", CrewAreSweptUpBailedOrLeftInside),
+    ("a bond is refused late, short, or twice", ABondIsRefusedLateShortOrTwice),
     ("a trip to the bank costs turns", ATripToTheBankCostsTurns),
     ("a second move on the same trip is free", ASecondMoveOnTheSameTripIsFree),
     ("the free bank window does not slide", TheFreeBankWindowDoesNotSlide),
     ("a bank trip you cannot afford moves no money", ABankTripYouCannotAffordMovesNoMoney),
-    ("every rival prices a trip to the bank against its own crew", EveryRivalPricesATripAgainstItsCrew),
+    ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
     ("a stopped run takes a share of the load but never the bank", StoppedRunTakesAShareOfTheLoadButNeverTheBank),
@@ -1282,6 +1284,114 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
     AssertTrue(player.LastBankedAtUtc is null, "an overflow sweep should not open the free window either");
 }
 
+/// <summary>
+/// The three ways a bond is not payable, all of which the bail route can be asked for directly and so
+/// must be refused by the rule rather than by the button that usually hides them.
+/// </summary>
+static void ABondIsRefusedLateShortOrTwice()
+{
+    var options = Resolve(null);
+    options.Arrests.ChancePerCrewPerShift = 50;
+    options.Arrests.PimpTakenChance = 0;
+    var snapshot = Snapshot(options);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"bond-{Guid.NewGuid()}")
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+        .Options);
+    var roster = new PimpRoster(snapshot, new MinimumRandom());
+    var service = new ArrestService(db, snapshot, new ZeroRandom(), new HideoutService(snapshot), roster);
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+
+    // Past the deadline. Nobody is holding them any more, whatever the page still says.
+    var player = new Player { Cash = 5_000_000, Hoes = 200, Thugs = 110, Hideout = new Hideout() };
+    var late = service.RollForShift(player, 20, "lowrent", now)!;
+    var heldBefore = player.Hoes + player.Thugs;
+    AssertRuleError(() => service.Bail(player, late, late.BailDeadlineUtc), "the window has closed");
+    AssertEqual(heldBefore, player.Hoes + player.Thugs);
+    AssertEqual(5_000_000L, player.Cash);
+
+    // Short. Counted against cash and bank together, because a bond is paid from the bank first.
+    var broke = new Player { Cash = 10, BankCash = 10, Hoes = 200, Thugs = 110, Hideout = new Hideout() };
+    var unaffordable = service.RollForShift(broke, 20, "lowrent", now)!;
+    AssertRuleError(() => service.Bail(broke, unaffordable, now.AddMinutes(1)), "the money is not there");
+    AssertTrue(unaffordable.IsHeld, "a refused bond leaves them where they are");
+
+    // And never twice: the second payment would buy back crew who are already home.
+    var rich = new Player { Cash = 5_000_000, Hoes = 200, Thugs = 110, Hideout = new Hideout() };
+    var paid = service.RollForShift(rich, 20, "lowrent", now)!;
+    service.Bail(rich, paid, now.AddMinutes(1));
+    var afterFirst = rich.Cash;
+    var crewAfterFirst = rich.Hoes + rich.Thugs;
+    AssertRuleError(() => service.Bail(rich, paid, now.AddMinutes(2)), "it is already settled");
+    AssertEqual(afterFirst, rich.Cash);
+    AssertEqual(crewAfterFirst, rich.Hoes + rich.Thugs);
+}
+
+/// <summary>
+/// The whole arc of a sweep: taken, bought back, and left inside.
+///
+/// The thing most worth pinning here is the third state a pimp can now be in. Active used to mean
+/// "not lost", and jail broke that in both directions - somebody in a cell is not working and is
+/// also not gone. If the fallen list ever starts reporting them, a player is being told they lost
+/// somebody they can still go and get.
+/// </summary>
+static void CrewAreSweptUpBailedOrLeftInside()
+{
+    var options = Resolve(null);
+    // Forced rather than sampled: this is about what a sweep does, not about how often one happens.
+    options.Arrests.ChancePerCrewPerShift = 50;
+    options.Arrests.PimpTakenChance = 1;
+    var snapshot = Snapshot(options);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"arrest-{Guid.NewGuid()}")
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+        .Options);
+    var roster = new PimpRoster(snapshot, new MinimumRandom());
+    var service = new ArrestService(db, snapshot, new ZeroRandom(), new HideoutService(snapshot), roster);
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+
+    var player = new Player { Cash = 500_000, Hoes = 200, Thugs = 110, Turns = 200, Hideout = new Hideout() };
+    roster.Hire(player, 3, now);
+    AssertEqual(3, player.Pimps);
+
+    var arrest = service.RollForShift(player, 20, "lowrent", now);
+    AssertTrue(arrest is not null, "a forced sweep should take somebody");
+    AssertTrue(arrest!.Hoes + arrest.Thugs > 0, "a sweep takes heads");
+    AssertTrue(arrest.PimpName is not null, "a forced pimp roll should jail one");
+    AssertEqual(2, player.Pimps);
+    AssertEqual(310 - (arrest.Hoes + arrest.Thugs), player.Hoes + player.Thugs);
+    AssertEqual(1, roster.Jailed(player).Count);
+    AssertEqual(0, roster.Fallen(player).Count);
+    AssertTrue(arrest.BailAmount > 0, "bail is priced");
+
+    // Bail brings everybody back and the counter with them.
+    var before = player.Cash + player.BankCash;
+    service.Bail(player, arrest, now.AddMinutes(1));
+    AssertEqual(310, player.Hoes + player.Thugs);
+    AssertEqual(3, player.Pimps);
+    AssertEqual(0, roster.Jailed(player).Count);
+    AssertEqual(before - arrest.BailAmount, player.Cash + player.BankCash);
+    AssertEqual("Bailed", arrest.Outcome);
+
+    // A second sweep, abandoned this time.
+    var second = service.RollForShift(player, 20, "lowrent", now.AddHours(1))!;
+    AssertEqual(2, player.Pimps);
+    var moraleBefore = player.HoeHappiness;
+    var gone = service.Abandon(player, second, now.AddHours(8));
+    AssertEqual("Abandoned", second.Outcome);
+    AssertEqual(2, player.Pimps);
+    AssertEqual(0, roster.Jailed(player).Count);
+    AssertEqual(1, roster.Fallen(player).Count);
+    AssertEqual("Left in County", roster.Fallen(player)[0].LostReason);
+    AssertTrue(player.HoeHappiness < moraleBefore, "leaving them costs the ones still out");
+    AssertTrue(player.HoeHappiness >= moraleBefore - options.Arrests.MaxAbandonMoralePenalty, "and never more than the cap");
+    AssertTrue(gone.Describe().Length > 0, "it says what happened");
+
+    // A small house is never touched, however long it works.
+    var small = new Player { Hoes = 10, Thugs = 5, Turns = 200, Hideout = new Hideout() };
+    AssertTrue(service.RollForShift(small, 20, "ghetto", now) is null, "under the floor nobody is taken");
+}
+
 static void ATripToTheBankCostsTurns()
 {
     var service = CreateEconomy(new GameOptions { Bank = new BankOptions { TripTurnCost = 2, TripGraceMinutes = 5 } });
@@ -1388,6 +1498,8 @@ static void EveryRivalPricesATripAgainstItsCrew()
             $"{focus} should price a trip at a plausible number of fares, not {brain.DepositTripWorthMultiple}");
         AssertTrue(brain.DepositShare is > 0 and <= 1,
             $"{focus} should bank a share of the excess, not {brain.DepositShare}");
+        AssertTrue(brain.BailMoraleFloor is >= 0 and <= 100,
+            $"{focus} should answer a cell at a morale that exists, not {brain.BailMoraleFloor}");
     }
 
     // Character survives the change of units: a Banker reaches for the bank before anything else, and
@@ -1395,6 +1507,12 @@ static void EveryRivalPricesATripAgainstItsCrew()
     AssertTrue(
         seen[BotBrainFocus.Banker].DepositTripWorthMultiple < seen[BotBrainFocus.MoraleNeglecter].DepositTripWorthMultiple,
         "a Banker should walk to the bank for less than a Hard Charger will");
+
+    // And the same character shows in the cell: the one who watches the house pays to keep it steady,
+    // and the one whose whole name is neglecting morale lets them sit.
+    AssertTrue(
+        seen[BotBrainFocus.ResourceManager].BailMoraleFloor > seen[BotBrainFocus.MoraleNeglecter].BailMoraleFloor,
+        "a Resource Manager should post a bond a Hard Charger would not");
 }
 
 static void CityMarketsChangeProductSalePrices()
@@ -8175,4 +8293,11 @@ sealed class MinimumRandom : IGameRandom
 {
     public int NextInclusive(int min, int max) => min;
     public double NextDouble() => 1;
+}
+
+/// <summary>Every roll lands, for exercising a path rather than sampling it.</summary>
+sealed class ZeroRandom : IGameRandom
+{
+    public int NextInclusive(int min, int max) => min;
+    public double NextDouble() => 0;
 }

@@ -13,7 +13,7 @@ namespace StreetEmpire.Api.Services;
 /// Wall-clock earnings have to happen wherever a player is loaded, not only on the dashboard, or the
 /// same hour pays out twice depending on which page they opened first.
 /// </summary>
-public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules, EconomyService economy)
+public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules, EconomyService economy, ArrestService arrests)
 {
     /// <summary>
     /// Brings a player up to date. The caller saves when <see cref="PlayerTick.Changed"/> is set, and
@@ -59,9 +59,13 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
 
         var runsHome = await SettleMuleRunsAsync(player, nowUtc, db, ct);
         var craftsDone = await CompleteWorkshopCraftsAsync(player, nowUtc, db, ct);
+        // Before the turn refresh, because leaving crew inside costs morale and the refresh is what
+        // recovers it. Settled the other way round, an abandonment would be partly healed in the same
+        // pass that applied it.
+        var writtenOff = await SettleArrestsAsync(player, nowUtc, db, ct);
 
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone, built, labs);
+        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff, built, labs);
     }
 
     /// <summary>
@@ -90,6 +94,35 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
             mules.Settle(run, player, crew.FirstOrDefault(x => x.Id == run.PimpId), random, nowUtc);
             if (db is not null)
                 AddLog(db, player, before, "MULE", 0, run.Summary, nowUtc);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Writes off anybody whose bail window has run out.
+    ///
+    /// Settled here rather than on a timer for the same reason a mule run is: the crew belong to one
+    /// empire, and the moment that matters is the moment that empire is next looked at. It does mean a
+    /// player who never logs in never loses anybody, which is correct - the choice was theirs to make
+    /// and the game should not make it while they are gone, only once they are back to be told.
+    /// </summary>
+    private async Task<bool> SettleArrestsAsync(Player player, DateTime nowUtc, GameDbContext? db, CancellationToken ct)
+    {
+        var expired = await territoryDb.Arrests
+            .Include(x => x.Pimp)
+            .Where(x => x.PlayerId == player.Id && x.SettledAtUtc == null && x.BailDeadlineUtc <= nowUtc)
+            .OrderBy(x => x.BailDeadlineUtc)
+            .ToListAsync(ct);
+        if (expired.Count == 0) return false;
+
+        foreach (var arrest in expired)
+        {
+            // Snapshotted per arrest: two windows closing together must not both claim the same loss.
+            var before = Snapshot(player);
+            var gone = arrests.Abandon(player, arrest, nowUtc);
+            if (db is not null)
+                AddLog(db, player, before, "ARREST", 0, gone.Describe(), nowUtc);
         }
 
         return true;

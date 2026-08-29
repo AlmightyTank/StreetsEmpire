@@ -1124,6 +1124,32 @@ export type MuleQuote = {
   bustChancePercent: number
   defectChancePercent: number
 }
+/** Somebody the law is holding, and what it would take to get them back. */
+export type Arrest = {
+  id: number
+  hoes: number
+  thugs: number
+  pimpName: string | null
+  heads: number
+  bailAmount: number
+  canAffordBail: boolean
+  city: string
+  district: string
+  /** The odds the shift ran, so a sweep can be read as bad luck or a bad call. */
+  chancePercent: number
+  arrestedAtUtc: string
+  bailDeadlineUtc: string
+  secondsRemaining: number
+}
+
+export type ArrestBoard = {
+  held: Arrest[]
+  totalBail: number
+  /** Cash and bank together, because a bond draws on the bank first. */
+  funds: number
+  bailWindowHours: number
+}
+
 export type MuleBoard = {
   concurrentRunCap: number
   runsOut: number
@@ -1457,6 +1483,9 @@ export const api = {
   cutCoke: (turns: number) =>
     request<ActionResult>('/api/game/cut', { method: 'POST', body: JSON.stringify({ turns, product: 'coke' }) }),
   mules: () => request<MuleBoard>('/api/game/mules'),
+  arrests: () => request<ArrestBoard>('/api/game/arrests'),
+  bailArrest: (id: number) => request<ActionResult>(`/api/game/arrests/${id}/bail`, { method: 'POST' }),
+  abandonArrest: (id: number) => request<ActionResult>(`/api/game/arrests/${id}/abandon`, { method: 'POST' }),
   contracts: () => request<ContractBoard>('/api/game/contracts'),
   chat: (channel: ChatChannelKey) =>
     request<ChatBoard>(`/api/game/chat?channel=${encodeURIComponent(channel)}`),

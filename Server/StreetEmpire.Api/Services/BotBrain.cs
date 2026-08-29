@@ -62,7 +62,21 @@ internal sealed record BotBrain(
     /// banked every loose note and paid a fare each time to do it.
     /// </summary>
     int DepositTripWorthMultiple,
-    double DepositShare)
+    double DepositShare,
+
+    /// <summary>
+    /// The crew morale at or below which this personality pays to get anonymous crew out of a cell.
+    ///
+    /// A morale figure rather than a price, because bail is deliberately dearer than hiring the same
+    /// head again: read as money it is always the worse deal, so a rival deciding on cash alone would
+    /// leave everybody inside every time. What it actually buys is the morale of the crew still out,
+    /// so that is what the decision is made on, and a house already near the desertion line is the one
+    /// that cannot afford another knock.
+    ///
+    /// A named pimp is outside this entirely - every personality goes for one, because bail buys back
+    /// a specialty and a loyalty history that hiring cannot, and all of them need somebody to command.
+    /// </summary>
+    int BailMoraleFloor)
 {
     public static BotBrain For(Player bot)
     {
@@ -80,49 +94,49 @@ internal sealed record BotBrain(
                 65, 90, 40, 65, 80, 10, 78, 82, 55, 42, 2,
                 72, 1, 0, 0, 4.5, 2, 1, 3, 4,
                 0.24, 6_000, 14_000, 0.55, 2, 3, 2, 5, 0.24,
-                18, 60, 2, 6, 0.65),
+                18, 60, 2, 6, 0.65, 78),
             BotBrainFocus.BigSpender => new BotBrain(
                 "Big Spender", focus, 10, 32 + (int)(risk * 8), 0.07, 0.55,
                 0.45, 0.55, 1.05, 2, 0.45, 0.75, 0.65, 900, 140, 320,
                 42, 84, 25, 55, 70, 15, 55, 58, 28, 24, 4,
                 42, -3, 3, 3, 1.5, 4, 2, 2, 2,
                 0.42, 2_500, 8_000, 0.72, 2, 5, 3, 8, 0.08,
-                10, 75, 4, 18, 0.25),
+                10, 75, 4, 18, 0.25, 45),
             BotBrainFocus.MoraleNeglecter => new BotBrain(
                 "Hard Charger", focus, 12, 36 + (int)(risk * 10), 0.06, 0.28,
                 0.65, 0.62, 0.85, 1, 0.25, 0.55, 0.75, 1_000, 120, 280,
                 30, 92, 20, 50, 60, 10, 38, 42, 18, 18, 2,
                 30, -6, 8, 5, 2.0, 3, 2, 2, 2,
                 0.32, 3_000, 9_000, 0.6, 1, 4, 3, 9, 0.06,
-                8, 40, 2, 22, 0.2),
+                8, 40, 2, 22, 0.2, 30),
             BotBrainFocus.ProductRunner => new BotBrain(
                 "Product Runner", focus, 14, 40 + (int)(appetite * 8), 0.11, 0.7,
                 0.95, 0.8, 1.6, 3, 0.75, 0.9, 1.7, 1_500, 180, 420,
                 52, 88, 35, 62, 78, 10, 68, 72, 40, 32, 2,
                 58, 0, 1, 1, 3.2, 2, 1, 3, 3,
                 0.78, 3_200, 7_000, 0.84, 3, 7, 2, 5, 0.14,
-                12, 45, 2, 10, 0.45),
+                12, 45, 2, 10, 0.45, 58),
             BotBrainFocus.CrewBuilder => new BotBrain(
                 "Crew Builder", focus, 13, 38 + (int)(appetite * 8), 0.1, 0.72,
                 0.8, 0.72, 1.5, 3, 0.7, 0.85, 0.8, 1_400, 100, 260,
                 54, 86, 35, 62, 78, 10, 68, 72, 38, 30, 2,
                 58, 2, 1, 2, 2.1, 5, 2, 4, 2,
                 0.28, 4_000, 10_000, 0.55, 2, 4, 2, 6, 0.12,
-                14, 55, 3, 13, 0.35),
+                14, 55, 3, 13, 0.35, 72),
             BotBrainFocus.Banker => new BotBrain(
                 "Banker", focus, 20 + (int)(patience * 10), 50 + (int)(patience * 14), 0.18, 0.78,
                 1.15, 1.3, 1.7, 3, 0.85, 0.95, 0.55, 2_000, 70, 180,
                 58, 88, 35, 65, 80, 10, 70, 76, 48, 36, 2,
                 64, 1, 0, 0, 4.0, 2, 1, 4, 4,
                 0.2, 5_000, 13_000, 0.48, 2, 3, 2, 5, 0.22,
-                12, 45, 2, 4, 0.82),
+                12, 45, 2, 4, 0.82, 70),
             _ => new BotBrain(
                 "Balanced Operator", focus, 15 + (int)(patience * 8), 42 + (int)(patience * 6), 0.12, 0.8,
                 1.0, 1.0, 2.0, 3, 0.8, 1.0, 1.0, 2_000, 100, 250,
                 55, 88, 35, 65, 80, 10, 70, 75, 45, 35, 2,
                 65, 0, 0, 0, 4.0, 3, 1, 3, 3,
                 0.35, 5_000, 12_000, 0.65, 2, 4, 2, 6, 0.18,
-                12, 40, 3, 8, 0.5)
+                12, 40, 3, 8, 0.5, 65)
         };
     }
 }

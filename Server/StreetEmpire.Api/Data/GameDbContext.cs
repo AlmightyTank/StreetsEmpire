@@ -23,6 +23,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Territory> Territories => Set<Territory>();
     public DbSet<MarketListing> MarketListings => Set<MarketListing>();
     public DbSet<MuleRun> MuleRuns => Set<MuleRun>();
+    public DbSet<Arrest> Arrests => Set<Arrest>();
     public DbSet<WorkshopCraft> WorkshopCrafts => Set<WorkshopCraft>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
@@ -274,6 +275,28 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.SellerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Arrest>(entity =>
+        {
+            // Every read is "who is this player holding in a cell", and the settler asks "whose time
+            // is up". The same pair of indexes a mule run is read by, for the same two questions.
+            entity.HasIndex(x => new { x.PlayerId, x.SettledAtUtc });
+            entity.HasIndex(x => x.BailDeadlineUtc);
+            entity.Property(x => x.Outcome).HasMaxLength(16);
+            entity.Property(x => x.City).HasMaxLength(64);
+            entity.Property(x => x.District).HasMaxLength(32);
+            entity.Property(x => x.PimpName).HasMaxLength(64);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // The pimp is nulled rather than the row going with them, because the row is the record of
+            // what happened and outlives whoever it happened to. PimpName is kept for that reason.
+            entity.HasOne(x => x.Pimp)
+                .WithMany()
+                .HasForeignKey(x => x.PimpId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<MuleRun>(entity =>

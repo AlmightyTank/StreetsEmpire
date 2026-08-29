@@ -749,6 +749,45 @@ public sealed record MuleBoardResponse(
     IReadOnlyList<MuleCandidateResponse> Pimps,
     IReadOnlyList<MuleRunResponse> Runs);
 
+/// <summary>
+/// Somebody the law is holding, and what it would take to get them back.
+///
+/// Carries the odds it happened at as well as the price, because a player who is only told they lost
+/// people cannot tell a bad decision from bad luck - the same reason a mule run reports the chances it
+/// ran. The seconds are sent alongside the deadline so a panel can count down without trusting the
+/// clock on the machine it is drawn on.
+/// </summary>
+public sealed record ArrestResponse(
+    long Id,
+    int Hoes,
+    int Thugs,
+    string? PimpName,
+    int Heads,
+    long BailAmount,
+    bool CanAffordBail,
+    string City,
+    string District,
+    int ChancePercent,
+    DateTime ArrestedAtUtc,
+    DateTime BailDeadlineUtc,
+    int SecondsRemaining);
+
+/// <summary>
+/// The cell. Everything being held, and what answering costs.
+///
+/// Bail draws on the bank first, so what a player can reach is cash and bank together rather than
+/// cash on hand - quoting it against the safe would put a bond out of reach of exactly the players who
+/// can plainly afford one.
+/// </summary>
+public sealed record ArrestBoardResponse(
+    IReadOnlyList<ArrestResponse> Held,
+    long TotalBail,
+    long Funds,
+    int BailWindowHours);
+
+/// <summary>Who is in a cell and how long there is, for the one row that says so on the front page.</summary>
+public sealed record HeldCrew(int Heads, long TotalBail, DateTime SoonestDeadlineUtc);
+
 /// <summary>One move worth making now, with what it costs and why it is worth it.</summary>
 public sealed record NextMoveResponse(string Label, string Why, string Page, long Cost, bool Urgent);
 

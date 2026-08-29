@@ -152,6 +152,9 @@ public static class DefenceAlerts
                || log.Action == "BUST"
                // A run settles on the clock rather than on a request, so it is news, not activity.
                || log.Action == "MULE"
+               // The arrest itself is reported in the shift that caused it, which is activity. This is
+               // the deadline running out while nobody was looking, which is the definition above.
+               || log.Action == "ARREST"
                // Written to the seller by the buyer's request, and to a crew by their ally's attacker.
                // Neither player was here when it happened, which is the whole definition above.
                || log.Action == "SALE"
@@ -174,7 +177,7 @@ public static class DefenceAlerts
     public static AlertCategory CategoryOf(string kind) => kind switch
     {
         "attack" or "bust" or "ground" => AlertCategory.Combat,
-        "crew" => AlertCategory.Crew,
+        "crew" or "arrest" => AlertCategory.Crew,
         "sale" => AlertCategory.Market,
         _ => AlertCategory.Always,
     };

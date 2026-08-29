@@ -15,8 +15,52 @@ public sealed class PimpRoster(IOptionsSnapshot<GameOptions> options, IGameRando
     public IReadOnlyList<Pimp> Active(Player player)
         => player.Crew.Where(x => x.IsActive).OrderBy(x => x.HiredAtUtc).ThenBy(x => x.Id).ToList();
 
+    /// <summary>
+    /// The dead and the departed. Read off LostAtUtc rather than off "not active", which stopped
+    /// meaning the same thing the moment jail existed: somebody in a cell is not active and is also
+    /// not gone, and listing them here would report a loss that has not happened and that the player
+    /// can still prevent.
+    /// </summary>
     public IReadOnlyList<Pimp> Fallen(Player player)
-        => player.Crew.Where(x => !x.IsActive).OrderByDescending(x => x.LostAtUtc).ToList();
+        => player.Crew.Where(x => x.LostAtUtc is not null).OrderByDescending(x => x.LostAtUtc).ToList();
+
+    /// <summary>Who is inside. Neither working nor lost, and the only list bail is picked from.</summary>
+    public IReadOnlyList<Pimp> Jailed(Player player)
+        => player.Crew.Where(x => x.IsJailed).OrderBy(x => x.JailedAtUtc).ToList();
+
+    /// <summary>
+    /// Puts one away, chosen from those actually on the street. Returns null when there is nobody to
+    /// take - a house with one pimp keeps them, on the same rule that stops the last one walking out,
+    /// because an empire with no pimp at all manages nothing and can lead nothing.
+    /// </summary>
+    public Pimp? Jail(Player player, DateTime nowUtc)
+    {
+        var active = Active(player);
+        if (active.Count <= 1) return null;
+
+        var taken = active[random.NextInclusive(0, active.Count - 1)];
+        taken.JailedAtUtc = nowUtc;
+        player.Pimps = Active(player).Count;
+        return taken;
+    }
+
+    /// <summary>Buys one back out. The counter moves with them, as it does everywhere else.</summary>
+    public void Bail(Player player, Pimp pimp)
+    {
+        pimp.JailedAtUtc = null;
+        player.Pimps = Active(player).Count;
+    }
+
+    /// <summary>
+    /// Nobody came. The jail stamp is left where it is so the record still says where they went, and
+    /// the loss is what makes them fallen.
+    /// </summary>
+    public void LeaveInside(Player player, Pimp pimp, DateTime nowUtc)
+    {
+        pimp.LostAtUtc = nowUtc;
+        pimp.LostReason = "Left in County";
+        player.Pimps = Active(player).Count;
+    }
 
     /// <summary>Adds named pimps and moves the counter with them.</summary>
     public IReadOnlyList<Pimp> Hire(Player player, int quantity, DateTime nowUtc)
@@ -198,7 +242,13 @@ public sealed class PimpRoster(IOptionsSnapshot<GameOptions> options, IGameRando
     public double RestRecovery => _options.RestRecovery;
     public double PartyRecovery => _options.PartyRecovery;
 
-    /// <summary>Brings the roster in line with a counter that was changed directly, e.g. admin cheats.</summary>
+    /// <summary>
+    /// Brings the roster in line with a counter that was changed directly, e.g. admin cheats.
+    ///
+    /// Counts only the active, which is the same thing the counter holds, so somebody in a cell does
+    /// not read as a missing pimp and get a replacement hired over the top of them. Release picks from
+    /// the active too, so a cutback can never quietly retire somebody who is inside.
+    /// </summary>
     public void Reconcile(Player player, DateTime nowUtc)
     {
         var active = Active(player).Count;

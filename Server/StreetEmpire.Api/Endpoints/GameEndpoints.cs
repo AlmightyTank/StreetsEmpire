@@ -24,6 +24,26 @@ namespace StreetEmpire.Api.Endpoints;
 /// <summary>The core economy loop: dashboard, street work, production, store, bank, crew, hideout.</summary>
 internal static class GameEndpoints
 {
+    /// <summary>
+    /// The sentence a sweep adds to the shift that caused it, or nothing at all.
+    ///
+    /// Says what it costs to answer and how long there is to answer it, because those are the two
+    /// numbers the decision needs and a player who has to go and look them up has been told they lost
+    /// people rather than that they have a choice to make.
+    /// </summary>
+    private static string Describe(Arrest? arrest)
+    {
+        if (arrest is null) return string.Empty;
+
+        var taken = new List<string>();
+        if (arrest.Hoes > 0) taken.Add($"{arrest.Hoes:N0} hoe(s)");
+        if (arrest.Thugs > 0) taken.Add($"{arrest.Thugs:N0} thug(s)");
+        if (arrest.PimpName is not null) taken.Add(arrest.PimpName);
+        var hours = Math.Max(1, (int)Math.Round((arrest.BailDeadlineUtc - arrest.ArrestedAtUtc).TotalHours));
+        return $" The law swept up {string.Join(" and ", taken)}."
+               + $" Bail is ${arrest.BailAmount:N0}, and you have {hours} hour(s) to pay it.";
+    }
+
     internal static void MapGameEndpoints(this IEndpointRouteBuilder app)
     {
 
@@ -116,6 +136,16 @@ internal static class GameEndpoints
                 .Distinct()
                 .ToListAsync(ct);
             var objectives = guidance.Objectives(player, actionsTaken);
+            // One row rather than the cell itself: the front page says somebody is being held and what
+            // it would take, and the crew page is where they are actually answered.
+            var held = await db.Arrests.AsNoTracking()
+                .Where(x => x.PlayerId == player.Id && x.SettledAtUtc == null)
+                .GroupBy(x => x.PlayerId)
+                .Select(g => new HeldCrew(
+                    g.Sum(x => x.Hoes + x.Thugs + (x.PimpName == null ? 0 : 1)),
+                    g.Sum(x => x.BailAmount),
+                    g.Min(x => x.BailDeadlineUtc)))
+                .SingleOrDefaultAsync(ct);
             var activeCraft = await db.WorkshopCrafts.AsNoTracking()
                 .Where(x => x.PlayerId == player.Id && x.CompletedAtUtc == null)
                 .OrderBy(x => x.CompletesAtUtc)
@@ -185,7 +215,7 @@ internal static class GameEndpoints
                 Math.Max(1, (int)Math.Round(economy.ProductSellPrice(player.City, "coke") * opts.PurityMultiplier(player.CokePurity))),
                 economy.GetCrewReport(player),
                 new GuidanceResponse(
-                    guidance.NextMoves(player, hideouts.HeatFor(player)),
+                    guidance.NextMoves(player, hideouts.HeatFor(player), held),
                     objectives,
                     objectives.Count(x => x.Done),
                     objectives.Count),
@@ -246,6 +276,7 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            ArrestService arrests,
             TerritoryService territories,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
@@ -264,7 +295,11 @@ internal static class GameEndpoints
             try
             {
                 var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct), request.District);
-                AddLog(db, player, before, "STREET", request.Turns, result.Summary);
+                // Rolled here rather than inside the shift because it writes a row, and the economy
+                // service has no database by design. Logged as one sentence with the shift that caused
+                // it: being swept up is part of what happened out there, not a separate event.
+                var swept = arrests.RollForShift(player, request.Turns, request.District, now);
+                AddLog(db, player, before, "STREET", request.Turns, result.Summary + Describe(swept));
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
             }
@@ -282,6 +317,7 @@ internal static class GameEndpoints
             GameDbContext db,
             PlayerClock clock,
             EconomyService economy,
+            ArrestService arrests,
             TerritoryService territories,
             CombatResolutionService combatResolver,
             CancellationToken ct) =>
@@ -300,7 +336,11 @@ internal static class GameEndpoints
             try
             {
                 var result = economy.Scout(player, request.Turns, request.AutoBuySupplies, await territories.EffectsForAsync(player.Id, player.City, ct), await territories.GarrisonedPimpIdsAsync(player.Id, ct), request.District);
-                AddLog(db, player, before, "STREET", request.Turns, result.Summary);
+                // Rolled here rather than inside the shift because it writes a row, and the economy
+                // service has no database by design. Logged as one sentence with the shift that caused
+                // it: being swept up is part of what happened out there, not a separate event.
+                var swept = arrests.RollForShift(player, request.Turns, request.District, now);
+                AddLog(db, player, before, "STREET", request.Turns, result.Summary + Describe(swept));
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
             }

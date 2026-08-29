@@ -20,6 +20,7 @@ public sealed class BotSimulationService(
     MuleService mules,
     ContractService contracts,
     StreetStrikeService strikes,
+    ArrestService arrests,
     IOptions<BotAutomationOptions> botOptions)
 {
     private readonly GameOptions _options = options.Value;
@@ -73,9 +74,13 @@ public sealed class BotSimulationService(
                 }
 
                 await clock.AdvanceAsync(bot, nowUtc, ct: ct);
+                // First, because a cell is the only thing on this list with a deadline on it. Every
+                // other opportunity is still there next round; somebody sitting in County is not.
+                var botActions = await TryBailAsync(bot, brain, nowUtc, ct);
                 // Before any other way of selling: a contract pays over the counter for stock a rival
                 // already holds, so a rival that ignored one would be turning down the better price.
-                var botActions = await TryFillContractAsync(bot, nowUtc, ct);
+                if (botActions == 0)
+                    botActions = await TryFillContractAsync(bot, nowUtc, ct);
                 if (botActions == 0)
                     botActions = await TryMarketAsync(bot, brain, nowUtc, ct);
                 if (botActions == 0)
@@ -187,7 +192,7 @@ public sealed class BotSimulationService(
 
         var (logAction, turnsSpent, result) = action switch
         {
-            "street" => ("STREET", Turns(request), economy.Scout(bot, Turns(request), autoBuySupplies: true)),
+            "street" => ("STREET", Turns(request), ScoutAndSweep(bot, Turns(request), nowUtc)),
             "produce" => ("PRODUCTION", Turns(request), economy.Produce(bot, request.Product, Turns(request))),
             "sell" => ("SALE", 0, economy.SellProduct(bot, request.Product, Quantity(request))),
             "buy" => ("STORE", 0, economy.BuyStoreItem(bot, request.Item, Quantity(request))),
@@ -1182,6 +1187,66 @@ public sealed class BotSimulationService(
         return TryAction(bot, "PRODUCTION", turnsToSpend, actionTimeUtc, () => economy.Produce(bot, product, turnsToSpend));
     }
 
+    /// <summary>
+    /// Answers a cell, when the personality thinks it is worth answering.
+    ///
+    /// Nothing here writes anybody off deliberately. A rival that decides not to pay simply lets the
+    /// window run out and the clock settles it, which is exactly what a player does by doing nothing -
+    /// so the two sides of the game reach the same outcome down the same path rather than a rival
+    /// getting a tidier version of the decision.
+    ///
+    /// One a round, most urgent first. The window runs for hours and a rival acts every few minutes,
+    /// so there is no need to empty the cell in one go, and paying them one at a time keeps a bond
+    /// costing a rival an action the way everything else does.
+    /// </summary>
+    private async Task<int> TryBailAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var held = await db.Arrests
+            .Include(x => x.Pimp)
+            .Where(x => x.PlayerId == bot.Id && x.SettledAtUtc == null && x.BailDeadlineUtc > nowUtc)
+            .OrderBy(x => x.BailDeadlineUtc)
+            .ToListAsync(ct);
+
+        foreach (var arrest in held)
+        {
+            if (!WorthBailing(bot, brain, arrest))
+                continue;
+            return TryAction(bot, "BAIL", 0, nowUtc, () =>
+                new ActionResultResponse(arrests.Bail(bot, arrest, nowUtc), bot.Turns, null));
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Whether this rival goes for them.
+    ///
+    /// A named pimp is worth it to any of them: bail is dearer than hiring the same head again, so on
+    /// price alone nobody would ever pay, but another pimp is not that pimp and all of them need one
+    /// to command with. Everything else is the morale question the bond actually answers, and the
+    /// floor is where the personality lives.
+    ///
+    /// Priced against the reserve rather than the balance, so a rival never bails itself out of the
+    /// working capital it needs to trade its way back.
+    /// </summary>
+    private bool WorthBailing(Player bot, BotBrain brain, Arrest arrest)
+    {
+        if (bot.Cash + bot.BankCash - CashReserve(bot, brain) < arrest.BailAmount)
+            return false;
+        if (arrest.PimpName is not null)
+            return true;
+
+        return Math.Min(bot.HoeHappiness, bot.ThugHappiness) <= brain.BailMoraleFloor;
+    }
+
+    /// <summary>A directed shift runs the same sweep an autonomous one does.</summary>
+    private ActionResultResponse ScoutAndSweep(Player bot, int turns, DateTime nowUtc)
+    {
+        var result = economy.Scout(bot, turns, autoBuySupplies: true);
+        arrests.RollForShift(bot, turns, null, nowUtc);
+        return result;
+    }
+
     private int TryWorkStreet(Player bot, BotBrain brain, DateTime actionTimeUtc)
     {
         var availableTurns = AvailableTurnBudget(bot, brain);
@@ -1192,7 +1257,17 @@ public sealed class BotSimulationService(
         if (bot.HoeHappiness < brain.LowMoraleStreetThreshold || bot.ThugHappiness < brain.LowMoraleStreetThreshold)
             turnsToSpend = Math.Min(turnsToSpend, random.NextInclusive(1, brain.LowMoraleMaxStreetTurns));
 
-        return TryAction(bot, "STREET", turnsToSpend, actionTimeUtc, () => economy.Scout(bot, turnsToSpend, district: DistrictFor(bot, brain)));
+        // Rivals work the same street on the same rules, so they are swept up on them too. Whether
+        // anybody comes for them is a decision their brain has to make, and until it can they simply
+        // run the window down - which is a policy, not an oversight, and the reason it is worth
+        // building next.
+        var district = DistrictFor(bot, brain);
+        return TryAction(bot, "STREET", turnsToSpend, actionTimeUtc, () =>
+        {
+            var result = economy.Scout(bot, turnsToSpend, district: district);
+            arrests.RollForShift(bot, turnsToSpend, district, actionTimeUtc);
+            return result;
+        });
     }
 
     /// <summary>

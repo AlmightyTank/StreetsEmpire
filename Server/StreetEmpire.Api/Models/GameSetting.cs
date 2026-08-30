@@ -27,6 +27,33 @@ public sealed class GameSetting
     /// <summary>Webhook display name override. Null falls back to configuration.</summary>
     public string? DiscordAnnouncementUsername { get; set; }
 
+    /// <summary>Discord bot token used for guild roles and slash-command registration.</summary>
+    public string? DiscordBotToken { get; set; }
+
+    /// <summary>Discord application id, used to register slash commands.</summary>
+    public string? DiscordApplicationId { get; set; }
+
+    /// <summary>Discord public key, used to verify interaction callbacks.</summary>
+    public string? DiscordPublicKey { get; set; }
+
+    /// <summary>The guild where Street Empire roles are managed.</summary>
+    public string? DiscordGuildId { get; set; }
+
+    /// <summary>Role given to every linked account.</summary>
+    public string? DiscordLinkedRoleId { get; set; }
+
+    /// <summary>Role given to players currently inside the top ten.</summary>
+    public string? DiscordTopTenRoleId { get; set; }
+
+    /// <summary>Role given to alliance founders.</summary>
+    public string? DiscordCrewBossRoleId { get; set; }
+
+    /// <summary>City-to-role mapping as JSON so admins can change the map without a deploy.</summary>
+    public string? DiscordCityRoleMapJson { get; set; }
+
+    public DateTime? DiscordRolesSyncedAtUtc { get; set; }
+    public DateTime? DiscordCommandsRegisteredAtUtc { get; set; }
+
     /// <summary>
     /// Tuning overrides as a JSON object of dotted path to value, layered over appsettings at runtime.
     /// Stored as one blob rather than a row per key: it is always read and written whole.

@@ -89,6 +89,13 @@ services:
       Auth__Discord__ReturnUrl: ${PUBLIC_URL:-https://${DOMAIN}}/
 
       Announcements__DiscordWebhookUrl: ${DISCORD_ANNOUNCEMENT_WEBHOOK:-}
+      Discord__BotToken: ${DISCORD_BOT_TOKEN:-}
+      Discord__ApplicationId: ${DISCORD_APPLICATION_ID:-}
+      Discord__PublicKey: ${DISCORD_PUBLIC_KEY:-}
+      Discord__GuildId: ${DISCORD_GUILD_ID:-}
+      Discord__LinkedRoleId: ${DISCORD_LINKED_ROLE_ID:-}
+      Discord__TopTenRoleId: ${DISCORD_TOP_TEN_ROLE_ID:-}
+      Discord__CrewBossRoleId: ${DISCORD_CREW_BOSS_ROLE_ID:-}
 
       Auth__Email__ApiKey: ${RESEND_API_KEY:-}
       Auth__Email__FromAddress: ${MAIL_FROM:-Street Empire <onboarding@resend.dev>}

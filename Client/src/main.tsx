@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3715,17 +3715,28 @@ function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
 function AdminUpdatesPanel({ busy }: { busy: boolean }) {
   const [posts, setPosts] = useState<AdminGameAnnouncement[]>([])
   const [delivery, setDelivery] = useState<AnnouncementDeliverySettings | null>(null)
+  const [discord, setDiscord] = useState<DiscordIntegrationSettings | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [draft, setDraft] = useState<AdminGameAnnouncementDraft>(() => emptyAnnouncementDraft())
   const [includeArchived, setIncludeArchived] = useState(false)
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState('')
   const [discordUsername, setDiscordUsername] = useState('')
+  const [discordBotToken, setDiscordBotToken] = useState('')
+  const [discordPublicKey, setDiscordPublicKey] = useState('')
+  const [discordApplicationId, setDiscordApplicationId] = useState('')
+  const [discordGuildId, setDiscordGuildId] = useState('')
+  const [discordLinkedRoleId, setDiscordLinkedRoleId] = useState('')
+  const [discordTopTenRoleId, setDiscordTopTenRoleId] = useState('')
+  const [discordCrewBossRoleId, setDiscordCrewBossRoleId] = useState('')
+  const [discordCityRoleMap, setDiscordCityRoleMap] = useState('')
   const [reason, setReason] = useState('')
   const [deliveryReason, setDeliveryReason] = useState('')
+  const [discordReason, setDiscordReason] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [working, setWorking] = useState(false)
   const selected = posts.find(post => post.id === selectedId) ?? null
+  const discordInviteUrl = discordBotInviteUrl(discord, discordApplicationId, discordGuildId)
 
   const load = async () => {
     try { setPosts(await opsApi.updates(includeArchived)) } catch (e) { setError((e as Error).message) }
@@ -3742,6 +3753,21 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
     }
   }
   useEffect(() => { void loadDelivery() }, [])
+
+  const applyDiscordSettings = (next: DiscordIntegrationSettings) => {
+    setDiscord(next)
+    setDiscordApplicationId(next.applicationId ?? '')
+    setDiscordGuildId(next.guildId ?? '')
+    setDiscordLinkedRoleId(next.linkedRoleId ?? '')
+    setDiscordTopTenRoleId(next.topTenRoleId ?? '')
+    setDiscordCrewBossRoleId(next.crewBossRoleId ?? '')
+    setDiscordCityRoleMap(next.cityRoleMap ?? '')
+  }
+
+  const loadDiscord = async () => {
+    try { applyDiscordSettings(await opsApi.discordIntegration()) } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void loadDiscord() }, [])
 
   const edit = (post: AdminGameAnnouncement) => {
     setSelectedId(post.id)
@@ -3820,6 +3846,68 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
       setDiscordUsername(next.discordUsername)
       setDeliveryReason('')
       setMessage('Saved webhook cleared.')
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const saveDiscord = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const next = await opsApi.setDiscordIntegration({
+        botToken: discordBotToken.trim() || null,
+        publicKey: discordPublicKey.trim() || null,
+        applicationId: discordApplicationId.trim() || null,
+        guildId: discordGuildId.trim() || null,
+        linkedRoleId: discordLinkedRoleId.trim() || null,
+        topTenRoleId: discordTopTenRoleId.trim() || null,
+        crewBossRoleId: discordCrewBossRoleId.trim() || null,
+        cityRoleMap: discordCityRoleMap,
+        reason: discordReason.trim() || null,
+      })
+      applyDiscordSettings(next)
+      setDiscordBotToken('')
+      setDiscordPublicKey('')
+      setDiscordReason('')
+      setMessage('Discord integration settings saved.')
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const clearDiscordSecret = async (kind: 'token' | 'key') => {
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const next = await opsApi.setDiscordIntegration({
+        clearBotToken: kind === 'token',
+        clearPublicKey: kind === 'key',
+        reason: discordReason.trim() || null,
+      })
+      applyDiscordSettings(next)
+      if (kind === 'token') setDiscordBotToken('')
+      if (kind === 'key') setDiscordPublicKey('')
+      setDiscordReason('')
+      setMessage(kind === 'token' ? 'Discord bot token cleared.' : 'Discord public key cleared.')
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const registerDiscordCommands = async () => {
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const result = await opsApi.registerDiscordCommands()
+      setMessage(`Registered ${result.registered} slash command${result.registered === 1 ? '' : 's'} in Discord.`)
+      await loadDiscord()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const syncDiscordRoles = async () => {
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const result: DiscordRoleSyncResult = await opsApi.syncDiscordRoles()
+      const tail = result.errors.length > 0 ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} reported.` : ''
+      setMessage(`Synced ${result.syncedPlayers} linked member${result.syncedPlayers === 1 ? '' : 's'}: +${result.rolesAdded} / -${result.rolesRemoved}.${tail}`)
+      await loadDiscord()
     } catch (e) { setError((e as Error).message) }
     finally { setWorking(false) }
   }
@@ -3992,50 +4080,134 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
       </section>
     </div>
 
-    <section className="card p-3">
-      <div className="panel-title">
-        <h2>Discord Webhook</h2>
-        <span>{delivery?.discordConfigured ? delivery.discordUsesStoredWebhook ? 'Saved in admin' : 'From config' : 'Not set'}</span>
-      </div>
-      <form className="d-grid gap-3" onSubmit={saveDelivery}>
-        <div className="d-flex flex-wrap gap-2">
-          <span className={`badge rounded-pill ${delivery?.discordConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>
-            {delivery?.discordConfigured ? 'Discord broadcast on' : 'Discord broadcast off'}
-          </span>
-          {delivery?.discordWebhookHost && <span className="badge rounded-pill text-bg-light border">{delivery.discordWebhookHost}</span>}
+    <div className="d-grid gap-3 align-content-start">
+      <section className="card p-3">
+        <div className="panel-title">
+          <h2>Discord Webhook</h2>
+          <span>{delivery?.discordConfigured ? delivery.discordUsesStoredWebhook ? 'Saved in admin' : 'From config' : 'Not set'}</span>
         </div>
-        <label className="field">
-          New webhook URL
-          <input
-            className="form-control"
-            type="password"
-            value={discordWebhookUrl}
-            onChange={event => setDiscordWebhookUrl(event.target.value)}
-            placeholder={delivery?.discordConfigured ? 'Paste a replacement webhook' : 'https://discord.com/api/webhooks/...'}
-            autoComplete="off"
-          />
-          <small className="form-text">Saved URLs are not shown again. Leave blank to keep the current webhook.</small>
-        </label>
-        <label className="field">
-          Webhook name
-          <input className="form-control" maxLength={80} value={discordUsername} onChange={event => setDiscordUsername(event.target.value)} placeholder="Street Empire" />
-        </label>
-        <label className="field">
-          Audit reason
-          <input className="form-control" value={deliveryReason} onChange={event => setDeliveryReason(event.target.value)} placeholder="Moved announcements to #updates" />
-        </label>
-        <div className="d-flex flex-wrap gap-2">
-          <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Webhook Settings'}</button>
-          <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void loadDelivery()}>Refresh</button>
-          <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !delivery?.discordUsesStoredWebhook} onClick={() => void clearDeliveryWebhook()}>
-            Clear saved webhook
-          </button>
+        <form className="d-grid gap-3" onSubmit={saveDelivery}>
+          <div className="d-flex flex-wrap gap-2">
+            <span className={`badge rounded-pill ${delivery?.discordConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>
+              {delivery?.discordConfigured ? 'Discord broadcast on' : 'Discord broadcast off'}
+            </span>
+            {delivery?.discordWebhookHost && <span className="badge rounded-pill text-bg-light border">{delivery.discordWebhookHost}</span>}
+          </div>
+          <label className="field">
+            New webhook URL
+            <input
+              className="form-control"
+              type="password"
+              value={discordWebhookUrl}
+              onChange={event => setDiscordWebhookUrl(event.target.value)}
+              placeholder={delivery?.discordConfigured ? 'Paste a replacement webhook' : 'https://discord.com/api/webhooks/...'}
+              autoComplete="off"
+            />
+            <small className="form-text">Saved URLs are not shown again. Leave blank to keep the current webhook.</small>
+          </label>
+          <label className="field">
+            Webhook name
+            <input className="form-control" maxLength={80} value={discordUsername} onChange={event => setDiscordUsername(event.target.value)} placeholder="Street Empire" />
+          </label>
+          <label className="field">
+            Audit reason
+            <input className="form-control" value={deliveryReason} onChange={event => setDeliveryReason(event.target.value)} placeholder="Moved announcements to #updates" />
+          </label>
+          <div className="d-flex flex-wrap gap-2">
+            <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Webhook Settings'}</button>
+            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void loadDelivery()}>Refresh</button>
+            <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !delivery?.discordUsesStoredWebhook} onClick={() => void clearDeliveryWebhook()}>
+              Clear saved webhook
+            </button>
+          </div>
+          {delivery && <small className="text-body-tertiary">
+            Last changed {new Date(delivery.updatedAtUtc).toLocaleString()}{delivery.updatedBy ? ` by ${delivery.updatedBy}` : ''}.
+          </small>}
+        </form>
+      </section>
+
+      <section className="card p-3">
+        <div className="panel-title">
+          <h2>Discord Bot</h2>
+          <span>{discord?.gatewayConnected ? 'Online' : discord?.botConfigured ? 'Starting' : 'Needs setup'}</span>
         </div>
-        {delivery && <small className="text-body-tertiary">
-          Last changed {new Date(delivery.updatedAtUtc).toLocaleString()}{delivery.updatedBy ? ` by ${delivery.updatedBy}` : ''}.
-        </small>}
-      </form>
-    </section>
+        <form className="d-grid gap-3" onSubmit={saveDiscord}>
+          <div className="d-flex flex-wrap gap-2">
+            <span className={`badge rounded-pill ${discord?.botConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.botConfigured ? 'Bot configured' : 'No bot'}</span>
+            <span className={`badge rounded-pill ${discord?.gatewayConnected ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.gatewayConnected ? 'Gateway online' : 'Gateway offline'}</span>
+            <span className={`badge rounded-pill ${discord?.slashCommandsConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.slashCommandsConfigured ? 'Slash ready' : 'Slash off'}</span>
+            <span className={`badge rounded-pill ${discord?.roleSyncConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.roleSyncConfigured ? 'Role sync ready' : 'Roles off'}</span>
+            {discord?.usesStoredBotToken && <span className="badge rounded-pill text-bg-light border">Token saved</span>}
+            {discord?.publicKeyConfigured && <span className="badge rounded-pill text-bg-light border">Public key saved</span>}
+          </div>
+          {discord?.gatewayError && <small className="text-body-tertiary">{discord.gatewayError}</small>}
+          <label className="field">
+            Interaction endpoint
+            <input className="form-control" readOnly value={`${window.location.origin}/api/discord/interactions`} />
+          </label>
+          <div className="d-flex flex-wrap gap-2">
+            {discordInviteUrl
+              ? <a className="btn btn-outline-primary btn-sm" href={discordInviteUrl} target="_blank" rel="noreferrer">
+                  Add bot to Discord
+                </a>
+              : <button className="btn btn-outline-secondary btn-sm" type="button" disabled>Add bot to Discord</button>}
+          </div>
+          <label className="field">
+            Bot token
+            <input className="form-control" type="password" value={discordBotToken} onChange={event => setDiscordBotToken(event.target.value)} placeholder={discord?.botConfigured ? 'Paste a replacement token' : 'Discord bot token'} autoComplete="off" />
+            <small className="form-text">Saved tokens are not shown again. Leave blank to keep the current one.</small>
+          </label>
+          <div className="d-grid gtc-1 gtc-md-2 gap-3">
+            <label className="field">
+              Application ID
+              <input className="form-control" value={discordApplicationId} onChange={event => setDiscordApplicationId(event.target.value)} placeholder="123456789012345678" />
+            </label>
+            <label className="field">
+              Guild ID
+              <input className="form-control" value={discordGuildId} onChange={event => setDiscordGuildId(event.target.value)} placeholder="123456789012345678" />
+            </label>
+          </div>
+          <label className="field">
+            Public key
+            <input className="form-control" type="password" value={discordPublicKey} onChange={event => setDiscordPublicKey(event.target.value)} placeholder={discord?.publicKeyConfigured ? 'Paste a replacement public key' : '64-character application public key'} autoComplete="off" />
+          </label>
+          <div className="d-grid gtc-1 gtc-md-3 gap-3">
+            <label className="field">
+              Linked role
+              <input className="form-control" value={discordLinkedRoleId} onChange={event => setDiscordLinkedRoleId(event.target.value)} placeholder="Role ID" />
+            </label>
+            <label className="field">
+              Top ten role
+              <input className="form-control" value={discordTopTenRoleId} onChange={event => setDiscordTopTenRoleId(event.target.value)} placeholder="Role ID" />
+            </label>
+            <label className="field">
+              Crew boss role
+              <input className="form-control" value={discordCrewBossRoleId} onChange={event => setDiscordCrewBossRoleId(event.target.value)} placeholder="Role ID" />
+            </label>
+          </div>
+          <label className="field">
+            City roles
+            <textarea className="form-control" rows={5} value={discordCityRoleMap} onChange={event => setDiscordCityRoleMap(event.target.value)} placeholder={'Chicago=123456789012345678\nMiami=234567890123456789'} />
+          </label>
+          <label className="field">
+            Audit reason
+            <input className="form-control" value={discordReason} onChange={event => setDiscordReason(event.target.value)} placeholder="Added Discord role sync" />
+          </label>
+          <div className="d-flex flex-wrap gap-2">
+            <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Bot Settings'}</button>
+            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void registerDiscordCommands()}>Register slash commands</button>
+            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void syncDiscordRoles()}>Sync roles now</button>
+            <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !discord?.usesStoredBotToken} onClick={() => void clearDiscordSecret('token')}>Clear token</button>
+            <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !discord?.publicKeyConfigured} onClick={() => void clearDiscordSecret('key')}>Clear key</button>
+          </div>
+          {discord && <small className="text-body-tertiary">
+            Commands {discord.commandsRegisteredAtUtc ? new Date(discord.commandsRegisteredAtUtc).toLocaleString() : 'not registered'}.
+            {' '}Roles {discord.rolesSyncedAtUtc ? new Date(discord.rolesSyncedAtUtc).toLocaleString() : 'not synced'}.
+            {' '}Gateway {discord.gatewayHeartbeatAtUtc ? `heartbeat ${new Date(discord.gatewayHeartbeatAtUtc).toLocaleString()}` : 'no heartbeat yet'}.
+          </small>}
+        </form>
+      </section>
+    </div>
   </div>
 }
 
@@ -4059,6 +4231,23 @@ function emptyAnnouncementDraft(): AdminGameAnnouncementDraft {
     fixed: '',
     knownIssues: '',
   }
+}
+
+function discordBotInviteUrl(settings: DiscordIntegrationSettings | null, applicationId: string, guildId: string) {
+  const clientId = (applicationId.trim() || settings?.applicationId || '').trim()
+  if (!/^\d+$/.test(clientId)) return null
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: 'bot applications.commands',
+    permissions: '268435456',
+  })
+  const guild = (guildId.trim() || settings?.guildId || '').trim()
+  if (/^\d+$/.test(guild)) {
+    params.set('guild_id', guild)
+    params.set('disable_guild_select', 'true')
+  }
+  return `https://discord.com/oauth2/authorize?${params.toString()}`
 }
 
 function draftFromAnnouncement(post: AdminGameAnnouncement): AdminGameAnnouncementDraft {

@@ -453,6 +453,13 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Announcement).HasMaxLength(400);
             entity.Property(x => x.DiscordAnnouncementWebhookUrl).HasMaxLength(512);
             entity.Property(x => x.DiscordAnnouncementUsername).HasMaxLength(80);
+            entity.Property(x => x.DiscordBotToken).HasMaxLength(256);
+            entity.Property(x => x.DiscordApplicationId).HasMaxLength(32);
+            entity.Property(x => x.DiscordPublicKey).HasMaxLength(128);
+            entity.Property(x => x.DiscordGuildId).HasMaxLength(32);
+            entity.Property(x => x.DiscordLinkedRoleId).HasMaxLength(32);
+            entity.Property(x => x.DiscordTopTenRoleId).HasMaxLength(32);
+            entity.Property(x => x.DiscordCrewBossRoleId).HasMaxLength(32);
             entity.Property(x => x.UpdatedBy).HasMaxLength(32);
             // Seeded so the single row always exists and readers never have to cope with its absence.
             entity.HasData(new GameSetting { Id = 1, UpdatedAtUtc = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc) });

@@ -1867,6 +1867,44 @@ export type AnnouncementDeliverySettings = {
   updatedBy?: string | null
 }
 
+export type DiscordIntegrationSettings = {
+  botConfigured: boolean
+  usesStoredBotToken: boolean
+  slashCommandsConfigured: boolean
+  roleSyncConfigured: boolean
+  gatewayConnected: boolean
+  gatewayConnectedAtUtc?: string | null
+  gatewayHeartbeatAtUtc?: string | null
+  gatewayError?: string | null
+  applicationId?: string | null
+  guildId?: string | null
+  publicKeyConfigured: boolean
+  linkedRoleId?: string | null
+  topTenRoleId?: string | null
+  crewBossRoleId?: string | null
+  cityRoleMap: string
+  rolesSyncedAtUtc?: string | null
+  commandsRegisteredAtUtc?: string | null
+  updatedAtUtc: string
+  updatedBy?: string | null
+}
+
+export type DiscordRoleSyncResult = {
+  checkedPlayers: number
+  linkedPlayers: number
+  syncedPlayers: number
+  skippedPlayers: number
+  rolesAdded: number
+  rolesRemoved: number
+  errors: string[]
+  syncedAtUtc: string
+}
+
+export type DiscordCommandRegistrationResult = {
+  registered: number
+  registeredAtUtc: string
+}
+
 export const opsApi = {
   oversight: () => request<AdminOversight>('/api/admin/oversight'),
   setBotPaused: (playerId: string, paused: boolean) =>
@@ -1885,6 +1923,22 @@ export const opsApi = {
   updateDelivery: () => request<AnnouncementDeliverySettings>('/api/admin/updates/delivery'),
   setUpdateDelivery: (body: { discordWebhookUrl?: string | null, discordUsername?: string | null, clearDiscordWebhook?: boolean, reason?: string | null }) =>
     request<AnnouncementDeliverySettings>('/api/admin/updates/delivery', { method: 'PUT', body: JSON.stringify(body) }),
+  discordIntegration: () => request<DiscordIntegrationSettings>('/api/admin/discord'),
+  setDiscordIntegration: (body: {
+    botToken?: string | null
+    applicationId?: string | null
+    publicKey?: string | null
+    guildId?: string | null
+    linkedRoleId?: string | null
+    topTenRoleId?: string | null
+    crewBossRoleId?: string | null
+    cityRoleMap?: string | null
+    clearBotToken?: boolean
+    clearPublicKey?: boolean
+    reason?: string | null
+  }) => request<DiscordIntegrationSettings>('/api/admin/discord', { method: 'PUT', body: JSON.stringify(body) }),
+  syncDiscordRoles: () => request<DiscordRoleSyncResult>('/api/admin/discord/sync-roles', { method: 'POST' }),
+  registerDiscordCommands: () => request<DiscordCommandRegistrationResult>('/api/admin/discord/register-commands', { method: 'POST' }),
   createUpdate: (body: AdminGameAnnouncementDraft) =>
     request<AdminGameAnnouncement>('/api/admin/updates', { method: 'POST', body: JSON.stringify(body) }),
   updatePost: (id: number, body: AdminGameAnnouncementDraft) =>

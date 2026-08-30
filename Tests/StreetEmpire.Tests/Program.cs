@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -200,6 +201,8 @@ var tests = new (string Name, Action Test)[]
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
+    ("Discord city role maps are written for humans and stored for machines", DiscordCityRoleMapsAreHumanWritable),
+    ("Discord server commands resolve through the API", DiscordServerCommandsResolveThroughTheApi),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
@@ -2269,6 +2272,10 @@ static void TheCommittedExampleHoldsNoSecrets()
         $"Auth__Discord__{nameof(DiscordOptions.ClientSecret)}",
         $"Auth__Discord__{nameof(DiscordOptions.RedirectUri)}",
         $"Announcements__{nameof(AnnouncementOptions.DiscordWebhookUrl)}",
+        $"Discord__{nameof(DiscordIntegrationOptions.BotToken)}",
+        $"Discord__{nameof(DiscordIntegrationOptions.ApplicationId)}",
+        $"Discord__{nameof(DiscordIntegrationOptions.PublicKey)}",
+        $"Discord__{nameof(DiscordIntegrationOptions.GuildId)}",
         $"Auth__Email__{nameof(EmailOptions.ApiKey)}",
         $"Auth__Email__{nameof(EmailOptions.FromAddress)}",
         $"Auth__Email__{nameof(EmailOptions.CodeLifetimeMinutes)}",
@@ -3014,6 +3021,128 @@ static void AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig()
     AssertTrue(DiscordAnnouncementSender.IsAllowedWebhookUrl("https://discord.com/api/webhooks/123/abc"), "Discord webhooks should be allowed");
     AssertTrue(!DiscordAnnouncementSender.IsAllowedWebhookUrl("http://discord.com/api/webhooks/123/abc"), "Discord webhooks must use https");
     AssertTrue(!DiscordAnnouncementSender.IsAllowedWebhookUrl("https://example.com/hook"), "only Discord webhook hosts should be allowed");
+}
+
+static void DiscordCityRoleMapsAreHumanWritable()
+{
+    var json = DiscordGuildIntegration.CityRoleMapJson("""
+        Chicago=123456789012345678
+        Miami:234567890123456789
+        """);
+    var parsed = DiscordGuildIntegration.ParseCityRoleMap(json);
+
+    AssertEqual("123456789012345678", parsed["Chicago"]);
+    AssertEqual("234567890123456789", parsed["Miami"]);
+    AssertTrue(DiscordGuildIntegration.CityRoleMapText(parsed).Contains("Chicago=123456789012345678"),
+        "the admin-facing role map should come back as line-oriented text");
+    try
+    {
+        DiscordGuildIntegration.ParseCityRoleMap("Chicago=not-a-role");
+        throw new Exception("role ids must be copied as Discord snowflakes");
+    }
+    catch (GameRuleException)
+    {
+    }
+    AssertEqual("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        DiscordGuildIntegration.NormalizePublicKey("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"));
+}
+
+static void DiscordServerCommandsResolveThroughTheApi()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-commands-{Guid.NewGuid()}")
+        .Options);
+    var options = Resolve(new GameOptions());
+    var linkedAccount = new PlayerAccount { Username = "runner", DiscordUserId = "777777777777777777" };
+    var bossAccount = new PlayerAccount { Username = "boss" };
+    var (linked, _) = AccountSetup.NewPlayer(linkedAccount, "Runner", "Chicago", options, CreateRoster(options));
+    var (boss, _) = AccountSetup.NewPlayer(bossAccount, "Boss", "Miami", options, CreateRoster(options));
+    boss.Cash += 1_000_000;
+
+    db.Players.AddRange(boss, linked);
+    db.GameAnnouncements.Add(new GameAnnouncement
+    {
+        Title = "Street Wire live",
+        Body = "Discord commands now pull directly from the Street Empire API.",
+        Category = "Patch",
+        Severity = "Info",
+        Version = "v0.4.0",
+        PublishedAtUtc = DateTime.UtcNow.AddMinutes(-1),
+        CreatedByUsername = "admin",
+        CreatedByAccountId = Guid.NewGuid()
+    });
+    db.SaveChanges();
+
+    var service = new DiscordGuildIntegration(
+        new HttpClient(),
+        db,
+        Options(new DiscordIntegrationOptions()),
+        Snapshot(options),
+        CreateEconomy(options),
+        new DiscordGatewayState(),
+        NullLogger<DiscordGuildIntegration>.Instance);
+
+    using var callback = JsonDocument.Parse("""
+        {
+          "type": 2,
+          "application_id": "999999999999999999",
+          "token": "interaction-token",
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "rank", "options": [] }
+        }
+        """);
+    AssertTrue(DiscordGuildIntegration.TryReadInteractionCallback(callback, out var interactionType, out var applicationId, out var token),
+        "server-backed Discord commands should carry the callback token used for delayed answers");
+    AssertEqual(2, interactionType);
+    AssertEqual("999999999999999999", applicationId);
+    AssertEqual("interaction-token", token);
+    using var deferred = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse()));
+    AssertEqual(5, deferred.RootElement.GetProperty("type").GetInt32());
+
+    var callerResponse = DiscordCommand(service, "rank");
+    AssertTrue(callerResponse.Contains("Runner"), "rank should resolve the Discord caller to their linked empire");
+    AssertTrue(callerResponse.Contains("#2"), "rank should be calculated from the game data");
+
+    var namedResponse = DiscordCommand(service, "rank", ("player", "Boss"));
+    AssertTrue(namedResponse.Contains("Boss"), "a typed player name should override the linked Discord caller");
+    AssertTrue(namedResponse.Contains("#1"), "the named player's rank should come from the same standings query");
+
+    var profileResponse = DiscordCommand(service, "profile");
+    AssertTrue(profileResponse.Contains("Runner runs Chicago"), "profile should use the linked caller and game profile data");
+    AssertTrue(profileResponse.Contains("Rank #2"), "profile should use the same server-side rank lookup");
+
+    var callerMarket = DiscordCommand(service, "market");
+    AssertTrue(callerMarket.Contains("Chicago market"), "market should default to the linked caller's city");
+    AssertTrue(callerMarket.Contains("bust risk"), "market should read live market rules from the API options");
+
+    var namedMarket = DiscordCommand(service, "market", ("city", "Miami"));
+    AssertTrue(namedMarket.Contains("Miami market"), "a typed city should override the linked caller's city");
+
+    var streetWire = DiscordCommand(service, "streetwire");
+    AssertTrue(streetWire.Contains("Street Wire live"), "streetwire should read the canonical in-game update feed");
+    AssertTrue(streetWire.Contains("v0.4.0"), "streetwire should include version data from the update record");
+}
+
+static string DiscordCommand(DiscordGuildIntegration service, string command, params (string Name, string Value)[] options)
+{
+    var optionJson = options.Length == 0
+        ? "[]"
+        : "[" + string.Join(",", options.Select(x => $$"""{ "name": "{{x.Name}}", "type": 3, "value": "{{x.Value}}" }""")) + "]";
+    return DiscordResponseContent(service.HandleInteractionAsync(JsonDocument.Parse($$"""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "{{command}}", "options": {{optionJson}} }
+        }
+        """), default).GetAwaiter().GetResult());
+}
+
+static string DiscordResponseContent(object response)
+{
+    using var json = JsonDocument.Parse(JsonSerializer.Serialize(response));
+    AssertEqual(4, json.RootElement.GetProperty("type").GetInt32());
+    return json.RootElement.GetProperty("data").GetProperty("content").GetString()
+           ?? throw new InvalidOperationException("Discord response should contain message content.");
 }
 
 static void MoneyIsDollarsWhereverTheServerIs()

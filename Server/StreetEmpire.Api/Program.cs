@@ -89,6 +89,10 @@ builder.Services.AddScoped<IPasswordHasher<PlayerAccount>, PasswordHasher<Player
 // Game updates are canonical in the database. Discord, when configured, is only the megaphone.
 builder.Services.Configure<AnnouncementOptions>(builder.Configuration.GetSection("Announcements"));
 builder.Services.AddHttpClient<DiscordAnnouncementSender>(client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.Configure<DiscordIntegrationOptions>(builder.Configuration.GetSection("Discord"));
+builder.Services.AddHttpClient<DiscordGuildIntegration>(client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddSingleton<DiscordGatewayState>();
+builder.Services.AddHostedService<DiscordGatewayService>();
 
 // Discord sign-in. Registered unconditionally so the endpoints exist and can say "not set up" for
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
@@ -543,6 +547,7 @@ app.MapGameEndpoints();
 app.MapCombatEndpoints();
 app.MapWorldEndpoints();
 app.MapUpdateEndpoints();
+app.MapDiscordEndpoints();
 app.MapAllianceEndpoints();
 app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();

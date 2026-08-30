@@ -1413,6 +1413,54 @@ public sealed record AnnouncementDeliverySettingsRequest(
     bool ClearDiscordWebhook,
     string? Reason);
 
+public sealed record DiscordIntegrationSettingsResponse(
+    bool BotConfigured,
+    bool UsesStoredBotToken,
+    bool SlashCommandsConfigured,
+    bool RoleSyncConfigured,
+    bool GatewayConnected,
+    DateTime? GatewayConnectedAtUtc,
+    DateTime? GatewayHeartbeatAtUtc,
+    string? GatewayError,
+    string? ApplicationId,
+    string? GuildId,
+    bool PublicKeyConfigured,
+    string? LinkedRoleId,
+    string? TopTenRoleId,
+    string? CrewBossRoleId,
+    string CityRoleMap,
+    DateTime? RolesSyncedAtUtc,
+    DateTime? CommandsRegisteredAtUtc,
+    DateTime UpdatedAtUtc,
+    string? UpdatedBy);
+
+public sealed record DiscordIntegrationSettingsRequest(
+    string? BotToken,
+    string? ApplicationId,
+    string? PublicKey,
+    string? GuildId,
+    string? LinkedRoleId,
+    string? TopTenRoleId,
+    string? CrewBossRoleId,
+    string? CityRoleMap,
+    bool ClearBotToken,
+    bool ClearPublicKey,
+    string? Reason);
+
+public sealed record DiscordRoleSyncResponse(
+    int CheckedPlayers,
+    int LinkedPlayers,
+    int SyncedPlayers,
+    int SkippedPlayers,
+    int RolesAdded,
+    int RolesRemoved,
+    IReadOnlyList<string> Errors,
+    DateTime SyncedAtUtc);
+
+public sealed record DiscordCommandRegistrationResponse(
+    int Registered,
+    DateTime RegisteredAtUtc);
+
 public sealed record AdminGameAnnouncementResponse(
     long Id,
     string Title,

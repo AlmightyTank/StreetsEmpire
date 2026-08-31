@@ -2,7 +2,7 @@
 # A deploy, on the VPS.
 #
 #   ./ops/deploy.sh              the newest build of main
-#   ./ops/deploy.sh 0.2.6        a released version
+#   ./ops/deploy.sh 0.2.7        a released version
 #   ./ops/deploy.sh 4f3a91c...   one exact commit, which is what a rollback is
 #
 # Nothing is built here. CI builds the image once, for a commit that passed its tests, and this pulls

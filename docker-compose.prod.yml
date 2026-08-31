@@ -52,7 +52,7 @@ services:
     # what it produces is an image no test ever ran against. The publish job only runs for a commit that
     # went green, so what lands here has passed.
     #
-    # IMAGE_TAG pins it. Leave it alone for the newest build of main; set it to a version - 0.2.6 - or to
+    # IMAGE_TAG pins it. Leave it alone for the newest build of main; set it to a version - 0.2.7 - or to
     # a full commit sha to go back to one, which is what a rollback is now.
     image: ${IMAGE:-ghcr.io/almightytank/streetsempire}:${IMAGE_TAG:-latest}
     logging: *logging

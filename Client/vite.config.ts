@@ -15,7 +15,21 @@ const version = readFileSync(fileURLToPath(new URL('../VERSION', import.meta.url
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
-  plugins: [react()],
+  plugins: [
+    react(),
+    /*
+      The same number again, for the one place `define` cannot reach.
+
+      index.html is not part of the bundle graph, so the tab title was still a hand-typed version -
+      the fifth copy, sitting one file over from the four that were fixed, and the one nobody looks
+      at until they are trying to work out which build a screenshot came from. It reads the same
+      token the client does now, replaced at serve time and at build time alike.
+    */
+    {
+      name: 'street-empire-version-in-html',
+      transformIndexHtml: (html: string) => html.replaceAll('__APP_VERSION__', version),
+    },
+  ],
   css: {
     preprocessorOptions: {
       scss: {

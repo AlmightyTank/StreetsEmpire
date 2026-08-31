@@ -4489,12 +4489,20 @@ static void TheVersionIsWrittenDownOnce()
     var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
     AssertTrue(client.Contains("__APP_VERSION__"), "the client should show the token, not a typed number");
 
+    // The page title, which was the fifth copy and outlived the fix that was supposed to remove all
+    // of them: index.html is not part of the bundle graph, so `define` never reached it and the tab
+    // quietly named 0.2.6 for a whole release. It is transformed at serve and build time now.
+    AssertTrue(viteConfig.Contains("transformIndexHtml"), "vite should rewrite the token in index.html");
+    var indexHtml = File.ReadAllText(Path.Combine(root.FullName, "Client", "index.html"));
+    AssertTrue(indexHtml.Contains("__APP_VERSION__"), "the page title should carry the token, not a typed number");
+
     // And nothing should have gone back to writing one down. The changelog and the release notes name
     // versions on purpose and are history; these four are the ones that have to move together.
     foreach (var (path, what) in new[]
     {
         (Path.Combine("Client", "src", "main.tsx"), "the client"),
         (Path.Combine("Client", "package.json"), "the client manifest"),
+        (Path.Combine("Client", "index.html"), "the page title"),
         (Path.Combine("Server", "StreetEmpire.Api", "Program.cs"), "the server"),
     })
     {

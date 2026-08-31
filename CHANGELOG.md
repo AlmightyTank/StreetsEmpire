@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.7 (in progress)
+## 0.2.7
 
 ### Added
 - **Seasons: the world can start over, and everything you did with it survives.** Last of the four and

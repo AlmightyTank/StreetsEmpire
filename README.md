@@ -2,6 +2,74 @@
 
 A playable browser-game foundation inspired by the turn-based economy and crew-management loop of classic browser crime/empire games.
 
+## What changed in 0.2.7
+
+0.2.7 is about there being enough to climb, and then somewhere for the climb to end.
+
+The turn bank stopped being one number for everybody. Turns come back at 288 a day against a bank of
+200 that filled in under seventeen hours, so anybody who slept and then went to work threw most of
+ninety turns away every single day and could buy nothing that would stop it. The rate is the wrong
+number to fix that with - everything here is priced per turn, so paying a grown empire faster inflates
+the gross of a shift, the heat it draws, what a drive-by costs and what a tier costs, all at once. The
+building holds the bank instead: 300 at the Warehouse, 450 at the Nightclub, 650 at the Penthouse, and
+the Trap House exactly where it was. Income per hour is untouched. What changed is how much of what a
+player is already owed is still there when they get back.
+
+The forty-eight pieces of ground on the map stopped being switches. A corner paid the same fifteen
+percent a season after it was claimed as it did on the day, there was nothing to spend on it, and
+anybody at the top of the tier ladder held their four pieces and was finished with the map for good.
+Ground can be worked up now, over five levels priced in months rather than evenings, and the level
+belongs to the ground rather than to whoever is standing on it - which is what finally gives a raid a
+target that is not simply the biggest house in town. Half of it survives being taken, and never more
+than the winner's own building could have built.
+
+Crews got a verb. Everything an alliance carried was defensive or passive - a truce nobody renews, a
+treasury that only moves when a member asks, pacts that create non-aggression and never the other
+kind, calls for help that cannot exist until somebody has already been attacked. Two crews could sit
+beside each other for a month with nothing to decide. A war is a clock, a score and a pot: 48 hours,
+scored off raids and ground that were already being fought over, and the winner takes the stake plus a
+cut of the losing treasury. A war nobody fought pays nobody, and no protection anywhere is lifted,
+because "we declared war" is exactly the excuse a farmer would reach for.
+
+And then seasons, last and deliberately so, because a reset is only a gift once there is something
+worth being handed back. The rule is that the empire goes and the person stays: the account, the name,
+the town, the crew somebody runs with and every honour they have ever won come through untouched, and
+everything an empire is made of does not. It is off by default, because a world already being played
+should not wake up one morning to find every empire in it deleted by a date somebody committed months
+earlier.
+
+The law also learned to take people off the street, working a shift became a choice between five
+districts rather than a gross ladder read straight down, a bigger house turns up more recruits, a trip
+to the bank costs turns, and this project put a bot of its own in the Discord server.
+
+### The four numbers worth knowing
+
+| | Was | Is |
+| --- | --- | --- |
+| Turn bank | 200 for everybody | 200 / 300 / 450 / 650 by building |
+| A piece of ground | one flat percentage, for ever | five levels, up to double, ~$42M to max |
+| A crew's reason to act | none | 48 hours, a score, and a pot |
+| The end of the climb | there wasn't one | a season, and an honour that outlives it |
+
+### What a season does and does not take
+
+Kept: the account, the sign-in, the player name, the town, crew membership, every season result ever
+recorded, and the crew itself as a crew.
+
+Taken: cash and bank, hoes, thugs and the named roster, the building and every room in it, all stock,
+all held ground and the work put into it, every combat clock and shield, the crew treasury and its
+thug pool, and a war still running when the clock goes.
+
+The prize for finishing well is opening cash in the next season - $50,000, $25,000, $10,000 for
+champion, top three and top ten - paid off the season just finished and nothing else. It never stacks,
+because winning one season must not be how you win the next, and it is paid in the currency that stops
+mattering fastest: a real leg up through the first hour, a rounding error against a Warehouse.
+
+Turning seasons on is `Game:Seasons:Enabled`, which is a scalar in the admin config panel and so can
+be flipped without a restart. Ending one by hand is `POST /api/admin/season/roll`, and it makes the
+caller type the season's own name to do it - a boolean is something a script sends by accident, and a
+name is something a person has to go and read first.
+
 ## What changed in 0.2.6
 
 0.2.6 was about the account, and about the fact that there was nowhere to put the game.
@@ -628,7 +696,7 @@ only for a commit that passed all three. It goes to GHCR under three tags doing 
 | tag | what it is for |
 | --- | --- |
 | `latest` | the newest green build of main - what a deploy takes when you give it no argument |
-| `0.2.6` | the version in `VERSION`, which is the name a human says out loud |
+| `0.2.7` | the version in `VERSION`, which is the name a human says out loud |
 | the commit sha | the only one that never moves, and therefore the only one worth pinning to |
 
 Which makes going back one command, and the same command:
@@ -649,7 +717,7 @@ the app and the built client, with every password and key coming from `.env` at 
 **The image reports which commit it is.** `/api/health` returns the version and the build:
 
 ```json
-{"status":"ok","version":"0.2.6","build":"0.2.6+8f63b72f0dba6dac2fdafc95f3d7dbeaa74ede3e"}
+{"status":"ok","version":"0.2.7","build":"0.2.7+8f63b72f0dba6dac2fdafc95f3d7dbeaa74ede3e"}
 ```
 
 The commit has to be passed in as a build argument, because the build context carries `Server/` and not
@@ -682,7 +750,7 @@ The health endpoint reports the commit alongside it, which is the thing actually
 server:
 
 ```json
-{ "status": "ok", "version": "0.2.6", "build": "0.2.6+15ba6c9105d8..." }
+{ "status": "ok", "version": "0.2.7", "build": "0.2.7+15ba6c9105d8..." }
 ```
 
 ### Where the credentials live
@@ -1827,7 +1895,7 @@ Health check:
 http://localhost:5080/api/health
 ```
 
-It should report version `0.2.6`.
+It should report version `0.2.7`.
 
 ### 4. Run the browser client
 

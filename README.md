@@ -681,9 +681,26 @@ the account back.
 ./ops/deploy.sh
 ```
 
-That pulls the checkout, pulls the image CI built, restarts, and waits until the app actually answers
-before calling it done. New migrations apply on the way up. The database is not part of this stack any
-more and is not touched by it, and the key ring volume is left alone.
+That pulls the checkout, waits for the image CI is building for that exact commit, pulls it the moment
+it is published, restarts, and waits until the app actually answers before calling it done. New
+migrations apply on the way up. The database is not part of this stack any more and is not touched by
+it, and the key ring volume is left alone.
+
+**It waits on purpose, and it deploys a sha rather than `latest`.** Both come out of the same problem:
+running the deploy in the minute after a push is racing a ten-minute build. `latest` does not fail
+there - it succeeds, puts back the *previous* commit, and reports success having changed nothing, which
+is worse than either finishing or stopping. So the tag it asks for is the sha the checkout is sitting
+on, which names one image and never moves, and a registry that has not heard of it yet is read as CI
+still working rather than as an error. Push, run this, walk away; it goes up when the build goes green.
+
+It gives up after thirty minutes (`DEPLOY_WAIT_MINUTES` if that is the wrong number) and touches
+nothing when it does, because after that long the honest answers are that CI is red, or that the commit
+was never pushed. A registry that answers something other than "no such tag" - denied, no route - is
+not waited on at all. And if what you want is whatever exists right now rather than what is coming:
+
+```bash
+./ops/deploy.sh --now
+```
 
 **The VPS does not build anything.** It used to: `up -d --build` ran the .NET SDK, `npm ci` and a Vite
 bundle on the machine that was at that moment serving the game, for minutes, using memory the game
@@ -695,9 +712,9 @@ only for a commit that passed all three. It goes to GHCR under three tags doing 
 
 | tag | what it is for |
 | --- | --- |
-| `latest` | the newest green build of main - what a deploy takes when you give it no argument |
+| `latest` | the newest green build of main - what `--now` takes, and the fallback when nothing is pinned |
 | `0.2.7` | the version in `VERSION`, which is the name a human says out loud |
-| the commit sha | the only one that never moves, and therefore the only one worth pinning to |
+| the commit sha | the only one that never moves, which is why a plain deploy asks for it by name |
 
 Which makes going back one command, and the same command:
 
@@ -706,7 +723,9 @@ Which makes going back one command, and the same command:
 ```
 
 It sets `IMAGE_TAG` for that one run rather than editing anything, so the next plain `./ops/deploy.sh`
-returns to `latest`. Pin it in `.env` instead if you want it to stay put across deploys.
+goes back to the head of main. A tag named by hand is never waited for - it either exists or it is a
+typo, and thirty minutes is a long time to spend finding out which. Pin `IMAGE_TAG` in `.env` instead
+if you want it to stay put across deploys; the script sees that pin and leaves it alone.
 
 **One thing to do once, in GitHub.** A package published from a public repository still starts private,
 and the VPS has no credentials. Open the package under the repository's Packages, then Package settings,

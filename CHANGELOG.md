@@ -317,6 +317,15 @@
 - `ops/deploy.sh` is that command. It pulls the checkout, pulls the image, restarts, and then waits
   until the app actually answers before saying it worked - because "up" and "working" are different
   claims when the app migrates on boot and a container that exits gets restarted for you.
+- **A deploy now waits for the build it is meant to be deploying, and asks for it by sha.** Run in the
+  minute after a push, it was racing CI - and `latest` does not fail a race, it wins it with the
+  previous commit: a deploy that says it worked, restarts the game, and changes nothing. Now the tag
+  asked for is the sha of the commit the checkout is sitting on, which names one image and never moves,
+  and a registry that has never heard of that tag is read as CI still building rather than as an error.
+  Push, run it, walk away. Thirty minutes and it gives up having touched nothing, because past that the
+  honest answers are that CI is red or that the commit was never pushed - and it says so with a link to
+  the run. Only "no such tag" is waited on; denied, or no route to the registry, fails at once.
+  `--now` is the old behaviour, for when what is wanted is whatever exists rather than what is coming.
 - **The image says which commit it is.** `/api/health` was already reporting the build, and in a built
   image that build was the version and nothing else: the build context carries `Server/` and not `.git`,
   so nothing inside it could know. CI passes the sha in as a build argument now. A build by hand still

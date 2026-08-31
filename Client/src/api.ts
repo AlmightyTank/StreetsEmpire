@@ -12,8 +12,57 @@ export type StoreItem = {
   key: string
   name: string
   category: string
+  /** What you pay, after your standing comes off it. */
   price: number
   description: string
+  /** The sticker, before standing. Equal to price for anybody with none. */
+  listPrice: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type StoreRepLevel = {
+  level: number
+  name: string
+  rep: number
+  discountPercent: number
+  /** What arriving here opens. Empty when it opens nothing but the discount. */
+  unlocks: string
+  reached: boolean
+  current: boolean
+}
+
+export type StoreInvestment = {
+  key: string
+  name: string
+  description: string
+  cost: number
+  rep: number
+  cooldownHours: number
+  minLevel: number
+  minLevelName: string
+  locked: boolean
+  lockedReason?: string | null
+}
+
+/** Where you stand with the counter, what it is worth, and what money would buy of it now. */
+export type StoreRep = {
+  rep: number
+  level: number
+  levelName: string
+  discountPercent: number
+  nextLevel?: number | null
+  nextLevelName?: string | null
+  nextLevelRep?: number | null
+  repToNextLevel: number
+  progressPercent: number
+  dollarsPerRep: number
+  investmentReadyAtUtc?: string | null
+  investmentReadySeconds: number
+  levels: StoreRepLevel[]
+  investments: StoreInvestment[]
 }
 
 export type CrewReport = {
@@ -341,6 +390,7 @@ export type Dashboard = {
   combatStatus: CombatStatus
   unreadDefenceAlerts: number
   store: StoreItem[]
+  storeRep: StoreRep
   attackMethods: AttackMethod[]
   /** Where a shift can be worked, and what each place is for. */
   districts: StreetDistrict[]
@@ -1746,6 +1796,10 @@ export const api = {
   sellStoreItem: (itemKey: string, quantity: number) => request<ActionResult>('/api/game/store/sell', {
     method: 'POST',
     body: JSON.stringify({ itemKey, quantity }),
+  }),
+  investInStore: (key: string) => request<ActionResult>('/api/game/store/invest', {
+    method: 'POST',
+    body: JSON.stringify({ key }),
   }),
   recoverMorale: (strategy: 'rest' | 'party') => request<ActionResult>('/api/game/hideout/recover', {
     method: 'POST',

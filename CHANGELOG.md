@@ -3,6 +3,56 @@
 ## 0.2.7
 
 ### Added
+- **The store keeps a reputation now, and the gun rack is behind it.** Money was the only thing the
+  counter ever asked for, which made the rack a price list rather than a ladder: a player who came into
+  $5,500 on their first evening walked out holding the best weapon in the game, and a player who had
+  traded there every day for a month was no more welcome than one who had never been through the door.
+  That is a vending machine, not a shop. The price is still what a gun costs; standing is now whether
+  anybody will sell you one.
+- Five rungs - **Nobody, Regular, Trusted, Connected, Made** - and the guns sit on them: pistols to
+  everybody, shotguns at Regular, SMGs at Trusted, rifles at Connected. Nothing is hidden. A locked row
+  is still a row, priced and described, saying which rung opens it, because a rack that quietly grows
+  extra lines as you climb never tells anybody there was a ladder at all.
+- **Every dollar over the counter counts.** Rep is earned by trading, at a hundredth of a point a
+  dollar, which means the beer and condoms an ordinary week already buys are building it whether or not
+  anybody is thinking about rep - auto-buy included, because that is where most players do most of their
+  shopping. Deliberately a trickle: trading is the floor under the climb rather than the way up it.
+- **An Investment counter, for money that buys standing and nothing else.** Cover the counter's tab at
+  $5,000, stake the next shipment at $50,000, buy into the block at $250,000. Each is cheaper per point
+  than trading the same money on goods, and each shuts the counter for longer than the last - six hours,
+  twelve, a full day - on one clock across all of them. That pairing is the whole shape of it: cash
+  shortens the climb and the clock stops it from erasing the climb. Nobody buys the ladder in an
+  afternoon, however good the night was.
+- **The last rung is worth reaching after the last gun.** Standing takes 2/4/6/8% off every price in the
+  shop, which is what keeps rep meaning something the day somebody buys their first rifle. It comes off
+  what you actually hand over, so a discount earns proportionally less rep as well - the reward does not
+  quietly pay for itself.
+- The player market asks the same question. Rifles list below the shop price, so gating the counter
+  alone would have made the cheapest route to a gun nobody would sell you the one that skipped the shop
+  entirely. Nothing is earned on the board either, which is also what stops two accounts selling the
+  same crate back and forth from being a rep machine.
+- The **workshop is deliberately not gated**. Forging is you making it in your own back room, and it is
+  the alternative route the whole thing leaves open: a deep building instead of a reputation, slower,
+  and it can never turn out a rifle. Standing is what somebody else's willingness to arm you is made of,
+  and nobody has to be willing to arm you in your own basement.
+- Rivals climb it too, buying standing once their crew is fed and armed and there is money spare. A
+  field of empires that can never be sold a rifle is a field that stops being worth fighting at exactly
+  the point a player outgrows it.
+- **Everything above the pistol costs more now**, because the gate and the price are one decision. A
+  shotgun at $1,250 was an afternoon's takings, which made the rung in front of it the only thing
+  anybody had to think about and the price a formality - and a ladder whose rungs are free is a waiting
+  room. Shotguns are $2,000, SMGs $5,000, rifles $18,000. Materials moved with them, so forging still
+  undercuts the counter by about a third and the bench stays a trade rather than the shop being closed.
+- **The pistol did not move.** It is what a new player arms a crew with on day one, it is the one gun
+  standing was never going to gate, and the whole point of the tier split is that covering a big crew
+  cheaply and arming a small one well are different purchases. What the rise sharpens is the second
+  half of that: a point of firepower is $250 on a pistol and $7,200 on a rifle, so trading up is still
+  never the efficient way to spend money and still the only thing left to buy once the house is full.
+- **Nobody already playing loses a gun they could buy yesterday.** The upgrade reads each existing
+  player's standing off the rack they already own, so a month of buying rifles is not answered by a
+  release that quietly stops you replacing them. A season still takes it, with everything else an empire
+  is made of.
+
 - **Seasons: the world can start over, and everything you did with it survives.** Last of the four and
   deliberately so, because a reset is only a gift once there is enough to climb. Before this release a
   season would have taken away an afternoon and given back an afternoon, which is not a season, it is a
@@ -502,6 +552,11 @@
   the answer the page is reporting.
 
 ### Fixed
+- **Rivals in a morale hole had been trying to buy a good called "weapons" since the day guns got
+  tiers.** The counter has stocked pistols, shotguns, SMGs and rifles by name for two releases; that one
+  recovery branch never moved off the old key, so a rival with uncovered thugs would reach for the shop,
+  be told it stocks no such thing, lose the action, and try again next round. It buys the best gun it
+  can pay for and stand for, like every other branch does.
 - **The two morale buttons went grey and would not say why.** Rest Crew and Throw Party check five
   things between them - morale already full, turns, cash, beer, weed - and failing any of them simply
   disabled the button with nothing anywhere to read. The state a player most often hits it in is the

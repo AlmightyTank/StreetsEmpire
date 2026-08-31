@@ -232,7 +232,8 @@ internal static class GameEndpoints
                 ToCombatCrewResponse(combatCrew),
                 ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
                 unreadAlerts,
-                economy.GetStore(),
+                economy.GetStore(player),
+                ToStoreRep(player, opts, now),
                 strikes.MethodsFor(player),
                 ToDistricts(opts),
                 player.Alliance is { } crew
@@ -593,8 +594,42 @@ internal static class GameEndpoints
         }).RequireAuthorization();
 
 
-        app.MapGet("/api/game/store", (EconomyService economy) => Results.Ok(economy.GetStore()))
-            .RequireAuthorization();
+        // Priced for whoever is asking: the shelf is the same for everybody and the prices are not.
+        app.MapGet("/api/game/store", async (
+            CurrentPlayerService current,
+            EconomyService economy,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            return player is null ? Results.Unauthorized() : Results.Ok(economy.GetStore(player));
+        }).RequireAuthorization();
+
+
+        // Money for standing and nothing else. No turns: this is a payment, not an errand, and the
+        // thing holding it back is the counter's own clock rather than the player's.
+        app.MapPost("/api/game/store/invest", async (
+            StoreInvestRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            EconomyService economy,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var before = Snapshot(player);
+            try
+            {
+                var result = economy.Invest(player, request.Key, DateTime.UtcNow);
+                AddLog(db, player, before, "STORE", 0, result.Summary);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
 
 
         app.MapPost("/api/game/store/buy", async (

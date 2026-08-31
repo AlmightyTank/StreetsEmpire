@@ -3882,30 +3882,50 @@ function MarketCorePage(ctx: PageContext) {
 
     <TradingPanel {...ctx} />
 
+    <StoreStandingPanel dashboard={dashboard} busy={busy} act={act} />
+
     <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>Street Store</h2><span>Cash on hand only</span></div>
+      <div className="panel-title">
+        <h2>Street Store</h2>
+        <span>Cash on hand only{dashboard.storeRep.discountPercent > 0 ? `, ${dashboard.storeRep.discountPercent}% off as ${dashboard.storeRep.levelName}` : ''}</span>
+      </div>
       <div className="d-grid gtc-1 gtc-xl-3 gap-2 mt-3">
         {dashboard.store.map(item => {
           const qty = storeQty[item.key] ?? 1
-          return <div className="store-row tnum d-grid gtc-1 gap-3 align-content-between border rounded bg-body-tertiary p-3" key={item.key}>
+          /*
+            A locked row is shown rather than hidden. What the shop sells and what you can be sold are
+            two different questions, and a rack that quietly grows extra rows as you climb never tells
+            anybody there was a ladder at all - which is the whole thing worth knowing about it.
+          */
+          return <div className={`store-row tnum d-grid gtc-1 gap-3 align-content-between border rounded p-3 ${item.locked ? 'bg-body-secondary opacity-75' : 'bg-body-tertiary'}`} key={item.key}>
             <div className="min-w-0 d-grid align-content-start gap-2">
               <div className="d-flex flex-wrap align-items-center gap-2">
                 <strong className="text-body fs-5">{item.name}</strong>
                 <span className="eyebrow border rounded-pill text-info-emphasis px-2 py-1">{item.category}</span>
+                {item.minRepLevel > 1 && <span className={`eyebrow border rounded-pill px-2 py-1 ${item.locked ? 'text-warning-emphasis border-warning' : 'text-success-emphasis border-success'}`}>
+                  {item.minRepLevelName}
+                </span>}
               </div>
               <p className="m-0 text-body-secondary">{item.description}</p>
+              {item.locked && <p className="m-0 small text-warning-emphasis">{item.lockedReason}</p>}
             </div>
             <div className="d-grid gtc-2 gap-2 align-items-end border rounded bg-body-tertiary p-2">
               <div className="d-grid gap-1">
                 <span className="eyebrow">Unit</span>
                 <strong className="text-primary fs-6">{money.format(item.price)}</strong>
+                {/* The sticker, struck through, only where standing has actually moved it. */}
+                {item.listPrice > item.price && <s className="text-body-tertiary small">{money.format(item.listPrice)}</s>}
               </div>
-              <label className="field small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
+              <label className="field small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} disabled={item.locked} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
               <div className="d-grid gap-1">
                 <span className="eyebrow">Total</span>
                 <strong className="text-primary fs-6">{money.format(qty * item.price)}</strong>
               </div>
-              <button className="btn btn-primary btn-sm w-100" disabled={busy || qty < 1 || dashboard.cash < qty * item.price} onClick={() => void act(() => api.buyStoreItem(item.key, qty))}>Buy</button>
+              <button
+                className="btn btn-primary btn-sm w-100"
+                disabled={busy || item.locked || qty < 1 || dashboard.cash < qty * item.price}
+                onClick={() => void act(() => api.buyStoreItem(item.key, qty))}
+              >{item.locked ? 'Locked' : 'Buy'}</button>
               {/* Rides are the only store item with a resale price, so the sell button only exists here. */}
               {item.key === 'rides' && <button
                 className="btn btn-secondary btn-sm w-100"
@@ -3920,6 +3940,92 @@ function MarketCorePage(ctx: PageContext) {
 
     <BankPanel dashboard={dashboard} busy={busy} bankAmount={bankAmount} setBankAmount={setBankAmount} act={act} className="market-bank" wide />
   </div>
+}
+
+/**
+ * Standing at the counter: where you are on the ladder, what it is worth, and what money buys of it.
+ *
+ * The panel leads with the rung you are on rather than the points behind it, because the points are
+ * only ever a means: nobody is saving up 3,000 rep, they are saving up for rifles. The whole ladder is
+ * on the page for the same reason - a player standing at the bottom of it should be able to read what
+ * the top of it costs without climbing three rungs to find out, and the guns each rung opens are the
+ * only honest answer to why anybody would bother.
+ *
+ * Investments sit under it rather than in the goods grid above. They are the one thing at this counter
+ * that hands over nothing at all, and a row that takes $250,000 and gives back no object belongs
+ * nowhere near the row that sells beer.
+ */
+function StoreStandingPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const rep = dashboard.storeRep
+  const waiting = rep.investmentReadySeconds > 0 && rep.investmentReadyAtUtc
+  return <section className="card p-3 gcol-full">
+    <div className="panel-title">
+      <h2>Standing</h2>
+      <span>{number.format(rep.rep)} rep, {money.format(rep.dollarsPerRep)} of trade a point</span>
+    </div>
+
+    <div className="tnum d-grid gap-2 mt-3">
+      <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+        <strong className="text-body fs-5">{rep.levelName}</strong>
+        <span className="text-body-secondary small">
+          {rep.nextLevelName
+            ? `${number.format(rep.repToNextLevel)} rep to ${rep.nextLevelName}`
+            : 'Top of the ladder. Nothing here is closed to you.'}
+        </span>
+      </div>
+      <div className="progress" role="progressbar" aria-label="Store standing" aria-valuenow={rep.progressPercent} aria-valuemin={0} aria-valuemax={100}>
+        <div className="progress-bar bg-primary" style={{ width: `${Math.max(2, rep.progressPercent)}%` }} />
+      </div>
+      <p className="m-0 text-body-secondary small">
+        Every dollar over the counter counts, so the beer and condoms you already buy are building this.
+        {rep.discountPercent > 0 && ` Standing here takes ${rep.discountPercent}% off every price in the shop.`}
+      </p>
+    </div>
+
+    <div className="d-grid gtc-1 gtc-sm-2 gtc-xl-3 gap-2 mt-3">
+      {rep.levels.map(level => <div
+        className={`d-grid gap-1 align-content-start border rounded p-2 ${level.current ? 'border-primary bg-body-tertiary' : level.reached ? 'bg-body-tertiary' : 'bg-body-secondary opacity-75'}`}
+        key={level.level}
+      >
+        <div className="d-flex justify-content-between align-items-baseline gap-2">
+          <strong className="text-body">{level.name}</strong>
+          <span className="eyebrow">{number.format(level.rep)} rep</span>
+        </div>
+        <span className="small text-body-secondary">
+          {level.unlocks ? level.unlocks : 'Nothing new on the shelf'}
+          {level.discountPercent > 0 && ` / ${level.discountPercent}% off`}
+        </span>
+      </div>)}
+    </div>
+
+    <div className="panel-title mt-3">
+      <h3 className="fs-6 m-0">Investment</h3>
+      <span>{waiting ? `The counter takes another in ${timeUntil(rep.investmentReadyAtUtc!)}` : 'The counter will take one now'}</span>
+    </div>
+    <div className="tnum d-grid gtc-1 gtc-xl-3 gap-2 mt-2">
+      {rep.investments.map(investment => {
+        const short = dashboard.cash < investment.cost
+        return <div className={`d-grid gap-2 align-content-between border rounded p-3 ${investment.locked ? 'bg-body-secondary opacity-75' : 'bg-body-tertiary'}`} key={investment.key}>
+          <div className="d-grid gap-1">
+            <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+              <strong className="text-body">{investment.name}</strong>
+              <span className="eyebrow text-primary">+{number.format(investment.rep)} rep</span>
+            </div>
+            <p className="m-0 text-body-secondary small">{investment.description}</p>
+            <span className="eyebrow">{money.format(investment.cost)} / shuts the counter {investment.cooldownHours}h</span>
+            {investment.locked && <span className="small text-warning-emphasis">{investment.lockedReason}</span>}
+          </div>
+          <button
+            className="btn btn-primary btn-sm w-100"
+            disabled={busy || investment.locked || short || !!waiting}
+            onClick={() => void act(() => api.investInStore(investment.key))}
+          >
+            {investment.locked ? investment.minLevelName : waiting ? timeUntil(rep.investmentReadyAtUtc!) : short ? 'Short' : `Pay ${money.format(investment.cost)}`}
+          </button>
+        </div>
+      })}
+    </div>
+  </section>
 }
 
 function ProductionPage(ctx: PageContext) {

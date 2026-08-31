@@ -681,6 +681,8 @@ public sealed record DashboardResponse(
     CombatStatusResponse CombatStatus,
     int UnreadDefenceAlerts,
     IReadOnlyList<StoreItemResponse> Store,
+    /// <summary>Where this player stands with the counter, and what standing is costing or saving them.</summary>
+    StoreRepResponse StoreRep,
     /// <summary>The attack menu, priced and gated for this player.</summary>
     IReadOnlyList<AttackMethodResponse> AttackMethods,
     /// <summary>Where a shift can be worked, and what each place is for.</summary>
@@ -767,8 +769,66 @@ public sealed record StoreItemResponse(
     string Key,
     string Name,
     string Category,
+    /// <summary>What this player pays, after their standing comes off it.</summary>
     int Price,
-    string Description);
+    string Description,
+    /// <summary>The sticker, before standing. Equal to <see cref="Price"/> for anybody with none.</summary>
+    int ListPrice,
+    /// <summary>The rung needed to be handed this. 1 is everybody.</summary>
+    int MinRepLevel,
+    /// <summary>What that rung is called, or null when nothing gates the row.</summary>
+    string? MinRepLevelName,
+    bool Locked,
+    /// <summary>Why it is locked, in the same words the refusal would use. Null when it is not.</summary>
+    string? LockedReason);
+
+/// <summary>
+/// Where a player stands with the store: what they have, what it is worth, what is above it, and what
+/// money would buy of it right now.
+/// </summary>
+public sealed record StoreRepResponse(
+    int Rep,
+    int Level,
+    string LevelName,
+    int DiscountPercent,
+    int? NextLevel,
+    string? NextLevelName,
+    int? NextLevelRep,
+    /// <summary>Rep still to find, or 0 at the top.</summary>
+    int RepToNextLevel,
+    /// <summary>How far through the current rung, for a bar. 100 at the top.</summary>
+    int ProgressPercent,
+    /// <summary>Dollars of trade that make one point, so the shop can say what a purchase is worth.</summary>
+    int DollarsPerRep,
+    /// <summary>When the counter will take another investment, and how long that is.</summary>
+    DateTime? InvestmentReadyAtUtc,
+    int InvestmentReadySeconds,
+    IReadOnlyList<StoreRepLevelResponse> Levels,
+    IReadOnlyList<StoreInvestmentResponse> Investments);
+
+public sealed record StoreRepLevelResponse(
+    int Level,
+    string Name,
+    int Rep,
+    int DiscountPercent,
+    /// <summary>What arriving here opens, in words. Empty when it opens nothing but the discount.</summary>
+    string Unlocks,
+    bool Reached,
+    bool Current);
+
+public sealed record StoreInvestmentResponse(
+    string Key,
+    string Name,
+    string Description,
+    long Cost,
+    int Rep,
+    int CooldownHours,
+    int MinLevel,
+    string MinLevelName,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record StoreInvestRequest(string? Key);
 
 public sealed record ActivityResponse(
     long Id,

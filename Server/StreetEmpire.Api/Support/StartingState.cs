@@ -52,6 +52,12 @@ internal static class StartingState
         player.Poison = 0;
         player.Rides = 0;
 
+        // Standing is an empire and not a person. It was earned by an empire's worth of trading, it
+        // unlocks the guns that empire fought with, and carrying it through a roll would open a new
+        // season with the rifle counter already unlocked - which is the one thing a season is for.
+        player.StoreRep = 0;
+        player.StoreInvestmentReadyAtUtc = null;
+
         player.Heat = 0;
         player.LastHeatRollUtc = nowUtc;
         player.TravelArrivesAtUtc = null;

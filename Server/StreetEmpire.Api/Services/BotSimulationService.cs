@@ -506,8 +506,10 @@ public sealed class BotSimulationService(
         var config = _options.Territory;
         var cap = territories.HoldingCapFor(bot.Hideout);
         var held = await db.Territories.CountAsync(x => x.HolderId == bot.Id, ct);
+        // Out of room for new ground is exactly when a rival should be putting money into the ground
+        // it already has. Breadth first, then depth, which is the order a player works in too.
         if (held >= cap)
-            return 0;
+            return await TryDevelopGroundAsync(bot, brain, nowUtc, ct);
 
         var free = await territories.FreeThugsAsync(bot, ct);
         if (free < config.MinimumGarrison)
@@ -568,7 +570,10 @@ public sealed class BotSimulationService(
             // The holder's morale, not the attacker's. Judging a garrison by how the raider feels is
             // nonsense, and it flattered thin garrisons held by a demoralised crew.
             var holderMorale = ground.Holder is { } owner ? (owner.HoeHappiness + owner.ThugHappiness) / 2 : 100;
-            var defence = GarrisonDefence(ground.GarrisonThugs, holderMorale);
+            // Money in the ground counts, or a rival walks into a corner somebody has spent months
+            // fortifying, loses, and calls it bad luck. The garrison's own bonus is read the same way
+            // the fight itself reads it.
+            var defence = GarrisonDefence(ground.GarrisonThugs, holderMorale, territories.DevelopmentDefencePercent(ground));
             if (attackPower < defence * profile.WinMargin)
                 continue;
 
@@ -810,8 +815,51 @@ public sealed class BotSimulationService(
         => CombatPower.Attack(pimps, thugs, Firepower.Of(rack, thugs, _options.WeaponFirepower()), morale, _options.Combat.Power);
 
     /// <summary>What a garrison is worth: bodies with sidearms, never the holder's rack at home.</summary>
-    private int GarrisonDefence(int thugs, double morale)
-        => CombatPower.Defence(0, thugs, Firepower.Sidearms(thugs, thugs), morale, _options.Combat.Power);
+    /// <summary>
+    /// Puts money into ground a rival already holds, shallowest piece first.
+    ///
+    /// Rivals develop for the same reason they claim: ground nobody has worked up is a map where the
+    /// only developed corner in a town is the player's own, and the half of this mechanic that makes a
+    /// piece worth crossing town for would then only ever point one way.
+    ///
+    /// Spent out of what is over the cash reserve, so a rival never fortifies a corner with the money
+    /// it needed to keep its house standing.
+    /// </summary>
+    private async Task<int> TryDevelopGroundAsync(Player bot, BotBrain brain, DateTime nowUtc, CancellationToken ct)
+    {
+        var mine = await db.Territories
+            .Where(x => x.HolderId == bot.Id && x.DevelopingToLevel == null)
+            .OrderBy(x => x.DevelopmentLevel)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+        if (mine.Count == 0)
+            return 0;
+
+        var spare = bot.Cash + bot.BankCash - CashReserve(bot, brain);
+        foreach (var ground in mine)
+        {
+            var next = _options.Territory.DevelopmentAfter(ground.DevelopmentLevel);
+            if (next is null || next.MinTier > (bot.Hideout?.Tier ?? 1) || next.Cost > spare || bot.Turns < next.Turns + TurnReserve(brain))
+                continue;
+
+            var before = Snapshot(bot);
+            try
+            {
+                var (worked, level, _) = await territories.DevelopAsync(bot, ground.Id, nowUtc, ct);
+                AddLog(bot, before, "GROUND", level.Turns, nowUtc, $"AI: Started working {worked.Name} up to {level.Name}.");
+                return 1;
+            }
+            catch (GameRuleException)
+            {
+                return 0;
+            }
+        }
+
+        return 0;
+    }
+
+    private int GarrisonDefence(int thugs, double morale, int groundBonusPercent = 0)
+        => CombatPower.Defence(0, thugs, Firepower.Sidearms(thugs, thugs), morale, _options.Combat.Power, groundBonusPercent);
 
     private int DefensePower(int pimps, int thugs, Armoury rack, double morale)
         => CombatPower.Defence(pimps, thugs, Firepower.Of(rack, thugs, _options.WeaponFirepower()), morale, _options.Combat.Power);

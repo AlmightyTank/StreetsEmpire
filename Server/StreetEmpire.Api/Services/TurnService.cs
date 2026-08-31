@@ -28,16 +28,20 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
         var moraleRecovery = completedTicks
             * Math.Max(0, _options.Morale.PassiveRecoveryPerTick)
             * (1 + Math.Max(0, moraleRecoveryPercent) / 100.0);
+        // What this player's building holds, not what the game opens at. Read per refresh for the
+        // same reason the rate is: it follows the player rather than needing recalculating when they
+        // move up, and a build that lands mid-session raises the ceiling on the very next tick.
+        var maxTurns = _options.MaxTurnsFor(player);
         var turnsBefore = player.Turns;
         var hoeBefore = player.HoeHappiness;
         var thugBefore = player.ThugHappiness;
         var clockBefore = player.LastTurnUpdateUtc;
-        player.Turns = Math.Min(_options.MaxTurns, player.Turns + turnsToAdd);
+        player.Turns = Math.Min(maxTurns, player.Turns + turnsToAdd);
         player.HoeHappiness = RecoverMorale(player.HoeHappiness, moraleRecovery);
         player.ThugHappiness = RecoverMorale(player.ThugHappiness, moraleRecovery);
         // Pimps cool off over the same ticks, so loyalty is not a one-way ratchet.
         pimps.Recover(player, completedTicks * pimps.PassiveRecoveryPerTick);
-        player.LastTurnUpdateUtc = player.Turns >= _options.MaxTurns
+        player.LastTurnUpdateUtc = player.Turns >= maxTurns
             ? nowUtc
             : player.LastTurnUpdateUtc.AddMinutes(completedTicks * _options.TurnTickMinutes);
         return turnsBefore != player.Turns
@@ -48,7 +52,7 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
 
     public int SecondsUntilNextTick(Player player, DateTime nowUtc)
     {
-        if (player.Turns >= _options.MaxTurns)
+        if (player.Turns >= _options.MaxTurnsFor(player))
             return 0;
 
         var next = player.LastTurnUpdateUtc.AddMinutes(_options.TurnTickMinutes);

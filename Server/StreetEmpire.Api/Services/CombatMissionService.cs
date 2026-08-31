@@ -228,6 +228,9 @@ public sealed class CombatMissionService(
                 // asking. Here rather than inside Complete, which is synchronous and has no business
                 // becoming a database round trip.
                 await alliances.CloseOpenAssistCallsAsync(mission.Id, nowUtc, cancellationToken);
+                // And it counts, if the two crews have a war on. After Complete rather than inside it,
+                // because a territory raid only knows who holds the ground once Complete has settled it.
+                await alliances.ScoreWarAsync(mission, nowUtc, cancellationToken);
                 updates++;
             }
         }
@@ -503,7 +506,10 @@ public sealed class CombatMissionService(
                 // exactly what it was worth before tiers existed.
                 Firepower.Sidearms(ground.GarrisonThugs, ground.GarrisonThugs),
                 mission.DefenderMorale,
-                pimps.GarrisonBonusPercent(ground.GarrisonPimp))
+                // The pimp running it and the work put into it, on the same bonus. Ground somebody has
+                // spent months on fights harder than bare ground, which is what stops development
+                // being nothing but a target painted on its holder.
+                pimps.GarrisonBonusPercent(ground.GarrisonPimp) + territories.DevelopmentDefencePercent(ground))
             : DefensePower(
                 defenderHomePimps,
                 defenderHomeThugs,
@@ -653,7 +659,9 @@ public sealed class CombatMissionService(
         if (mission.Outcome == "Victory")
         {
             var loser = ground.HolderId;
-            territories.Transfer(ground, mission.AttackerId, mission.RemainingAttackers, nowUtc);
+            // The winner's own building decides how much of the work they are left holding, so
+            // nobody comes away running ground they could never have built.
+            territories.Transfer(ground, mission.AttackerId, mission.RemainingAttackers, nowUtc, mission.Attacker.Hideout);
             mission.Summary = $"{mission.Attacker.Name} took {ground.Name}.";
 
             // The loser is told, because losing ground is something done to them and they were very

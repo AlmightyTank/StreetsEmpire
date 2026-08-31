@@ -6,6 +6,11 @@ public sealed class GameOptions
 {
     public int TurnsPerTick { get; set; } = 2;
     public int TurnTickMinutes { get; set; } = 10;
+
+    /// <summary>
+    /// The bank a player starts life with, and the floor under every building above it. What a
+    /// particular player can actually hold is <see cref="MaxTurnsFor"/>, because the building raises it.
+    /// </summary>
     public int MaxTurns { get; set; } = 200;
     /// <summary>
     /// The opening bank. Half of the cap read as a courtesy and played as a wall: a hundred turns at
@@ -39,6 +44,22 @@ public sealed class GameOptions
         var room = Math.Clamp(1 - EconomyService.PlunderOf(player, this) / (double)ceiling, 0, 1);
         return Math.Max(TurnsPerTick, (int)Math.Round(TurnsPerTick * (1 + (boost - 1) * room)));
     }
+
+    /// <summary>
+    /// The turn bank this player's building holds.
+    ///
+    /// The rate is deliberately not on this ladder. Everything in the game is priced per turn - the
+    /// gross of a shift, the heat it draws, what a drive-by costs, what a tier costs - so paying a
+    /// bigger player more turns an hour would inflate every one of those numbers and need all of them
+    /// retuned. A bigger bank changes none of it: income per hour is untouched and a day is still
+    /// worth the same 288 turns. What it changes is how much of that a player who is not at the screen
+    /// actually keeps, and how long one sitting is allowed to be.
+    ///
+    /// Which is the thing worth buying. At 200 the bank fills in under seventeen hours, so anybody who
+    /// sleeps and then works throws away most of a third of what the game owes them every day, and
+    /// there was nothing on any shop page that could stop it happening. Now the building can.
+    /// </summary>
+    public int MaxTurnsFor(Player player) => Hideout.TurnBankFor(player.Hideout, MaxTurns);
 
     public long StartingCash { get; set; } = 5_000;
     public long StartingBankCash { get; set; } = 0;
@@ -225,6 +246,7 @@ public sealed class GameOptions
     public ContractOptions Contracts { get; set; } = new();
     public BankOptions Bank { get; set; } = new();
     public ArrestOptions Arrests { get; set; } = new();
+    public SeasonOptions Seasons { get; set; } = new();
 }
 
 /// <summary>
@@ -557,6 +579,9 @@ public sealed class AllianceOptions
     /// </summary>
     public double MaxBorrowedPerOwnThug { get; set; } = 1;
 
+    /// <summary>What a declared war costs, runs for, scores, and pays out.</summary>
+    public WarOptions War { get; set; } = new();
+
     /// <summary>
     /// Crews the world already has. Seeded around towns on first read, because that is the alliance a
     /// world would actually make - the people working the same streets - and it gives a player an
@@ -600,6 +625,70 @@ public sealed class AllianceOptions
 }
 
 /// <summary>A crew the world starts with, formed from the rivals already working that town.</summary>
+/// <summary>
+/// A crew war: a clock, a score and a pot.
+///
+/// Sized against what a crew can actually do inside the window rather than picked round. Two days is
+/// long enough that both sides get a full evening at the screen whatever timezone they are in, and
+/// short enough that a war is an event rather than a condition. A player has two attack lanes on a
+/// thirty-minute cooldown, so a crew of six can mount a few dozen fights in that stretch and a score
+/// in the twenties is a hard-fought one.
+/// </summary>
+public sealed class WarOptions
+{
+    /// <summary>How long a war runs once declared.</summary>
+    public int DurationHours { get; set; } = 48;
+
+    /// <summary>
+    /// What the declaring crew puts on the table, out of the treasury, the moment they declare.
+    ///
+    /// Priced against the founding cost rather than against income: starting a crew is $150,000 and is
+    /// meant to be a decision an established player makes, and picking a fight with another crew should
+    /// cost about as much thought. It is also the whole of what the crew being declared on is
+    /// guaranteed to win, which is why it cannot be nominal - a free declaration is an insult, and an
+    /// insult is not a war.
+    /// </summary>
+    public long Stake { get; set; } = 250_000;
+
+    /// <summary>
+    /// What the loser's treasury pays the winner on top of the stake, and the ceiling on it.
+    ///
+    /// A share rather than a number, so a war between two poor crews is fought over the stake and a
+    /// war between two rich ones is fought over something worth having. Capped because a crew that has
+    /// been saving for a year should not be emptied by two days of raids.
+    /// </summary>
+    public double TributePercent { get; set; } = 15;
+    public long MaxTribute { get; set; } = 5_000_000;
+
+    /// <summary>
+    /// The score it takes to win anything at all.
+    ///
+    /// Without it, declaring on a crew that has stopped playing is a wage: one raid nobody contests
+    /// wins the war and takes a cut of whatever they had saved. A war has to be fought to be won, and
+    /// this is the line under "fought".
+    /// </summary>
+    public int MinScoreToWin { get; set; } = 6;
+
+    /// <summary>
+    /// How long the same two crews must wait before doing it again. The second half of the answer to
+    /// farming a dormant crew: even a war that is worth winning cannot be re-declared every other day.
+    /// </summary>
+    public int CooldownHours { get; set; } = 72;
+
+    /// <summary>
+    /// What the things a crew already does are worth once there is a war on.
+    ///
+    /// Nothing new is scored. A raid, a defence and a piece of ground are the three outcomes the combat
+    /// system already produces, and a war is only a reason to go and produce them against one
+    /// particular crew. Ground is worth the most because it is the hardest and it lasts; a defence is
+    /// worth something real because a crew that only ever attacks should not beat a crew that turns
+    /// every raid away.
+    /// </summary>
+    public int PointsForRaidWon { get; set; } = 3;
+    public int PointsForDefenceHeld { get; set; } = 2;
+    public int PointsForGroundTaken { get; set; } = 5;
+}
+
 public sealed class RivalCrewOptions
 {
     public string Name { get; set; } = string.Empty;
@@ -609,6 +698,55 @@ public sealed class RivalCrewOptions
 
     /// <summary>How they take people on: Open, Application, or InviteOnly.</summary>
     public string Door { get; set; } = "Open";
+}
+
+/// <summary>
+/// How long a run of the world lasts, and what finishing it well is worth in the next one.
+///
+/// Off by default, and that is not timidity - a world already being played would otherwise wake up one
+/// morning to find every empire in it deleted by a date somebody committed months earlier. Turning
+/// seasons on is a decision an operator makes with their hand on the switch, and once it is on the
+/// clock is public, because a season whose end nobody can name is only a rumour that the world might
+/// be deleted.
+/// </summary>
+public sealed class SeasonOptions
+{
+    /// <summary>Whether the clock actually rolls the world when it runs out.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// How long a run lasts.
+    ///
+    /// Sized against the longest climb the game contains rather than picked round. Working one piece
+    /// of ground the whole way up is priced in months of income, and a season shorter than that would
+    /// make the deepest thing in the game the one thing nobody ever finishes. Thirty days is one full
+    /// pass at a Penthouse and a maxed corner for somebody playing seriously, and a first tier and a
+    /// lab for somebody playing on a Sunday.
+    /// </summary>
+    public int LengthDays { get; set; } = 30;
+
+    /// <summary>
+    /// Opening cash earned by last season's finish, and only last season's - it never stacks and never
+    /// compounds. Paid in the one currency that stops mattering fastest: against the $5,000 everybody
+    /// else opens with it is a real leg up through the first hour, and against a Warehouse it is a
+    /// rounding error. A head start that lasted would be a way of winning a season by having won the
+    /// one before it, which is the failure mode every seasonal game has to avoid.
+    /// </summary>
+    public long ChampionHeadStart { get; set; } = 50_000;
+    public long TopThreeHeadStart { get; set; } = 25_000;
+    public long TopTenHeadStart { get; set; } = 10_000;
+
+    /// <summary>What a run is called before anybody names it.</summary>
+    public string NameFormat { get; set; } = "Season {0}";
+
+    /// <summary>What the head start is worth to somebody who finished here.</summary>
+    public long HeadStartFor(string? honour) => honour switch
+    {
+        SeasonHonours.Champion => Math.Max(0, ChampionHeadStart),
+        SeasonHonours.TopThree => Math.Max(0, TopThreeHeadStart),
+        SeasonHonours.TopTen => Math.Max(0, TopTenHeadStart),
+        _ => 0
+    };
 }
 
 public sealed class AntiFarmOptions
@@ -716,6 +854,27 @@ public sealed class HideoutOptions
     public int LevelOfIntelligence(Hideout? hideout) => hideout?.IntelligenceLevel ?? 0;
 
     /// <summary>
+    /// The turn bank a building of this size holds, never below the opening one.
+    ///
+    /// Read as the best of every tier at or below the one standing rather than the row that matches
+    /// it, so the ladder can only ever climb. A table that left a middle row's number out would
+    /// otherwise take a bank away from somebody for upgrading, which is the one thing an upgrade must
+    /// never do.
+    /// </summary>
+    public int TurnBankFor(Hideout? hideout, int opening)
+        => TurnBankAtTier(hideout?.Tier ?? 1, opening);
+
+    /// <summary>The same answer for a building nobody has bought yet, so an upgrade can be advertised.</summary>
+    public int TurnBankAtTier(int tier, int opening)
+    {
+        var held = opening;
+        foreach (var candidate in Tiers)
+            if (candidate.Level <= tier && candidate.MaxTurns > held)
+                held = candidate.MaxTurns;
+        return held;
+    }
+
+    /// <summary>
     /// How much notice each contraband good draws per unit held. Weighted rather than flat because
     /// they are not equally incriminating: a coke lab's output is the worst thing to be found with,
     /// while cut is mostly baking soda and barely registers despite where it is made.
@@ -784,10 +943,14 @@ public sealed class HideoutOptions
         if (Tiers.Count == 0)
             Tiers =
             [
+                // The turn banks are hours away from the screen, not round numbers. At twelve turns an
+                // hour the opening 200 is gone in under seventeen, which is a night's sleep and a
+                // morning; 300 is a whole day, 450 is a day and a half, and 650 is a weekend. Each one
+                // is what that building is actually promising: that being away from it costs nothing.
                 new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25, MaxRides = 2 },
-                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 300_000, UpgradeTurns = 40, BuildMinutes = 30 },
-                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 1_500_000, UpgradeTurns = 80, BuildMinutes = 120 },
-                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 7_200_000, UpgradeTurns = 120, BuildMinutes = 360 }
+                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxTurns = 300, MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 300_000, UpgradeTurns = 40, BuildMinutes = 30 },
+                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxTurns = 450, MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 1_500_000, UpgradeTurns = 80, BuildMinutes = 120 },
+                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxTurns = 650, MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 7_200_000, UpgradeTurns = 120, BuildMinutes = 360 }
             ];
 
         // Every level holds a full 20-turn action for the crew it supports: condoms at one per 12 turns
@@ -1100,6 +1263,44 @@ public sealed class TerritoryOptions
     /// <summary>How many pieces of ground each hideout tier can hold at once.</summary>
     public List<TerritoryTierCapOptions> TierCaps { get; set; } = [];
 
+    /// <summary>
+    /// The ladder a piece of ground can be worked up. Empty here for the same reason every other table
+    /// is: the binder appends rather than replaces.
+    /// </summary>
+    public List<TerritoryDevelopmentOptions> Development { get; set; } = [];
+
+    /// <summary>The rung this ground is standing on, or null for ground nobody has put anything into.</summary>
+    public TerritoryDevelopmentOptions? DevelopmentAt(int level)
+        => level <= 0 ? null : Development.FirstOrDefault(x => x.Level == level);
+
+    /// <summary>The next rung up, or null at the top of the ladder.</summary>
+    public TerritoryDevelopmentOptions? DevelopmentAfter(int level)
+        => Development.FirstOrDefault(x => x.Level == level + 1);
+
+    /// <summary>
+    /// The highest rung a building of this size is allowed to run, which is what a captured piece of
+    /// ground is cut down to when the winner's house is smaller than the loser's was.
+    /// </summary>
+    public int MaxDevelopmentForTier(int tier)
+    {
+        var best = 0;
+        foreach (var level in Development)
+            if (level.MinTier <= tier && level.Level > best)
+                best = level.Level;
+        return best;
+    }
+
+    /// <summary>
+    /// What this ground multiplies its type's effect by. One for bare ground, so every piece on the
+    /// map reads exactly as it did before anybody spent anything.
+    /// </summary>
+    public double DevelopmentMultiplier(int level)
+        => 1 + Math.Max(0, DevelopmentAt(level)?.EffectPercent ?? 0) / 100.0;
+
+    /// <summary>What the work adds to the garrison standing on it, as a percentage of their strength.</summary>
+    public int DevelopmentDefencePercent(int level)
+        => Math.Max(0, DevelopmentAt(level)?.DefencePercent ?? 0);
+
     public List<TerritoryTypeOptions> Types { get; set; } = [];
     public List<TerritoryCityControlOptions> CityControl { get; set; } = [];
     public List<TerritorySeedOptions> Map { get; set; } = [];
@@ -1113,6 +1314,35 @@ public sealed class TerritoryOptions
                 new TerritoryTierCapOptions { Tier = 2, MaxTerritories = 2 },
                 new TerritoryTierCapOptions { Tier = 3, MaxTerritories = 3 },
                 new TerritoryTierCapOptions { Tier = 4, MaxTerritories = 4 }
+            ];
+
+        // The ladder a piece of ground is worked up, and the only thing in the game priced to be
+        // months rather than days.
+        //
+        // A corner was worth the same fifteen percent on the day it was taken as it was a season
+        // later, and a player at the top of the tier ladder held their four pieces and was finished
+        // with the map for good. There was nothing to put money into and nothing to come and take.
+        //
+        // The prices are deliberately steep at the top and the return there is deliberately poor -
+        // the same thing the late hideout rooms are, and said out loud there too: they exist to absorb
+        // money from players who have run out of things to buy. Forty-two million for one maxed piece
+        // against seven for the biggest building in the game, and the whole ladder doubles what the
+        // ground is worth rather than multiplying it out of sight.
+        //
+        // The defence percentages are what stops all of that being a target painted on a player's own
+        // back. Money in the ground buys some of the reason you get to keep it, and a fully worked
+        // piece fights at half again what bare ground does.
+        //
+        // Tier-gated like the hideout rooms, so the map's depth opens at the same pace as everything
+        // else, and a building that could never have built a level is never left holding one.
+        if (Development.Count == 0)
+            Development =
+            [
+                new TerritoryDevelopmentOptions { Level = 1, Name = "Staked Out", MinTier = 1, Cost = 150_000, Turns = 10, BuildMinutes = 30, EffectPercent = 20, DefencePercent = 8 },
+                new TerritoryDevelopmentOptions { Level = 2, Name = "Established", MinTier = 2, Cost = 600_000, Turns = 20, BuildMinutes = 120, EffectPercent = 40, DefencePercent = 16 },
+                new TerritoryDevelopmentOptions { Level = 3, Name = "Entrenched", MinTier = 3, Cost = 2_400_000, Turns = 40, BuildMinutes = 360, EffectPercent = 60, DefencePercent = 24 },
+                new TerritoryDevelopmentOptions { Level = 4, Name = "Locked Down", MinTier = 4, Cost = 9_000_000, Turns = 60, BuildMinutes = 720, EffectPercent = 80, DefencePercent = 32 },
+                new TerritoryDevelopmentOptions { Level = 5, Name = "Untouchable", MinTier = 4, Cost = 30_000_000, Turns = 90, BuildMinutes = 1_440, EffectPercent = 100, DefencePercent = 40 }
             ];
 
         // Every effect is a percentage on an activity the player still spends turns on. Nothing here
@@ -1208,6 +1438,33 @@ public sealed class TerritoryOptions
     }
 }
 
+/// <summary>
+/// One rung of the development ladder. The percentages are what the ground is worth standing on this
+/// rung rather than what this rung adds, so a level reads on its own without summing the ones below.
+/// </summary>
+public sealed class TerritoryDevelopmentOptions
+{
+    public int Level { get; set; }
+
+    /// <summary>What this rung is called, which is what the map shows instead of a number.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The hideout tier it takes to build it, and to be left holding it after a raid.</summary>
+    public int MinTier { get; set; } = 1;
+
+    public long Cost { get; set; }
+    public int Turns { get; set; }
+
+    /// <summary>How long the work takes. The ground is worth what it was worth until it lands.</summary>
+    public int BuildMinutes { get; set; }
+
+    /// <summary>What the ground adds to its type's effect at this level, as a percentage of it.</summary>
+    public int EffectPercent { get; set; }
+
+    /// <summary>What it adds to the garrison defending it.</summary>
+    public int DefencePercent { get; set; }
+}
+
 public sealed class TerritoryTierCapOptions
 {
     public int Tier { get; set; }
@@ -1258,6 +1515,16 @@ public sealed class HideoutTierOptions
     /// House guard and treating the jacking strike as somebody else's problem.
     /// </summary>
     public int MaxRides { get; set; } = 2;
+
+    /// <summary>
+    /// Turns the building can hold at once. Zero means it adds nothing to the opening bank, which is
+    /// what the first tier is: the Trap House leaves <see cref="GameOptions.MaxTurns"/> as it found it,
+    /// so the one number that decides a new player's bank stays the one number in config.
+    ///
+    /// The first thing a tier sells that is not room for people. A player whose crew is held down by
+    /// their storage room rather than their building had no reason at all to want the next one.
+    /// </summary>
+    public int MaxTurns { get; set; }
 
     /// <summary>What moving up to this tier costs. Tier 1 is where everyone starts, so it costs nothing.</summary>
     public long UpgradeCost { get; set; }

@@ -233,6 +233,261 @@ public sealed class AllianceService(
     }
 
     /// <summary>
+    /// Declares war on another crew: a clock, a score and a pot on the table.
+    ///
+    /// Governed by the treasury power rather than a new one, because that is honestly what declaring
+    /// is - somebody spending the crew's money on a fight everybody in it is now part of. The stake
+    /// leaves the treasury here, not at the end, so the decision is felt on the day it is made.
+    /// </summary>
+    public async Task<AllianceWar> DeclareWarAsync(Player actor, long targetAllianceId, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var alliance = await LoadForAsync(actor, cancellationToken);
+        EnsurePower(actor, alliance, AlliancePower.SpendTreasury);
+        if (targetAllianceId == alliance.Id)
+            throw new GameRuleException("You cannot declare war on yourselves.");
+
+        var target = await db.Alliances.SingleOrDefaultAsync(x => x.Id == targetAllianceId, cancellationToken)
+            ?? throw new GameRuleException("That crew does not exist.");
+
+        // A truce and a war are the same question answered two ways, so one has to be ended before the
+        // other can start. Cancelling the pact first is a move the other crew can see coming, which is
+        // the whole difference between calling a war and simply reneging on a deal.
+        if (await AnyLivePactAsync(alliance.Id, target.Id, cancellationToken))
+            throw new GameRuleException($"You hold a pact with {target.Name}. End it before you declare on them.");
+
+        var config = _options.Alliances.War;
+        var live = await db.AllianceWars
+            .Where(x => x.Status == AllianceWarStatuses.Active)
+            .Where(x => x.DeclaringAllianceId == alliance.Id || x.TargetAllianceId == alliance.Id
+                        || x.DeclaringAllianceId == target.Id || x.TargetAllianceId == target.Id)
+            .ToListAsync(cancellationToken);
+        // One war at a time, per crew rather than per pair. A crew fighting on two fronts is a crew
+        // whose members cannot tell which fights are scoring, and the score is the whole point.
+        if (live.Any(x => x.DeclaringAllianceId == alliance.Id || x.TargetAllianceId == alliance.Id))
+            throw new GameRuleException("You are already at war. Finish that one first.");
+        if (live.Count > 0)
+            throw new GameRuleException($"{target.Name} is already at war with somebody else.");
+
+        var cooledOffAfter = nowUtc.AddHours(-Math.Max(0, config.CooldownHours));
+        var recent = await db.AllianceWars
+            .Where(x => x.Status == AllianceWarStatuses.Settled && x.SettledAtUtc > cooledOffAfter)
+            .Where(x => (x.DeclaringAllianceId == alliance.Id && x.TargetAllianceId == target.Id)
+                        || (x.DeclaringAllianceId == target.Id && x.TargetAllianceId == alliance.Id))
+            .OrderByDescending(x => x.SettledAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (recent is not null)
+            throw new GameRuleException($"You fought {target.Name} too recently. Wait {config.CooldownHours} hours between wars with the same crew.");
+
+        var stake = Math.Max(0, config.Stake);
+        if (alliance.Treasury < stake)
+            throw new GameRuleException($"Declaring costs the treasury {stake:C0} and you hold {alliance.Treasury:C0}.");
+
+        alliance.Treasury -= stake;
+        var war = new AllianceWar
+        {
+            DeclaringAllianceId = alliance.Id,
+            DeclaringAlliance = alliance,
+            TargetAllianceId = target.Id,
+            TargetAlliance = target,
+            DeclaredById = actor.Id,
+            DeclaredBy = actor,
+            Status = AllianceWarStatuses.Active,
+            Stake = stake,
+            StartedAtUtc = nowUtc,
+            EndsAtUtc = nowUtc.AddHours(Math.Max(1, config.DurationHours))
+        };
+        db.AllianceWars.Add(war);
+
+        // One public row, on the player who declared it, because crews do not write to the news feed -
+        // people do. Everybody in both crews gets told separately, in their own activity.
+        db.ActionLogs.Add(new GameActionLog
+        {
+            PlayerId = actor.Id,
+            Action = "WAR",
+            Summary = $"{alliance.Name} declared war on {target.Name}, and put {stake:C0} on it.",
+            CashDelta = 0,
+            CreatedAtUtc = nowUtc
+        });
+        await TellBothCrewsAsync(
+            war,
+            $"{alliance.Name} declared war on {target.Name}. {config.DurationHours} hours, and the pot is {stake:C0} plus a cut of the losing treasury.",
+            nowUtc,
+            cancellationToken);
+
+        return war;
+    }
+
+    /// <summary>
+    /// Scores a finished fight, when it happened between two crews with a war on.
+    ///
+    /// Nothing new is counted. A raid won, a raid turned away and a piece of ground taken are outcomes
+    /// the combat system already produces; a war is only a reason to go and produce them against one
+    /// particular crew, and this is where that reason gets written down.
+    /// </summary>
+    public async Task<AllianceWar?> ScoreWarAsync(CombatMission mission, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        if (mission.Attacker.AllianceId is not { } attackerCrew || mission.Defender.AllianceId is not { } defenderCrew)
+            return null;
+        if (attackerCrew == defenderCrew)
+            return null;
+
+        var war = await db.AllianceWars
+            .Where(x => x.Status == AllianceWarStatuses.Active && x.EndsAtUtc > nowUtc)
+            .Where(x => (x.DeclaringAllianceId == attackerCrew && x.TargetAllianceId == defenderCrew)
+                        || (x.DeclaringAllianceId == defenderCrew && x.TargetAllianceId == attackerCrew))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (war is null)
+            return null;
+
+        var config = _options.Alliances.War;
+        // A standstill scores for nobody, which is correct: neither side achieved anything, and a war
+        // where both crews are paid for stalemates is a war nobody has to try to win.
+        var (scorer, points) = mission.Outcome switch
+        {
+            "Victory" when mission.TerritoryId is not null => (attackerCrew, config.PointsForGroundTaken),
+            "Victory" => (attackerCrew, config.PointsForRaidWon),
+            "Defeat" => (defenderCrew, config.PointsForDefenceHeld),
+            _ => (0L, 0)
+        };
+        if (points <= 0 || scorer == 0)
+            return null;
+
+        if (scorer == war.DeclaringAllianceId)
+            war.DeclaringScore += points;
+        else
+            war.TargetScore += points;
+        return war;
+    }
+
+    /// <summary>
+    /// Settles every war whose clock has run out, and pays the winner.
+    ///
+    /// Run off whoever happens to be looked at next rather than a timer, like everything else here.
+    /// The stake goes back to the crew that put it up when nobody won, because a war that was declared
+    /// and never fought did not happen, and a crew should not be able to draw a wage by declaring on
+    /// people who have stopped playing.
+    /// </summary>
+    public async Task<int> SettleDueWarsAsync(DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var due = await db.AllianceWars
+            .Include(x => x.DeclaringAlliance)
+            .Include(x => x.TargetAlliance)
+            .Where(x => x.Status == AllianceWarStatuses.Active && x.EndsAtUtc <= nowUtc)
+            .OrderBy(x => x.EndsAtUtc)
+            .Take(20)
+            .ToListAsync(cancellationToken);
+        if (due.Count == 0)
+            return 0;
+
+        var config = _options.Alliances.War;
+        foreach (var war in due)
+        {
+            war.Status = AllianceWarStatuses.Settled;
+            war.SettledAtUtc = nowUtc;
+
+            var declaring = war.DeclaringAlliance;
+            var target = war.TargetAlliance;
+            var best = Math.Max(war.DeclaringScore, war.TargetScore);
+            var level = war.DeclaringScore == war.TargetScore;
+
+            if (level || best < config.MinScoreToWin)
+            {
+                declaring.Treasury += war.Stake;
+                war.Outcome = level && best > 0
+                    ? $"{declaring.Name} and {target.Name} fought to {war.DeclaringScore} apiece. The stake went home."
+                    : $"Neither {declaring.Name} nor {target.Name} did enough to call it a war. The stake went home.";
+                await TellBothCrewsAsync(war, war.Outcome, nowUtc, cancellationToken);
+                continue;
+            }
+
+            var winner = war.DeclaringScore > war.TargetScore ? declaring : target;
+            var loser = winner == declaring ? target : declaring;
+            var tribute = (long)Math.Min(
+                Math.Max(0, config.MaxTribute),
+                Math.Max(0, loser.Treasury) * Math.Clamp(config.TributePercent, 0, 100) / 100.0);
+
+            loser.Treasury -= tribute;
+            winner.Treasury += war.Stake + tribute;
+            war.WinnerAllianceId = winner.Id;
+            war.Tribute = tribute;
+            war.Outcome = $"{winner.Name} beat {loser.Name} {Math.Max(war.DeclaringScore, war.TargetScore)}-{Math.Min(war.DeclaringScore, war.TargetScore)} and took {war.Stake + tribute:C0}.";
+
+            db.ActionLogs.Add(new GameActionLog
+            {
+                PlayerId = war.DeclaredById,
+                Action = "WAR",
+                Summary = war.Outcome,
+                CreatedAtUtc = nowUtc
+            });
+            await TellBothCrewsAsync(war, war.Outcome, nowUtc, cancellationToken);
+        }
+
+        // Left unsaved on purpose: the caller owns the save, the way it does for everything else the
+        // clock does. A settle that is not saved is simply settled again next time somebody looks,
+        // because the only thing that decides whether a war is over is its own status and its clock.
+        return due.Count;
+    }
+
+    /// <summary>The war a crew is in right now, or null. Both directions, because either side counts.</summary>
+    public async Task<AllianceWar?> ActiveWarForAsync(long allianceId, CancellationToken cancellationToken)
+        => await db.AllianceWars
+            .Include(x => x.DeclaringAlliance)
+            .Include(x => x.TargetAlliance)
+            .Include(x => x.DeclaredBy)
+            .Where(x => x.Status == AllianceWarStatuses.Active)
+            .Where(x => x.DeclaringAllianceId == allianceId || x.TargetAllianceId == allianceId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    /// <summary>What a crew has been through, newest first. This is the record a crew is judged on.</summary>
+    public async Task<IReadOnlyList<AllianceWar>> WarHistoryForAsync(long allianceId, int take, CancellationToken cancellationToken)
+        => await db.AllianceWars
+            .AsNoTracking()
+            .Include(x => x.DeclaringAlliance)
+            .Include(x => x.TargetAlliance)
+            .Include(x => x.DeclaredBy)
+            .Where(x => x.Status == AllianceWarStatuses.Settled)
+            .Where(x => x.DeclaringAllianceId == allianceId || x.TargetAllianceId == allianceId)
+            .OrderByDescending(x => x.SettledAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>Wars won and lost by every crew on the board, in one pass rather than one query each.</summary>
+    public async Task<IReadOnlyDictionary<long, (int Won, int Lost)>> WarRecordsAsync(CancellationToken cancellationToken)
+    {
+        var settled = await db.AllianceWars.AsNoTracking()
+            .Where(x => x.Status == AllianceWarStatuses.Settled && x.WinnerAllianceId != null)
+            .Select(x => new { x.DeclaringAllianceId, x.TargetAllianceId, x.WinnerAllianceId })
+            .ToListAsync(cancellationToken);
+
+        var records = new Dictionary<long, (int Won, int Lost)>();
+        foreach (var row in settled)
+        {
+            var winner = row.WinnerAllianceId!.Value;
+            var loser = winner == row.DeclaringAllianceId ? row.TargetAllianceId : row.DeclaringAllianceId;
+            records.TryGetValue(winner, out var won);
+            records[winner] = (won.Won + 1, won.Lost);
+            records.TryGetValue(loser, out var lost);
+            records[loser] = (lost.Won, lost.Lost + 1);
+        }
+
+        return records;
+    }
+
+    /// <summary>
+    /// Tells everybody in both crews, because a war is the one thing here that happens to a whole crew
+    /// rather than to a player. Bots are skipped: they act on rules, not on being told.
+    /// </summary>
+    private async Task TellBothCrewsAsync(AllianceWar war, string summary, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var members = await db.Players
+            .Where(x => !x.Account.IsBot && (x.AllianceId == war.DeclaringAllianceId || x.AllianceId == war.TargetAllianceId))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var member in members)
+            Tell(member, summary, nowUtc);
+    }
+
+    /// <summary>
     /// Raises a call for help with every crew the defender has a truce with, when a raid launches.
     ///
     /// Automatic rather than something the defender does, because a player being raided is frequently
@@ -580,6 +835,16 @@ public sealed class AllianceService(
             : await territories.ControlledCitiesByAllianceAsync(cancellationToken);
 
         var crews = await db.Alliances.AsNoTracking().ToListAsync(cancellationToken);
+        // A crew's record and who it is currently fighting, read once for the whole board rather than
+        // once per row. Both belong on the board rather than only on a crew's own page: a record you
+        // cannot see from outside is not a reputation, and a crew already in a war is one nobody else
+        // may declare on, which the button has to know before it is pressed.
+        var records = await WarRecordsAsync(cancellationToken);
+        var fighting = await db.AllianceWars.AsNoTracking()
+            .Include(x => x.DeclaringAlliance)
+            .Include(x => x.TargetAlliance)
+            .Where(x => x.Status == AllianceWarStatuses.Active)
+            .ToListAsync(cancellationToken);
 
         return crews
             .Select(x =>
@@ -605,7 +870,12 @@ public sealed class AllianceService(
                     x.Id == viewer.AllianceId,
                     x.FounderId == viewer.Id,
                     cityControl.Sum(city => city.BonusThugs),
-                    cityControlResponses);
+                    cityControlResponses,
+                    records.GetValueOrDefault(x.Id).Won,
+                    records.GetValueOrDefault(x.Id).Lost,
+                    fighting.FirstOrDefault(war => war.DeclaringAllianceId == x.Id || war.TargetAllianceId == x.Id) is { } live
+                        ? (live.DeclaringAllianceId == x.Id ? live.TargetAlliance.Name : live.DeclaringAlliance.Name)
+                        : null);
             })
             .OrderByDescending(x => x.NetWorth)
             .ThenBy(x => x.Name, StringComparer.Ordinal)

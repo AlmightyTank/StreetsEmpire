@@ -13,7 +13,7 @@ namespace StreetEmpire.Api.Services;
 /// Wall-clock earnings have to happen wherever a player is loaded, not only on the dashboard, or the
 /// same hour pays out twice depending on which page they opened first.
 /// </summary>
-public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules, EconomyService economy, ArrestService arrests)
+public sealed class PlayerClock(TurnService turns, HideoutService hideouts, GameDbContext territoryDb, IGameRandom random, MuleService mules, EconomyService economy, ArrestService arrests, TerritoryService territories, AllianceService alliances)
 {
     /// <summary>
     /// Brings a player up to date. The caller saves when <see cref="PlayerTick.Changed"/> is set, and
@@ -57,6 +57,12 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
             landed = true;
         }
 
+        // Not owed to this player - a war belongs to two crews - but this is the one call the game
+        // makes whenever anybody at all is looked at, and a clock nobody is watching still has to run
+        // out. Idempotent and guarded by status, so whoever gets here first settles it for everybody.
+        var warsSettled = await alliances.SettleDueWarsAsync(nowUtc, ct) > 0;
+
+        var groundWorked = await CompleteGroundWorkAsync(player, nowUtc, db, ct);
         var runsHome = await SettleMuleRunsAsync(player, nowUtc, db, ct);
         var craftsDone = await CompleteWorkshopCraftsAsync(player, nowUtc, db, ct);
         // Before the turn refresh, because leaving crew inside costs morale and the refresh is what
@@ -65,7 +71,7 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         var writtenOff = await SettleArrestsAsync(player, nowUtc, db, ct);
 
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff, built, labs);
+        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff || groundWorked || warsSettled, built, labs);
     }
 
     /// <summary>
@@ -97,6 +103,38 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Lands work on any ground of theirs whose timer has run out.
+    ///
+    /// Settled on the holder's clock rather than a sweep, like everything else here: the ground belongs
+    /// to one empire and the moment that matters is the moment that empire is next looked at. A holder
+    /// who never comes back simply has a corner that stays half-built, which is the honest reading of
+    /// having walked away from it.
+    /// </summary>
+    private async Task<bool> CompleteGroundWorkAsync(Player player, DateTime nowUtc, GameDbContext? db, CancellationToken ct)
+    {
+        var due = await territoryDb.Territories
+            .Where(x => x.HolderId == player.Id && x.DevelopingToLevel != null && x.DevelopmentCompletesAtUtc <= nowUtc)
+            .OrderBy(x => x.DevelopmentCompletesAtUtc)
+            .ToListAsync(ct);
+        if (due.Count == 0) return false;
+
+        var worked = false;
+        foreach (var ground in due)
+        {
+            var level = ground.DevelopingToLevel;
+            if (!TerritoryService.CompleteDevelopment(ground, nowUtc))
+                continue;
+            worked = true;
+            if (db is not null)
+                AddLog(db, player, Snapshot(player), "GROUND", 0,
+                    $"The work at {ground.Name} is finished. It runs as {territories.DevelopmentName(level ?? ground.DevelopmentLevel)} ground now.",
+                    nowUtc);
+        }
+
+        return worked;
     }
 
     /// <summary>

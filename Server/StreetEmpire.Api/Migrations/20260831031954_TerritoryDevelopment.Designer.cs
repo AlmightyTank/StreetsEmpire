@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831031954_TerritoryDevelopment")]
+    partial class TerritoryDevelopment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -327,69 +330,6 @@ namespace StreetEmpire.Api.Migrations
                     b.HasIndex("AllianceId", "CreatedAtUtc");
 
                     b.ToTable("AllianceTransfers");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceWar", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<Guid>("DeclaredById")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("DeclaringAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("DeclaringScore")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("EndsAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Outcome")
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)");
-
-                    b.Property<DateTime?>("SettledAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("Stake")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<long>("TargetAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("TargetScore")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("Tribute")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("WinnerAllianceId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeclaredById");
-
-                    b.HasIndex("DeclaringAllianceId", "Status");
-
-                    b.HasIndex("Status", "EndsAtUtc");
-
-                    b.HasIndex("TargetAllianceId", "Status");
-
-                    b.ToTable("AllianceWars");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.Arrest", b =>
@@ -2118,96 +2058,6 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("RecoveryCodes");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.Season", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime?>("EndedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("EndsAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<int>("Number")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Players")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Number")
-                        .IsUnique();
-
-                    b.HasIndex("Status");
-
-                    b.ToTable("Seasons");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.SeasonResult", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("City")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("CrewName")
-                        .HasMaxLength(48)
-                        .HasColumnType("character varying(48)");
-
-                    b.Property<string>("Honour")
-                        .HasMaxLength(24)
-                        .HasColumnType("character varying(24)");
-
-                    b.Property<long>("NetWorth")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("PlayerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("PlayerName")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<int>("Rank")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("SeasonId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlayerId");
-
-                    b.HasIndex("SeasonId", "Rank");
-
-                    b.ToTable("SeasonResults");
-                });
-
             modelBuilder.Entity("StreetEmpire.Api.Models.StandingSnapshot", b =>
                 {
                     b.Property<long>("Id")
@@ -2472,33 +2322,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("FromPlayer");
 
                     b.Navigation("ToPlayer");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.AllianceWar", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Player", "DeclaredBy")
-                        .WithMany()
-                        .HasForeignKey("DeclaredById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "DeclaringAlliance")
-                        .WithMany()
-                        .HasForeignKey("DeclaringAllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Alliance", "TargetAlliance")
-                        .WithMany()
-                        .HasForeignKey("TargetAllianceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("DeclaredBy");
-
-                    b.Navigation("DeclaringAlliance");
-
-                    b.Navigation("TargetAlliance");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.Arrest", b =>
@@ -2793,25 +2616,6 @@ namespace StreetEmpire.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Account");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.SeasonResult", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
-                        .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Season", "Season")
-                        .WithMany()
-                        .HasForeignKey("SeasonId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Player");
-
-                    b.Navigation("Season");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.StandingSnapshot", b =>

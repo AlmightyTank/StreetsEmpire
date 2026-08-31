@@ -3,6 +3,119 @@
 ## 0.2.7 (in progress)
 
 ### Added
+- **Seasons: the world can start over, and everything you did with it survives.** Last of the four and
+  deliberately so, because a reset is only a gift once there is enough to climb. Before this release a
+  season would have taken away an afternoon and given back an afternoon, which is not a season, it is a
+  punishment on a timer. Now there is a turn bank that grows with the building, four tiers of house,
+  ground priced in months, and a war to fight over the top of it - and handing all of that back to
+  somebody who has finished it is handing them the good part again.
+- One rule, stated once and followed everywhere: **the empire goes and the person stays.** The account,
+  the name, the town, the crew somebody runs with and every honour they have ever won come through a
+  roll untouched. Cash, bank, crew, buildings, rooms, stock, ground, rosters and every clock a fight
+  left behind do not. What is taken away is the thing that stops being fun once it is finished; what is
+  kept is the only proof anybody has that they finished it.
+- Where everybody finished is written down before anything is deleted, for everybody rather than only
+  the top - a season somebody came fortieth in is still a season they played, and a record that only
+  remembers winners is one most people have no reason to open. The top three finishes carry a name:
+  Champion, Top Three, Top Ten.
+- The prize is opening cash in the next season - $50,000, $25,000, $10,000 - and it is paid **off the
+  season just finished and nothing else**. It never stacks and never compounds, which is the failure
+  every seasonal game has to avoid: winning one season being how you win the next. It is also paid in
+  the one currency that stops mattering fastest. Against the $5,000 everybody else opens with it is a
+  real leg up through the first hour; against a Warehouse it is a rounding error.
+- Crews survive as crews and lose everything they had saved. The people who organised themselves stay
+  organised, because that is a person and not an empire, and the treasury and the thug pool go, because
+  a crew carrying either into a fresh world starts the season already finished. A war still running when
+  the clock goes is closed unpaid - there is nothing left to fight over - and settled wars stay on the
+  record beside everybody's honours, because a record is not an asset either.
+- **It is off by default, and that is not timidity.** A world already being played would otherwise wake
+  up one morning to find every empire in it deleted by a date somebody committed months earlier.
+  Turning it on is an operator decision with a hand on the switch - it is a scalar in the admin config
+  panel, so it can be flipped without a restart. An admin can also end a season by hand, and that route
+  makes them type the season's own name to do it: a boolean is something a script sends by accident,
+  and a name is something a person has to go and read first.
+- The countdown is public, because a season whose end nobody can name is only a rumour that the world
+  might be deleted - and the panel says outright when seasons are switched off rather than counting
+  down to a date that will pass quietly.
+- What a first day is now lives in one place, which is what makes any of this safe: signing up builds a
+  player around it and a season puts an existing player back through the same call. Two copies of "what
+  a new player has" is exactly how two doors end up handing out different amounts of money.
+
+- **Crews can declare war on each other now, with a clock, a score and a pot on the table.** A crew was
+  a reason to exist and no reason to act. Every single thing one carried was defensive or passive - a
+  truce nobody has to renew, a treasury that only moves when a member asks it to, pacts that create
+  non-aggression and never once the other kind, and calls for help that cannot exist until somebody has
+  already been attacked. Two crews could sit beside each other for a month and never have one thing to
+  decide about each other.
+- Declaring costs the treasury $250,000 and runs 48 hours. The stake leaves on the day it is called
+  rather than at the end, so it is a decision the crew feels when somebody makes it, and it is the
+  whole of what the crew being declared on is guaranteed to win - a free declaration is an insult, and
+  an insult is not a war. Two days because both sides deserve a full evening at the screen whichever
+  timezone they keep, and because a war should be an event rather than a condition.
+- **Nothing new is scored.** A raid won is three, a raid turned away is two, and taking a piece of
+  ground is five - three outcomes the combat system already produces. A war is not a new way to fight,
+  it is a reason to go and fight the people you were already allowed to. Defence scores real points on
+  purpose: a crew that only attacks should not beat a crew that turns every raid away, and a defender
+  is usually asleep when it happens.
+- The winner takes the stake back plus 15% of the losing treasury, capped at five million. A share
+  rather than a number, so a war between two poor crews is fought over the stake and one between two
+  rich crews is fought over something worth having, and capped so a crew that has been saving for a
+  year is not emptied by two bad days.
+- **A war nobody fought pays nobody.** It takes six points to win anything at all, and level scores
+  send the stake home. That is the hole every war system has - declare on a crew that has stopped
+  playing, land one unanswered raid, take a cut of everything they saved - and the answer is that a war
+  has to be fought to be won. The same two crews also have to wait 72 hours before doing it again.
+- Nothing about a war lifts a single protection. The wealth floor, the five-times ratio, the shield
+  that widens on somebody who has just been hit and the haul that falls on every repeat all still
+  apply - because "we declared war" is precisely the excuse a farmer would reach for. What changes is
+  that the fights those rules already allow are suddenly worth choosing.
+- A truce has to be ended before a war can be declared, in the open, which is the whole difference
+  between calling a war and simply reneging. One war per crew at a time, either side of it: a crew
+  fighting on two fronts cannot tell its members which fights are scoring, and the score is the point.
+- Crews carry a record now - won and lost, on the board, where everybody can read it, next to who each
+  of them is currently fighting. A record nobody outside can see is not a reputation. Declaring is
+  governed by the power that already governs spending the treasury, because that is honestly what it
+  is: somebody spending the crew's money on a fight everybody in it is now part of.
+
+- **Ground can be worked up now, and what somebody has put into a corner is the thing worth taking it
+  for.** There are forty-eight pieces on the map and every one of them was a switch: take it, garrison
+  it, lose it. A corner paid the same fifteen percent on the day it was claimed as it did a season
+  later, there was nothing to spend on it, and a player at the top of the tier ladder held their four
+  pieces and was finished with the map for good. `HeldSinceUtc` was written down and read by nothing.
+- Five levels, and the money goes into the ground rather than into the building: $150,000, then
+  $600,000, then $2.4M, $9M and $30M, each with turns and a build timer against it, each gated behind
+  a hideout tier the way the rooms are. A maxed piece is forty-two million against seven for the
+  biggest building in the game, and four of them is a hundred and seventy. That is deliberate and it
+  is the point - it is the first thing here priced in months rather than evenings, and the top rungs
+  are trophies with a poor return in exactly the way the late hideout rooms already are.
+- What it buys is what the ground does. Every level raises the type's own effect, and the whole ladder
+  doubles it: a maxed corner runs at 30% street income rather than 15, a maxed club at 100% morale
+  recovery rather than 50. Nothing new was invented to pay out - it is still a percentage on an
+  activity somebody spends turns on, which is the rule the map has always had.
+- **The level belongs to the ground, not to whoever is standing on it**, and that is the whole
+  mechanic. A raid finally has a target that is not simply the biggest house in town, and the map reads
+  as a set of prizes worth different amounts rather than forty-eight identical switches. What a rival
+  has put into a corner is shown on it for the same reason: hiding it would leave every raid a guess
+  about the only number that decides whether the trip is worth taking.
+- What survives being taken is **half, rounded down, and never more than the winner's own building
+  could have built**. Whole would make taking ground strictly cheaper than working it up and nobody
+  would build anything; nothing at all would mean contested ground never gets developed either, because
+  a player would only invest where they were already safe and one lost raid would wipe out months. Half
+  leaves both worth doing: the attacker gets a head start on a ladder they still have to climb, and the
+  loser loses enough that defending it mattered. A Trap House that beats a Penthouse off its corner
+  comes away running what a Trap House can run, and no more.
+- Development defends itself, which is what stops all of this being a target painted on its owner's
+  back. Each level adds to the garrison standing on the ground, up to half again on a maxed piece, on
+  the same bonus an Enforcer posted there uses. Rivals read that number before they pick a fight, so a
+  worked-up corner turns raids away rather than only losing more when one lands.
+- Walking away razes it. Pull the garrison and the ground goes back to being ground - otherwise a
+  developed piece could be parked for somebody else to walk onto, which is a way of handing an empire's
+  money to a friend without either of them fighting for it. Work half-finished when the ground changes
+  hands or is given up is lost too: the money went when the work started.
+- Rivals work their ground up on the same ladder once they have no room for more, breadth first and
+  then depth, spending only what is over the reserve that keeps their house standing. A town where the
+  only developed corner is the player's own is a town where half of this only ever points one way.
+
 - **The law takes people off the street.** Working a shift had no downside event at all. It draws heat,
   but heat only ever answered for what was held, so a house holding nothing worked for ever at no risk.
   A sweep can now pick up hoes, thugs, and occasionally a pimp by name, and they sit in a cell with six
@@ -31,6 +144,31 @@
   happened.
 
 ### Changed
+- **The building holds the turn bank now, and the rate never moves.** Turns come back at two every ten
+  minutes, which is 288 a day, against a bank of 200 that fills in sixteen hours and forty minutes. So
+  anybody who sleeps eight hours and then does anything else with their day threw away most of ninety
+  turns before they got back to the screen, every day, and there was nothing on any shop page they
+  could buy to stop it. The game owed them and then quietly stopped counting.
+- The rate is the wrong number to fix it with. Everything here is priced per turn - the gross of a
+  shift, the 0.15 heat it draws, four turns a drive-by, twenty a full action, forty and eighty and a
+  hundred and twenty for the tiers - so paying a grown empire more turns an hour inflates every one of
+  those at once and needs all of them retuned. The bank costs none of that. Income per hour is
+  identical, a day is still worth the same 288, and the only thing that changes is how much of what
+  they are already owed is still there when they come back.
+- So it is the building that holds it: 300 turns at the Warehouse, 450 at the Nightclub, 650 at the
+  Penthouse, and the Trap House exactly where it was, so nothing about a new player moves. Those are
+  hours away from the screen rather than round numbers - a whole day, a day and a half, a weekend -
+  and it is the first thing a tier has ever sold that is not room for more people, which matters most
+  to the player whose crew is held down by their storage room and who therefore had no reason to want
+  the next building at all.
+- The cost is honest and it is the heat. A bank is also a night's budget for the street, so a Penthouse
+  emptied into shifts in one sitting is about 97 heat, which is Hunted and most of a day and a half to
+  cool off. That is the trade rather than an oversight: a bigger night gets you noticed more. Nobody
+  gains a way to grind one rival either, because a strike is rationed by the twenty-minute shield over
+  its victim and never by what the attacker can afford.
+- The upgrade page says so, because a number nobody is told about is not a feature. Moving up now
+  quotes the bank against the one you hold and both of them in hours, and says outright that the rate
+  is not what changed.
 - **Working the streets: the district picker was a gross ladder, and now it is a choice.** Five
   districts, five sets of multipliers, and only one of the columns grew with the house. Gross scales
   with every hoe on the street; recruits and finds are flat per turn and the law's interest is priced

@@ -61,8 +61,15 @@ internal static class GameEndpoints
             StreetStrikeService strikes,
             AllianceService allianceRules,
             StandingsRecorder standings,
+            SeasonService seasons,
             CancellationToken ct) =>
         {
+            // Before the player is loaded, not after. The world may be due to start over, and a
+            // dashboard landing in the same second as a roll should show the new season rather than
+            // the last minute of the old one. Does nothing at all unless an operator has turned
+            // seasons on and the clock has actually run out.
+            await seasons.RollIfDueAsync(DateTime.UtcNow, ct);
+
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
@@ -184,7 +191,7 @@ internal static class GameEndpoints
                 cityRank,
                 cityPlayers,
                 player.Turns,
-                opts.MaxTurns,
+                opts.MaxTurnsFor(player),
                 opts.MaxActionTurns,
                 // The rate this player actually earns at, not the base one. Reporting the base while
                 // paying the boosted rate would make the strip quietly wrong for every new player.
@@ -453,6 +460,54 @@ internal static class GameEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
+        }).RequireAuthorization();
+
+
+        // The clock everybody is playing against, and the only part of the game that survives it.
+        app.MapGet("/api/game/season", async (
+            CurrentPlayerService current,
+            SeasonService seasons,
+            IOptionsSnapshot<GameOptions> gameOptions,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            var season = await seasons.CurrentAsync(now, ct);
+            var config = gameOptions.Value.Seasons;
+            var honours = await seasons.HonoursForAsync(player.Id, ct);
+            var previous = (await seasons.PastSeasonsAsync(1, ct)).FirstOrDefault();
+            var table = previous is null
+                ? new List<SeasonResult>()
+                : (await seasons.TableForAsync(previous.Id, 10, ct)).ToList();
+
+            return Results.Ok(new SeasonResponse(
+                season.Number,
+                season.Name,
+                season.StartedAtUtc,
+                season.EndsAtUtc,
+                Math.Max(0, (int)Math.Ceiling((season.EndsAtUtc - now).TotalSeconds)),
+                config.Enabled,
+                config.LengthDays,
+                config.ChampionHeadStart,
+                config.TopThreeHeadStart,
+                config.TopTenHeadStart,
+                honours.Select(x => new SeasonHonourResponse(
+                    x.Season.Number,
+                    x.Season.Name,
+                    x.Rank,
+                    x.NetWorth,
+                    x.Honour,
+                    x.Season.EndedAtUtc)).ToList(),
+                table.Select(x => new SeasonStandingResponse(
+                    x.Rank,
+                    x.PlayerName,
+                    x.City,
+                    x.CrewName,
+                    x.NetWorth,
+                    x.Honour)).ToList(),
+                previous?.Name));
         }).RequireAuthorization();
 
 

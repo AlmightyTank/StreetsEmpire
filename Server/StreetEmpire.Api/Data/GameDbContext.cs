@@ -29,6 +29,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
     public DbSet<AlliancePact> AlliancePacts => Set<AlliancePact>();
+    public DbSet<AllianceWar> AllianceWars => Set<AllianceWar>();
     public DbSet<AllianceAssistCall> AllianceAssistCalls => Set<AllianceAssistCall>();
     public DbSet<AllianceTransfer> AllianceTransfers => Set<AllianceTransfer>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
@@ -37,6 +38,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
     public DbSet<GameAnnouncement> GameAnnouncements => Set<GameAnnouncement>();
     public DbSet<CustomTitle> CustomTitles => Set<CustomTitle>();
+    public DbSet<Season> Seasons => Set<Season>();
+    public DbSet<SeasonResult> SeasonResults => Set<SeasonResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -205,6 +208,61 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Season>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            // Only ever one running, and the question "which season is this" is asked on every read.
+            entity.HasIndex(x => x.Status);
+            entity.Property(x => x.Name).HasMaxLength(64);
+            entity.Property(x => x.Status).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<SeasonResult>(entity =>
+        {
+            entity.HasIndex(x => new { x.SeasonId, x.Rank });
+            entity.HasIndex(x => x.PlayerId);
+            entity.Property(x => x.PlayerName).HasMaxLength(32);
+            entity.Property(x => x.City).HasMaxLength(32);
+            entity.Property(x => x.CrewName).HasMaxLength(48);
+            entity.Property(x => x.Honour).HasMaxLength(24);
+            entity.HasOne(x => x.Season)
+                .WithMany()
+                .HasForeignKey(x => x.SeasonId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A result outlives the account it belongs to being deleted only if the row itself goes
+            // with it: an honours table full of players nobody can look up is worse than a shorter one.
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AllianceWar>(entity =>
+        {
+            // Both directions indexed on status, because every question asked of this table is "is
+            // this crew at war" and a crew is as often the one declared on as the one declaring.
+            entity.HasIndex(x => new { x.DeclaringAllianceId, x.Status });
+            entity.HasIndex(x => new { x.TargetAllianceId, x.Status });
+            // The settle sweep reads this one on its own: every war whose clock has run out.
+            entity.HasIndex(x => new { x.Status, x.EndsAtUtc });
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.Outcome).HasMaxLength(400);
+            entity.HasOne(x => x.DeclaringAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.DeclaringAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TargetAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.TargetAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // The declarer is kept, not cascaded: a settled war is a record of what happened between
+            // two crews, and losing the player who started it must not erase it.
+            entity.HasOne(x => x.DeclaredBy)
+                .WithMany()
+                .HasForeignKey(x => x.DeclaredById)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AlliancePact>(entity =>

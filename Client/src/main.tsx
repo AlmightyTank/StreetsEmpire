@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -1792,6 +1792,74 @@ function renderPage(page: AppPage, ctx: PageContext) {
   }
 }
 
+/**
+ * The clock everybody is playing against, and the shelf their trophies sit on.
+ *
+ * Both halves are here on purpose, because they are the same idea seen from either end: what a season
+ * takes away is the empire, and what it never takes away is what you did with it. Showing the countdown
+ * without the honours would be a threat; showing the honours without the countdown would be a museum.
+ *
+ * Renders nothing at all in a world where the operator has not turned seasons on and nobody has ever
+ * finished one - an inert countdown to a date that will pass quietly is worse than no countdown.
+ */
+function SeasonPanel() {
+  const [season, setSeason] = useState<Season | null>(null)
+  useEffect(() => {
+    let live = true
+    void api.season().then(value => { if (live) setSeason(value) }).catch(() => {})
+    return () => { live = false }
+  }, [])
+
+  // A second hand of its own, so the countdown moves while somebody is looking at it.
+  const [, setNow] = useState(0)
+  useEffect(() => {
+    if (!season?.enabled) return
+    const timer = window.setInterval(() => setNow(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [season?.enabled, season?.endsAtUtc])
+
+  if (!season) return null
+  if (!season.enabled && season.honours.length === 0) return null
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      <h2>{season.name}</h2>
+      <span>{season.enabled ? `${timeUntil(season.endsAtUtc)} left` : 'Running on'}</span>
+    </div>
+    {season.enabled
+      ? <p>
+        Everything you have built goes back to day one when this runs out, and everything you did with
+        it stays: your name, your crew, and where you finished. Finish top and next season opens with{' '}
+        {money.format(season.championHeadStart)} on account - top three{' '}
+        {money.format(season.topThreeHeadStart)}, top ten {money.format(season.topTenHeadStart)}. It is
+        paid once, off this season alone, and against a Warehouse it is a rounding error.
+      </p>
+      : <p className="text-body-tertiary small">
+        Seasons are not running on this world. Nothing resets, and the date above is only a marker.
+      </p>}
+
+    {season.honours.length > 0 && <div className="d-grid gap-1 mt-2">
+      <strong className="d-block text-primary small">What you have won</strong>
+      {season.honours.map(honour => <div key={honour.number} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
+        <small className={honour.honour ? 'text-warning-emphasis' : 'text-body-secondary'}>
+          {honour.name}: {honour.honour ?? `finished #${honour.rank}`}
+        </small>
+        <small className="text-body-tertiary tnum">{money.format(honour.netWorth)}</small>
+      </div>)}
+    </div>}
+
+    {season.lastSeason.length > 0 && <div className="d-grid gap-1 mt-3">
+      <strong className="d-block text-body-secondary small">{season.lastSeasonName} finished</strong>
+      {season.lastSeason.map(row => <div key={row.rank} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
+        <small className="text-body-secondary text-truncate">
+          #{row.rank} {row.playerName}{row.crewName ? ` / ${row.crewName}` : ''}
+        </small>
+        <small className="text-body-tertiary tnum">{money.format(row.netWorth)}</small>
+      </div>)}
+    </div>}
+  </section>
+}
+
 function OverviewPage(ctx: PageContext) {
   const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
@@ -1812,6 +1880,7 @@ function OverviewPage(ctx: PageContext) {
         </div>
       </section>
 
+      <SeasonPanel />
       <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
       <UpdatesPanel updates={dashboard.updates.updates} unread={dashboard.updates.unreadCount} busy={busy} act={act} onPage={setActivePage} />
       <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} onTour={ctx.openTour} />
@@ -2923,6 +2992,12 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
     return () => window.clearInterval(timer)
   }, [building?.completesAtUtc])
 
+  // Hours of being somewhere else, which is what a turn bank actually buys. Read off the rate this
+  // player earns at rather than the base one, so a new player is told the truth about their own clock.
+  const hoursAway = (turns: number) => dashboard.turnsPerTick > 0
+    ? Math.round(turns / dashboard.turnsPerTick * dashboard.turnTickMinutes / 60)
+    : 0
+
   return <section className="card p-3 gcol-full">
     <div className="panel-title">
       <h2>The Building</h2>
@@ -2949,6 +3024,16 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
             small to hold. Your crew reaches that ceiling as the store grows into it: a room only ever
             supplies what it can feed for a full shift, and that is the number the caps show.
           </p>
+          {/* The half of the purchase nothing else on the page mentions. A bigger building does not
+              pay turns any faster - nothing does - it holds more of the ones you are already owed, so
+              being away from the game for a night stops throwing them away. */}
+          {next.maxTurns > dashboard.maxTurns && <p>
+            It also holds <strong>{number.format(next.maxTurns)} turns</strong> against your{' '}
+            {number.format(dashboard.maxTurns)}: {hoursAway(next.maxTurns)} hours away from this screen
+            before the bank fills and stops, rather than {hoursAway(dashboard.maxTurns)}. Turns come
+            back at the same rate they always did. What changes is how many of them are still there
+            when you get back.
+          </p>}
           <div className="room-row">
             <div className="room-copy">
               <strong>{next.name}</strong>
@@ -3073,6 +3158,39 @@ function TerritoryPage(ctx: PageContext) {
     </section>
 
     <section className="card p-3 gcol-full">
+      <div className="panel-title">
+        <h2>Working Ground Up</h2>
+        <span>{board.developmentLadder.length} levels</span>
+      </div>
+      {/* Shown whole rather than a rung at a time. This is the one climb in the game measured in
+          months, and a months-long climb whose shape nobody can see is not a goal, it is a surprise. */}
+      <p>
+        Money goes into the ground itself, not into your building, and it stays with the ground. Every
+        level raises what a piece is worth and how hard the crew standing on it fights for it. It also
+        makes the piece worth taking: whoever beats you off it keeps <strong>half</strong> of what you
+        put in, rounded down, and never more than their own building could have built. Walk away from a
+        piece and all of it is gone.
+      </p>
+      <div className="d-grid gtc-fill-268 gap-2 mt-3">
+        {board.developmentLadder.map(rung => <div
+          className={`d-grid gap-1 align-content-start border rounded p-3 ${rung.reachable ? 'bg-body-tertiary' : 'bg-body-secondary opacity-75'}`}
+          key={rung.level}
+        >
+          <div className="d-flex justify-content-between align-items-baseline gap-2">
+            <strong className="text-body">{rung.name}</strong>
+            <em className="eyebrow fst-normal">Level {rung.level}</em>
+          </div>
+          <span className="text-warning-emphasis small">+{rung.effectPercent}% on what the ground does</span>
+          <span className="text-success-emphasis small">+{rung.defencePercent}% to the garrison holding it</span>
+          <span className="text-body-secondary small">
+            {money.format(rung.cost)} and {rung.turns} turns, {rung.buildMinutes >= 60 ? `${Math.round(rung.buildMinutes / 60)} hour(s)` : `${rung.buildMinutes} minutes`} of work.
+          </span>
+          {!rung.reachable && <small className="text-body-tertiary small">Needs the {rung.requiredTierName}.</small>}
+        </div>)}
+      </div>
+    </section>
+
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The Map</h2><span>{board.territories.length} pieces in {board.city}</span></div>
       <div className="d-grid gtc-fill-268 gap-2 mt-3">
         {board.territories.map(t => <div
@@ -3093,6 +3211,15 @@ function TerritoryPage(ctx: PageContext) {
           {t.garrisonPimpName && <span className="text-success-emphasis small">
             Run by {t.garrisonPimpName}{t.garrisonBonusPercent > 0 ? ` (+${t.garrisonBonusPercent}% defence)` : ''}
           </span>}
+          {/* Shown on anybody's ground. What a rival has put into a corner is exactly the thing that
+              decides whether it is worth crossing town for, and hiding it would leave every raid a
+              guess about the only number that matters. */}
+          {t.developmentLevel > 0 && <span className="text-info-emphasis small">
+            {t.developmentName} ground{t.developmentDefencePercent > 0 ? `, +${t.developmentDefencePercent}% to whoever holds it` : ''}
+          </span>}
+          {t.developing && <small className="text-warning small">
+            Work under way: {t.developing.name} in {timeUntil(t.developing.completesAtUtc)}
+          </small>}
           {t.isProtected && t.protectedUntilUtc && <small className="text-body-tertiary small">Settled for {timeUntil(t.protectedUntilUtc)}</small>}
           {t.blockedReason && <small className="text-body-tertiary small">{t.blockedReason}</small>}
           <div className="territory-actions d-flex flex-wrap align-items-end gap-1 mt-1">
@@ -3116,6 +3243,26 @@ function TerritoryPage(ctx: PageContext) {
               <button className="btn btn-secondary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
               <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</button>
             </>}
+            {/* Priced, gated and timed on the button itself. A greyed control with no reason on it is
+                the thing players come back to ask about, and this one is greyed for four different
+                reasons. */}
+            {t.heldByYou && !t.developing && t.nextDevelopment && <button
+              className="btn btn-primary btn-sm w-100"
+              disabled={busy
+                || t.nextDevelopment.tierLocked
+                || dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
+                || dashboard.turns < t.nextDevelopment.turns}
+              title={`${t.nextDevelopment.effectNow}% now, ${t.nextDevelopment.effectAfter}% once it lands`}
+              onClick={() => void run(() => api.developTerritory(t.id))}
+            >
+              {t.nextDevelopment.tierLocked
+                ? `${t.nextDevelopment.name} needs the ${t.nextDevelopment.requiredTierName}`
+                : dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
+                  ? `${t.nextDevelopment.name}: ${money.format(t.nextDevelopment.cost)}`
+                  : dashboard.turns < t.nextDevelopment.turns
+                    ? `${t.nextDevelopment.turns} turns and you have ${dashboard.turns}`
+                    : `Work up to ${t.nextDevelopment.name} (${money.format(t.nextDevelopment.cost)})`}
+            </button>}
             {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
             {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxRaidThugs} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
           </div>
@@ -6385,6 +6532,8 @@ function AlliancePage(ctx: PageContext) {
 
         <AllianceAssistPanel board={board} ownPlayerId={ctx.dashboard.playerId} busy={busy} onAct={run} />
 
+        <AllianceWarPanel board={board} busy={busy} />
+
         <AlliancePactsPanel board={board} busy={busy} onAct={run} />
 
         <AlliancePoolPanel board={board} crew={yours} busy={busy} onAct={run} />
@@ -6447,7 +6596,10 @@ function AlliancePage(ctx: PageContext) {
             <small className="text-body-secondary">
               {crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues
               {crew.cityControlThugs > 0 ? ` / +${crew.cityControlThugs} city thugs` : ''}
+              {/* A record you cannot see from outside is not a reputation. */}
+              {crew.warsWon + crew.warsLost > 0 ? ` / ${crew.warsWon}-${crew.warsLost} in wars` : ''}
             </small>
+            {crew.atWarWith && <small className="text-danger-emphasis">At war with {crew.atWarWith}</small>}
           </div>
           <b>{money.format(crew.netWorth)}</b>
           {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
@@ -6469,6 +6621,17 @@ function AlliancePage(ctx: PageContext) {
             disabled={busy}
             onClick={() => run(() => api.requestAlliancePact(crew.id))}
           >Ally</button>}
+          {/* Offered only where it could actually be pressed: your rank has to allow spending the
+              treasury, neither crew can already be in a war, and you cannot declare on people you
+              hold a truce with. Every one of those is refused by the server too - this is so nobody
+              learns the rules by being told no. */}
+          {yours && !crew.yours && board.warTerms.youCanDeclare && !hasPactWith(board, crew.id)
+            && !board.war && !crew.atWarWith && <button
+              className="btn btn-outline-danger btn-sm"
+              disabled={busy || board.treasury < board.warTerms.stake}
+              title={`${money.format(board.warTerms.stake)} out of the treasury, ${board.warTerms.durationHours} hours, winner takes the stake and ${board.warTerms.tributePercent}% of the losing treasury.`}
+              onClick={() => run(() => api.declareWar(crew.id))}
+            >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</button>}
         </div>)}
       </div>
     </section>
@@ -6604,6 +6767,76 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</button>
       <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</button>
     </div>)}
+  </div>
+}
+
+/**
+ * The war, if there is one, and the record if there is not.
+ *
+ * A crew was a reason to exist and no reason to act - everything it carried was defensive, and two
+ * crews could sit beside each other for a month with nothing to decide. This is the panel where that
+ * stops being true, so it says the terms out loud whether or not a war is on: what the fights a crew
+ * already fights are worth, what the clock is, and what changes hands at the end.
+ */
+function AllianceWarPanel({ board, busy }: { board: AllianceBoard, busy: boolean }) {
+  const war = board.war
+  const terms = board.warTerms
+
+  // The panel keeps its own second hand, like the building does. The app-wide one stops once turns
+  // are maxed, which would freeze a war clock for exactly the crews who have stopped earning to fight.
+  const [, setNow] = useState(0)
+  useEffect(() => {
+    if (!war || war.settled) return
+    const timer = window.setInterval(() => setNow(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [war?.id, war?.settled])
+
+  if (!board.yours) return null
+
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-danger small">Wars</strong>
+    {war
+      ? <div className="d-grid gap-1 border rounded border-danger p-3">
+        <div className="d-flex justify-content-between align-items-baseline gap-2">
+          <strong>Against {war.opponentName}</strong>
+          <em className="eyebrow fst-normal">{timeUntil(war.endsAtUtc)} left</em>
+        </div>
+        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2 my-2">
+          <AdminMetric label="You" value={`${war.yourScore}`} />
+          <AdminMetric label="Them" value={`${war.theirScore}`} />
+          <AdminMetric label="On the table" value={money.format(war.stake)} />
+        </div>
+        <span className="text-body-secondary small">
+          {war.youDeclared
+            ? `${war.declaredByName} declared it, and the stake is yours until somebody wins it.`
+            : `${war.opponentName} declared it. The stake is theirs, and it is yours if you beat them.`}
+          {' '}A raid won is {terms.pointsForRaidWon}, a raid turned away is {terms.pointsForDefenceHeld},
+          and taking ground is {terms.pointsForGroundTaken}. It takes {terms.minScoreToWin} to win
+          anything at all, and the winner takes the stake plus {terms.tributePercent}% of the losing
+          treasury.
+        </span>
+        <small className="text-body-tertiary">
+          Nothing about a war lifts a protection. The wealth floor, the ratio, the shield on somebody
+          who has just been hit and the falling haul on a repeat all still apply - so this is a reason
+          to fight, not a licence.
+        </small>
+      </div>
+      : <p className="text-body-secondary small mb-0">
+        No war on. Declaring costs the treasury {money.format(terms.stake)} and runs {terms.durationHours} hours;
+        the winner takes that back plus {terms.tributePercent}% of the losing crew's treasury, up to{' '}
+        {money.format(terms.maxTribute)}. {terms.youCanDeclare
+          ? 'Pick a crew off the board below.'
+          : 'Somebody who can spend the treasury has to call it.'}
+      </p>}
+    {board.warHistory.length > 0 && <div className="d-grid gap-1 mt-2">
+      {board.warHistory.map(past => <div key={past.id} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
+        <small className={past.youWon === true ? 'text-success-emphasis' : past.youWon === false ? 'text-danger-emphasis' : 'text-body-secondary'}>
+          {past.youWon === true ? 'Won' : past.youWon === false ? 'Lost' : 'Drew'} against {past.opponentName}
+        </small>
+        <small className="text-body-tertiary tnum">{past.yourScore}-{past.theirScore}</small>
+      </div>)}
+    </div>}
+    {busy && <small className="text-body-tertiary">Working.</small>}
   </div>
 }
 

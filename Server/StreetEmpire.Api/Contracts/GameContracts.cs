@@ -121,6 +121,46 @@ public sealed record AlliancePactResponse(
     bool YoursToAnswer,
     DateTime CreatedAtUtc);
 
+/// <summary>
+/// A war, from the point of view of one of the two crews in it. Everything is stated from that side -
+/// "your score", "theirs" - because a crew reading its own war page should never have to work out
+/// which of two names it is.
+/// </summary>
+public sealed record AllianceWarResponse(
+    long Id,
+    long OpponentAllianceId,
+    string OpponentName,
+    /// <summary>Whether this crew is the one that declared it, which is whose stake is on the table.</summary>
+    bool YouDeclared,
+    string DeclaredByName,
+    long Stake,
+    int YourScore,
+    int TheirScore,
+    DateTime StartedAtUtc,
+    DateTime EndsAtUtc,
+    int SecondsRemaining,
+    bool Settled,
+    /// <summary>Null while it runs, and on a war nobody won.</summary>
+    bool? YouWon,
+    long Tribute,
+    string? Outcome);
+
+/// <summary>What a war costs, runs for and pays, so the page can say so before anybody commits to one.</summary>
+public sealed record AllianceWarTermsResponse(
+    int DurationHours,
+    long Stake,
+    int TributePercent,
+    long MaxTribute,
+    int MinScoreToWin,
+    int CooldownHours,
+    int PointsForRaidWon,
+    int PointsForDefenceHeld,
+    int PointsForGroundTaken,
+    /// <summary>Whether this viewer's rank lets them declare one at all.</summary>
+    bool YouCanDeclare);
+
+public sealed record DeclareWarRequest(long AllianceId);
+
 public sealed record AllianceAssistCallResponse(
     long Id,
     long CombatMissionId,
@@ -200,9 +240,64 @@ public sealed record AllianceSummaryResponse(
     bool YouFounded,
     int CityControlThugs,
     IReadOnlyList<AllianceCityControlResponse> ControlledCities,
+    /// <summary>Wars settled in their favour and against them. A crew has a record now.</summary>
+    int WarsWon = 0,
+    int WarsLost = 0,
+    /// <summary>Who they are fighting right now, or null. Nobody may declare on a crew already in one.</summary>
+    string? AtWarWith = null,
     int Rank = 0);
 
 public sealed record AllianceCityControlResponse(string City, int Territories, int BonusThugs);
+
+/// <summary>
+/// The run of the world everybody is currently in, what it has cost so far, and what this player has
+/// to show for the ones before it.
+/// </summary>
+public sealed record SeasonResponse(
+    int Number,
+    string Name,
+    DateTime StartedAtUtc,
+    DateTime EndsAtUtc,
+    int SecondsRemaining,
+    /// <summary>
+    /// Whether the clock actually rolls the world when it runs out. Said out loud because a countdown
+    /// to nothing is worse than no countdown, and an operator who has not turned seasons on should not
+    /// have their players planning around a date that will pass quietly.
+    /// </summary>
+    bool Enabled,
+    int LengthDays,
+    /// <summary>What finishing well is worth in the next one, so the climb has a stated prize.</summary>
+    long ChampionHeadStart,
+    long TopThreeHeadStart,
+    long TopTenHeadStart,
+    /// <summary>Every season this player has finished, newest first.</summary>
+    IReadOnlyList<SeasonHonourResponse> Honours,
+    /// <summary>How the last one finished, top first. Empty in a world on its first season.</summary>
+    IReadOnlyList<SeasonStandingResponse> LastSeason,
+    string? LastSeasonName);
+
+/// <param name="Confirm">
+/// The season's own name, typed out. The one thing standing between a mis-click and every empire in
+/// the world being deleted, and the reason it is the name rather than a boolean: a true is something
+/// a script sends by accident, and a name is something a person has to go and read first.
+/// </param>
+public sealed record SeasonRollRequest(string? Confirm, string? Reason);
+
+public sealed record SeasonHonourResponse(
+    int Number,
+    string Name,
+    int Rank,
+    long NetWorth,
+    string? Honour,
+    DateTime? EndedAtUtc);
+
+public sealed record SeasonStandingResponse(
+    int Rank,
+    string PlayerName,
+    string City,
+    string? CrewName,
+    long NetWorth,
+    string? Honour);
 
 /// <summary>One member, as their own crew sees them.</summary>
 public sealed record AllianceMemberResponse(
@@ -244,6 +339,11 @@ public sealed record AllianceBoardResponse(
     /// <summary>Asks waiting on somebody: invitations to the viewer, applications to their crew.</summary>
     IReadOnlyList<AllianceRequestResponse> Requests,
     IReadOnlyList<AlliancePactResponse> Pacts,
+    /// <summary>The war on right now, or null.</summary>
+    AllianceWarResponse? War,
+    /// <summary>What this crew has been through. The record everybody else reads them by.</summary>
+    IReadOnlyList<AllianceWarResponse> WarHistory,
+    AllianceWarTermsResponse WarTerms,
     IReadOnlyList<AllianceAssistCallResponse> AssistCalls,
     IReadOnlyList<AllianceTransferResponse> Transfers,
     IReadOnlyList<AllianceSummaryResponse> Board);
@@ -381,6 +481,9 @@ public sealed record MarketGoodResponse(
     long? BestPrice);
 
 public sealed record TerritoryClaimRequest(long TerritoryId, int Thugs, long? PimpId = null);
+/// <summary>Which piece of ground to put the next level of work into. The level is never chosen.</summary>
+public sealed record TerritoryDevelopRequest(long TerritoryId);
+
 public sealed record TerritoryGarrisonRequest(long TerritoryId, int Thugs, long? PimpId = null);
 public sealed record TerritoryRaidRequest(long TerritoryId, int Thugs, int Weapons = 0, long? CommanderPimpId = null);
 
@@ -401,9 +504,42 @@ public sealed record TerritoryResponse(
     DateTime? HeldSinceUtc,
     bool IsProtected,
     DateTime? ProtectedUntilUtc,
+    /// <summary>How far this ground has been worked up, and what that is worth on it.</summary>
+    int DevelopmentLevel,
+    string DevelopmentName,
+    /// <summary>What the work adds to the type's effect and to the garrison, as percentages.</summary>
+    int DevelopmentEffectPercent,
+    int DevelopmentDefencePercent,
+    /// <summary>The next rung, or null at the top of the ladder. Only ever sent for your own ground.</summary>
+    TerritoryDevelopmentUpgradeResponse? NextDevelopment,
+    /// <summary>Work going on right now. Visible on anybody's ground, because it is a window.</summary>
+    TerritoryDevelopmentBuildResponse? Developing,
     bool CanClaim,
     bool CanRaid,
     string? BlockedReason);
+
+/// <summary>The next rung of the development ladder, priced and gated.</summary>
+public sealed record TerritoryDevelopmentUpgradeResponse(
+    int Level,
+    string Name,
+    long Cost,
+    int Turns,
+    int BuildMinutes,
+    int EffectPercent,
+    int DefencePercent,
+    int RequiredTier,
+    string RequiredTierName,
+    bool TierLocked,
+    /// <summary>The type's own effect at this rung, so the page can quote what it actually buys.</summary>
+    int EffectNow,
+    int EffectAfter);
+
+/// <summary>Work under way on a piece of ground, and when it lands.</summary>
+public sealed record TerritoryDevelopmentBuildResponse(
+    int Level,
+    string Name,
+    DateTime CompletesAtUtc,
+    int SecondsRemaining);
 
 public sealed record TerritoryBoardResponse(
     string City,
@@ -416,7 +552,22 @@ public sealed record TerritoryBoardResponse(
     int FreeThugs,
     TerritoryEffectsResponse Effects,
     AllianceCityControlResponse? AllianceCityControl,
+    /// <summary>The whole development ladder, so the page can show what is ahead rather than one rung.</summary>
+    IReadOnlyList<TerritoryDevelopmentRungResponse> DevelopmentLadder,
     IReadOnlyList<TerritoryResponse> Territories);
+
+/// <summary>One rung of the ladder as the map page lists it.</summary>
+public sealed record TerritoryDevelopmentRungResponse(
+    int Level,
+    string Name,
+    long Cost,
+    int Turns,
+    int BuildMinutes,
+    int EffectPercent,
+    int DefencePercent,
+    int RequiredTier,
+    string RequiredTierName,
+    bool Reachable);
 
 public sealed record TerritoryEffectsResponse(
     int StreetIncomePercent,
@@ -1049,7 +1200,13 @@ public sealed record HideoutTierUpgradeResponse(
     int BuildMinutes,
     int MaxPimps,
     int MaxHoes,
-    int MaxThugs);
+    int MaxThugs,
+    /// <summary>
+    /// The turn bank the building holds. Reported because it is the half of the purchase a player
+    /// cannot see anywhere else: crew caps are on the page they are hiring from, and a bank they were
+    /// never told about is an upgrade that silently stops throwing their turns away.
+    /// </summary>
+    int MaxTurns);
 
 /// <summary>A tier build in progress. The hideout keeps its old caps until this lands.</summary>
 public sealed record HideoutBuildResponse(

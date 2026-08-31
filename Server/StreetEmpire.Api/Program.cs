@@ -61,6 +61,7 @@ builder.Services.AddScoped<TurnService>();
 builder.Services.AddScoped<HideoutService>();
 builder.Services.AddScoped<PlayerClock>();
 builder.Services.AddScoped<StandingsRecorder>();
+builder.Services.AddScoped<SeasonService>();
 builder.Services.AddScoped<TerritoryService>();
 builder.Services.AddScoped<MarketService>();
 builder.Services.AddScoped<MuleService>();
@@ -69,6 +70,9 @@ builder.Services.AddScoped<GuidanceService>();
 builder.Services.AddScoped<ContractService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<StandingsSchedule>();
+// Singleton for the same reason the standings gate is: it exists to stop every request in a busy
+// second deciding independently that the world is due to be started over.
+builder.Services.AddSingleton<SeasonSchedule>();
 builder.Services.AddScoped<PimpRoster>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();

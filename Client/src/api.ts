@@ -255,6 +255,8 @@ export type HideoutTierUpgrade = {
   maxPimps: number
   maxHoes: number
   maxThugs: number
+  /** Turns the building holds at once. The half of the purchase that is not room for people. */
+  maxTurns: number
 }
 
 export type HideoutBuild = {
@@ -453,7 +455,81 @@ export type AllianceSummary = {
   youFounded: boolean
   cityControlThugs: number
   controlledCities: AllianceCityControl[]
+  /** Wars settled their way and against them. A crew has a record now. */
+  warsWon: number
+  warsLost: number
+  /** Who they are fighting right now. Nobody may declare on a crew already in one. */
+  atWarWith?: string | null
   rank: number
+}
+
+/** A war, told from the point of view of the crew reading it. */
+export type AllianceWar = {
+  id: number
+  opponentAllianceId: number
+  opponentName: string
+  youDeclared: boolean
+  declaredByName: string
+  stake: number
+  yourScore: number
+  theirScore: number
+  startedAtUtc: string
+  endsAtUtc: string
+  secondsRemaining: number
+  settled: boolean
+  /** Null while it runs, and on a war nobody won. */
+  youWon?: boolean | null
+  tribute: number
+  outcome?: string | null
+}
+
+export type AllianceWarTerms = {
+  durationHours: number
+  stake: number
+  tributePercent: number
+  maxTribute: number
+  minScoreToWin: number
+  cooldownHours: number
+  pointsForRaidWon: number
+  pointsForDefenceHeld: number
+  pointsForGroundTaken: number
+  youCanDeclare: boolean
+}
+
+/** The run of the world everybody is in, and the only part of the game that survives it. */
+export type Season = {
+  number: number
+  name: string
+  startedAtUtc: string
+  endsAtUtc: string
+  secondsRemaining: number
+  /** Whether the clock actually rolls the world when it runs out. */
+  enabled: boolean
+  lengthDays: number
+  championHeadStart: number
+  topThreeHeadStart: number
+  topTenHeadStart: number
+  honours: SeasonHonour[]
+  lastSeason: SeasonStanding[]
+  lastSeasonName?: string | null
+}
+
+export type SeasonHonour = {
+  number: number
+  name: string
+  rank: number
+  netWorth: number
+  honour?: string | null
+  endedAtUtc?: string | null
+}
+
+export type SeasonStanding = {
+  rank: number
+  playerName: string
+  city: string
+  crewName?: string | null
+  netWorth: number
+  honour?: string | null
 }
 
 export type AllianceCityControl = {
@@ -587,6 +663,10 @@ export type AllianceBoard = {
   doors: AllianceDoor[]
   requests: AllianceRequest[]
   pacts: AlliancePact[]
+  /** The war on right now, or null. */
+  war?: AllianceWar | null
+  warHistory: AllianceWar[]
+  warTerms: AllianceWarTerms
   assistCalls: AllianceAssistCall[]
   transfers: AllianceTransfer[]
   board: AllianceSummary[]
@@ -1513,6 +1593,8 @@ export const api = {
     request<ActionResult>('/api/game/alliances/pacts', { method: 'POST', body: JSON.stringify({ allianceId }) }),
   answerAlliancePact: (pactId: number, accept: boolean) =>
     request<ActionResult>('/api/game/alliances/pacts/answer', { method: 'POST', body: JSON.stringify({ pactId, accept }) }),
+  declareWar: (allianceId: number) =>
+    request<ActionResult>('/api/game/alliance/war', { method: 'POST', body: JSON.stringify({ allianceId }) }),
   cancelAlliancePact: (pactId: number) =>
     request<ActionResult>('/api/game/alliances/pacts/cancel', { method: 'POST', body: JSON.stringify({ pactId, accept: false }) }),
   /** Takes back whatever is left of what you sent, once the fight it was sent to is over. */
@@ -1580,8 +1662,11 @@ export const api = {
     request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
   setGarrison: (territoryId: number, thugs: number, pimpId: number | null) =>
     request<ActionResult>('/api/game/territories/garrison', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
+  developTerritory: (territoryId: number) =>
+    request<ActionResult>('/api/game/territories/develop', { method: 'POST', body: JSON.stringify({ territoryId }) }),
   raidTerritory: (territoryId: number, thugs: number, weapons: number) =>
     request<ActionResult>('/api/game/territories/raid', { method: 'POST', body: JSON.stringify({ territoryId, thugs, weapons }) }),
+  season: () => request<Season>('/api/game/season'),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
   alerts: () => request<Alerts>('/api/game/alerts'),
   markAlertsSeen: () => request<Alerts>('/api/game/alerts/seen', { method: 'POST' }),
@@ -1802,9 +1887,55 @@ export type Territory = {
   heldSinceUtc?: string | null
   isProtected: boolean
   protectedUntilUtc?: string | null
+  /** How far this ground has been worked up. Zero is bare ground. */
+  developmentLevel: number
+  developmentName: string
+  developmentEffectPercent: number
+  developmentDefencePercent: number
+  /** The next rung. Only ever sent for ground you hold. */
+  nextDevelopment?: TerritoryDevelopmentUpgrade | null
+  /** Work under way, on anybody's ground: a piece mid-build is a window. */
+  developing?: TerritoryDevelopmentBuild | null
   canClaim: boolean
   canRaid: boolean
   blockedReason?: string | null
+}
+
+export type TerritoryDevelopmentUpgrade = {
+  level: number
+  name: string
+  cost: number
+  turns: number
+  buildMinutes: number
+  effectPercent: number
+  defencePercent: number
+  requiredTier: number
+  requiredTierName: string
+  tierLocked: boolean
+  /** What the piece is worth now, and what it would be worth on the next rung. */
+  effectNow: number
+  effectAfter: number
+}
+
+export type TerritoryDevelopmentBuild = {
+  level: number
+  name: string
+  completesAtUtc: string
+  secondsRemaining: number
+}
+
+export type TerritoryDevelopmentRung = {
+  level: number
+  name: string
+  cost: number
+  turns: number
+  buildMinutes: number
+  effectPercent: number
+  defencePercent: number
+  requiredTier: number
+  requiredTierName: string
+  /** Whether the building this player runs can reach this rung at all yet. */
+  reachable: boolean
 }
 
 export type MarketListing = {
@@ -1853,6 +1984,7 @@ export type TerritoryBoard = {
     lootPercent: number
   }
   allianceCityControl?: AllianceCityControl | null
+  developmentLadder: TerritoryDevelopmentRung[]
   territories: Territory[]
 }
 

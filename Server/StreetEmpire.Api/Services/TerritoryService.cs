@@ -52,10 +52,13 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
             var type = TypeOf(territory.Type);
             if (type is null)
                 continue;
-            street += type.StreetIncomePercent;
-            production += type.ProductionYieldPercent;
-            morale += type.MoraleRecoveryPercent;
-            loot += type.LootPercent;
+            // What the ground is worth is the type's number times what has been put into the ground.
+            // Bare ground multiplies by one, so a map nobody has developed reads exactly as it did.
+            var worked = _options.Territory.DevelopmentMultiplier(territory.DevelopmentLevel);
+            street += Scale(type.StreetIncomePercent, worked);
+            production += Scale(type.ProductionYieldPercent, worked);
+            morale += Scale(type.MoraleRecoveryPercent, worked);
+            loot += Scale(type.LootPercent, worked);
         }
 
         return new TerritoryEffects(street, production, morale, loot);
@@ -130,6 +133,96 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         return configured?.MaxTerritories ?? 1;
     }
 
+    private static int Scale(int percent, double multiplier)
+        => percent <= 0 ? 0 : (int)Math.Round(percent * multiplier, MidpointRounding.AwayFromZero);
+
+    /// <summary>What this ground is worth against a bare piece of the same type, as a multiplier.</summary>
+    public double DevelopmentMultiplier(Territory ground)
+        => _options.Territory.DevelopmentMultiplier(ground.DevelopmentLevel);
+
+    /// <summary>
+    /// What the work adds to the garrison standing on it. Passed to the raid as a bonus percentage
+    /// alongside an enforcer's, so money in the ground buys some of the reason you keep it rather than
+    /// only painting a target on it.
+    /// </summary>
+    public int DevelopmentDefencePercent(Territory ground)
+        => _options.Territory.DevelopmentDefencePercent(ground.DevelopmentLevel);
+
+    public string DevelopmentName(int level)
+        => _options.Territory.DevelopmentAt(level)?.Name ?? "Bare";
+
+    /// <summary>
+    /// Starts the next level of work on ground the player already holds.
+    ///
+    /// The money and the turns go now and the ground is worth what it was worth until the build lands,
+    /// which is the same bargain a hideout tier makes. What that buys the rest of the town is a window:
+    /// a piece being worked up is a piece whose holder has just spent everything, and it can be taken
+    /// off them before it is finished.
+    /// </summary>
+    public async Task<(Territory Ground, TerritoryDevelopmentOptions Level, long FromBank)> DevelopAsync(
+        Player player,
+        long territoryId,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        TravelGate.EnsureLanded(player);
+        var config = _options.Territory;
+        var ground = await db.Territories.SingleOrDefaultAsync(x => x.Id == territoryId, ct)
+            ?? throw new GameRuleException("That ground does not exist.");
+        if (ground.HolderId != player.Id)
+            throw new GameRuleException("You can only work up ground you hold.");
+        if (ground.DevelopingToLevel is not null)
+            throw new GameRuleException($"Work is already going on at {ground.Name}.");
+
+        var next = config.DevelopmentAfter(ground.DevelopmentLevel)
+            ?? throw new GameRuleException($"{ground.Name} is as worked up as ground gets.");
+
+        var tier = player.Hideout?.Tier ?? 1;
+        if (next.MinTier > tier)
+            throw new GameRuleException($"Running {next.Name} ground takes the {TierNameAt(next.MinTier)} or better.");
+        if (player.Turns < next.Turns)
+            throw new GameRuleException($"Working {ground.Name} up to {next.Name} takes {next.Turns} turns.");
+        if (player.Cash + player.BankCash < next.Cost)
+            throw new GameRuleException($"You need {next.Cost:C0} across your cash and bank to work {ground.Name} up to {next.Name}.");
+
+        var fromBank = Capital.Charge(player, next.Cost);
+        player.Turns -= next.Turns;
+        ground.DevelopingToLevel = next.Level;
+        ground.DevelopmentCompletesAtUtc = nowUtc.AddMinutes(Math.Max(0, next.BuildMinutes));
+        return (ground, next, fromBank);
+    }
+
+    /// <summary>
+    /// Lands any work whose timer has run out. Settled on the holder's clock rather than a background
+    /// sweep for the same reason a mule run is: the ground belongs to one empire, and the moment that
+    /// matters is the moment that empire is next looked at.
+    /// </summary>
+    public static bool CompleteDevelopment(Territory ground, DateTime nowUtc)
+    {
+        if (ground.DevelopingToLevel is not { } level || ground.DevelopmentCompletesAtUtc is not { } due || due > nowUtc)
+            return false;
+
+        ground.DevelopmentLevel = Math.Max(ground.DevelopmentLevel, level);
+        ground.DevelopingToLevel = null;
+        ground.DevelopmentCompletesAtUtc = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Ground goes back to being ground. Used wherever a holder stops holding it without losing a
+    /// fight - walking away, or being pulled off by dropping the garrison under the minimum.
+    ///
+    /// Everything put into it is lost rather than left standing for the next person to claim, because
+    /// ground that keeps its development while nobody holds it is a way to hand an empire's money to
+    /// somebody else without either of them fighting for it.
+    /// </summary>
+    private static void Raze(Territory ground)
+    {
+        ground.DevelopmentLevel = 0;
+        ground.DevelopingToLevel = null;
+        ground.DevelopmentCompletesAtUtc = null;
+    }
+
     /// <summary>
     /// Claims ground nobody holds. Taking it off somebody is a mission, not this: the point of the
     /// system is that held ground has to be fought for.
@@ -193,6 +286,8 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
             territory.GarrisonThugs = 0;
             territory.GarrisonPimpId = null;
             territory.HeldSinceUtc = null;
+            // Walking away is walking away from what was put into it, half-finished work included.
+            Raze(territory);
             return (territory, true);
         }
         if (thugs > config.MaxGarrisonThugs)
@@ -264,8 +359,23 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
     /// Hands ground to its new holder after a won raid. The winning force stays as the garrison, which
     /// is why taking ground and then walking away is not an option.
     /// </summary>
-    public void Transfer(Territory territory, Guid newHolderId, int garrison, DateTime nowUtc)
+    public void Transfer(Territory territory, Guid newHolderId, int garrison, DateTime nowUtc, Hideout? winnersHideout = null)
     {
+        // Half, rounded down, and never past what the winner's own building could have built.
+        //
+        // Whole would make taking ground strictly cheaper than working it up, and nobody would ever
+        // build anything. Nothing at all would mean contested ground is never developed either - a
+        // player would only invest where they were already safe, and one lost raid would wipe out
+        // months. Half is the shape that leaves both worth doing: the attacker gets a head start on a
+        // ladder they still have to climb, and the loser loses enough that defending it mattered.
+        var inherited = Math.Min(
+            territory.DevelopmentLevel / 2,
+            _options.Territory.MaxDevelopmentForTier(winnersHideout?.Tier ?? 1));
+        territory.DevelopmentLevel = Math.Max(0, inherited);
+        // Work in progress does not survive the ground changing hands. The money went when it started.
+        territory.DevelopingToLevel = null;
+        territory.DevelopmentCompletesAtUtc = null;
+
         territory.HolderId = newHolderId;
         // The beaten pimp does not stay on to run it for the winner.
         territory.GarrisonPimpId = null;
@@ -281,7 +391,10 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
         => territory.GarrisonThugs = Math.Max(0, territory.GarrisonThugs - Math.Max(0, losses));
 
     private string TierName(Player player)
-        => _options.Hideout.Tiers.FirstOrDefault(x => x.Level == (player.Hideout?.Tier ?? 1))?.Name ?? "hideout";
+        => TierNameAt(player.Hideout?.Tier ?? 1);
+
+    private string TierNameAt(int tier)
+        => _options.Hideout.Tiers.FirstOrDefault(x => x.Level == tier)?.Name ?? "hideout";
 }
 
 /// <summary>Percentages a player's holdings add to activities they still spend turns on.</summary>

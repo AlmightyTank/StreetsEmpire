@@ -76,9 +76,12 @@ var tests = new (string Name, Action Test)[]
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
     ("turns come back faster while you are small", EarlyGameTurnsTaper),
+    ("the building holds the turn bank, and never the rate", TheBuildingHoldsTheTurnBank),
     ("the first tier always has something worth saving for", TheFirstTierHasNoDeadZone),
     ("a crew too big for a full shift is told the shorter one", ShortShiftsAreASupplyAnswer),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
+    ("ground is worth what has been put into it", GroundIsWorthWhatWasPutIntoIt),
+    ("working ground up costs money, turns and time", WorkingGroundUpIsPaidForUpFront),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
@@ -201,6 +204,10 @@ var tests = new (string Name, Action Test)[]
     ("one box on the form is one name underneath", OneBoxOnTheFormIsOneNameUnderneath),
     ("money is dollars wherever the server happens to be", MoneyIsDollarsWhereverTheServerIs),
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
+    ("a war has a clock, a score and a pot", AWarHasAClockAScoreAndAPot),
+    ("a war nobody fought pays nobody", AWarNobodyFoughtPaysNobody),
+    ("a season takes the empire and leaves the person", ASeasonTakesTheEmpireAndLeavesThePerson),
+    ("a head start is one season deep and never compounds", AHeadStartNeverCompounds),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
@@ -4163,6 +4170,259 @@ static (Player Ally, Player Defender, CombatMission Mission, AllianceAssistCall 
     return (ally, defender, mission, call);
 }
 
+/// <summary>
+/// The thing a crew never had: a reason to act, on a clock, with something on the table. This is the
+/// whole arc - declared, scored off fights that were happening anyway, settled, paid.
+/// </summary>
+static void AWarHasAClockAScoreAndAPot()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var config = options.Alliances.War;
+    var alliances = world.Alliances;
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var ours = world.Crew("Riverworks");
+    var theirs = world.Crew("The Causeway Set");
+    ours.Treasury = 2_000_000;
+    theirs.Treasury = 4_000_000;
+    var boss = world.Member("Boss", ours);
+    var enemy = world.Member("Enemy", theirs);
+    world.Db.SaveChanges();
+
+    var war = alliances.DeclareWarAsync(boss, theirs.Id, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // The stake leaves on the day it is declared, so the decision is felt when it is made.
+    AssertEqual(config.Stake, war.Stake);
+    AssertEqual(2_000_000 - config.Stake, ours.Treasury);
+    AssertEqual(now.AddHours(config.DurationHours), war.EndsAtUtc);
+
+    // One war at a time, either way round, and never on people you hold a truce with.
+    AssertRuleError(() => alliances.DeclareWarAsync(boss, theirs.Id, now, default).GetAwaiter().GetResult(),
+        "declaring a second war while one is running");
+    AssertRuleError(() => alliances.DeclareWarAsync(boss, ours.Id, now, default).GetAwaiter().GetResult(),
+        "declaring war on yourselves");
+
+    // Fights that were happening anyway are what score it. Nothing new is counted.
+    Score(world, boss, enemy, "Victory", null, now);
+    AssertEqual(config.PointsForRaidWon, war.DeclaringScore);
+    Score(world, boss, enemy, "Victory", 1, now);
+    AssertEqual(config.PointsForRaidWon + config.PointsForGroundTaken, war.DeclaringScore);
+    Score(world, enemy, boss, "Defeat", null, now);
+    // A raid the other crew failed to land scores for the side that turned it away, which is this one.
+    AssertEqual(config.PointsForRaidWon + config.PointsForGroundTaken + config.PointsForDefenceHeld, war.DeclaringScore);
+    // A standstill is nobody's, which is why a war cannot be won by refusing to resolve anything.
+    var before = war.DeclaringScore + war.TargetScore;
+    Score(world, boss, enemy, "Standstill", null, now);
+    AssertEqual(before, war.DeclaringScore + war.TargetScore);
+    Score(world, enemy, boss, "Victory", null, now);
+    AssertEqual(config.PointsForRaidWon, war.TargetScore);
+
+    // Nothing settles while the clock is still running.
+    AssertEqual(0, alliances.SettleDueWarsAsync(war.EndsAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult());
+    AssertEqual(AllianceWarStatuses.Active, war.Status);
+
+    var theirTreasuryBefore = theirs.Treasury;
+    AssertEqual(1, alliances.SettleDueWarsAsync(war.EndsAtUtc, default).GetAwaiter().GetResult());
+    world.Db.SaveChanges();
+
+    var tribute = (long)Math.Min(config.MaxTribute, theirTreasuryBefore * config.TributePercent / 100.0);
+    AssertEqual(AllianceWarStatuses.Settled, war.Status);
+    AssertEqual(ours.Id, war.WinnerAllianceId);
+    AssertEqual(tribute, war.Tribute);
+    // The winner takes back their own stake and the loser's cut on top of it.
+    AssertEqual(2_000_000 - config.Stake + config.Stake + tribute, ours.Treasury);
+    AssertEqual(theirTreasuryBefore - tribute, theirs.Treasury);
+    AssertTrue(war.Outcome is not null, "a settled war says what happened");
+
+    // Settling twice must not pay twice.
+    AssertEqual(0, alliances.SettleDueWarsAsync(war.EndsAtUtc.AddHours(1), default).GetAwaiter().GetResult());
+    AssertEqual(2_000_000 - config.Stake + config.Stake + tribute, ours.Treasury);
+
+    // And the same two crews cannot go straight back at each other.
+    AssertRuleError(() => alliances.DeclareWarAsync(boss, theirs.Id, war.EndsAtUtc.AddHours(1), default).GetAwaiter().GetResult(),
+        "re-declaring inside the cooldown");
+}
+
+/// <summary>
+/// The hole every war system has: declaring on a crew that has stopped playing and drawing a wage off
+/// them. A war has to be fought to be won, and the stake goes home when it was not.
+/// </summary>
+static void AWarNobodyFoughtPaysNobody()
+{
+    using var world = NewCrewWorld();
+    var config = world.Options.Alliances.War;
+    var alliances = world.Alliances;
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var ours = world.Crew("Riverworks");
+    var dormant = world.Crew("The Quiet Ones");
+    ours.Treasury = 1_000_000;
+    dormant.Treasury = 9_000_000;
+    var boss = world.Member("Boss", ours);
+    var sleeper = world.Member("Sleeper", dormant);
+    world.Db.SaveChanges();
+
+    var war = alliances.DeclareWarAsync(boss, dormant.Id, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // One unanswered raid is not a war, however rich the crew on the other end of it.
+    Score(world, boss, sleeper, "Victory", null, now);
+    AssertTrue(war.DeclaringScore < config.MinScoreToWin, "one raid should not clear the bar");
+
+    alliances.SettleDueWarsAsync(war.EndsAtUtc, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertTrue(war.WinnerAllianceId is null, "nobody wins a war nobody fought");
+    AssertEqual(0L, war.Tribute);
+    AssertEqual(9_000_000, dormant.Treasury);
+    // The stake goes home rather than being forfeit: it was not lost, the war simply did not happen.
+    AssertEqual(1_000_000, ours.Treasury);
+}
+
+/// <summary>Runs one finished fight past the war scorer, which is all the war cares about.</summary>
+static void Score(CrewWorld world, Player attacker, Player defender, string outcome, long? territoryId, DateTime nowUtc)
+{
+    var mission = new CombatMission
+    {
+        AttackerId = attacker.Id,
+        Attacker = attacker,
+        DefenderId = defender.Id,
+        Defender = defender,
+        Status = "Complete",
+        Outcome = outcome,
+        TerritoryId = territoryId
+    };
+    world.Alliances.ScoreWarAsync(mission, nowUtc, default).GetAwaiter().GetResult();
+}
+
+/// <summary>
+/// The rule the whole reset is built on, checked from both sides: the empire goes and the person
+/// stays. This is the most destructive thing the game can do to somebody, so what it must not touch is
+/// worth more test than what it does.
+/// </summary>
+static void ASeasonTakesTheEmpireAndLeavesThePerson()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var crew = world.Crew("Riverworks");
+    crew.Treasury = 4_000_000;
+    crew.OffensiveThugs = 40;
+    var rich = world.Member("Rich", crew, thugs: 90, cash: 9_000_000);
+    var poor = world.Member("Poor", crew, thugs: 2, cash: 4_000);
+    rich.Hoes = 150;
+    rich.Pistols = 60;
+    rich.Coke = 200;
+    rich.Heat = 80;
+    rich.AllianceDefenders = 10;
+    rich.Hideout!.Tier = 4;
+    rich.Hideout.StorageLevel = 5;
+    rich.Hideout.WeedLabLevel = 5;
+    var ground = new Territory { City = "Detroit", Name = "Delray Docks", Type = "dock", HolderId = rich.Id, GarrisonThugs = 20, DevelopmentLevel = 4 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+
+    var season = seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    AssertEqual(1, season.Number);
+    AssertEqual(now.AddDays(options.Seasons.LengthDays), season.EndsAtUtc);
+
+    var roll = seasons.RollAsync(now.AddDays(options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+
+    // The person: still here, still called the same thing, still in the same town and the same crew.
+    AssertEqual("Rich", rich.Name);
+    AssertEqual("Detroit", rich.City);
+    AssertEqual(crew.Id, rich.AllianceId);
+
+    // The empire: gone, and gone all the way down to the building and the clocks.
+    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart, rich.Cash);
+    AssertEqual(0L, rich.BankCash);
+    AssertEqual(options.StartingHoes, rich.Hoes);
+    AssertEqual(options.StartingThugs, rich.Thugs);
+    AssertEqual(options.StartingWeapons, rich.Weapons);
+    AssertEqual(0, rich.Coke);
+    AssertEqual(0d, rich.Heat);
+    AssertEqual(0, rich.AllianceDefenders);
+    AssertEqual(1, rich.Hideout.Tier);
+    AssertEqual(1, rich.Hideout.StorageLevel);
+    AssertEqual(0, rich.Hideout.WeedLabLevel);
+    AssertEqual(options.StartingTurns, rich.Turns);
+
+    // The crew survives as a crew and loses everything it had saved. The people who organised stay
+    // organised; a treasury carried over would be one crew starting the season already finished.
+    AssertEqual(0L, crew.Treasury);
+    AssertEqual(0, crew.OffensiveThugs);
+
+    // The map is emptied rather than deleted, development included, or the world comes back mapless.
+    AssertTrue(ground.HolderId is null, "ground goes back to being anybody's");
+    AssertEqual(0, ground.DevelopmentLevel);
+    AssertEqual(0, ground.GarrisonThugs);
+
+    // And the record: written for everybody, not only the winner, and honest about who was where.
+    AssertEqual(2, roll.Players);
+    var honours = seasons.HonoursForAsync(rich.Id, default).GetAwaiter().GetResult();
+    AssertEqual(1, honours.Count);
+    AssertEqual(1, honours[0].Rank);
+    AssertEqual(SeasonHonours.Champion, honours[0].Honour);
+    AssertTrue(honours[0].NetWorth > 0, "a season records what the empire was worth at the end of it");
+    var alsoRan = seasons.HonoursForAsync(poor.Id, default).GetAwaiter().GetResult();
+    AssertEqual(1, alsoRan.Count);
+    AssertEqual(2, alsoRan[0].Rank);
+
+    // The next season opened behind it, numbered and clocked.
+    AssertEqual(2, roll.Opened.Number);
+    AssertEqual(SeasonStatuses.Running, roll.Opened.Status);
+    AssertEqual(SeasonStatuses.Ended, roll.Ended.Status);
+    AssertEqual(2, seasons.CurrentAsync(now.AddDays(31), default).GetAwaiter().GetResult().Number);
+}
+
+/// <summary>
+/// The failure mode every seasonal game has to avoid: winning one season being how you win the next.
+/// A head start is paid off the season just finished and nothing else, so it can never accumulate.
+/// </summary>
+static void AHeadStartNeverCompounds()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var champion = world.Member("Champion", cash: 5_000_000);
+    world.Db.SaveChanges();
+
+    seasons.RollAsync(now, default).GetAwaiter().GetResult();
+    var afterOne = champion.Cash;
+    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart, afterOne);
+
+    // Wins again, from the same position. The head start is the same size, not twice the size.
+    champion.Cash = 5_000_000;
+    seasons.RollAsync(now.AddDays(options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+    AssertEqual(afterOne, champion.Cash);
+
+    // Two trophies, one leg up.
+    var honours = seasons.HonoursForAsync(champion.Id, default).GetAwaiter().GetResult();
+    AssertEqual(2, honours.Count);
+    AssertTrue(honours.All(x => x.Honour == SeasonHonours.Champion), "both wins are on the record");
+
+    // And a finish worth nothing is worth nothing: the ladder stops at the top ten.
+    AssertEqual(SeasonHonours.Champion, SeasonHonours.For(1));
+    AssertEqual(SeasonHonours.TopThree, SeasonHonours.For(3));
+    AssertEqual(SeasonHonours.TopTen, SeasonHonours.For(10));
+    AssertTrue(SeasonHonours.For(11) is null, "eleventh is a season played, not an honour won");
+    AssertEqual(0L, options.Seasons.HeadStartFor(null));
+}
+
+static SeasonService CreateSeasons(CrewWorld world)
+    => new(
+        world.Db,
+        Snapshot(world.Options),
+        CreateEconomy(world.Options),
+        CreatePimps(world.Options),
+        new SeasonSchedule());
+
 static void MakePact(CrewWorld world, Player asker, long targetId, Player answerer)
 {
     var pact = world.Alliances.RequestPactAsync(asker, targetId, DateTime.UtcNow, default).GetAwaiter().GetResult();
@@ -4928,6 +5188,63 @@ static void EarlyGameTurnsTaper()
     AssertEqual(opening, earning.Turns);
 }
 
+static void TheBuildingHoldsTheTurnBank()
+{
+    var options = Resolve(new GameOptions());
+
+    // A player in the opening building banks exactly what the game opens at, so nothing about a new
+    // player moved.
+    var trapHouse = Rookie(options);
+    AssertEqual(options.MaxTurns, options.MaxTurnsFor(trapHouse));
+
+    // Every building above it holds more, and the ladder only ever climbs.
+    var last = options.MaxTurnsFor(trapHouse);
+    foreach (var tier in options.Hideout.Tiers.OrderBy(x => x.Level).Skip(1))
+    {
+        var owner = Rookie(options);
+        owner.Hideout = new Hideout { Tier = tier.Level };
+        var bank = options.MaxTurnsFor(owner);
+        AssertTrue(bank > last, $"the {tier.Name} holds more than the building below it ({bank} against {last})");
+        last = bank;
+    }
+
+    // And the rate is untouched at every one of them, which is the whole point: a bigger building
+    // keeps more of what a player is owed rather than paying them any faster.
+    var penthouse = Rookie(options);
+    penthouse.Hideout = new Hideout { Tier = options.Hideout.Tiers.Max(x => x.Level) };
+    penthouse.BankCash = options.EarlyGameNetWorthCeiling * 4;
+    var trapVeteran = Rookie(options);
+    trapVeteran.BankCash = options.EarlyGameNetWorthCeiling * 4;
+    AssertEqual(options.TurnsPerTickFor(trapVeteran), options.TurnsPerTickFor(penthouse));
+
+    // A refresh actually pays into the bigger bank rather than stopping at the opening one. Long
+    // enough away to overfill a Trap House twice over.
+    var clock = CreateTurns(options);
+    var away = DateTime.UtcNow.AddHours(-48);
+    var small = Rookie(options);
+    small.Turns = 0;
+    small.LastTurnUpdateUtc = away;
+    clock.Refresh(small, DateTime.UtcNow);
+    AssertEqual(options.MaxTurns, small.Turns);
+
+    var big = Rookie(options);
+    big.Hideout = new Hideout { Tier = 2 };
+    big.Turns = 0;
+    big.LastTurnUpdateUtc = away;
+    clock.Refresh(big, DateTime.UtcNow);
+    AssertTrue(big.Turns > small.Turns, $"the Warehouse keeps turns the Trap House threw away ({big.Turns} against {small.Turns})");
+    AssertEqual(options.MaxTurnsFor(big), big.Turns);
+
+    // A table that forgot a middle rung must not take a bank away from anybody for upgrading.
+    var gappy = Resolve(new GameOptions());
+    gappy.Hideout.Tiers.Single(x => x.Level == 3).MaxTurns = 0;
+    var third = Rookie(gappy);
+    third.Hideout = new Hideout { Tier = 3 };
+    var second = Rookie(gappy);
+    second.Hideout = new Hideout { Tier = 2 };
+    AssertTrue(gappy.MaxTurnsFor(third) >= gappy.MaxTurnsFor(second), "the ladder never steps down");
+}
+
 static void GuidancePointsAtTheGame()
 {
     var options = Resolve(new GameOptions());
@@ -5279,6 +5596,146 @@ static void TerritoryEffectsAddUp()
     // The tier ladder gains a second meaning: how much ground you may run at once.
     AssertEqual(1, service.HoldingCapFor(new Hideout { Tier = 1 }));
     AssertEqual(4, service.HoldingCapFor(new Hideout { Tier = 4 }));
+}
+
+/// <summary>
+/// The whole point of development: a piece of ground is worth what somebody has put into it, and what
+/// they put in is a thing another player can come and take a share of.
+/// </summary>
+static void GroundIsWorthWhatWasPutIntoIt()
+{
+    var options = Resolve(new GameOptions());
+    var service = CreateTerritories(options);
+    var config = options.Territory;
+
+    Territory Ground(string type, int level = 0) => new() { Type = type, DevelopmentLevel = level };
+
+    // Bare ground reads exactly as it did before any of this existed, which is what stops the change
+    // rewriting every map in play.
+    AssertEqual(15, service.EffectsFor([Ground("corner")]).StreetIncomePercent);
+    AssertEqual(1.0, config.DevelopmentMultiplier(0));
+    AssertEqual(0, config.DevelopmentDefencePercent(0));
+
+    // And the top of the ladder is worth double, on every type, without any of them being special-cased.
+    var top = config.Development.Max(x => x.Level);
+    AssertEqual(30, service.EffectsFor([Ground("corner", top)]).StreetIncomePercent);
+    AssertEqual(40, service.EffectsFor([Ground("dock", top)]).ProductionYieldPercent);
+    AssertEqual(100, service.EffectsFor([Ground("club", top)]).MoraleRecoveryPercent);
+    AssertEqual(40, service.EffectsFor([Ground("stash", top)]).LootPercent);
+
+    // The ladder only ever climbs, in what it is worth, what it costs and what it defends with.
+    var rungs = config.Development.OrderBy(x => x.Level).ToList();
+    AssertTrue(rungs.Count >= 3, "a ladder worth months needs rungs");
+    for (var i = 1; i < rungs.Count; i++)
+    {
+        AssertTrue(rungs[i].EffectPercent > rungs[i - 1].EffectPercent, $"level {rungs[i].Level} is worth more");
+        AssertTrue(rungs[i].Cost > rungs[i - 1].Cost, $"level {rungs[i].Level} costs more");
+        AssertTrue(rungs[i].DefencePercent > rungs[i - 1].DefencePercent, $"level {rungs[i].Level} defends better");
+        AssertTrue(rungs[i].MinTier >= rungs[i - 1].MinTier, $"level {rungs[i].Level} never unlocks earlier");
+    }
+
+    // Priced to be months rather than an evening. The whole ladder on one piece costs several times
+    // the biggest building in the game, which is the only reason the map is worth anything long term.
+    var wholeLadder = rungs.Sum(x => x.Cost);
+    var biggestBuilding = options.Hideout.Tiers.Max(x => x.UpgradeCost);
+    AssertTrue(wholeLadder > biggestBuilding * 4,
+        $"one maxed piece should dwarf the top building: {wholeLadder:N0} against {biggestBuilding:N0}");
+
+    // A building can only run what it could have built, which is what a captured piece is cut down to.
+    AssertTrue(config.MaxDevelopmentForTier(1) < config.MaxDevelopmentForTier(4), "the tier ladder gates the ground ladder");
+    AssertEqual(top, config.MaxDevelopmentForTier(options.Hideout.Tiers.Max(x => x.Level)));
+
+    // Taking it keeps half and wrecks the rest, and never leaves the winner running more than their
+    // own house could have built.
+    var won = new Territory { Type = "corner", DevelopmentLevel = top, GarrisonThugs = 20 };
+    service.Transfer(won, Guid.NewGuid(), 20, DateTime.UtcNow, new Hideout { Tier = 4 });
+    AssertEqual(top / 2, won.DevelopmentLevel);
+
+    var smallHouse = new Territory { Type = "corner", DevelopmentLevel = top, GarrisonThugs = 20 };
+    service.Transfer(smallHouse, Guid.NewGuid(), 20, DateTime.UtcNow, new Hideout { Tier = 1 });
+    AssertEqual(config.MaxDevelopmentForTier(1), smallHouse.DevelopmentLevel);
+    AssertTrue(smallHouse.DevelopmentLevel < top / 2, "a Trap House cannot come away running a Penthouse's corner");
+
+    // Half-finished work never survives the ground changing hands: the money went when it started.
+    var interrupted = new Territory { Type = "corner", DevelopmentLevel = 2, DevelopingToLevel = 3, DevelopmentCompletesAtUtc = DateTime.UtcNow.AddHours(1) };
+    service.Transfer(interrupted, Guid.NewGuid(), 10, DateTime.UtcNow, new Hideout { Tier = 4 });
+    AssertTrue(interrupted.DevelopingToLevel is null, "work in progress does not change hands");
+    AssertTrue(interrupted.DevelopmentCompletesAtUtc is null, "and neither does its clock");
+
+    // Work lands on the clock and not a moment before it.
+    var building = new Territory { Type = "dock", DevelopingToLevel = 1, DevelopmentCompletesAtUtc = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc) };
+    AssertTrue(!TerritoryService.CompleteDevelopment(building, new DateTime(2026, 8, 10, 11, 59, 0, DateTimeKind.Utc)), "unfinished work is unfinished");
+    AssertEqual(0, building.DevelopmentLevel);
+    AssertTrue(TerritoryService.CompleteDevelopment(building, new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc)), "and lands when its timer runs out");
+    AssertEqual(1, building.DevelopmentLevel);
+    AssertTrue(building.DevelopingToLevel is null, "the build clears itself");
+}
+
+/// <summary>
+/// The purchase itself: what it takes, when it lands, and the ways it is refused. Run against a
+/// database because the ground is a row and the rules read the rest of the map.
+/// </summary>
+static void WorkingGroundUpIsPaidForUpFront()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var config = options.Territory;
+    var service = new TerritoryService(world.Db, Snapshot(options));
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var holder = world.Member("Holder", thugs: 20, cash: 100_000);
+    holder.BankCash = 5_000_000;
+    holder.Turns = 200;
+    holder.Hideout!.Tier = 2;
+
+    var ground = new Territory { City = "Detroit", Name = "The Docks", Type = "dock", HolderId = holder.Id, GarrisonThugs = 10 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+
+    var first = config.Development.Single(x => x.Level == 1);
+    var (_, level, fromBank) = service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult();
+
+    // Paid out of the bank first, like every other purchase priced past what a safe holds.
+    AssertEqual(first.Level, level.Level);
+    AssertEqual(first.Cost, fromBank);
+    AssertEqual(5_000_000 - first.Cost, holder.BankCash);
+    AssertEqual(100_000, holder.Cash);
+    AssertEqual(200 - first.Turns, holder.Turns);
+
+    // And the ground is worth what it was worth until the work lands, which is the same bargain a
+    // hideout tier makes.
+    AssertEqual(0, ground.DevelopmentLevel);
+    AssertEqual(first.Level, ground.DevelopingToLevel);
+    AssertEqual(now.AddMinutes(first.BuildMinutes), ground.DevelopmentCompletesAtUtc);
+
+    // One job at a time on one piece.
+    AssertRuleError(() => service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult(),
+        "starting a second job on ground already being worked");
+
+    TerritoryService.CompleteDevelopment(ground, now.AddMinutes(first.BuildMinutes));
+    AssertEqual(first.Level, ground.DevelopmentLevel);
+
+    // The tier gate is real: a Warehouse cannot reach a rung the Nightclub unlocks.
+    var gated = config.Development.First(x => x.MinTier > 2);
+    ground.DevelopmentLevel = gated.Level - 1;
+    AssertRuleError(() => service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult(),
+        "reaching past what the building allows");
+
+    // Nobody works up ground they do not hold.
+    var stranger = world.Member("Stranger", cash: 50_000_000);
+    stranger.Hideout!.Tier = 4;
+    stranger.Turns = 200;
+    AssertRuleError(() => service.DevelopAsync(stranger, ground.Id, now, default).GetAwaiter().GetResult(),
+        "working up somebody else's ground");
+
+    // Walking away is walking away from all of it, half-finished work included.
+    ground.DevelopmentLevel = 2;
+    ground.DevelopingToLevel = 3;
+    ground.DevelopmentCompletesAtUtc = now.AddHours(2);
+    var (given, gaveUp) = service.SetGarrisonAsync(holder, ground.Id, 0, null, default).GetAwaiter().GetResult();
+    AssertTrue(gaveUp, "dropping under the minimum gives the ground up");
+    AssertEqual(0, given.DevelopmentLevel);
+    AssertTrue(given.DevelopingToLevel is null, "and takes the unfinished work with it");
 }
 
 /// <summary>

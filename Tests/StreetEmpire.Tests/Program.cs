@@ -80,6 +80,8 @@ var tests = new (string Name, Action Test)[]
     ("the first tier always has something worth saving for", TheFirstTierHasNoDeadZone),
     ("a crew too big for a full shift is told the shorter one", ShortShiftsAreASupplyAnswer),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
+    ("ground is worth what has been put into it", GroundIsWorthWhatWasPutIntoIt),
+    ("working ground up costs money, turns and time", WorkingGroundUpIsPaidForUpFront),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
@@ -5337,6 +5339,146 @@ static void TerritoryEffectsAddUp()
     // The tier ladder gains a second meaning: how much ground you may run at once.
     AssertEqual(1, service.HoldingCapFor(new Hideout { Tier = 1 }));
     AssertEqual(4, service.HoldingCapFor(new Hideout { Tier = 4 }));
+}
+
+/// <summary>
+/// The whole point of development: a piece of ground is worth what somebody has put into it, and what
+/// they put in is a thing another player can come and take a share of.
+/// </summary>
+static void GroundIsWorthWhatWasPutIntoIt()
+{
+    var options = Resolve(new GameOptions());
+    var service = CreateTerritories(options);
+    var config = options.Territory;
+
+    Territory Ground(string type, int level = 0) => new() { Type = type, DevelopmentLevel = level };
+
+    // Bare ground reads exactly as it did before any of this existed, which is what stops the change
+    // rewriting every map in play.
+    AssertEqual(15, service.EffectsFor([Ground("corner")]).StreetIncomePercent);
+    AssertEqual(1.0, config.DevelopmentMultiplier(0));
+    AssertEqual(0, config.DevelopmentDefencePercent(0));
+
+    // And the top of the ladder is worth double, on every type, without any of them being special-cased.
+    var top = config.Development.Max(x => x.Level);
+    AssertEqual(30, service.EffectsFor([Ground("corner", top)]).StreetIncomePercent);
+    AssertEqual(40, service.EffectsFor([Ground("dock", top)]).ProductionYieldPercent);
+    AssertEqual(100, service.EffectsFor([Ground("club", top)]).MoraleRecoveryPercent);
+    AssertEqual(40, service.EffectsFor([Ground("stash", top)]).LootPercent);
+
+    // The ladder only ever climbs, in what it is worth, what it costs and what it defends with.
+    var rungs = config.Development.OrderBy(x => x.Level).ToList();
+    AssertTrue(rungs.Count >= 3, "a ladder worth months needs rungs");
+    for (var i = 1; i < rungs.Count; i++)
+    {
+        AssertTrue(rungs[i].EffectPercent > rungs[i - 1].EffectPercent, $"level {rungs[i].Level} is worth more");
+        AssertTrue(rungs[i].Cost > rungs[i - 1].Cost, $"level {rungs[i].Level} costs more");
+        AssertTrue(rungs[i].DefencePercent > rungs[i - 1].DefencePercent, $"level {rungs[i].Level} defends better");
+        AssertTrue(rungs[i].MinTier >= rungs[i - 1].MinTier, $"level {rungs[i].Level} never unlocks earlier");
+    }
+
+    // Priced to be months rather than an evening. The whole ladder on one piece costs several times
+    // the biggest building in the game, which is the only reason the map is worth anything long term.
+    var wholeLadder = rungs.Sum(x => x.Cost);
+    var biggestBuilding = options.Hideout.Tiers.Max(x => x.UpgradeCost);
+    AssertTrue(wholeLadder > biggestBuilding * 4,
+        $"one maxed piece should dwarf the top building: {wholeLadder:N0} against {biggestBuilding:N0}");
+
+    // A building can only run what it could have built, which is what a captured piece is cut down to.
+    AssertTrue(config.MaxDevelopmentForTier(1) < config.MaxDevelopmentForTier(4), "the tier ladder gates the ground ladder");
+    AssertEqual(top, config.MaxDevelopmentForTier(options.Hideout.Tiers.Max(x => x.Level)));
+
+    // Taking it keeps half and wrecks the rest, and never leaves the winner running more than their
+    // own house could have built.
+    var won = new Territory { Type = "corner", DevelopmentLevel = top, GarrisonThugs = 20 };
+    service.Transfer(won, Guid.NewGuid(), 20, DateTime.UtcNow, new Hideout { Tier = 4 });
+    AssertEqual(top / 2, won.DevelopmentLevel);
+
+    var smallHouse = new Territory { Type = "corner", DevelopmentLevel = top, GarrisonThugs = 20 };
+    service.Transfer(smallHouse, Guid.NewGuid(), 20, DateTime.UtcNow, new Hideout { Tier = 1 });
+    AssertEqual(config.MaxDevelopmentForTier(1), smallHouse.DevelopmentLevel);
+    AssertTrue(smallHouse.DevelopmentLevel < top / 2, "a Trap House cannot come away running a Penthouse's corner");
+
+    // Half-finished work never survives the ground changing hands: the money went when it started.
+    var interrupted = new Territory { Type = "corner", DevelopmentLevel = 2, DevelopingToLevel = 3, DevelopmentCompletesAtUtc = DateTime.UtcNow.AddHours(1) };
+    service.Transfer(interrupted, Guid.NewGuid(), 10, DateTime.UtcNow, new Hideout { Tier = 4 });
+    AssertTrue(interrupted.DevelopingToLevel is null, "work in progress does not change hands");
+    AssertTrue(interrupted.DevelopmentCompletesAtUtc is null, "and neither does its clock");
+
+    // Work lands on the clock and not a moment before it.
+    var building = new Territory { Type = "dock", DevelopingToLevel = 1, DevelopmentCompletesAtUtc = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc) };
+    AssertTrue(!TerritoryService.CompleteDevelopment(building, new DateTime(2026, 8, 10, 11, 59, 0, DateTimeKind.Utc)), "unfinished work is unfinished");
+    AssertEqual(0, building.DevelopmentLevel);
+    AssertTrue(TerritoryService.CompleteDevelopment(building, new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc)), "and lands when its timer runs out");
+    AssertEqual(1, building.DevelopmentLevel);
+    AssertTrue(building.DevelopingToLevel is null, "the build clears itself");
+}
+
+/// <summary>
+/// The purchase itself: what it takes, when it lands, and the ways it is refused. Run against a
+/// database because the ground is a row and the rules read the rest of the map.
+/// </summary>
+static void WorkingGroundUpIsPaidForUpFront()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var config = options.Territory;
+    var service = new TerritoryService(world.Db, Snapshot(options));
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var holder = world.Member("Holder", thugs: 20, cash: 100_000);
+    holder.BankCash = 5_000_000;
+    holder.Turns = 200;
+    holder.Hideout!.Tier = 2;
+
+    var ground = new Territory { City = "Detroit", Name = "The Docks", Type = "dock", HolderId = holder.Id, GarrisonThugs = 10 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+
+    var first = config.Development.Single(x => x.Level == 1);
+    var (_, level, fromBank) = service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult();
+
+    // Paid out of the bank first, like every other purchase priced past what a safe holds.
+    AssertEqual(first.Level, level.Level);
+    AssertEqual(first.Cost, fromBank);
+    AssertEqual(5_000_000 - first.Cost, holder.BankCash);
+    AssertEqual(100_000, holder.Cash);
+    AssertEqual(200 - first.Turns, holder.Turns);
+
+    // And the ground is worth what it was worth until the work lands, which is the same bargain a
+    // hideout tier makes.
+    AssertEqual(0, ground.DevelopmentLevel);
+    AssertEqual(first.Level, ground.DevelopingToLevel);
+    AssertEqual(now.AddMinutes(first.BuildMinutes), ground.DevelopmentCompletesAtUtc);
+
+    // One job at a time on one piece.
+    AssertRuleError(() => service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult(),
+        "starting a second job on ground already being worked");
+
+    TerritoryService.CompleteDevelopment(ground, now.AddMinutes(first.BuildMinutes));
+    AssertEqual(first.Level, ground.DevelopmentLevel);
+
+    // The tier gate is real: a Warehouse cannot reach a rung the Nightclub unlocks.
+    var gated = config.Development.First(x => x.MinTier > 2);
+    ground.DevelopmentLevel = gated.Level - 1;
+    AssertRuleError(() => service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult(),
+        "reaching past what the building allows");
+
+    // Nobody works up ground they do not hold.
+    var stranger = world.Member("Stranger", cash: 50_000_000);
+    stranger.Hideout!.Tier = 4;
+    stranger.Turns = 200;
+    AssertRuleError(() => service.DevelopAsync(stranger, ground.Id, now, default).GetAwaiter().GetResult(),
+        "working up somebody else's ground");
+
+    // Walking away is walking away from all of it, half-finished work included.
+    ground.DevelopmentLevel = 2;
+    ground.DevelopingToLevel = 3;
+    ground.DevelopmentCompletesAtUtc = now.AddHours(2);
+    var (given, gaveUp) = service.SetGarrisonAsync(holder, ground.Id, 0, null, default).GetAwaiter().GetResult();
+    AssertTrue(gaveUp, "dropping under the minimum gives the ground up");
+    AssertEqual(0, given.DevelopmentLevel);
+    AssertTrue(given.DevelopingToLevel is null, "and takes the unfinished work with it");
 }
 
 /// <summary>

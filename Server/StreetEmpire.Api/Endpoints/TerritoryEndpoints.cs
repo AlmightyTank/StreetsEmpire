@@ -67,7 +67,8 @@ internal static class TerritoryEndpoints
                 cityControl is null
                     ? null
                     : new AllianceCityControlResponse(cityControl.City, cityControl.Territories, cityControl.BonusThugs),
-                all.Select(x => Describe(x, player, territories, pimps, now, mine.Count, cap, free, config)).ToList()));
+                Ladder(gameOptions.Value, player),
+                all.Select(x => Describe(x, player, territories, pimps, now, mine.Count, cap, free, config, gameOptions.Value)).ToList()));
         }).RequireAuthorization();
 
 
@@ -128,6 +129,44 @@ internal static class TerritoryEndpoints
                     ["territoryId"] = ground.Id,
                     ["garrison"] = ground.GarrisonThugs,
                     ["gaveUp"] = gaveUp
+                }));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        // Money into the ground rather than into the building. The only sink in the game priced to be
+        // months, and the only one somebody else can come and take a share of.
+        app.MapPost("/api/game/territories/develop", async (
+            TerritoryDevelopRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            TerritoryService territories,
+            PlayerClock clock,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var (ground, level, fromBank) = await territories.DevelopAsync(player, request.TerritoryId, now, ct);
+                var summary = $"Started working {ground.Name} up to {level.Name} for {level.Cost:C0}.";
+                AddLog(db, player, before, "GROUND", level.Turns, summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
+                {
+                    ["territoryId"] = ground.Id,
+                    ["level"] = level.Level,
+                    ["cost"] = level.Cost,
+                    ["paidFromBank"] = fromBank,
+                    ["completesAtUtc"] = ground.DevelopmentCompletesAtUtc
                 }));
             }
             catch (GameRuleException ex)
@@ -203,7 +242,8 @@ internal static class TerritoryEndpoints
         int held,
         int cap,
         int freeThugs,
-        TerritoryOptions config)
+        TerritoryOptions config,
+        GameOptions options)
     {
         var type = territories.TypeOf(ground.Type);
         var mine = ground.HolderId == player.Id;
@@ -217,13 +257,18 @@ internal static class TerritoryEndpoints
         else if (ground.HolderId is null && player.Turns < config.ClaimTurnCost) blocked = $"Claiming takes {config.ClaimTurnCost} turns.";
         else if (ground.HolderId is not null && held >= cap) blocked = $"You already run {held} of {cap} pieces of ground.";
 
+        // Only ever offered on your own ground, and only the rung immediately above what is standing.
+        // A ladder shown against somebody else's corner would be a price list for a thing you cannot buy.
+        var next = mine ? config.DevelopmentAfter(ground.DevelopmentLevel) : null;
+        var tier = player.Hideout?.Tier ?? 1;
+
         return new TerritoryResponse(
             ground.Id,
             ground.Name,
             ground.City,
             ground.Type,
             type?.Label ?? ground.Type,
-            DescribeEffect(type),
+            DescribeEffect(type, config.DevelopmentMultiplier(ground.DevelopmentLevel)),
             ground.HolderId,
             ground.Holder?.Name,
             mine,
@@ -233,18 +278,85 @@ internal static class TerritoryEndpoints
             ground.HeldSinceUtc,
             settled,
             ground.ProtectedUntilUtc,
+            ground.DevelopmentLevel,
+            territories.DevelopmentName(ground.DevelopmentLevel),
+            config.DevelopmentAt(ground.DevelopmentLevel)?.EffectPercent ?? 0,
+            config.DevelopmentDefencePercent(ground.DevelopmentLevel),
+            next is null
+                ? null
+                : new TerritoryDevelopmentUpgradeResponse(
+                    next.Level,
+                    next.Name,
+                    next.Cost,
+                    next.Turns,
+                    next.BuildMinutes,
+                    next.EffectPercent,
+                    next.DefencePercent,
+                    next.MinTier,
+                    TierName(options, next.MinTier),
+                    next.MinTier > tier,
+                    BaseEffect(type, config.DevelopmentMultiplier(ground.DevelopmentLevel)),
+                    BaseEffect(type, config.DevelopmentMultiplier(next.Level))),
+            ground is { DevelopingToLevel: { } building, DevelopmentCompletesAtUtc: { } due }
+                ? new TerritoryDevelopmentBuildResponse(
+                    building,
+                    territories.DevelopmentName(building),
+                    due,
+                    Math.Max(0, (int)Math.Ceiling((due - nowUtc).TotalSeconds)))
+                : null,
             CanClaim: !mine && ground.HolderId is null && blocked is null,
             CanRaid: !mine && ground.HolderId is not null && blocked is null,
             blocked);
     }
 
-    private static string DescribeEffect(TerritoryTypeOptions? type)
+    /// <summary>
+    /// The whole ladder, marked with what this player's building can currently reach. Shown in full
+    /// rather than one rung at a time because it is the only thing in the game that takes months, and
+    /// a months-long climb nobody can see the shape of is not a goal, it is a surprise.
+    /// </summary>
+    private static List<TerritoryDevelopmentRungResponse> Ladder(GameOptions options, Player player)
+    {
+        var tier = player.Hideout?.Tier ?? 1;
+        return options.Territory.Development
+            .OrderBy(x => x.Level)
+            .Select(x => new TerritoryDevelopmentRungResponse(
+                x.Level,
+                x.Name,
+                x.Cost,
+                x.Turns,
+                x.BuildMinutes,
+                x.EffectPercent,
+                x.DefencePercent,
+                x.MinTier,
+                TierName(options, x.MinTier),
+                x.MinTier <= tier))
+            .ToList();
+    }
+
+    private static string TierName(GameOptions options, int tier)
+        => options.Hideout.Tiers.FirstOrDefault(x => x.Level == tier)?.Name ?? $"tier {tier}";
+
+    /// <summary>The type's own effect, scaled by what has been put into the ground.</summary>
+    private static int BaseEffect(TerritoryTypeOptions? type, double multiplier)
+    {
+        if (type is null) return 0;
+        var percent = Math.Max(
+            Math.Max(type.StreetIncomePercent, type.ProductionYieldPercent),
+            Math.Max(type.MoraleRecoveryPercent, type.LootPercent));
+        return (int)Math.Round(percent * multiplier, MidpointRounding.AwayFromZero);
+    }
+
+    private static string DescribeEffect(TerritoryTypeOptions? type, double multiplier)
     {
         if (type is null) return "No effect.";
-        if (type.StreetIncomePercent > 0) return $"+{type.StreetIncomePercent}% street income";
-        if (type.ProductionYieldPercent > 0) return $"+{type.ProductionYieldPercent}% production yield";
-        if (type.MoraleRecoveryPercent > 0) return $"+{type.MoraleRecoveryPercent}% passive morale recovery";
-        if (type.LootPercent > 0) return $"+{type.LootPercent}% haul from raids";
+        // Read off the developed number rather than the table's, or a corner somebody has spent
+        // months on would advertise the fifteen percent it was worth on the day they took it.
+        static int Worked(int percent, double multiplier)
+            => (int)Math.Round(percent * multiplier, MidpointRounding.AwayFromZero);
+        if (type.StreetIncomePercent > 0) return $"+{Worked(type.StreetIncomePercent, multiplier)}% street income";
+        if (type.ProductionYieldPercent > 0) return $"+{Worked(type.ProductionYieldPercent, multiplier)}% production yield";
+        if (type.MoraleRecoveryPercent > 0) return $"+{Worked(type.MoraleRecoveryPercent, multiplier)}% passive morale recovery";
+        if (type.LootPercent > 0) return $"+{Worked(type.LootPercent, multiplier)}% haul from raids";
         return "No effect.";
     }
 }

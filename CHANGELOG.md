@@ -3,6 +3,45 @@
 ## 0.2.7 (in progress)
 
 ### Added
+- **Ground can be worked up now, and what somebody has put into a corner is the thing worth taking it
+  for.** There are forty-eight pieces on the map and every one of them was a switch: take it, garrison
+  it, lose it. A corner paid the same fifteen percent on the day it was claimed as it did a season
+  later, there was nothing to spend on it, and a player at the top of the tier ladder held their four
+  pieces and was finished with the map for good. `HeldSinceUtc` was written down and read by nothing.
+- Five levels, and the money goes into the ground rather than into the building: $150,000, then
+  $600,000, then $2.4M, $9M and $30M, each with turns and a build timer against it, each gated behind
+  a hideout tier the way the rooms are. A maxed piece is forty-two million against seven for the
+  biggest building in the game, and four of them is a hundred and seventy. That is deliberate and it
+  is the point - it is the first thing here priced in months rather than evenings, and the top rungs
+  are trophies with a poor return in exactly the way the late hideout rooms already are.
+- What it buys is what the ground does. Every level raises the type's own effect, and the whole ladder
+  doubles it: a maxed corner runs at 30% street income rather than 15, a maxed club at 100% morale
+  recovery rather than 50. Nothing new was invented to pay out - it is still a percentage on an
+  activity somebody spends turns on, which is the rule the map has always had.
+- **The level belongs to the ground, not to whoever is standing on it**, and that is the whole
+  mechanic. A raid finally has a target that is not simply the biggest house in town, and the map reads
+  as a set of prizes worth different amounts rather than forty-eight identical switches. What a rival
+  has put into a corner is shown on it for the same reason: hiding it would leave every raid a guess
+  about the only number that decides whether the trip is worth taking.
+- What survives being taken is **half, rounded down, and never more than the winner's own building
+  could have built**. Whole would make taking ground strictly cheaper than working it up and nobody
+  would build anything; nothing at all would mean contested ground never gets developed either, because
+  a player would only invest where they were already safe and one lost raid would wipe out months. Half
+  leaves both worth doing: the attacker gets a head start on a ladder they still have to climb, and the
+  loser loses enough that defending it mattered. A Trap House that beats a Penthouse off its corner
+  comes away running what a Trap House can run, and no more.
+- Development defends itself, which is what stops all of this being a target painted on its owner's
+  back. Each level adds to the garrison standing on the ground, up to half again on a maxed piece, on
+  the same bonus an Enforcer posted there uses. Rivals read that number before they pick a fight, so a
+  worked-up corner turns raids away rather than only losing more when one lands.
+- Walking away razes it. Pull the garrison and the ground goes back to being ground - otherwise a
+  developed piece could be parked for somebody else to walk onto, which is a way of handing an empire's
+  money to a friend without either of them fighting for it. Work half-finished when the ground changes
+  hands or is given up is lost too: the money went when the work started.
+- Rivals work their ground up on the same ladder once they have no room for more, breadth first and
+  then depth, spending only what is over the reserve that keeps their house standing. A town where the
+  only developed corner is the player's own is a town where half of this only ever points one way.
+
 - **The law takes people off the street.** Working a shift had no downside event at all. It draws heat,
   but heat only ever answered for what was held, so a house holding nothing worked for ever at no risk.
   A sweep can now pick up hoes, thugs, and occasionally a pimp by name, and they sit in a cell with six

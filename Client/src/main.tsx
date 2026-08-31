@@ -3089,6 +3089,39 @@ function TerritoryPage(ctx: PageContext) {
     </section>
 
     <section className="card p-3 gcol-full">
+      <div className="panel-title">
+        <h2>Working Ground Up</h2>
+        <span>{board.developmentLadder.length} levels</span>
+      </div>
+      {/* Shown whole rather than a rung at a time. This is the one climb in the game measured in
+          months, and a months-long climb whose shape nobody can see is not a goal, it is a surprise. */}
+      <p>
+        Money goes into the ground itself, not into your building, and it stays with the ground. Every
+        level raises what a piece is worth and how hard the crew standing on it fights for it. It also
+        makes the piece worth taking: whoever beats you off it keeps <strong>half</strong> of what you
+        put in, rounded down, and never more than their own building could have built. Walk away from a
+        piece and all of it is gone.
+      </p>
+      <div className="d-grid gtc-fill-268 gap-2 mt-3">
+        {board.developmentLadder.map(rung => <div
+          className={`d-grid gap-1 align-content-start border rounded p-3 ${rung.reachable ? 'bg-body-tertiary' : 'bg-body-secondary opacity-75'}`}
+          key={rung.level}
+        >
+          <div className="d-flex justify-content-between align-items-baseline gap-2">
+            <strong className="text-body">{rung.name}</strong>
+            <em className="eyebrow fst-normal">Level {rung.level}</em>
+          </div>
+          <span className="text-warning-emphasis small">+{rung.effectPercent}% on what the ground does</span>
+          <span className="text-success-emphasis small">+{rung.defencePercent}% to the garrison holding it</span>
+          <span className="text-body-secondary small">
+            {money.format(rung.cost)} and {rung.turns} turns, {rung.buildMinutes >= 60 ? `${Math.round(rung.buildMinutes / 60)} hour(s)` : `${rung.buildMinutes} minutes`} of work.
+          </span>
+          {!rung.reachable && <small className="text-body-tertiary small">Needs the {rung.requiredTierName}.</small>}
+        </div>)}
+      </div>
+    </section>
+
+    <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>The Map</h2><span>{board.territories.length} pieces in {board.city}</span></div>
       <div className="d-grid gtc-fill-268 gap-2 mt-3">
         {board.territories.map(t => <div
@@ -3109,6 +3142,15 @@ function TerritoryPage(ctx: PageContext) {
           {t.garrisonPimpName && <span className="text-success-emphasis small">
             Run by {t.garrisonPimpName}{t.garrisonBonusPercent > 0 ? ` (+${t.garrisonBonusPercent}% defence)` : ''}
           </span>}
+          {/* Shown on anybody's ground. What a rival has put into a corner is exactly the thing that
+              decides whether it is worth crossing town for, and hiding it would leave every raid a
+              guess about the only number that matters. */}
+          {t.developmentLevel > 0 && <span className="text-info-emphasis small">
+            {t.developmentName} ground{t.developmentDefencePercent > 0 ? `, +${t.developmentDefencePercent}% to whoever holds it` : ''}
+          </span>}
+          {t.developing && <small className="text-warning small">
+            Work under way: {t.developing.name} in {timeUntil(t.developing.completesAtUtc)}
+          </small>}
           {t.isProtected && t.protectedUntilUtc && <small className="text-body-tertiary small">Settled for {timeUntil(t.protectedUntilUtc)}</small>}
           {t.blockedReason && <small className="text-body-tertiary small">{t.blockedReason}</small>}
           <div className="territory-actions d-flex flex-wrap align-items-end gap-1 mt-1">
@@ -3132,6 +3174,26 @@ function TerritoryPage(ctx: PageContext) {
               <button className="btn btn-secondary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
               <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</button>
             </>}
+            {/* Priced, gated and timed on the button itself. A greyed control with no reason on it is
+                the thing players come back to ask about, and this one is greyed for four different
+                reasons. */}
+            {t.heldByYou && !t.developing && t.nextDevelopment && <button
+              className="btn btn-primary btn-sm w-100"
+              disabled={busy
+                || t.nextDevelopment.tierLocked
+                || dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
+                || dashboard.turns < t.nextDevelopment.turns}
+              title={`${t.nextDevelopment.effectNow}% now, ${t.nextDevelopment.effectAfter}% once it lands`}
+              onClick={() => void run(() => api.developTerritory(t.id))}
+            >
+              {t.nextDevelopment.tierLocked
+                ? `${t.nextDevelopment.name} needs the ${t.nextDevelopment.requiredTierName}`
+                : dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
+                  ? `${t.nextDevelopment.name}: ${money.format(t.nextDevelopment.cost)}`
+                  : dashboard.turns < t.nextDevelopment.turns
+                    ? `${t.nextDevelopment.turns} turns and you have ${dashboard.turns}`
+                    : `Work up to ${t.nextDevelopment.name} (${money.format(t.nextDevelopment.cost)})`}
+            </button>}
             {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
             {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxRaidThugs} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
           </div>

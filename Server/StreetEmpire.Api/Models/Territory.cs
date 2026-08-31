@@ -43,6 +43,30 @@ public sealed class Territory
     public DateTime? HeldSinceUtc { get; set; }
 
     /// <summary>
+    /// How far this ground has been worked up, and what it is worth because of it.
+    ///
+    /// It belongs to the ground rather than to whoever is standing on it, which is the point of the
+    /// whole mechanic: a corner somebody has spent months on is worth crossing a town for, and a raid
+    /// finally has a target that is not simply the biggest house in the city. What the winner keeps of
+    /// it is decided in <see cref="Services.TerritoryService.Transfer"/> - half, and never more than
+    /// their own building could have built.
+    ///
+    /// Zero is bare ground and what every piece on the map starts as.
+    /// </summary>
+    public int DevelopmentLevel { get; set; }
+
+    /// <summary>
+    /// The level being built and when it lands, set together or not at all. Same shape as a hideout
+    /// tier build and for the same reason: the money goes now and the ground is worth what it was
+    /// worth until the work finishes, so nobody buys their way past a level the moment it is threatened.
+    ///
+    /// A build does not survive the ground changing hands or being walked away from. The money spent on
+    /// it is gone either way, which is what makes developing ground you cannot hold a bad idea.
+    /// </summary>
+    public int? DevelopingToLevel { get; set; }
+    public DateTime? DevelopmentCompletesAtUtc { get; set; }
+
+    /// <summary>
     /// Set when the ground changes hands. Without it two players trade the same corner every time
     /// their lanes come free, which is a different problem from the wealth farming anti-farm covers.
     /// </summary>

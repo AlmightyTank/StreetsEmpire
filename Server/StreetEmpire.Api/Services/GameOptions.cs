@@ -1146,6 +1146,44 @@ public sealed class TerritoryOptions
     /// <summary>How many pieces of ground each hideout tier can hold at once.</summary>
     public List<TerritoryTierCapOptions> TierCaps { get; set; } = [];
 
+    /// <summary>
+    /// The ladder a piece of ground can be worked up. Empty here for the same reason every other table
+    /// is: the binder appends rather than replaces.
+    /// </summary>
+    public List<TerritoryDevelopmentOptions> Development { get; set; } = [];
+
+    /// <summary>The rung this ground is standing on, or null for ground nobody has put anything into.</summary>
+    public TerritoryDevelopmentOptions? DevelopmentAt(int level)
+        => level <= 0 ? null : Development.FirstOrDefault(x => x.Level == level);
+
+    /// <summary>The next rung up, or null at the top of the ladder.</summary>
+    public TerritoryDevelopmentOptions? DevelopmentAfter(int level)
+        => Development.FirstOrDefault(x => x.Level == level + 1);
+
+    /// <summary>
+    /// The highest rung a building of this size is allowed to run, which is what a captured piece of
+    /// ground is cut down to when the winner's house is smaller than the loser's was.
+    /// </summary>
+    public int MaxDevelopmentForTier(int tier)
+    {
+        var best = 0;
+        foreach (var level in Development)
+            if (level.MinTier <= tier && level.Level > best)
+                best = level.Level;
+        return best;
+    }
+
+    /// <summary>
+    /// What this ground multiplies its type's effect by. One for bare ground, so every piece on the
+    /// map reads exactly as it did before anybody spent anything.
+    /// </summary>
+    public double DevelopmentMultiplier(int level)
+        => 1 + Math.Max(0, DevelopmentAt(level)?.EffectPercent ?? 0) / 100.0;
+
+    /// <summary>What the work adds to the garrison standing on it, as a percentage of their strength.</summary>
+    public int DevelopmentDefencePercent(int level)
+        => Math.Max(0, DevelopmentAt(level)?.DefencePercent ?? 0);
+
     public List<TerritoryTypeOptions> Types { get; set; } = [];
     public List<TerritoryCityControlOptions> CityControl { get; set; } = [];
     public List<TerritorySeedOptions> Map { get; set; } = [];
@@ -1159,6 +1197,35 @@ public sealed class TerritoryOptions
                 new TerritoryTierCapOptions { Tier = 2, MaxTerritories = 2 },
                 new TerritoryTierCapOptions { Tier = 3, MaxTerritories = 3 },
                 new TerritoryTierCapOptions { Tier = 4, MaxTerritories = 4 }
+            ];
+
+        // The ladder a piece of ground is worked up, and the only thing in the game priced to be
+        // months rather than days.
+        //
+        // A corner was worth the same fifteen percent on the day it was taken as it was a season
+        // later, and a player at the top of the tier ladder held their four pieces and was finished
+        // with the map for good. There was nothing to put money into and nothing to come and take.
+        //
+        // The prices are deliberately steep at the top and the return there is deliberately poor -
+        // the same thing the late hideout rooms are, and said out loud there too: they exist to absorb
+        // money from players who have run out of things to buy. Forty-two million for one maxed piece
+        // against seven for the biggest building in the game, and the whole ladder doubles what the
+        // ground is worth rather than multiplying it out of sight.
+        //
+        // The defence percentages are what stops all of that being a target painted on a player's own
+        // back. Money in the ground buys some of the reason you get to keep it, and a fully worked
+        // piece fights at half again what bare ground does.
+        //
+        // Tier-gated like the hideout rooms, so the map's depth opens at the same pace as everything
+        // else, and a building that could never have built a level is never left holding one.
+        if (Development.Count == 0)
+            Development =
+            [
+                new TerritoryDevelopmentOptions { Level = 1, Name = "Staked Out", MinTier = 1, Cost = 150_000, Turns = 10, BuildMinutes = 30, EffectPercent = 20, DefencePercent = 8 },
+                new TerritoryDevelopmentOptions { Level = 2, Name = "Established", MinTier = 2, Cost = 600_000, Turns = 20, BuildMinutes = 120, EffectPercent = 40, DefencePercent = 16 },
+                new TerritoryDevelopmentOptions { Level = 3, Name = "Entrenched", MinTier = 3, Cost = 2_400_000, Turns = 40, BuildMinutes = 360, EffectPercent = 60, DefencePercent = 24 },
+                new TerritoryDevelopmentOptions { Level = 4, Name = "Locked Down", MinTier = 4, Cost = 9_000_000, Turns = 60, BuildMinutes = 720, EffectPercent = 80, DefencePercent = 32 },
+                new TerritoryDevelopmentOptions { Level = 5, Name = "Untouchable", MinTier = 4, Cost = 30_000_000, Turns = 90, BuildMinutes = 1_440, EffectPercent = 100, DefencePercent = 40 }
             ];
 
         // Every effect is a percentage on an activity the player still spends turns on. Nothing here
@@ -1252,6 +1319,33 @@ public sealed class TerritoryOptions
                 new TerritorySeedOptions { Name = "Acres Home Stash", City = "Houston", Type = "stash" }
             ];
     }
+}
+
+/// <summary>
+/// One rung of the development ladder. The percentages are what the ground is worth standing on this
+/// rung rather than what this rung adds, so a level reads on its own without summing the ones below.
+/// </summary>
+public sealed class TerritoryDevelopmentOptions
+{
+    public int Level { get; set; }
+
+    /// <summary>What this rung is called, which is what the map shows instead of a number.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The hideout tier it takes to build it, and to be left holding it after a raid.</summary>
+    public int MinTier { get; set; } = 1;
+
+    public long Cost { get; set; }
+    public int Turns { get; set; }
+
+    /// <summary>How long the work takes. The ground is worth what it was worth until it lands.</summary>
+    public int BuildMinutes { get; set; }
+
+    /// <summary>What the ground adds to its type's effect at this level, as a percentage of it.</summary>
+    public int EffectPercent { get; set; }
+
+    /// <summary>What it adds to the garrison defending it.</summary>
+    public int DefencePercent { get; set; }
 }
 
 public sealed class TerritoryTierCapOptions

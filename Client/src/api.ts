@@ -1582,6 +1582,8 @@ export const api = {
     request<ActionResult>('/api/game/territories/claim', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
   setGarrison: (territoryId: number, thugs: number, pimpId: number | null) =>
     request<ActionResult>('/api/game/territories/garrison', { method: 'POST', body: JSON.stringify({ territoryId, thugs, pimpId }) }),
+  developTerritory: (territoryId: number) =>
+    request<ActionResult>('/api/game/territories/develop', { method: 'POST', body: JSON.stringify({ territoryId }) }),
   raidTerritory: (territoryId: number, thugs: number, weapons: number) =>
     request<ActionResult>('/api/game/territories/raid', { method: 'POST', body: JSON.stringify({ territoryId, thugs, weapons }) }),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
@@ -1804,9 +1806,55 @@ export type Territory = {
   heldSinceUtc?: string | null
   isProtected: boolean
   protectedUntilUtc?: string | null
+  /** How far this ground has been worked up. Zero is bare ground. */
+  developmentLevel: number
+  developmentName: string
+  developmentEffectPercent: number
+  developmentDefencePercent: number
+  /** The next rung. Only ever sent for ground you hold. */
+  nextDevelopment?: TerritoryDevelopmentUpgrade | null
+  /** Work under way, on anybody's ground: a piece mid-build is a window. */
+  developing?: TerritoryDevelopmentBuild | null
   canClaim: boolean
   canRaid: boolean
   blockedReason?: string | null
+}
+
+export type TerritoryDevelopmentUpgrade = {
+  level: number
+  name: string
+  cost: number
+  turns: number
+  buildMinutes: number
+  effectPercent: number
+  defencePercent: number
+  requiredTier: number
+  requiredTierName: string
+  tierLocked: boolean
+  /** What the piece is worth now, and what it would be worth on the next rung. */
+  effectNow: number
+  effectAfter: number
+}
+
+export type TerritoryDevelopmentBuild = {
+  level: number
+  name: string
+  completesAtUtc: string
+  secondsRemaining: number
+}
+
+export type TerritoryDevelopmentRung = {
+  level: number
+  name: string
+  cost: number
+  turns: number
+  buildMinutes: number
+  effectPercent: number
+  defencePercent: number
+  requiredTier: number
+  requiredTierName: string
+  /** Whether the building this player runs can reach this rung at all yet. */
+  reachable: boolean
 }
 
 export type MarketListing = {
@@ -1855,6 +1903,7 @@ export type TerritoryBoard = {
     lootPercent: number
   }
   allianceCityControl?: AllianceCityControl | null
+  developmentLadder: TerritoryDevelopmentRung[]
   territories: Territory[]
 }
 

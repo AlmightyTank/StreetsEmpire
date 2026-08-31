@@ -381,6 +381,9 @@ public sealed record MarketGoodResponse(
     long? BestPrice);
 
 public sealed record TerritoryClaimRequest(long TerritoryId, int Thugs, long? PimpId = null);
+/// <summary>Which piece of ground to put the next level of work into. The level is never chosen.</summary>
+public sealed record TerritoryDevelopRequest(long TerritoryId);
+
 public sealed record TerritoryGarrisonRequest(long TerritoryId, int Thugs, long? PimpId = null);
 public sealed record TerritoryRaidRequest(long TerritoryId, int Thugs, int Weapons = 0, long? CommanderPimpId = null);
 
@@ -401,9 +404,42 @@ public sealed record TerritoryResponse(
     DateTime? HeldSinceUtc,
     bool IsProtected,
     DateTime? ProtectedUntilUtc,
+    /// <summary>How far this ground has been worked up, and what that is worth on it.</summary>
+    int DevelopmentLevel,
+    string DevelopmentName,
+    /// <summary>What the work adds to the type's effect and to the garrison, as percentages.</summary>
+    int DevelopmentEffectPercent,
+    int DevelopmentDefencePercent,
+    /// <summary>The next rung, or null at the top of the ladder. Only ever sent for your own ground.</summary>
+    TerritoryDevelopmentUpgradeResponse? NextDevelopment,
+    /// <summary>Work going on right now. Visible on anybody's ground, because it is a window.</summary>
+    TerritoryDevelopmentBuildResponse? Developing,
     bool CanClaim,
     bool CanRaid,
     string? BlockedReason);
+
+/// <summary>The next rung of the development ladder, priced and gated.</summary>
+public sealed record TerritoryDevelopmentUpgradeResponse(
+    int Level,
+    string Name,
+    long Cost,
+    int Turns,
+    int BuildMinutes,
+    int EffectPercent,
+    int DefencePercent,
+    int RequiredTier,
+    string RequiredTierName,
+    bool TierLocked,
+    /// <summary>The type's own effect at this rung, so the page can quote what it actually buys.</summary>
+    int EffectNow,
+    int EffectAfter);
+
+/// <summary>Work under way on a piece of ground, and when it lands.</summary>
+public sealed record TerritoryDevelopmentBuildResponse(
+    int Level,
+    string Name,
+    DateTime CompletesAtUtc,
+    int SecondsRemaining);
 
 public sealed record TerritoryBoardResponse(
     string City,
@@ -416,7 +452,22 @@ public sealed record TerritoryBoardResponse(
     int FreeThugs,
     TerritoryEffectsResponse Effects,
     AllianceCityControlResponse? AllianceCityControl,
+    /// <summary>The whole development ladder, so the page can show what is ahead rather than one rung.</summary>
+    IReadOnlyList<TerritoryDevelopmentRungResponse> DevelopmentLadder,
     IReadOnlyList<TerritoryResponse> Territories);
+
+/// <summary>One rung of the ladder as the map page lists it.</summary>
+public sealed record TerritoryDevelopmentRungResponse(
+    int Level,
+    string Name,
+    long Cost,
+    int Turns,
+    int BuildMinutes,
+    int EffectPercent,
+    int DefencePercent,
+    int RequiredTier,
+    string RequiredTierName,
+    bool Reachable);
 
 public sealed record TerritoryEffectsResponse(
     int StreetIncomePercent,

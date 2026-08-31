@@ -602,14 +602,12 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// $120,000 against a level 2 safe that holds $100,000, so it could never be bought, and everything
     /// gated behind it was unreachable too. Earnings over the safe are swept into the bank anyway, so
     /// the bank is where the money for a large purchase actually is.
+    ///
+    /// The till itself lives in <see cref="Capital"/>, because working ground up is the second thing in
+    /// the game priced past what a safe holds and both have to charge it the same way.
     /// </summary>
     private static long ChargeCapital(Player player, long cost)
-    {
-        var fromBank = Math.Min(player.BankCash, cost);
-        player.BankCash -= fromBank;
-        player.Cash -= cost - fromBank;
-        return fromBank;
-    }
+        => Capital.Charge(player, cost);
 
     private static NextRoomUpgrade? Next<T>(
         List<T> levels,

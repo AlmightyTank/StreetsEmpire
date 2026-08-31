@@ -1,34 +1,5 @@
 # Changelog
 
-## 0.2.8 (in progress)
-
-### Fixed
-- **Starting work on your own ground reported itself as losing it.** Buying the first level of
-  development on a corner landed in the bell as "You lost ground" over a sentence saying you had just
-  started building on it. The rule it broke was already written down in the alerts code: GROUND is the
-  action for ground news happening *to* you, TERRITORY is ground you acted on yourself. Working a piece
-  up is something you did, so it files under the second one and stays out of the bell entirely.
-- Work *finishing* is a notification - it lands on the holder's clock, which means while they are
-  somewhere else - so it now has an action of its own rather than borrowing the one that means somebody
-  took a corner off you. It reads as the good news it is. Told apart by the action rather than by how
-  the sentence ends, which is the mistake the same file had already made once and written a comment
-  about.
-
-### Changed
-- **A shift stopped reporting the things that did not happen.** "Found 0 condoms, 0 beer, 2 weed, and 0
-  coke" is one fact and three noises, and it was not a one-off: every list in the summary was gated on
-  its total being positive and then printed all of its parts, so a single find named the three goods
-  that were not found and recruiting one hoe announced nought pimps and nought thugs beside her. The
-  lists name what there was and nothing else.
-- The same sentence stopped reading like a receipt. It opened on the auto-buy - a $630 line printed
-  before the reader knew what the night had made - then set out three money figures separated by
-  semicolons, then explained the bonus that had produced the first of them. Now it is the work and what
-  it grossed with the bonus attached to the number it actually moved, then who got the money, then the
-  incidental cost, then only what there was any of.
-- No more `(s)`. Plurals are per word, because this game counts condoms and hoes but also beer, weed
-  and coke, and "2 beers" is as wrong as "1 hoe(s)". The shortage lines are sentences rather than
-  labels with colons, and "beyond your pimp management capacity" is now "worked with no pimp watching".
-
 ## 0.2.7
 
 ### Added
@@ -173,6 +144,19 @@
   happened.
 
 ### Changed
+- **A shift stopped reporting the things that did not happen.** "Found 0 condoms, 0 beer, 2 weed, and 0
+  coke" is one fact and three noises, and it was not a one-off: every list in the summary was gated on
+  its total being positive and then printed all of its parts, so a single find named the three goods
+  that were not found and recruiting one hoe announced nought pimps and nought thugs beside her. The
+  lists name what there was and nothing else.
+- The same sentence stopped reading like a receipt. It opened on the auto-buy - a $630 line printed
+  before the reader knew what the night had made - then set out three money figures separated by
+  semicolons, then explained the bonus that had produced the first of them. Now it is the work and what
+  it grossed with the bonus attached to the number it actually moved, then who got the money, then the
+  incidental cost, then only what there was any of.
+- No more `(s)`. Plurals are per word, because this game counts condoms and hoes but also beer, weed
+  and coke, and "2 beers" is as wrong as "1 hoe(s)". The shortage lines are sentences rather than
+  labels with colons, and "beyond your pimp management capacity" is now "worked with no pimp watching".
 - **The building holds the turn bank now, and the rate never moves.** Turns come back at two every ten
   minutes, which is 288 a day, against a bank of 200 that fills in sixteen hours and forty minutes. So
   anybody who sleeps eight hours and then does anything else with their day threw away most of ninety
@@ -494,6 +478,16 @@
   the answer the page is reporting.
 
 ### Fixed
+- **Starting work on your own ground reported itself as losing it.** Buying the first level of
+  development on a corner landed in the bell as "You lost ground" over a sentence saying you had just
+  started building on it. The rule it broke was already written down in the alerts code: GROUND is the
+  action for ground news happening *to* you, TERRITORY is ground you acted on yourself. Working a piece
+  up is something you did, so it files under the second one and stays out of the bell entirely.
+- Work *finishing* is a notification - it lands on the holder's clock, which means while they are
+  somewhere else - so it now has an action of its own rather than borrowing the one that means somebody
+  took a corner off you. It reads as the good news it is. Told apart by the action rather than by how
+  the sentence ends, which is the mistake the same file had already made once and written a comment
+  about.
 - **The server was about to start quoting prices in a currency that does not exist.** Thirty-eight
   player-facing strings format money with `:C0`, which asks the ambient culture what a currency looks
   like. On a developer's Windows machine that culture is American and the answer is `$1,234`. In a

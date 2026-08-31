@@ -3,6 +3,44 @@
 ## 0.2.7 (in progress)
 
 ### Added
+- **Seasons: the world can start over, and everything you did with it survives.** Last of the four and
+  deliberately so, because a reset is only a gift once there is enough to climb. Before this release a
+  season would have taken away an afternoon and given back an afternoon, which is not a season, it is a
+  punishment on a timer. Now there is a turn bank that grows with the building, four tiers of house,
+  ground priced in months, and a war to fight over the top of it - and handing all of that back to
+  somebody who has finished it is handing them the good part again.
+- One rule, stated once and followed everywhere: **the empire goes and the person stays.** The account,
+  the name, the town, the crew somebody runs with and every honour they have ever won come through a
+  roll untouched. Cash, bank, crew, buildings, rooms, stock, ground, rosters and every clock a fight
+  left behind do not. What is taken away is the thing that stops being fun once it is finished; what is
+  kept is the only proof anybody has that they finished it.
+- Where everybody finished is written down before anything is deleted, for everybody rather than only
+  the top - a season somebody came fortieth in is still a season they played, and a record that only
+  remembers winners is one most people have no reason to open. The top three finishes carry a name:
+  Champion, Top Three, Top Ten.
+- The prize is opening cash in the next season - $50,000, $25,000, $10,000 - and it is paid **off the
+  season just finished and nothing else**. It never stacks and never compounds, which is the failure
+  every seasonal game has to avoid: winning one season being how you win the next. It is also paid in
+  the one currency that stops mattering fastest. Against the $5,000 everybody else opens with it is a
+  real leg up through the first hour; against a Warehouse it is a rounding error.
+- Crews survive as crews and lose everything they had saved. The people who organised themselves stay
+  organised, because that is a person and not an empire, and the treasury and the thug pool go, because
+  a crew carrying either into a fresh world starts the season already finished. A war still running when
+  the clock goes is closed unpaid - there is nothing left to fight over - and settled wars stay on the
+  record beside everybody's honours, because a record is not an asset either.
+- **It is off by default, and that is not timidity.** A world already being played would otherwise wake
+  up one morning to find every empire in it deleted by a date somebody committed months earlier.
+  Turning it on is an operator decision with a hand on the switch - it is a scalar in the admin config
+  panel, so it can be flipped without a restart. An admin can also end a season by hand, and that route
+  makes them type the season's own name to do it: a boolean is something a script sends by accident,
+  and a name is something a person has to go and read first.
+- The countdown is public, because a season whose end nobody can name is only a rumour that the world
+  might be deleted - and the panel says outright when seasons are switched off rather than counting
+  down to a date that will pass quietly.
+- What a first day is now lives in one place, which is what makes any of this safe: signing up builds a
+  player around it and a season puts an existing player back through the same call. Two copies of "what
+  a new player has" is exactly how two doors end up handing out different amounts of money.
+
 - **Crews can declare war on each other now, with a clock, a score and a pot on the table.** A crew was
   a reason to exist and no reason to act. Every single thing one carried was defensive or passive - a
   truce nobody has to renew, a treasury that only moves when a member asks it to, pacts that create

@@ -496,6 +496,42 @@ export type AllianceWarTerms = {
   youCanDeclare: boolean
 }
 
+/** The run of the world everybody is in, and the only part of the game that survives it. */
+export type Season = {
+  number: number
+  name: string
+  startedAtUtc: string
+  endsAtUtc: string
+  secondsRemaining: number
+  /** Whether the clock actually rolls the world when it runs out. */
+  enabled: boolean
+  lengthDays: number
+  championHeadStart: number
+  topThreeHeadStart: number
+  topTenHeadStart: number
+  honours: SeasonHonour[]
+  lastSeason: SeasonStanding[]
+  lastSeasonName?: string | null
+}
+
+export type SeasonHonour = {
+  number: number
+  name: string
+  rank: number
+  netWorth: number
+  honour?: string | null
+  endedAtUtc?: string | null
+}
+
+export type SeasonStanding = {
+  rank: number
+  playerName: string
+  city: string
+  crewName?: string | null
+  netWorth: number
+  honour?: string | null
+}
+
 export type AllianceCityControl = {
   city: string
   territories: number
@@ -1630,6 +1666,7 @@ export const api = {
     request<ActionResult>('/api/game/territories/develop', { method: 'POST', body: JSON.stringify({ territoryId }) }),
   raidTerritory: (territoryId: number, thugs: number, weapons: number) =>
     request<ActionResult>('/api/game/territories/raid', { method: 'POST', body: JSON.stringify({ territoryId, thugs, weapons }) }),
+  season: () => request<Season>('/api/game/season'),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
   alerts: () => request<Alerts>('/api/game/alerts'),
   markAlertsSeen: () => request<Alerts>('/api/game/alerts/seen', { method: 'POST' }),

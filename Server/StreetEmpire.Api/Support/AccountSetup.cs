@@ -53,27 +53,19 @@ internal static partial class AccountSetup
         GameOptions options,
         PimpRoster pimps)
     {
+        var now = DateTime.UtcNow;
         var player = new Player
         {
             Account = account,
             Name = playerName,
-            City = city,
-            Cash = options.StartingCash,
-            BankCash = options.StartingBankCash,
-            Turns = options.StartingTurns,
-            Pimps = options.StartingPimps,
-            Hoes = options.StartingHoes,
-            Thugs = options.StartingThugs,
-            Condoms = options.StartingCondoms,
-            Beer = options.StartingBeer,
-            // Everyone starts with the cheapest gun there is.
-            Pistols = options.StartingWeapons,
-            HoeCutPercent = options.StartingHoeCutPercent,
-            HoeHappiness = 100,
-            ThugHappiness = 100,
-            LastTurnUpdateUtc = DateTime.UtcNow
+            City = city
         };
+        // What a first day is, from the one place that says so. A season starting over puts an
+        // existing player back through the same call, and two copies of "what a new player has" is
+        // exactly how the two doors end up handing out different amounts of money.
+        StartingState.Apply(player, options, now);
         player.Hideout = new Hideout { Player = player };
+        StartingState.Apply(player.Hideout, now);
         // Turns the starting pimp count into named crew.
         pimps.Reconcile(player, DateTime.UtcNow);
 

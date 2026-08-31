@@ -249,6 +249,56 @@ public sealed record AllianceSummaryResponse(
 
 public sealed record AllianceCityControlResponse(string City, int Territories, int BonusThugs);
 
+/// <summary>
+/// The run of the world everybody is currently in, what it has cost so far, and what this player has
+/// to show for the ones before it.
+/// </summary>
+public sealed record SeasonResponse(
+    int Number,
+    string Name,
+    DateTime StartedAtUtc,
+    DateTime EndsAtUtc,
+    int SecondsRemaining,
+    /// <summary>
+    /// Whether the clock actually rolls the world when it runs out. Said out loud because a countdown
+    /// to nothing is worse than no countdown, and an operator who has not turned seasons on should not
+    /// have their players planning around a date that will pass quietly.
+    /// </summary>
+    bool Enabled,
+    int LengthDays,
+    /// <summary>What finishing well is worth in the next one, so the climb has a stated prize.</summary>
+    long ChampionHeadStart,
+    long TopThreeHeadStart,
+    long TopTenHeadStart,
+    /// <summary>Every season this player has finished, newest first.</summary>
+    IReadOnlyList<SeasonHonourResponse> Honours,
+    /// <summary>How the last one finished, top first. Empty in a world on its first season.</summary>
+    IReadOnlyList<SeasonStandingResponse> LastSeason,
+    string? LastSeasonName);
+
+/// <param name="Confirm">
+/// The season's own name, typed out. The one thing standing between a mis-click and every empire in
+/// the world being deleted, and the reason it is the name rather than a boolean: a true is something
+/// a script sends by accident, and a name is something a person has to go and read first.
+/// </param>
+public sealed record SeasonRollRequest(string? Confirm, string? Reason);
+
+public sealed record SeasonHonourResponse(
+    int Number,
+    string Name,
+    int Rank,
+    long NetWorth,
+    string? Honour,
+    DateTime? EndedAtUtc);
+
+public sealed record SeasonStandingResponse(
+    int Rank,
+    string PlayerName,
+    string City,
+    string? CrewName,
+    long NetWorth,
+    string? Honour);
+
 /// <summary>One member, as their own crew sees them.</summary>
 public sealed record AllianceMemberResponse(
     Guid PlayerId,

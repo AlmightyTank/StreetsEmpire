@@ -246,6 +246,7 @@ public sealed class GameOptions
     public ContractOptions Contracts { get; set; } = new();
     public BankOptions Bank { get; set; } = new();
     public ArrestOptions Arrests { get; set; } = new();
+    public SeasonOptions Seasons { get; set; } = new();
 }
 
 /// <summary>
@@ -697,6 +698,55 @@ public sealed class RivalCrewOptions
 
     /// <summary>How they take people on: Open, Application, or InviteOnly.</summary>
     public string Door { get; set; } = "Open";
+}
+
+/// <summary>
+/// How long a run of the world lasts, and what finishing it well is worth in the next one.
+///
+/// Off by default, and that is not timidity - a world already being played would otherwise wake up one
+/// morning to find every empire in it deleted by a date somebody committed months earlier. Turning
+/// seasons on is a decision an operator makes with their hand on the switch, and once it is on the
+/// clock is public, because a season whose end nobody can name is only a rumour that the world might
+/// be deleted.
+/// </summary>
+public sealed class SeasonOptions
+{
+    /// <summary>Whether the clock actually rolls the world when it runs out.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// How long a run lasts.
+    ///
+    /// Sized against the longest climb the game contains rather than picked round. Working one piece
+    /// of ground the whole way up is priced in months of income, and a season shorter than that would
+    /// make the deepest thing in the game the one thing nobody ever finishes. Thirty days is one full
+    /// pass at a Penthouse and a maxed corner for somebody playing seriously, and a first tier and a
+    /// lab for somebody playing on a Sunday.
+    /// </summary>
+    public int LengthDays { get; set; } = 30;
+
+    /// <summary>
+    /// Opening cash earned by last season's finish, and only last season's - it never stacks and never
+    /// compounds. Paid in the one currency that stops mattering fastest: against the $5,000 everybody
+    /// else opens with it is a real leg up through the first hour, and against a Warehouse it is a
+    /// rounding error. A head start that lasted would be a way of winning a season by having won the
+    /// one before it, which is the failure mode every seasonal game has to avoid.
+    /// </summary>
+    public long ChampionHeadStart { get; set; } = 50_000;
+    public long TopThreeHeadStart { get; set; } = 25_000;
+    public long TopTenHeadStart { get; set; } = 10_000;
+
+    /// <summary>What a run is called before anybody names it.</summary>
+    public string NameFormat { get; set; } = "Season {0}";
+
+    /// <summary>What the head start is worth to somebody who finished here.</summary>
+    public long HeadStartFor(string? honour) => honour switch
+    {
+        SeasonHonours.Champion => Math.Max(0, ChampionHeadStart),
+        SeasonHonours.TopThree => Math.Max(0, TopThreeHeadStart),
+        SeasonHonours.TopTen => Math.Max(0, TopTenHeadStart),
+        _ => 0
+    };
 }
 
 public sealed class AntiFarmOptions

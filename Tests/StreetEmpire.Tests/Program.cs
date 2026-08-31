@@ -206,6 +206,8 @@ var tests = new (string Name, Action Test)[]
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
     ("a war has a clock, a score and a pot", AWarHasAClockAScoreAndAPot),
     ("a war nobody fought pays nobody", AWarNobodyFoughtPaysNobody),
+    ("a season takes the empire and leaves the person", ASeasonTakesTheEmpireAndLeavesThePerson),
+    ("a head start is one season deep and never compounds", AHeadStartNeverCompounds),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
@@ -4294,6 +4296,132 @@ static void Score(CrewWorld world, Player attacker, Player defender, string outc
     };
     world.Alliances.ScoreWarAsync(mission, nowUtc, default).GetAwaiter().GetResult();
 }
+
+/// <summary>
+/// The rule the whole reset is built on, checked from both sides: the empire goes and the person
+/// stays. This is the most destructive thing the game can do to somebody, so what it must not touch is
+/// worth more test than what it does.
+/// </summary>
+static void ASeasonTakesTheEmpireAndLeavesThePerson()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var crew = world.Crew("Riverworks");
+    crew.Treasury = 4_000_000;
+    crew.OffensiveThugs = 40;
+    var rich = world.Member("Rich", crew, thugs: 90, cash: 9_000_000);
+    var poor = world.Member("Poor", crew, thugs: 2, cash: 4_000);
+    rich.Hoes = 150;
+    rich.Pistols = 60;
+    rich.Coke = 200;
+    rich.Heat = 80;
+    rich.AllianceDefenders = 10;
+    rich.Hideout!.Tier = 4;
+    rich.Hideout.StorageLevel = 5;
+    rich.Hideout.WeedLabLevel = 5;
+    var ground = new Territory { City = "Detroit", Name = "Delray Docks", Type = "dock", HolderId = rich.Id, GarrisonThugs = 20, DevelopmentLevel = 4 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+
+    var season = seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    AssertEqual(1, season.Number);
+    AssertEqual(now.AddDays(options.Seasons.LengthDays), season.EndsAtUtc);
+
+    var roll = seasons.RollAsync(now.AddDays(options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+
+    // The person: still here, still called the same thing, still in the same town and the same crew.
+    AssertEqual("Rich", rich.Name);
+    AssertEqual("Detroit", rich.City);
+    AssertEqual(crew.Id, rich.AllianceId);
+
+    // The empire: gone, and gone all the way down to the building and the clocks.
+    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart, rich.Cash);
+    AssertEqual(0L, rich.BankCash);
+    AssertEqual(options.StartingHoes, rich.Hoes);
+    AssertEqual(options.StartingThugs, rich.Thugs);
+    AssertEqual(options.StartingWeapons, rich.Weapons);
+    AssertEqual(0, rich.Coke);
+    AssertEqual(0d, rich.Heat);
+    AssertEqual(0, rich.AllianceDefenders);
+    AssertEqual(1, rich.Hideout.Tier);
+    AssertEqual(1, rich.Hideout.StorageLevel);
+    AssertEqual(0, rich.Hideout.WeedLabLevel);
+    AssertEqual(options.StartingTurns, rich.Turns);
+
+    // The crew survives as a crew and loses everything it had saved. The people who organised stay
+    // organised; a treasury carried over would be one crew starting the season already finished.
+    AssertEqual(0L, crew.Treasury);
+    AssertEqual(0, crew.OffensiveThugs);
+
+    // The map is emptied rather than deleted, development included, or the world comes back mapless.
+    AssertTrue(ground.HolderId is null, "ground goes back to being anybody's");
+    AssertEqual(0, ground.DevelopmentLevel);
+    AssertEqual(0, ground.GarrisonThugs);
+
+    // And the record: written for everybody, not only the winner, and honest about who was where.
+    AssertEqual(2, roll.Players);
+    var honours = seasons.HonoursForAsync(rich.Id, default).GetAwaiter().GetResult();
+    AssertEqual(1, honours.Count);
+    AssertEqual(1, honours[0].Rank);
+    AssertEqual(SeasonHonours.Champion, honours[0].Honour);
+    AssertTrue(honours[0].NetWorth > 0, "a season records what the empire was worth at the end of it");
+    var alsoRan = seasons.HonoursForAsync(poor.Id, default).GetAwaiter().GetResult();
+    AssertEqual(1, alsoRan.Count);
+    AssertEqual(2, alsoRan[0].Rank);
+
+    // The next season opened behind it, numbered and clocked.
+    AssertEqual(2, roll.Opened.Number);
+    AssertEqual(SeasonStatuses.Running, roll.Opened.Status);
+    AssertEqual(SeasonStatuses.Ended, roll.Ended.Status);
+    AssertEqual(2, seasons.CurrentAsync(now.AddDays(31), default).GetAwaiter().GetResult().Number);
+}
+
+/// <summary>
+/// The failure mode every seasonal game has to avoid: winning one season being how you win the next.
+/// A head start is paid off the season just finished and nothing else, so it can never accumulate.
+/// </summary>
+static void AHeadStartNeverCompounds()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var champion = world.Member("Champion", cash: 5_000_000);
+    world.Db.SaveChanges();
+
+    seasons.RollAsync(now, default).GetAwaiter().GetResult();
+    var afterOne = champion.Cash;
+    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart, afterOne);
+
+    // Wins again, from the same position. The head start is the same size, not twice the size.
+    champion.Cash = 5_000_000;
+    seasons.RollAsync(now.AddDays(options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+    AssertEqual(afterOne, champion.Cash);
+
+    // Two trophies, one leg up.
+    var honours = seasons.HonoursForAsync(champion.Id, default).GetAwaiter().GetResult();
+    AssertEqual(2, honours.Count);
+    AssertTrue(honours.All(x => x.Honour == SeasonHonours.Champion), "both wins are on the record");
+
+    // And a finish worth nothing is worth nothing: the ladder stops at the top ten.
+    AssertEqual(SeasonHonours.Champion, SeasonHonours.For(1));
+    AssertEqual(SeasonHonours.TopThree, SeasonHonours.For(3));
+    AssertEqual(SeasonHonours.TopTen, SeasonHonours.For(10));
+    AssertTrue(SeasonHonours.For(11) is null, "eleventh is a season played, not an honour won");
+    AssertEqual(0L, options.Seasons.HeadStartFor(null));
+}
+
+static SeasonService CreateSeasons(CrewWorld world)
+    => new(
+        world.Db,
+        Snapshot(world.Options),
+        CreateEconomy(world.Options),
+        CreatePimps(world.Options),
+        new SeasonSchedule());
 
 static void MakePact(CrewWorld world, Player asker, long targetId, Player answerer)
 {

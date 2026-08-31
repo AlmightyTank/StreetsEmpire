@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -1792,6 +1792,74 @@ function renderPage(page: AppPage, ctx: PageContext) {
   }
 }
 
+/**
+ * The clock everybody is playing against, and the shelf their trophies sit on.
+ *
+ * Both halves are here on purpose, because they are the same idea seen from either end: what a season
+ * takes away is the empire, and what it never takes away is what you did with it. Showing the countdown
+ * without the honours would be a threat; showing the honours without the countdown would be a museum.
+ *
+ * Renders nothing at all in a world where the operator has not turned seasons on and nobody has ever
+ * finished one - an inert countdown to a date that will pass quietly is worse than no countdown.
+ */
+function SeasonPanel() {
+  const [season, setSeason] = useState<Season | null>(null)
+  useEffect(() => {
+    let live = true
+    void api.season().then(value => { if (live) setSeason(value) }).catch(() => {})
+    return () => { live = false }
+  }, [])
+
+  // A second hand of its own, so the countdown moves while somebody is looking at it.
+  const [, setNow] = useState(0)
+  useEffect(() => {
+    if (!season?.enabled) return
+    const timer = window.setInterval(() => setNow(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [season?.enabled, season?.endsAtUtc])
+
+  if (!season) return null
+  if (!season.enabled && season.honours.length === 0) return null
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      <h2>{season.name}</h2>
+      <span>{season.enabled ? `${timeUntil(season.endsAtUtc)} left` : 'Running on'}</span>
+    </div>
+    {season.enabled
+      ? <p>
+        Everything you have built goes back to day one when this runs out, and everything you did with
+        it stays: your name, your crew, and where you finished. Finish top and next season opens with{' '}
+        {money.format(season.championHeadStart)} on account - top three{' '}
+        {money.format(season.topThreeHeadStart)}, top ten {money.format(season.topTenHeadStart)}. It is
+        paid once, off this season alone, and against a Warehouse it is a rounding error.
+      </p>
+      : <p className="text-body-tertiary small">
+        Seasons are not running on this world. Nothing resets, and the date above is only a marker.
+      </p>}
+
+    {season.honours.length > 0 && <div className="d-grid gap-1 mt-2">
+      <strong className="d-block text-primary small">What you have won</strong>
+      {season.honours.map(honour => <div key={honour.number} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
+        <small className={honour.honour ? 'text-warning-emphasis' : 'text-body-secondary'}>
+          {honour.name}: {honour.honour ?? `finished #${honour.rank}`}
+        </small>
+        <small className="text-body-tertiary tnum">{money.format(honour.netWorth)}</small>
+      </div>)}
+    </div>}
+
+    {season.lastSeason.length > 0 && <div className="d-grid gap-1 mt-3">
+      <strong className="d-block text-body-secondary small">{season.lastSeasonName} finished</strong>
+      {season.lastSeason.map(row => <div key={row.rank} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
+        <small className="text-body-secondary text-truncate">
+          #{row.rank} {row.playerName}{row.crewName ? ` / ${row.crewName}` : ''}
+        </small>
+        <small className="text-body-tertiary tnum">{money.format(row.netWorth)}</small>
+      </div>)}
+    </div>}
+  </section>
+}
+
 function OverviewPage(ctx: PageContext) {
   const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
@@ -1812,6 +1880,7 @@ function OverviewPage(ctx: PageContext) {
         </div>
       </section>
 
+      <SeasonPanel />
       <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
       <UpdatesPanel updates={dashboard.updates.updates} unread={dashboard.updates.unreadCount} busy={busy} act={act} onPage={setActivePage} />
       <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} onTour={ctx.openTour} />

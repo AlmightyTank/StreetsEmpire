@@ -38,6 +38,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
     public DbSet<GameAnnouncement> GameAnnouncements => Set<GameAnnouncement>();
     public DbSet<CustomTitle> CustomTitles => Set<CustomTitle>();
+    public DbSet<Season> Seasons => Set<Season>();
+    public DbSet<SeasonResult> SeasonResults => Set<SeasonResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -202,6 +204,35 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .HasForeignKey(x => x.AllianceId)
                 .OnDelete(DeleteBehavior.Cascade);
             // A player leaving the game takes their outstanding asks with them.
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Season>(entity =>
+        {
+            entity.HasIndex(x => x.Number).IsUnique();
+            // Only ever one running, and the question "which season is this" is asked on every read.
+            entity.HasIndex(x => x.Status);
+            entity.Property(x => x.Name).HasMaxLength(64);
+            entity.Property(x => x.Status).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<SeasonResult>(entity =>
+        {
+            entity.HasIndex(x => new { x.SeasonId, x.Rank });
+            entity.HasIndex(x => x.PlayerId);
+            entity.Property(x => x.PlayerName).HasMaxLength(32);
+            entity.Property(x => x.City).HasMaxLength(32);
+            entity.Property(x => x.CrewName).HasMaxLength(48);
+            entity.Property(x => x.Honour).HasMaxLength(24);
+            entity.HasOne(x => x.Season)
+                .WithMany()
+                .HasForeignKey(x => x.SeasonId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A result outlives the account it belongs to being deleted only if the row itself goes
+            // with it: an honours table full of players nobody can look up is worse than a shorter one.
             entity.HasOne(x => x.Player)
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)

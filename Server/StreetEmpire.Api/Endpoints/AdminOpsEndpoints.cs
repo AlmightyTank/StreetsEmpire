@@ -603,6 +603,45 @@ internal static class AdminOpsEndpoints
         }).RequireAuthorization();
 
 
+        // Ending a season by hand. The most destructive button in the game, so it is behind an admin
+        // check, it is written to the audit log with the operator's name on it, and it refuses to fire
+        // unless the caller spells out what they are doing - a mis-click here deletes every empire in
+        // the world, and "are you sure" in a dialog is not a safeguard a URL has.
+        app.MapPost("/api/admin/season/roll", async (
+            SeasonRollRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AdminService admins,
+            SeasonService seasons,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            var now = DateTime.UtcNow;
+            var season = await seasons.CurrentAsync(now, ct);
+            if (!string.Equals(request.Confirm?.Trim(), season.Name, StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = $"Type the season's name exactly - \"{season.Name}\" - to end it." });
+
+            admins.Record(admin.Account, "SeasonRoll", admin,
+                $"ending {season.Name} by hand", request.Reason, now);
+            await db.SaveChangesAsync(ct);
+
+            var roll = await seasons.RollAsync(now, ct);
+            return Results.Ok(new ActionResultResponse(
+                $"{roll.Ended.Name} is over. {roll.Players:N0} player(s) recorded, and {roll.Opened.Name} runs until {roll.Opened.EndsAtUtc:u}.",
+                admin.Turns,
+                new Dictionary<string, object?>
+                {
+                    ["endedSeason"] = roll.Ended.Number,
+                    ["openedSeason"] = roll.Opened.Number,
+                    ["players"] = roll.Players,
+                    ["endsAtUtc"] = roll.Opened.EndsAtUtc
+                }));
+        }).RequireAuthorization();
+
+
         app.MapGet("/api/admin/audit", async (
             CurrentPlayerService current,
             AdminService admins,

@@ -170,30 +170,53 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public static int RankOf(PlayerStanding standing, IReadOnlyList<PlayerStanding> contenders)
         => contenders.Count(x => Outranks(x, standing)) + 1;
 
-    public IReadOnlyList<StoreItemResponse> GetStore()
+    /// <summary>
+    /// The counter, priced and gated for whoever is standing at it.
+    ///
+    /// A player is optional because the shelf is the same shelf for everybody: what changes with them
+    /// is what each row costs after their standing comes off it, and which guns anybody will hand over.
+    /// Passed null - which is only the places describing the shop rather than shopping in it - the list
+    /// is the sticker price with nothing locked.
+    /// </summary>
+    public IReadOnlyList<StoreItemResponse> GetStore(Player? player = null)
     {
+        var level = player is null ? int.MaxValue : StoreRep.LevelOf(player, _options);
+        StoreItemResponse Row(string key, string name, string category, int listPrice, string description)
+            => new(key, name, category, Paid(listPrice), description, listPrice, 1, null, false, null);
+
+        int Paid(int listPrice) => player is null ? listPrice : StoreRep.Price(player, listPrice, _options);
+
         var store = new List<StoreItemResponse>
         {
-            new("condoms", "Condoms", "Crew Supplies", _options.CondomPrice, "Consumed while your hoes work the streets."),
-            new("beer", "Beer", "Crew Supplies", _options.BeerPrice, "Consumed by thugs during street operations."),
-            new("medicine", "Medicine", "Crew Supplies", _options.MedicinePrice, $"Treats {Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate)} hoes when a rival infests your house. Does nothing until then."),
-            new("poison", "Poison", "Crew Supplies", _options.PoisonPrice, $"One dose reaches {Math.Max(1, _options.Strikes.Infest.HoesHitPerDose)} of somebody else's hoes. The other end of medicine, and the only way to infest a house.")
+            Row("condoms", "Condoms", "Crew Supplies", _options.CondomPrice, "Consumed while your hoes work the streets."),
+            Row("beer", "Beer", "Crew Supplies", _options.BeerPrice, "Consumed by thugs during street operations."),
+            Row("medicine", "Medicine", "Crew Supplies", _options.MedicinePrice, $"Treats {Math.Max(1, _options.Strikes.Infest.HoesCuredPerCrate)} hoes when a rival infests your house. Does nothing until then."),
+            Row("poison", "Poison", "Crew Supplies", _options.PoisonPrice, $"One dose reaches {Math.Max(1, _options.Strikes.Infest.HoesHitPerDose)} of somebody else's hoes. The other end of medicine, and the only way to infest a house.")
         };
 
         // The gun counter, cheapest first. Every row says the same two things because they are the two
         // that decide the purchase: any gun covers one thug for morale, and what separates them is what
-        // that thug is worth in a fight.
+        // that thug is worth in a fight. A locked row still says all of it - a ladder you cannot see the
+        // top of is not a ladder, it is a wall.
         foreach (var tier in _options.Weapons.OrderBy(x => x.Price))
+        {
+            var required = Math.Max(1, tier.MinRepLevel);
             store.Add(new StoreItemResponse(
                 tier.Key,
                 WeaponTiers.Label(tier.Key),
                 "Security",
-                tier.Price,
+                Paid(tier.Price),
                 tier.Firepower <= 1
                     ? "Covers one thug. The cheapest way to keep a big crew content."
-                    : $"Covers one thug like any gun, and fights {tier.Firepower:0.#}x as hard as a pistol."));
+                    : $"Covers one thug like any gun, and fights {tier.Firepower:0.#}x as hard as a pistol.",
+                tier.Price,
+                required,
+                required > 1 ? _options.Store.LevelName(required) : null,
+                level < required,
+                level < required ? StoreRep.Refusal(_options, tier.Key, required) : null));
+        }
 
-        store.Add(new StoreItemResponse("rides", "Low-Rider", "Chop Shop", _options.RidePrice, $"Needed for a drive-by, and worth jacking. The shop buys them back at ${_options.RideSalePrice:N0}."));
+        store.Add(Row("rides", "Low-Rider", "Chop Shop", _options.RidePrice, $"Needed for a drive-by, and worth jacking. The shop buys them back at ${_options.RideSalePrice:N0}."));
         return store;
     }
 
@@ -1134,9 +1157,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         if (quantity is < 1 or > 10_000)
             throw new GameRuleException("Move between 1 and 10,000 at a time.");
 
-        var item = GetStore().SingleOrDefault(x => string.Equals(x.Key, itemKey?.Trim(), StringComparison.OrdinalIgnoreCase));
+        var item = GetStore(player).SingleOrDefault(x => string.Equals(x.Key, itemKey?.Trim(), StringComparison.OrdinalIgnoreCase));
         if (item is null)
             throw new GameRuleException("Unknown store item.");
+
+        // Standing is checked before the money is, so somebody who cannot be sold a rifle is told that
+        // rather than told what a rifle costs.
+        StoreRep.EnsureCanHold(player, _options, item.Key);
 
         var total = (long)item.Price * quantity;
         if (player.Cash < total)
@@ -1166,6 +1193,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 : $"Your {roomName} only has space for {room:N0} more {item.Name.ToLowerInvariant()}.");
 
         player.Cash -= total;
+        // Every dollar over the counter counts, whatever it bought. Credited on what was actually
+        // handed over rather than the sticker, so a discount is worth less rep as well as less money.
+        var repBefore = player.StoreRep;
+        StoreRep.Credit(player, total, _options);
         switch (item.Key)
         {
             case "condoms": player.Condoms += quantity; break;
@@ -1185,14 +1216,93 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         }
 
         return new ActionResultResponse(
-            $"Bought {quantity:N0} {item.Name.ToLowerInvariant()} for ${total:N0}.",
+            $"Bought {quantity:N0} {item.Name.ToLowerInvariant()} for ${total:N0}.{RepGained(player, repBefore)}",
             player.Turns,
             new Dictionary<string, object?>
             {
                 ["itemKey"] = item.Key,
                 ["quantity"] = quantity,
                 ["unitPrice"] = item.Price,
-                ["total"] = total
+                ["listPrice"] = item.ListPrice,
+                ["total"] = total,
+                ["repEarned"] = (int)Math.Floor(player.StoreRep) - (int)Math.Floor(repBefore),
+                ["rep"] = (int)Math.Floor(player.StoreRep)
+            });
+    }
+
+    /// <summary>
+    /// What a purchase did to your standing, said out loud only when it moved a whole point and only
+    /// when it moved you up a rung is it worth more than a clause. A purchase that earns a fraction of
+    /// a point still earns it; announcing "+0 rep" on a box of condoms would be noise.
+    /// </summary>
+    private string RepGained(Player player, double repBefore)
+    {
+        var gained = (int)Math.Floor(player.StoreRep) - (int)Math.Floor(repBefore);
+        if (gained <= 0) return string.Empty;
+
+        var was = _options.Store.LevelFor(repBefore)?.Level ?? 1;
+        var now = _options.Store.LevelFor(player.StoreRep);
+        return now is not null && now.Level > was
+            ? $" +{gained:N0} rep, and the counter now calls you {now.Name}."
+            : $" +{gained:N0} rep.";
+    }
+
+    /// <summary>
+    /// A wait, in the largest unit that says something. The mission formatter counts minutes, which is
+    /// right for a shift and useless for a day: "1440m 00s" is a number nobody reads as tomorrow.
+    /// </summary>
+    private static string Wait(TimeSpan left)
+    {
+        var seconds = Math.Max(0, (int)Math.Ceiling(left.TotalSeconds));
+        if (seconds >= 3600) return $"{seconds / 3600}h {seconds % 3600 / 60:00}m";
+        return seconds >= 60 ? $"{seconds / 60}m" : $"{seconds}s";
+    }
+
+    /// <summary>
+    /// Buys standing outright.
+    ///
+    /// The counter takes one favour at a time and remembers a big one longer, which is what keeps money
+    /// from erasing the climb rather than merely shortening it: every investment here is cheaper per
+    /// point than trading, and no amount of cash buys the next one before the clock says so.
+    /// </summary>
+    public ActionResultResponse Invest(Player player, string? key, DateTime nowUtc)
+    {
+        TravelGate.EnsureLanded(player);
+        var config = _options.Store;
+        var investment = config.Investment(key)
+            ?? throw new GameRuleException("The counter does not take that.");
+
+        var level = StoreRep.LevelOf(player, _options);
+        if (level < investment.MinLevel)
+            throw new GameRuleException(
+                $"Nobody is offered that until they are {config.LevelName(investment.MinLevel)} at the store.");
+
+        if (StoreRep.InvestmentReadyAt(player, nowUtc) is { } ready)
+            throw new GameRuleException(
+                $"You put money in recently. The counter will take another in {Wait(ready - nowUtc)}.");
+
+        if (player.Cash < investment.Cost)
+            throw new GameRuleException($"That takes {investment.Cost:C0} and you are carrying {player.Cash:C0}.");
+
+        var repBefore = player.StoreRep;
+        player.Cash -= investment.Cost;
+        player.StoreRep = Math.Max(0, player.StoreRep + Math.Max(0, investment.Rep));
+        player.StoreInvestmentReadyAtUtc = nowUtc.AddHours(Math.Max(0, investment.CooldownHours));
+
+        var now = config.LevelFor(player.StoreRep);
+        var climbed = now is not null && now.Level > (config.LevelFor(repBefore)?.Level ?? 1);
+        return new ActionResultResponse(
+            $"{investment.Name} for {investment.Cost:C0}. +{investment.Rep:N0} rep."
+                + (climbed ? $" The counter now calls you {now!.Name}." : string.Empty),
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["investment"] = investment.Key,
+                ["cost"] = investment.Cost,
+                ["repEarned"] = investment.Rep,
+                ["rep"] = (int)Math.Floor(player.StoreRep),
+                ["level"] = now?.Level ?? 1,
+                ["readyAtUtc"] = player.StoreInvestmentReadyAtUtc
             });
     }
 
@@ -1218,6 +1328,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var total = (long)unitPrice * quantity;
         player.Rides -= quantity;
         player.Cash += total;
+        // The counter counts money in both directions. Without this the garage is a rep printer: buy a
+        // ride, sell it back, and the $10,000 the round trip actually cost has bought two and a half
+        // times what any other $10,000 in the shop buys, all evening, for as long as anybody clicks.
+        StoreRep.Debit(player, total, _options);
         // The safe still binds what can sit at the house, and a fleet is worth more than an early safe
         // holds, so a big sale would otherwise vanish at the next settle.
         var overflow = hideout.Settle(player, StockLevels.From(player) with { Cash = player.Cash - total });
@@ -1494,11 +1608,15 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var condomsNeeded = RequiredUpkeep(player.Hoes, turns, morale.TurnsPerCondom);
         var beerNeeded = RequiredUpkeep(player.Thugs, turns, morale.TurnsPerBeer);
 
-        var condoms = BuyUpTo(player, condomsNeeded - player.Condoms, capacity.MaxCondoms - player.Condoms, _options.CondomPrice);
+        // Bought at the same counter, so it is charged at the same standing and it earns the same rep.
+        // Auto-buy is where most players do most of their shopping; leaving it out would have made the
+        // convenience button quietly cost them the discount and the credit both.
+        var condoms = BuyUpTo(player, condomsNeeded - player.Condoms, capacity.MaxCondoms - player.Condoms, StoreRep.Price(player, _options.CondomPrice, _options));
         player.Condoms += condoms.Quantity;
-        var beer = BuyUpTo(player, beerNeeded - player.Beer, capacity.MaxBeer - player.Beer, _options.BeerPrice);
+        var beer = BuyUpTo(player, beerNeeded - player.Beer, capacity.MaxBeer - player.Beer, StoreRep.Price(player, _options.BeerPrice, _options));
         player.Beer += beer.Quantity;
 
+        StoreRep.Credit(player, condoms.Cost + beer.Cost, _options);
         return new Restock(condoms.Quantity, beer.Quantity, condoms.Cost + beer.Cost);
     }
 

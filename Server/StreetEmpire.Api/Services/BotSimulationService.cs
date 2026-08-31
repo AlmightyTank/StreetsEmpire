@@ -1007,9 +1007,13 @@ public sealed class BotSimulationService(
 
         if ((bot.ThugHappiness < brain.WeaponMoraleThreshold || report.UncoveredThugs > brain.UncoveredThugTolerance) && report.UncoveredThugs > 0)
         {
+            // Named by tier, like every other gun purchase. "weapons" stopped being a store key when
+            // the rack grew tiers, so this branch had been buying nothing at all since: a rival with
+            // uncovered thugs would reach for the counter, be told it stocks no such thing, and lose
+            // the action.
             var quantity = AffordableQuantity(bot, report.UncoveredThugs, _options.WeaponPrice, random.NextInclusive(1, brain.MaxWeaponBuy), brain);
             if (quantity > 0)
-                return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "weapons", quantity));
+                return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, WeaponFor(bot, brain), quantity));
         }
 
         return 0;
@@ -1130,7 +1134,9 @@ public sealed class BotSimulationService(
             return TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.BuyStoreItem(bot, "medicine", quantity));
         }
 
-        return 0;
+        // Last, because standing buys nothing anybody needs tonight. It is what a rival with a fed
+        // crew, an armed crew and money left over spends on being able to buy a better gun next month.
+        return TryBuyStanding(bot, brain, actionTimeUtc);
     }
 
     /// <summary>
@@ -1150,9 +1156,42 @@ public sealed class BotSimulationService(
         var spare = Math.Max(0, bot.Cash - CashReserve(bot, brain));
         var best = WeaponTiers.Pistol;
         foreach (var tier in _options.Weapons.OrderBy(x => x.Price))
-            if (spare >= tier.Price * Math.Max(1, brain.MaxWeaponBuy))
+            // Money and standing both, because the counter asks a rival the same two questions it asks
+            // a player. Read here rather than left to the refusal: a bot that reaches for a rifle it
+            // has no rep for spends its action being told no, over and over, and never buys the
+            // shotgun it could have had.
+            if (spare >= tier.Price * Math.Max(1, brain.MaxWeaponBuy) && StoreRep.CanHold(bot, _options, tier.Key))
                 best = tier.Key;
         return best;
+    }
+
+    /// <summary>
+    /// Buys standing, when a rival is rich enough for the gun rack to be the thing holding it back.
+    ///
+    /// Without this the whole AI population is stuck on pistols for ever: rivals earn rep from their
+    /// own shopping like anybody does, but supplies alone are a trickle, and a field of empires that
+    /// can never be sold a rifle is a field that stops being worth fighting at exactly the point a
+    /// player outgrows it. Gated on the crew already being armed and the money being spare, so it
+    /// never comes out of the beer.
+    /// </summary>
+    private int TryBuyStanding(Player bot, BotBrain brain, DateTime actionTimeUtc)
+    {
+        if (bot.Weapons < bot.Thugs || StoreRep.InvestmentReadyAt(bot, actionTimeUtc) is not null)
+            return 0;
+        // Nothing to climb towards: at the top rung the money is better spent on the shop itself.
+        if (_options.Store.NextLevelAfter(bot.StoreRep) is null)
+            return 0;
+
+        var spare = Math.Max(0, bot.Cash - CashReserve(bot, brain));
+        var level = StoreRep.LevelOf(bot, _options);
+        var best = _options.Store.Investments
+            .Where(x => x.MinLevel <= level && x.Cost > 0 && x.Cost <= spare)
+            .OrderByDescending(x => x.Cost)
+            .FirstOrDefault();
+
+        return best is null
+            ? 0
+            : TryAction(bot, "STORE", 0, actionTimeUtc, () => economy.Invest(bot, best.Key, actionTimeUtc));
     }
 
     /// <summary>

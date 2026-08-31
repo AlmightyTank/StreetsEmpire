@@ -39,7 +39,11 @@ public sealed class AdminService(
         ["medicine"] = new(p => p.Medicine, (p, v) => p.Medicine = (int)v, int.MaxValue),
         ["rides"] = new(p => p.Rides, (p, v) => p.Rides = (int)v, int.MaxValue),
         ["weed"] = new(p => p.Weed, (p, v) => p.Weed = (int)v, int.MaxValue),
-        ["coke"] = new(p => p.Coke, (p, v) => p.Coke = (int)v, int.MaxValue)
+        ["coke"] = new(p => p.Coke, (p, v) => p.Coke = (int)v, int.MaxValue),
+        // Standing, in whole points. Adjustable because it gates weapons: a support ticket about a
+        // purchase that took the money and not the rep has no other answer, and the fractions rep
+        // accrues in are not something anybody is going to type into an admin form.
+        ["rep"] = new(p => (long)Math.Floor(p.StoreRep), (p, v) => p.StoreRep = v, int.MaxValue)
     };
 
     public static IReadOnlyCollection<string> AdjustableResources => Resources.Keys.ToList();

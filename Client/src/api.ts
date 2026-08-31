@@ -12,8 +12,57 @@ export type StoreItem = {
   key: string
   name: string
   category: string
+  /** What you pay, after your standing comes off it. */
   price: number
   description: string
+  /** The sticker, before standing. Equal to price for anybody with none. */
+  listPrice: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type StoreRepLevel = {
+  level: number
+  name: string
+  rep: number
+  discountPercent: number
+  /** What arriving here opens. Empty when it opens nothing but the discount. */
+  unlocks: string
+  reached: boolean
+  current: boolean
+}
+
+export type StoreInvestment = {
+  key: string
+  name: string
+  description: string
+  cost: number
+  rep: number
+  cooldownHours: number
+  minLevel: number
+  minLevelName: string
+  locked: boolean
+  lockedReason?: string | null
+}
+
+/** Where you stand with the counter, what it is worth, and what money would buy of it now. */
+export type StoreRep = {
+  rep: number
+  level: number
+  levelName: string
+  discountPercent: number
+  nextLevel?: number | null
+  nextLevelName?: string | null
+  nextLevelRep?: number | null
+  repToNextLevel: number
+  progressPercent: number
+  dollarsPerRep: number
+  investmentReadyAtUtc?: string | null
+  investmentReadySeconds: number
+  levels: StoreRepLevel[]
+  investments: StoreInvestment[]
 }
 
 export type CrewReport = {
@@ -341,6 +390,7 @@ export type Dashboard = {
   combatStatus: CombatStatus
   unreadDefenceAlerts: number
   store: StoreItem[]
+  storeRep: StoreRep
   attackMethods: AttackMethod[]
   /** Where a shift can be worked, and what each place is for. */
   districts: StreetDistrict[]
@@ -530,6 +580,45 @@ export type SeasonStanding = {
   crewName?: string | null
   netWorth: number
   honour?: string | null
+}
+
+/**
+ * One season on the shelf: what it was called, when it ran, who won it, and where you came in it.
+ *
+ * That last part is what makes the archive worth opening for somebody who has never finished top ten.
+ * A record that only says who won is a record most people appear nowhere in.
+ */
+export type SeasonArchiveEntry = {
+  number: number
+  name: string
+  startedAtUtc: string
+  endsAtUtc: string
+  endedAtUtc?: string | null
+  /** Whether this is the one being played. Exactly one entry is ever true. */
+  running: boolean
+  players: number
+  championName?: string | null
+  championCity?: string | null
+  championCrewName?: string | null
+  championNetWorth: number
+  yourRank?: number | null
+  yourHonour?: string | null
+  yourNetWorth?: number | null
+}
+
+/** How one season finished - or as much of it as a page can hold. */
+export type SeasonTable = {
+  number: number
+  name: string
+  startedAtUtc: string
+  endsAtUtc: string
+  endedAtUtc?: string | null
+  running: boolean
+  players: number
+  /** Empty for the season being played: there is no final table until it has finished. */
+  table: SeasonStanding[]
+  /** Your own line, carried separately because a hundred rows is where it gets cut off. */
+  you?: SeasonStanding | null
 }
 
 export type AllianceCityControl = {
@@ -1667,6 +1756,8 @@ export const api = {
   raidTerritory: (territoryId: number, thugs: number, weapons: number) =>
     request<ActionResult>('/api/game/territories/raid', { method: 'POST', body: JSON.stringify({ territoryId, thugs, weapons }) }),
   season: () => request<Season>('/api/game/season'),
+  seasons: () => request<SeasonArchiveEntry[]>('/api/game/seasons'),
+  seasonTable: (number: number) => request<SeasonTable>(`/api/game/seasons/${number}`),
   catchUp: () => request<CatchUp>('/api/game/catch-up'),
   alerts: () => request<Alerts>('/api/game/alerts'),
   markAlertsSeen: () => request<Alerts>('/api/game/alerts/seen', { method: 'POST' }),
@@ -1705,6 +1796,10 @@ export const api = {
   sellStoreItem: (itemKey: string, quantity: number) => request<ActionResult>('/api/game/store/sell', {
     method: 'POST',
     body: JSON.stringify({ itemKey, quantity }),
+  }),
+  investInStore: (key: string) => request<ActionResult>('/api/game/store/invest', {
+    method: 'POST',
+    body: JSON.stringify({ key }),
   }),
   recoverMorale: (strategy: 'rest' | 'party') => request<ActionResult>('/api/game/hideout/recover', {
     method: 'POST',

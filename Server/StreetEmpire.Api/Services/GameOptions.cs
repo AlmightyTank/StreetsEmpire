@@ -205,22 +205,34 @@ public sealed class GameOptions
         if (Weapons.Count > 0)
             return;
 
-        // Prices are the source game's, and the firepower curve is the answer to what they buy. It falls
-        // away steeply against price - a pistol is $250 a point, a rifle $2,200 - so trading up is never
-        // the efficient way to spend money and always the only way left once the hideout's thug cap is
-        // full. That is the trade the tiers exist to create: more bodies while you have room for them,
-        // better guns once you do not.
+        // The firepower curve is the answer to what the prices buy. It falls away steeply against price -
+        // a pistol is $250 a point, a rifle $7,200 - so trading up is never the efficient way to spend
+        // money and always the only way left once the hideout's thug cap is full. That is the trade the
+        // tiers exist to create: more bodies while you have room for them, better guns once you do not.
+        //
+        // Everything above the pistol was raised once standing began gating it, because the two are one
+        // decision. A shotgun at $1,250 was an afternoon's takings, which made the rung in front of it
+        // the only thing anybody had to think about and the price a formality - and a ladder whose rungs
+        // are free is a waiting room. The pistol did not move: it is what a new player arms a crew with
+        // on day one, and it is the one gun the ladder was never going to gate.
         //
         // A pistol is exactly 1, which is what the old single weapon contributed, so nobody's fighting
         // strength moved when tiers arrived - only what their rack is worth on paper.
+        //
+        // The rep rungs are the other half of that trade. Money alone used to decide the whole rack,
+        // which meant one good night on the street put the best gun in the game in the hands of somebody
+        // who had never been in the shop before. Now the price is what a gun costs and the standing is
+        // whether anybody will sell you one.
         Weapons =
         [
-            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 2 },
-            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 1_250, Firepower = 1.4, ForgeCost = 880, MinWorkshopLevel = 2 },
-            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 2_500, Firepower = 1.9, ForgeCost = 1_800, MinWorkshopLevel = 4 },
+            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 2, MinRepLevel = 1 },
+            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 2_000, Firepower = 1.4, ForgeCost = 1_400, MinWorkshopLevel = 2, MinRepLevel = 2 },
+            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 5_000, Firepower = 1.9, ForgeCost = 3_500, MinWorkshopLevel = 4, MinRepLevel = 3 },
             // No forge cost and no workshop level: a rifle is the one gun nobody makes in a back room,
-            // which is what stops the workshop from eventually replacing the shop entirely.
-            new WeaponTierOptions { Key = WeaponTiers.Rifle, Price = 5_500, Firepower = 2.5 }
+            // which is what stops the workshop from eventually replacing the shop entirely - and what
+            // makes the top rung of standing the only door to it. It is priced as the thing at the end
+            // of both ladders rather than as the last step of one.
+            new WeaponTierOptions { Key = WeaponTiers.Rifle, Price = 18_000, Firepower = 2.5, MinRepLevel = 4 }
         ];
     }
 
@@ -247,6 +259,7 @@ public sealed class GameOptions
     public BankOptions Bank { get; set; } = new();
     public ArrestOptions Arrests { get; set; } = new();
     public SeasonOptions Seasons { get; set; } = new();
+    public StoreOptions Store { get; set; } = new();
 }
 
 /// <summary>
@@ -1637,6 +1650,18 @@ public sealed class WeaponTierOptions
     /// <summary>Materials to forge one, and the workshop that can. Zero means it cannot be made at all.</summary>
     public long ForgeCost { get; set; }
     public int MinWorkshopLevel { get; set; }
+
+    /// <summary>
+    /// The rung of store standing anybody has to be on before this gun will be handed over, at the
+    /// counter or off another player's listing. 1 is everybody.
+    ///
+    /// Deliberately not enforced on the workshop. Forging is you making it yourself in your own back
+    /// room, which is the alternative route the gate exists to leave open - it needs a deep building
+    /// instead of a reputation, it is slow, and it can never turn out a rifle. Standing is what
+    /// somebody else's willingness to arm you is made of, and nobody has to be willing to arm you in
+    /// your own basement.
+    /// </summary>
+    public int MinRepLevel { get; set; } = 1;
 
     public bool CanForge => ForgeCost > 0 && MinWorkshopLevel > 0;
 }

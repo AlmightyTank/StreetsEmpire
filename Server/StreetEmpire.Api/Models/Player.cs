@@ -124,6 +124,28 @@ public sealed class Player
     public int Cut { get; set; }
 
     /// <summary>
+    /// Standing at the street store, earned by trading there and bought by investing in it.
+    ///
+    /// A double rather than a counter because it accrues off cash: at a hundredth of a point per dollar
+    /// an integer would round seventeen condoms down to nothing and hand the same player their rep back
+    /// for buying a thousand at once. Nothing else in the game is priced in it, so there is no
+    /// arithmetic here that a fraction can spoil. Heat is the same shape for the same reason.
+    ///
+    /// It is an empire rather than a person, so a season takes it. See <see cref="Services.StoreRep"/>.
+    /// </summary>
+    public double StoreRep { get; set; }
+
+    /// <summary>
+    /// When the counter will take another investment. Null means now.
+    ///
+    /// One clock across every favour rather than one per favour, because what is being modelled is the
+    /// counter's patience and not the player's: a table of per-investment cooldowns would let somebody
+    /// take all three in the same minute, which is exactly the "buy the whole ladder this afternoon"
+    /// the clock exists to prevent.
+    /// </summary>
+    public DateTime? StoreInvestmentReadyAtUtc { get; set; }
+
+    /// <summary>
     /// Attention earned rather than held. Everything in this game is illegal, so being illegal is not
     /// what distinguishes anything: what differs is how much notice a thing draws. This is the part
     /// that accumulates from working, and it decays on its own, which is why laying low works.

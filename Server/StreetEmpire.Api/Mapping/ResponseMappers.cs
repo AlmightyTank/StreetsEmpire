@@ -250,6 +250,82 @@ internal static class ResponseMappers
                 x.CanForge ? x.MinWorkshopLevel : null))
             .ToList();
 
+    /// <summary>
+    /// Standing at the counter, whole.
+    ///
+    /// The ladder ships entire rather than only the next rung, because the question a player is
+    /// actually asking at the shop is "what does it take to buy a rifle", and an answer that only ever
+    /// names the step in front of them makes that four visits to find out. Locked rungs say what they
+    /// open for the same reason.
+    /// </summary>
+    internal static StoreRepResponse ToStoreRep(Player player, GameOptions options, DateTime nowUtc)
+    {
+        var config = options.Store;
+        var rep = Math.Max(0, player.StoreRep);
+        var here = config.LevelFor(rep);
+        var next = config.NextLevelAfter(rep);
+        var floor = here?.Rep ?? 0;
+        // Distance covered between the rung underfoot and the next one. At the top there is no next
+        // one, and a bar that could never fill would be a permanent unfinished job on the page.
+        var span = Math.Max(1, (next?.Rep ?? (int)rep) - floor);
+        var ready = StoreRep.InvestmentReadyAt(player, nowUtc);
+        var level = here?.Level ?? 1;
+
+        return new StoreRepResponse(
+            (int)Math.Floor(rep),
+            level,
+            here?.Name ?? "Nobody",
+            here?.DiscountPercent ?? 0,
+            next?.Level,
+            next?.Name,
+            next?.Rep,
+            next is null ? 0 : Math.Max(0, (int)Math.Ceiling(next.Rep - rep)),
+            next is null ? 100 : (int)Math.Clamp(Math.Round((rep - floor) * 100 / span), 0, 100),
+            config.RepPerDollarSpent <= 0 ? 0 : (int)Math.Round(1 / config.RepPerDollarSpent),
+            ready,
+            ready is null ? 0 : Math.Max(0, (int)Math.Ceiling((ready.Value - nowUtc).TotalSeconds)),
+            config.Ladder()
+                .Select(x => new StoreRepLevelResponse(
+                    x.Level,
+                    x.Name,
+                    x.Rep,
+                    x.DiscountPercent,
+                    Unlocks(x.Level),
+                    level >= x.Level,
+                    level == x.Level))
+                .ToList(),
+            config.Investments
+                .OrderBy(x => x.Cost)
+                .Select(x => new StoreInvestmentResponse(
+                    x.Key,
+                    x.Name,
+                    x.Description,
+                    x.Cost,
+                    x.Rep,
+                    x.CooldownHours,
+                    x.MinLevel,
+                    config.LevelName(x.MinLevel),
+                    level < x.MinLevel,
+                    level < x.MinLevel ? $"Offered to {config.LevelName(x.MinLevel)} and above." : null))
+                .ToList());
+
+        // What arriving at a rung opens: the guns it unlocks and the favours it puts on the table.
+        // Read off the same tables the gates use, so a retuned weapon or a new investment cannot leave
+        // the ladder describing a shop that no longer exists.
+        string Unlocks(int atLevel)
+        {
+            var parts = new List<string>();
+            var guns = options.Weapons
+                .Where(x => Math.Max(1, x.MinRepLevel) == atLevel)
+                .OrderBy(x => x.Price)
+                .Select(x => WeaponTiers.Label(x.Key).ToLowerInvariant())
+                .ToList();
+            if (guns.Count > 0) parts.Add(string.Join(", ", guns));
+            parts.AddRange(config.Investments.Where(x => x.MinLevel == atLevel).Select(x => x.Name.ToLowerInvariant()));
+            return string.Join(", ", parts);
+        }
+    }
+
     internal static CombatReadinessResponse ToCombatReadiness(Player player, GameOptions options)
     {
         var armedThugs = Math.Min(player.Weapons, player.Thugs);

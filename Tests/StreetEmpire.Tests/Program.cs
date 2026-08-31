@@ -178,6 +178,12 @@ var tests = new (string Name, Action Test)[]
     ("a crew carries the best guns and drops the worst", CrewsCarryTheBestAndDropTheWorst),
     ("one shelf holds every gun", OneShelfHoldsEveryGun),
     ("better guns cost more per point than more thugs", TradingUpIsForWhenTheHouseIsFull),
+    ("nobody sells a gun to somebody with no standing", TheCounterWillNotArmAStranger),
+    ("every rung of standing is one somebody can stand on", EveryGunSitsOnARungThatExists),
+    ("trading at the counter is what builds standing", TradingAtTheCounterBuildsStanding),
+    ("a ride sold back takes its standing with it", ARideSoldBackTakesItsStandingWithIt),
+    ("standing takes a cut off every price in the shop", StandingTakesACutOffEveryPrice),
+    ("an investment buys standing and shuts the counter", AnInvestmentBuysStandingAndShutsTheCounter),
     ("an email is a second name, not a message", AnEmailIsASecondNameNotAMessage),
     ("both doors put down exactly the same player", BothDoorsPutDownTheSamePlayer),
     ("an account can never end up with no way in", AnAccountAlwaysKeepsAWayIn),
@@ -210,6 +216,7 @@ var tests = new (string Name, Action Test)[]
     ("a war nobody fought pays nobody", AWarNobodyFoughtPaysNobody),
     ("a season takes the empire and leaves the person", ASeasonTakesTheEmpireAndLeavesThePerson),
     ("a head start is one season deep and never compounds", AHeadStartNeverCompounds),
+    ("the shelf remembers who won and where everybody else came", TheShelfRemembersEveryFinish),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
@@ -1247,11 +1254,13 @@ static void EverythingOnTheCounterCanBeBought()
 
     foreach (var item in service.GetStore())
     {
-        var buyer = new Player
+        // Standing enough to be sold anything: this test is about the counter being able to hand over
+        // every row it advertises, not about who it will hand them to.
+        var buyer = Connected(new Player
         {
             Cash = 100_000_000,
             Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 }
-        };
+        }, options);
 
         // One of each. A price the player can plainly afford and a room with space, so anything that
         // refuses here is refusing on the shape of the code rather than on the state of the player.
@@ -4341,6 +4350,8 @@ static void ASeasonTakesTheEmpireAndLeavesThePerson()
     rich.Pistols = 60;
     rich.Coke = 200;
     rich.Heat = 80;
+    rich.StoreRep = 12_345;
+    rich.StoreInvestmentReadyAtUtc = now.AddHours(6);
     rich.AllianceDefenders = 10;
     rich.Hideout!.Tier = 4;
     rich.Hideout.StorageLevel = 5;
@@ -4368,6 +4379,10 @@ static void ASeasonTakesTheEmpireAndLeavesThePerson()
     AssertEqual(options.StartingWeapons, rich.Weapons);
     AssertEqual(0, rich.Coke);
     AssertEqual(0d, rich.Heat);
+    // Standing goes with it. It was earned by an empire's worth of trading and it unlocks the guns that
+    // empire fought with, so a season that kept it would open with the rifle counter already unlocked.
+    AssertEqual(0d, rich.StoreRep);
+    AssertTrue(rich.StoreInvestmentReadyAtUtc is null, "and the counter's own clock goes with it");
     AssertEqual(0, rich.AllianceDefenders);
     AssertEqual(1, rich.Hideout.Tier);
     AssertEqual(1, rich.Hideout.StorageLevel);
@@ -4436,6 +4451,68 @@ static void AHeadStartNeverCompounds()
     AssertEqual(SeasonHonours.TopTen, SeasonHonours.For(10));
     AssertTrue(SeasonHonours.For(11) is null, "eleventh is a season played, not an honour won");
     AssertEqual(0L, options.Seasons.HeadStartFor(null));
+}
+
+/// <summary>
+/// The archive, read the way a player reads it: which seasons there have been, who took each of them,
+/// and - the line that makes the shelf worth opening for somebody who has never come top ten - where
+/// they finished themselves.
+///
+/// The record is written for everybody rather than only the winners, and that is worth nothing if the
+/// only way to find your own line in it is to have been at the top of the table.
+/// </summary>
+static void TheShelfRemembersEveryFinish()
+{
+    using var world = NewCrewWorld();
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var first = world.Member("First", cash: 9_000_000);
+    world.Member("Second", cash: 5_000_000);
+    // A field deep enough that a finish can be worth nothing. The honours stop at the top ten, so a
+    // world of three would have handed one to everybody in it and proved the opposite of the point.
+    for (var filler = 3; filler <= 11; filler++)
+        world.Member($"Player{filler}", cash: 1_000_000 - filler * 1_000);
+    var last = world.Member("Last", cash: 1_000);
+    world.Db.SaveChanges();
+
+    // The season being played has no count written down yet, so it is counted live.
+    AssertEqual(12, seasons.PlayersNowAsync(default).GetAwaiter().GetResult());
+
+    var one = seasons.RollAsync(now, default).GetAwaiter().GetResult().Ended;
+
+    // A second season, taken by somebody else, so the shelf carries two different names.
+    last.Cash = 20_000_000;
+    world.Db.SaveChanges();
+    var two = seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default)
+        .GetAwaiter().GetResult().Ended;
+
+    // Found by the number people call it rather than by a row id nobody ever sees.
+    var read = seasons.ByNumberAsync(1, default).GetAwaiter().GetResult();
+    AssertTrue(read is not null && read.Id == one.Id, "a season is found by its number");
+    AssertTrue(seasons.ByNumberAsync(99, default).GetAwaiter().GetResult() is null,
+        "a season nobody has played is not found");
+
+    // Who won each of them, in one query for the whole shelf rather than one per season.
+    var champions = seasons.ChampionsForAsync(new[] { one.Id, two.Id }, default).GetAwaiter().GetResult();
+    AssertEqual(2, champions.Count);
+    AssertEqual("First", champions[one.Id].PlayerName);
+    AssertEqual("Last", champions[two.Id].PlayerName);
+
+    // And where somebody who won nothing came, which is the row a capped table leaves out.
+    var alsoRan = seasons.FinishForAsync(one.Id, last.Id, default).GetAwaiter().GetResult();
+    AssertTrue(alsoRan is not null, "everybody who was in it has a line");
+    AssertEqual(12, alsoRan!.Rank);
+    AssertTrue(alsoRan.Honour is null, "twelfth is a season played, not an honour won");
+    AssertTrue(seasons.FinishForAsync(one.Id, Guid.NewGuid(), default).GetAwaiter().GetResult() is null,
+        "somebody who was not in it has no line in it");
+
+    // The table is capped by whoever is asking, and still reads top first.
+    var top = seasons.TableForAsync(one.Id, 2, default).GetAwaiter().GetResult();
+    AssertEqual(2, top.Count);
+    AssertEqual(1, top[0].Rank);
+    AssertEqual(2, top[1].Rank);
+    AssertEqual(first.Id, top[0].PlayerId);
 }
 
 static SeasonService CreateSeasons(CrewWorld world)
@@ -4942,6 +5019,15 @@ static void WorkshopMakesWeaponsUnderStorePrice()
     foreach (var tier in options.Weapons.Where(x => x.CanForge))
         AssertTrue(tier.ForgeCost < tier.Price,
             $"{tier.Key} cost {tier.ForgeCost} to make against a store price of {tier.Price}");
+
+    // And a floor under the margin, which is the half of this that has no other guard. The counter's
+    // prices move - they were raised once standing started gating them - and materials that stayed
+    // where they were would quietly turn the bench from an alternative into the obvious answer, with
+    // nothing failing to say so. A bench that undercuts the shop by a third is a trade; one that
+    // undercuts it by nine tenths is the shop being closed.
+    foreach (var tier in options.Weapons.Where(x => x.CanForge))
+        AssertTrue(tier.ForgeCost * 2 >= tier.Price,
+            $"{tier.Key} costs {tier.ForgeCost} to make against a store price of {tier.Price}, which is not a trade");
 
     // And the rifle is the one gun nobody makes in a back room, which is what stops the workshop
     // from eventually replacing the shop.
@@ -8426,7 +8512,7 @@ static void OneShelfHoldsEveryGun()
     var capacity = hideouts.CapacityFor(new Hideout());
     AssertEqual(5, capacity.MaxWeapons);
 
-    var player = new Player { Cash = 1_000_000, Pistols = 3, Hideout = new Hideout() };
+    var player = Connected(new Player { Cash = 1_000_000, Pistols = 3, Hideout = new Hideout() }, options);
 
     // Three pistols on a five-gun shelf leaves room for two more guns of any kind.
     AssertEqual(2, TradeGoods.Room(player, capacity, WeaponTiers.Rifle));
@@ -8483,6 +8569,199 @@ static void TradingUpIsForWhenTheHouseIsFull()
 
     // And the cap is what makes it worth doing at all: past it, guns are the only thing left to buy.
     AssertTrue(rifle.Firepower > pistol.Firepower, "which only pays because a full house cannot grow");
+}
+
+// Money used to be the only question the gun counter asked, which made the rack a price list: one good
+// night on the street and a player who had never been in the shop walked out with the best weapon in the
+// game. The price is still what a gun costs; standing is whether anybody will sell you one.
+static void TheCounterWillNotArmAStranger()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var stranger = new Player { Cash = 100_000_000, Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 } };
+
+    // Cash is not the constraint anywhere in this test. A hundred million and a full-size house.
+    economy.BuyStoreItem(stranger, WeaponTiers.Pistol, 1);
+    AssertEqual(1, stranger.Pistols);
+    AssertRuleError(() => economy.BuyStoreItem(stranger, WeaponTiers.Shotgun, 1), "buying a shotgun with no standing");
+    AssertRuleError(() => economy.BuyStoreItem(stranger, WeaponTiers.Rifle, 1), "buying a rifle with no standing");
+
+    // The board is gated by the same rung, or the gate would be decorative: rifles list below the shop
+    // price, so the cheapest route to the gun nobody would sell you would be the one that skips the shop.
+    AssertTrue(!StoreRep.CanHold(stranger, options, WeaponTiers.Rifle), "the market asks the same question");
+    AssertTrue(StoreRep.CanHold(stranger, options, WeaponTiers.Pistol), "and gates nothing anybody can already buy");
+    AssertTrue(StoreRep.CanHold(stranger, options, "condoms"), "nothing that is not a gun is gated at all");
+
+    // Climbing opens the rack a rung at a time rather than all at once.
+    stranger.StoreRep = options.Store.Level(2)!.Rep;
+    economy.BuyStoreItem(stranger, WeaponTiers.Shotgun, 1);
+    AssertEqual(1, stranger.Shotguns);
+    AssertRuleError(() => economy.BuyStoreItem(stranger, WeaponTiers.Rifle, 1), "buying a rifle two rungs early");
+
+    stranger.StoreRep = options.Store.Level(4)!.Rep;
+    economy.BuyStoreItem(stranger, WeaponTiers.Rifle, 1);
+    AssertEqual(1, stranger.Rifles);
+
+    // A locked row is still a row. What the shop sells and what you can be sold are different questions,
+    // and a rack that quietly grew extra rows would never tell anybody there was a ladder.
+    var shelf = economy.GetStore(new Player());
+    var rifle = shelf.Single(x => x.Key == WeaponTiers.Rifle);
+    AssertTrue(rifle.Locked, "a rifle reads as locked to somebody who cannot buy one");
+    AssertTrue(rifle.MinRepLevelName == options.Store.Level(4)!.Name, "and says which rung by name, not by number");
+    AssertTrue(shelf.Single(x => x.Key == WeaponTiers.Pistol).Locked == false, "the first gun is nobody's ladder");
+}
+
+// The two tables have to agree. A gun gated behind a rung the ladder does not contain would be a gun
+// nobody in the game could ever be sold, and nothing would say so out loud.
+static void EveryGunSitsOnARungThatExists()
+{
+    var options = Resolve(new GameOptions());
+    var rungs = options.Store.Ladder();
+    AssertTrue(rungs.Count > 0, "there is a ladder at all");
+    AssertEqual(0, rungs[0].Rep);
+
+    foreach (var tier in options.Weapons)
+        AssertTrue(options.Store.Level(Math.Max(1, tier.MinRepLevel)) is not null,
+            $"{tier.Key} is gated behind a rung that exists");
+
+    foreach (var investment in options.Store.Investments)
+        AssertTrue(options.Store.Level(investment.MinLevel) is not null,
+            $"{investment.Key} is offered at a rung that exists");
+
+    // Rep and discount both climb, so no rung is ever worse than the one below it.
+    for (var i = 1; i < rungs.Count; i++)
+    {
+        AssertTrue(rungs[i].Rep > rungs[i - 1].Rep, $"{rungs[i].Name} costs more than {rungs[i - 1].Name}");
+        AssertTrue(rungs[i].DiscountPercent >= rungs[i - 1].DiscountPercent, $"{rungs[i].Name} is worth at least as much");
+    }
+
+    // The cheapest gun is on the floor of the ladder. A first purchase nobody can make is not a shop.
+    var cheapest = options.Weapons.OrderBy(x => x.Price).First();
+    AssertEqual(1, Math.Max(1, cheapest.MinRepLevel));
+}
+
+// Rep is earned by trading, at a rate slow enough that trade is the floor under the climb rather than
+// the way up it. What matters here is that it is earned at all, and on everything.
+static void TradingAtTheCounterBuildsStanding()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var player = new Player { Cash = 10_000_000, Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 } };
+
+    // A hundred boxes of condoms is a hundred boxes of trade. Supplies count like anything else does:
+    // a player who never thinks about rep is building it every time they restock.
+    var spent = 100L * options.CondomPrice;
+    economy.BuyStoreItem(player, "condoms", 100);
+    AssertEqual(spent * options.Store.RepPerDollarSpent, player.StoreRep);
+
+    // Fractions survive. At a hundredth of a point a dollar an integer would round a small purchase to
+    // nothing, and hand the same player their rep back for making one big one instead.
+    var small = new Player { Cash = 1_000, Hideout = new Hideout() };
+    economy.BuyStoreItem(small, "condoms", 1);
+    AssertTrue(small.StoreRep > 0, "a single box still counts for something");
+
+    // And it is what opens the rack, with nothing else on the player changed.
+    player.StoreRep = options.Store.Level(2)!.Rep - 1;
+    AssertRuleError(() => economy.BuyStoreItem(player, WeaponTiers.Shotgun, 1), "buying a shotgun one point short");
+    economy.BuyStoreItem(player, "condoms", 100);
+    economy.BuyStoreItem(player, WeaponTiers.Shotgun, 1);
+    AssertEqual(1, player.Shotguns);
+}
+
+// The chop shop is the one counter that buys as well as sells, which made it a rep printer: a ride is
+// $25,000 out and $15,000 back, so the round trip bought 250 points for a net $10,000 - two and a half
+// times the going rate, uncapped, for as long as anybody kept clicking.
+static void ARideSoldBackTakesItsStandingWithIt()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var player = new Player { Cash = 10_000_000, Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 } };
+
+    economy.BuyStoreItem(player, "rides", 1);
+    var afterBuying = player.StoreRep;
+    AssertEqual(options.RidePrice * options.Store.RepPerDollarSpent, afterBuying);
+
+    economy.SellRides(player, 1);
+    AssertEqual(0, player.Rides);
+    // What is left is the money that stayed spent, at the rate any other money would have earned.
+    var stayedSpent = (double)(options.RidePrice - options.RideSalePrice);
+    AssertEqual(stayedSpent * options.Store.RepPerDollarSpent, Math.Round(player.StoreRep, 6));
+
+    // A car nobody bought here can still be sold here, and the worst it can do is cost credit that was
+    // earned. Standing never goes negative, so a jacked fleet is never a debt.
+    var thief = new Player { Rides = 4, Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 } };
+    economy.SellRides(thief, 4);
+    AssertEqual(0, thief.StoreRep);
+}
+
+// The top of the ladder has to be worth reaching after the last gun is already unlocked, or standing
+// stops mattering the day somebody buys their first rifle. What it is worth is every price in the shop.
+static void StandingTakesACutOffEveryPrice()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var top = options.Store.Ladder().Last();
+    AssertTrue(top.DiscountPercent > 0, "the last rung is worth something on its own");
+
+    var made = new Player { Cash = 10_000_000, StoreRep = top.Rep, Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5 } };
+    var listed = options.CondomPrice;
+    var paid = economy.GetStore(made).Single(x => x.Key == "condoms");
+    AssertEqual(listed, paid.ListPrice);
+    AssertTrue(paid.Price < listed, "standing at the top costs less than standing at the bottom");
+
+    // Charged what the shelf quoted, and credited on what was handed over rather than the sticker: a
+    // discount is worth less rep as well as less money, or the reward would pay for itself.
+    var cashBefore = made.Cash;
+    economy.BuyStoreItem(made, "condoms", 10);
+    AssertEqual(cashBefore - 10L * paid.Price, made.Cash);
+    AssertEqual(top.Rep + 10L * paid.Price * options.Store.RepPerDollarSpent, made.StoreRep);
+
+    // Somebody with no standing is quoted the sticker, and so is anybody the shop is only describing.
+    AssertEqual(listed, economy.GetStore(new Player()).Single(x => x.Key == "condoms").Price);
+    AssertEqual(listed, economy.GetStore().Single(x => x.Key == "condoms").Price);
+}
+
+// Investing is cheaper per point than trading and would be the only thing anybody did, if it were not
+// for the clock: the counter takes one favour at a time and remembers a big one longer.
+static void AnInvestmentBuysStandingAndShutsTheCounter()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    var now = new DateTime(2026, 8, 31, 12, 0, 0, DateTimeKind.Utc);
+    var first = options.Store.Investments.OrderBy(x => x.Cost).First();
+    var dearest = options.Store.Investments.OrderByDescending(x => x.Cost).First();
+
+    // Every one of them beats trading the same money at the counter, or nobody would ever take one.
+    foreach (var investment in options.Store.Investments)
+        AssertTrue(investment.Rep > investment.Cost * options.Store.RepPerDollarSpent,
+            $"{investment.Key} buys more standing than spending the same money on goods would");
+
+    var player = new Player { Cash = first.Cost * 4, Hideout = new Hideout() };
+    var result = economy.Invest(player, first.Key, now);
+    AssertEqual(first.Rep, (int)player.StoreRep);
+    AssertEqual(first.Cost * 4 - first.Cost, player.Cash);
+    AssertTrue(result.Summary.Contains("rep"), "the result says what it bought");
+
+    // Shut, and not by a per-favour clock: the counter's patience is one thing, so a second favour of a
+    // different size is refused too. Otherwise the whole ladder could be bought in a single minute.
+    AssertRuleError(() => economy.Invest(player, first.Key, now.AddHours(1)), "investing again inside the cooldown");
+    AssertRuleError(() => economy.Invest(player, dearest.Key, now.AddHours(1)), "taking a different favour inside the same cooldown");
+    AssertEqual(now.AddHours(first.CooldownHours), player.StoreInvestmentReadyAtUtc);
+
+    economy.Invest(player, first.Key, now.AddHours(first.CooldownHours));
+    AssertEqual(first.Rep * 2, (int)player.StoreRep);
+
+    // The rungs above are shut to somebody standing below them, whatever they are carrying.
+    var rich = new Player { Cash = 100_000_000, Hideout = new Hideout() };
+    var gated = options.Store.Investments.FirstOrDefault(x => x.MinLevel > 1);
+    if (gated is not null)
+        AssertRuleError(() => economy.Invest(rich, gated.Key, now), "buying into a rung you do not stand on");
+
+    // And money is still money: a favour nobody can pay for is refused before the clock is touched.
+    var broke = new Player { Cash = first.Cost - 1, Hideout = new Hideout() };
+    AssertRuleError(() => economy.Invest(broke, first.Key, now), "investing money that is not there");
+    AssertTrue(broke.StoreInvestmentReadyAtUtc is null, "a refused favour costs nothing, including the clock");
+    AssertRuleError(() => economy.Invest(broke, "nothing-like-this", now), "investing in something the counter does not offer");
 }
 
 // Both of a drive-by's rolls read the guard, and they weight it differently on purpose. Finding somebody
@@ -9444,7 +9723,21 @@ static GameOptions Resolve(GameOptions? options)
     resolved.Hideout.ApplyDefaultsWhereEmpty();
     resolved.Territory.ApplyDefaultsWhereEmpty();
     resolved.CityMarkets.ApplyDefaultsWhereEmpty(resolved.Territory.Cities());
+    resolved.Store.ApplyDefaultsWhereEmpty();
     return resolved;
+}
+
+/// <summary>
+/// A player standing high enough at the store to be sold anything on the shelf.
+///
+/// Used by the tests that are about something else entirely - storage rooms, prices, what a rack is
+/// worth - and only need the counter to hand a gun over. The rep gate has its own tests; every other
+/// test in this file predates it and is not about it.
+/// </summary>
+static Player Connected(Player player, GameOptions options)
+{
+    player.StoreRep = options.Store.Ladder().LastOrDefault()?.Rep ?? 0;
+    return player;
 }
 
 /// <summary>

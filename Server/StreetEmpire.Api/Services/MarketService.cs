@@ -86,6 +86,13 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
         if (quantity > listing.Quantity)
             throw new GameRuleException($"Only {listing.Quantity:N0} left in that listing.");
 
+        // The same standing the shop asks for. Gating the counter alone would have made the gate
+        // decorative and the board absurd: rifles are listed here at a discount to the shop, so the
+        // cheapest route to the gun nobody would sell you would have been the one that skipped the
+        // shop entirely. Nothing is earned here either - the counter is what remembers you, and a
+        // pair of accounts selling the same crate back and forth would otherwise be a rep machine.
+        StoreRep.EnsureCanHold(buyer, _options, listing.Item);
+
         var cost = listing.PricePerUnit * quantity;
         if (buyer.Cash < cost)
             throw new GameRuleException($"That comes to {cost:C0} and you have {buyer.Cash:C0} on hand.");

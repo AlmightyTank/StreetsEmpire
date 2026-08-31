@@ -478,6 +478,16 @@
   the answer the page is reporting.
 
 ### Fixed
+- **The two morale buttons went grey and would not say why.** Rest Crew and Throw Party check five
+  things between them - morale already full, turns, cash, beer, weed - and failing any of them simply
+  disabled the button with nothing anywhere to read. The state a player most often hits it in is the
+  one that hides the answer best: a building is paid for out of the bank and then out of your pocket,
+  so the crew wants steadying on precisely the day there is nothing in hand to steady them with. Each
+  button now names the first thing it is short of, in the order the server checks, and the cash line
+  says "in hand" because money sitting in the bank is exactly what makes this confusing.
+- **The party never said what it was worth.** Rest Crew has always shown its +8%, and the button beside
+  it - the one that puts ten points on thug morale against rest's eight - showed only what it cost. A
+  player whose thugs are the half that is suffering could not tell which of the two was aimed at them.
 - **A finished building did not raise the ground you could run until something else happened.** Upgrade
   to the Warehouse, wait out the thirty-minute build, open the map, and it still said one of one piece
   of ground and offered no button to take a second - while the claim endpoint behind that button would

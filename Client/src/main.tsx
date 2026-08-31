@@ -5670,16 +5670,41 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
 }) {
   const report = dashboard.crewReport
   const moraleFull = dashboard.hoeHappiness >= 100 && dashboard.thugHappiness >= 100
-  const canRest = !busy
-    && !moraleFull
-    && dashboard.turns >= report.hqRestTurnCost
-    && dashboard.cash >= report.hqRestCashCost
-  const canParty = !busy
-    && !moraleFull
-    && dashboard.turns >= report.hqPartyTurnCost
-    && dashboard.cash >= report.hqPartyCashCost
-    && dashboard.beer >= report.hqPartyBeerCost
-    && dashboard.weed >= report.hqPartyWeedCost
+
+  /*
+    Why the button is grey, in the button.
+
+    Both of these were `disabled` and silent, which is the one thing this game says it does not do to
+    a player - and the state they most often land in is the one that hides the answer best: buy the
+    building, and the price comes out of the bank and then out of your pocket, so the crew needs
+    steadying on the day there is nothing in hand to steady them with. A player in that position sees
+    two dead buttons and no way at all to find out that the money is the problem, or that the money
+    being in the bank is why it is a problem.
+
+    The order is the order the server checks in, so the reason shown is the reason it would refuse
+    with, and cash names where it has to be.
+  */
+  const restReason = moraleFull
+    ? 'Your crew are already steady.'
+    : dashboard.turns < report.hqRestTurnCost
+      ? `Needs ${report.hqRestTurnCost} turns and you have ${dashboard.turns}.`
+      : dashboard.cash < report.hqRestCashCost
+        ? `Needs ${money.format(report.hqRestCashCost)} in hand. Bank money does not count.`
+        : null
+  const partyReason = moraleFull
+    ? 'Your crew are already steady.'
+    : dashboard.turns < report.hqPartyTurnCost
+      ? `Needs ${report.hqPartyTurnCost} turns and you have ${dashboard.turns}.`
+      : dashboard.cash < report.hqPartyCashCost
+        ? `Needs ${money.format(report.hqPartyCashCost)} in hand. Bank money does not count.`
+        : dashboard.beer < report.hqPartyBeerCost
+          ? `Needs ${report.hqPartyBeerCost} beer and you have ${dashboard.beer}.`
+          : dashboard.weed < report.hqPartyWeedCost
+            ? `Needs ${report.hqPartyWeedCost} weed and you have ${dashboard.weed}.`
+            : null
+
+  const canRest = !busy && restReason === null
+  const canParty = !busy && partyReason === null
 
   return <section className="card p-3 gcol-full">
     <div className="panel-title"><h2>Recovery</h2><span>{dashboard.hideout.tierName} morale</span></div>
@@ -5691,11 +5716,19 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
       <div className="d-grid gtc-1 gtc-md-2 gap-2">
         <button className="btn btn-secondary btn-stacked" disabled={!canRest} onClick={() => void act(() => api.recoverMorale('rest'))}>
           Rest Crew
-          <span>{report.hqRestTurnCost} turns / {money.format(report.hqRestCashCost)} / +{report.hqRestMoraleGain.toFixed(0)}%</span>
+          <span>{report.hqRestTurnCost} turns / {money.format(report.hqRestCashCost)} / +{report.hqRestMoraleGain.toFixed(0)}% to both</span>
+          {restReason && <span className="text-warning-emphasis">{restReason}</span>}
         </button>
         <button className="btn btn-primary btn-stacked" disabled={!canParty} onClick={() => void act(() => api.recoverMorale('party'))}>
           Throw Party
-          <span>{report.hqPartyTurnCost} turns / {money.format(report.hqPartyCashCost)} / {report.hqPartyBeerCost} beer / {report.hqPartyWeedCost} weed</span>
+          {/* The party's two gains were the one thing this panel never said, while the rest button
+              beside it has always shown its own. A player whose thugs are the half that is suffering
+              could not tell which of these two was the one aimed at them. */}
+          <span>
+            {report.hqPartyTurnCost} turns / {money.format(report.hqPartyCashCost)} / {report.hqPartyBeerCost} beer / {report.hqPartyWeedCost} weed
+            {' / '}+{report.hqPartyHoeMoraleGain.toFixed(0)}% hoes, +{report.hqPartyThugMoraleGain.toFixed(0)}% thugs
+          </span>
+          {partyReason && <span className="text-warning-emphasis">{partyReason}</span>}
         </button>
       </div>
     </div>

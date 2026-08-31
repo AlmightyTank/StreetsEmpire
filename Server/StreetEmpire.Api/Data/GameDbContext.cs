@@ -29,6 +29,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
     public DbSet<AlliancePact> AlliancePacts => Set<AlliancePact>();
+    public DbSet<AllianceWar> AllianceWars => Set<AllianceWar>();
     public DbSet<AllianceAssistCall> AllianceAssistCalls => Set<AllianceAssistCall>();
     public DbSet<AllianceTransfer> AllianceTransfers => Set<AllianceTransfer>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
@@ -205,6 +206,32 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AllianceWar>(entity =>
+        {
+            // Both directions indexed on status, because every question asked of this table is "is
+            // this crew at war" and a crew is as often the one declared on as the one declaring.
+            entity.HasIndex(x => new { x.DeclaringAllianceId, x.Status });
+            entity.HasIndex(x => new { x.TargetAllianceId, x.Status });
+            // The settle sweep reads this one on its own: every war whose clock has run out.
+            entity.HasIndex(x => new { x.Status, x.EndsAtUtc });
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.Outcome).HasMaxLength(400);
+            entity.HasOne(x => x.DeclaringAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.DeclaringAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TargetAlliance)
+                .WithMany()
+                .HasForeignKey(x => x.TargetAllianceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // The declarer is kept, not cascaded: a settled war is a record of what happened between
+            // two crews, and losing the player who started it must not erase it.
+            entity.HasOne(x => x.DeclaredBy)
+                .WithMany()
+                .HasForeignKey(x => x.DeclaredById)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AlliancePact>(entity =>

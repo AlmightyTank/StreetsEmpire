@@ -6463,6 +6463,8 @@ function AlliancePage(ctx: PageContext) {
 
         <AllianceAssistPanel board={board} ownPlayerId={ctx.dashboard.playerId} busy={busy} onAct={run} />
 
+        <AllianceWarPanel board={board} busy={busy} />
+
         <AlliancePactsPanel board={board} busy={busy} onAct={run} />
 
         <AlliancePoolPanel board={board} crew={yours} busy={busy} onAct={run} />
@@ -6525,7 +6527,10 @@ function AlliancePage(ctx: PageContext) {
             <small className="text-body-secondary">
               {crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues
               {crew.cityControlThugs > 0 ? ` / +${crew.cityControlThugs} city thugs` : ''}
+              {/* A record you cannot see from outside is not a reputation. */}
+              {crew.warsWon + crew.warsLost > 0 ? ` / ${crew.warsWon}-${crew.warsLost} in wars` : ''}
             </small>
+            {crew.atWarWith && <small className="text-danger-emphasis">At war with {crew.atWarWith}</small>}
           </div>
           <b>{money.format(crew.netWorth)}</b>
           {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
@@ -6547,6 +6552,17 @@ function AlliancePage(ctx: PageContext) {
             disabled={busy}
             onClick={() => run(() => api.requestAlliancePact(crew.id))}
           >Ally</button>}
+          {/* Offered only where it could actually be pressed: your rank has to allow spending the
+              treasury, neither crew can already be in a war, and you cannot declare on people you
+              hold a truce with. Every one of those is refused by the server too - this is so nobody
+              learns the rules by being told no. */}
+          {yours && !crew.yours && board.warTerms.youCanDeclare && !hasPactWith(board, crew.id)
+            && !board.war && !crew.atWarWith && <button
+              className="btn btn-outline-danger btn-sm"
+              disabled={busy || board.treasury < board.warTerms.stake}
+              title={`${money.format(board.warTerms.stake)} out of the treasury, ${board.warTerms.durationHours} hours, winner takes the stake and ${board.warTerms.tributePercent}% of the losing treasury.`}
+              onClick={() => run(() => api.declareWar(crew.id))}
+            >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</button>}
         </div>)}
       </div>
     </section>
@@ -6682,6 +6698,76 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</button>
       <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</button>
     </div>)}
+  </div>
+}
+
+/**
+ * The war, if there is one, and the record if there is not.
+ *
+ * A crew was a reason to exist and no reason to act - everything it carried was defensive, and two
+ * crews could sit beside each other for a month with nothing to decide. This is the panel where that
+ * stops being true, so it says the terms out loud whether or not a war is on: what the fights a crew
+ * already fights are worth, what the clock is, and what changes hands at the end.
+ */
+function AllianceWarPanel({ board, busy }: { board: AllianceBoard, busy: boolean }) {
+  const war = board.war
+  const terms = board.warTerms
+
+  // The panel keeps its own second hand, like the building does. The app-wide one stops once turns
+  // are maxed, which would freeze a war clock for exactly the crews who have stopped earning to fight.
+  const [, setNow] = useState(0)
+  useEffect(() => {
+    if (!war || war.settled) return
+    const timer = window.setInterval(() => setNow(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [war?.id, war?.settled])
+
+  if (!board.yours) return null
+
+  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
+    <strong className="d-block mb-1 text-danger small">Wars</strong>
+    {war
+      ? <div className="d-grid gap-1 border rounded border-danger p-3">
+        <div className="d-flex justify-content-between align-items-baseline gap-2">
+          <strong>Against {war.opponentName}</strong>
+          <em className="eyebrow fst-normal">{timeUntil(war.endsAtUtc)} left</em>
+        </div>
+        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2 my-2">
+          <AdminMetric label="You" value={`${war.yourScore}`} />
+          <AdminMetric label="Them" value={`${war.theirScore}`} />
+          <AdminMetric label="On the table" value={money.format(war.stake)} />
+        </div>
+        <span className="text-body-secondary small">
+          {war.youDeclared
+            ? `${war.declaredByName} declared it, and the stake is yours until somebody wins it.`
+            : `${war.opponentName} declared it. The stake is theirs, and it is yours if you beat them.`}
+          {' '}A raid won is {terms.pointsForRaidWon}, a raid turned away is {terms.pointsForDefenceHeld},
+          and taking ground is {terms.pointsForGroundTaken}. It takes {terms.minScoreToWin} to win
+          anything at all, and the winner takes the stake plus {terms.tributePercent}% of the losing
+          treasury.
+        </span>
+        <small className="text-body-tertiary">
+          Nothing about a war lifts a protection. The wealth floor, the ratio, the shield on somebody
+          who has just been hit and the falling haul on a repeat all still apply - so this is a reason
+          to fight, not a licence.
+        </small>
+      </div>
+      : <p className="text-body-secondary small mb-0">
+        No war on. Declaring costs the treasury {money.format(terms.stake)} and runs {terms.durationHours} hours;
+        the winner takes that back plus {terms.tributePercent}% of the losing crew's treasury, up to{' '}
+        {money.format(terms.maxTribute)}. {terms.youCanDeclare
+          ? 'Pick a crew off the board below.'
+          : 'Somebody who can spend the treasury has to call it.'}
+      </p>}
+    {board.warHistory.length > 0 && <div className="d-grid gap-1 mt-2">
+      {board.warHistory.map(past => <div key={past.id} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
+        <small className={past.youWon === true ? 'text-success-emphasis' : past.youWon === false ? 'text-danger-emphasis' : 'text-body-secondary'}>
+          {past.youWon === true ? 'Won' : past.youWon === false ? 'Lost' : 'Drew'} against {past.opponentName}
+        </small>
+        <small className="text-body-tertiary tnum">{past.yourScore}-{past.theirScore}</small>
+      </div>)}
+    </div>}
+    {busy && <small className="text-body-tertiary">Working.</small>}
   </div>
 }
 

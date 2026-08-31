@@ -31,6 +31,10 @@ public static class WorldNews
                   && log.Action != "GROUND"
                   && log.Action != "BUST"
                   && (log.Action == "ATTACK"
+                      // One crew declaring on another is the largest thing that happens in this world
+                      // and the only one that involves a dozen people at once. It is written once, to
+                      // the player who declared it, precisely so it can be published here.
+                      || log.Action == "WAR"
                       || log.Action == "HIDEOUT"
                       || log.Action == "TERRITORY"
                       || log.Action == "START"
@@ -48,6 +52,7 @@ public static class WorldNews
     {
         "ATTACK" => "combat",
         "TERRITORY" => "ground",
+        "WAR" => "crew",
         "HIDEOUT" => "build",
         "START" => "arrival",
         "CREW" => "crew",

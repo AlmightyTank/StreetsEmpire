@@ -3,6 +3,42 @@
 ## 0.2.7 (in progress)
 
 ### Added
+- **Crews can declare war on each other now, with a clock, a score and a pot on the table.** A crew was
+  a reason to exist and no reason to act. Every single thing one carried was defensive or passive - a
+  truce nobody has to renew, a treasury that only moves when a member asks it to, pacts that create
+  non-aggression and never once the other kind, and calls for help that cannot exist until somebody has
+  already been attacked. Two crews could sit beside each other for a month and never have one thing to
+  decide about each other.
+- Declaring costs the treasury $250,000 and runs 48 hours. The stake leaves on the day it is called
+  rather than at the end, so it is a decision the crew feels when somebody makes it, and it is the
+  whole of what the crew being declared on is guaranteed to win - a free declaration is an insult, and
+  an insult is not a war. Two days because both sides deserve a full evening at the screen whichever
+  timezone they keep, and because a war should be an event rather than a condition.
+- **Nothing new is scored.** A raid won is three, a raid turned away is two, and taking a piece of
+  ground is five - three outcomes the combat system already produces. A war is not a new way to fight,
+  it is a reason to go and fight the people you were already allowed to. Defence scores real points on
+  purpose: a crew that only attacks should not beat a crew that turns every raid away, and a defender
+  is usually asleep when it happens.
+- The winner takes the stake back plus 15% of the losing treasury, capped at five million. A share
+  rather than a number, so a war between two poor crews is fought over the stake and one between two
+  rich crews is fought over something worth having, and capped so a crew that has been saving for a
+  year is not emptied by two bad days.
+- **A war nobody fought pays nobody.** It takes six points to win anything at all, and level scores
+  send the stake home. That is the hole every war system has - declare on a crew that has stopped
+  playing, land one unanswered raid, take a cut of everything they saved - and the answer is that a war
+  has to be fought to be won. The same two crews also have to wait 72 hours before doing it again.
+- Nothing about a war lifts a single protection. The wealth floor, the five-times ratio, the shield
+  that widens on somebody who has just been hit and the haul that falls on every repeat all still
+  apply - because "we declared war" is precisely the excuse a farmer would reach for. What changes is
+  that the fights those rules already allow are suddenly worth choosing.
+- A truce has to be ended before a war can be declared, in the open, which is the whole difference
+  between calling a war and simply reneging. One war per crew at a time, either side of it: a crew
+  fighting on two fronts cannot tell its members which fights are scoring, and the score is the point.
+- Crews carry a record now - won and lost, on the board, where everybody can read it, next to who each
+  of them is currently fighting. A record nobody outside can see is not a reputation. Declaring is
+  governed by the power that already governs spending the treasury, because that is honestly what it
+  is: somebody spending the crew's money on a fight everybody in it is now part of.
+
 - **Ground can be worked up now, and what somebody has put into a corner is the thing worth taking it
   for.** There are forty-eight pieces on the map and every one of them was a switch: take it, garrison
   it, lose it. A corner paid the same fifteen percent on the day it was claimed as it did a season

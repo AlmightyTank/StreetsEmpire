@@ -38,6 +38,8 @@ internal static class AllianceEndpoints
             var pacts = new List<AlliancePactResponse>();
             var assistCalls = new List<AllianceAssistCallResponse>();
             var transfers = new List<AllianceTransferResponse>();
+            AllianceWarResponse? war = null;
+            var warHistory = new List<AllianceWarResponse>();
             long treasury = 0;
             if (player.AllianceId is { } id)
             {
@@ -98,6 +100,12 @@ internal static class AllianceEndpoints
                     .Take(20)
                     .ToListAsync(ct);
                 transfers = transferRows.Select(ToTransferResponse).ToList();
+
+                var live = await alliances.ActiveWarForAsync(id, ct);
+                war = live is null ? null : ToWarResponse(live, id, DateTime.UtcNow);
+                warHistory = (await alliances.WarHistoryForAsync(id, 10, ct))
+                    .Select(x => ToWarResponse(x, id, DateTime.UtcNow))
+                    .ToList();
             }
 
             // Everything this player has a part in: invitations waiting on them, applications waiting on
@@ -144,9 +152,61 @@ internal static class AllianceEndpoints
                     .ToList(),
                 pending.Select(x => ToRequestResponse(x, player)).ToList(),
                 pacts,
+                war,
+                warHistory,
+                new AllianceWarTermsResponse(
+                    config.War.DurationHours,
+                    config.War.Stake,
+                    (int)Math.Round(config.War.TributePercent),
+                    config.War.MaxTribute,
+                    config.War.MinScoreToWin,
+                    config.War.CooldownHours,
+                    config.War.PointsForRaidWon,
+                    config.War.PointsForDefenceHeld,
+                    config.War.PointsForGroundTaken,
+                    // Declaring is spending the crew's money on a fight, so it answers to the power
+                    // that governs spending rather than one of its own.
+                    crewForPowers is not null && AllianceService.Can(player, crewForPowers, AlliancePower.SpendTreasury)),
                 assistCalls,
                 transfers,
                 board));
+        }).RequireAuthorization();
+
+
+        // The one thing a crew can do to another crew on purpose.
+        app.MapPost("/api/game/alliance/war", async (
+            DeclareWarRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AllianceService alliances,
+            PlayerClock clock,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            // Settles anything already due before declaring, so a crew coming off one war can start
+            // the next one in the same click rather than being told they are still in a finished fight.
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var war = await alliances.DeclareWarAsync(player, request.AllianceId, now, ct);
+                var summary = $"Declared war on {war.TargetAlliance.Name}. It runs until {war.EndsAtUtc:u}.";
+                AddLog(db, player, before, "CREW", 0, summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
+                {
+                    ["warId"] = war.Id,
+                    ["stake"] = war.Stake,
+                    ["endsAtUtc"] = war.EndsAtUtc
+                }));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         }).RequireAuthorization();
 
 
@@ -711,6 +771,33 @@ internal static class AllianceEndpoints
                 : viewer.AllianceId == request.AllianceId
                   && AllianceService.Can(viewer, request.Alliance, AlliancePower.Invite),
             request.CreatedAtUtc);
+
+    /// <summary>
+    /// A war told from one crew's side. Everything is "yours" and "theirs" rather than two names,
+    /// because a crew reading its own war should never have to work out which of them it is.
+    /// </summary>
+    private static AllianceWarResponse ToWarResponse(AllianceWar war, long viewingAllianceId, DateTime nowUtc)
+    {
+        var mine = war.DeclaringAllianceId == viewingAllianceId;
+        var opponentId = war.OpponentOf(viewingAllianceId);
+        var opponentName = mine ? war.TargetAlliance.Name : war.DeclaringAlliance.Name;
+        return new AllianceWarResponse(
+            war.Id,
+            opponentId,
+            opponentName,
+            mine,
+            war.DeclaredBy?.Name ?? "Somebody",
+            war.Stake,
+            war.ScoreOf(viewingAllianceId),
+            war.ScoreOf(opponentId),
+            war.StartedAtUtc,
+            war.EndsAtUtc,
+            Math.Max(0, (int)Math.Ceiling((war.EndsAtUtc - nowUtc).TotalSeconds)),
+            war.Status == AllianceWarStatuses.Settled,
+            war.WinnerAllianceId is null ? null : war.WinnerAllianceId == viewingAllianceId,
+            war.Tribute,
+            war.Outcome);
+    }
 
     private static AlliancePactResponse ToPactResponse(AlliancePact pact, long viewerAllianceId, bool canAnswer)
         => new(

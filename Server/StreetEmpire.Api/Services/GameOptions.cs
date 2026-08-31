@@ -578,6 +578,9 @@ public sealed class AllianceOptions
     /// </summary>
     public double MaxBorrowedPerOwnThug { get; set; } = 1;
 
+    /// <summary>What a declared war costs, runs for, scores, and pays out.</summary>
+    public WarOptions War { get; set; } = new();
+
     /// <summary>
     /// Crews the world already has. Seeded around towns on first read, because that is the alliance a
     /// world would actually make - the people working the same streets - and it gives a player an
@@ -621,6 +624,70 @@ public sealed class AllianceOptions
 }
 
 /// <summary>A crew the world starts with, formed from the rivals already working that town.</summary>
+/// <summary>
+/// A crew war: a clock, a score and a pot.
+///
+/// Sized against what a crew can actually do inside the window rather than picked round. Two days is
+/// long enough that both sides get a full evening at the screen whatever timezone they are in, and
+/// short enough that a war is an event rather than a condition. A player has two attack lanes on a
+/// thirty-minute cooldown, so a crew of six can mount a few dozen fights in that stretch and a score
+/// in the twenties is a hard-fought one.
+/// </summary>
+public sealed class WarOptions
+{
+    /// <summary>How long a war runs once declared.</summary>
+    public int DurationHours { get; set; } = 48;
+
+    /// <summary>
+    /// What the declaring crew puts on the table, out of the treasury, the moment they declare.
+    ///
+    /// Priced against the founding cost rather than against income: starting a crew is $150,000 and is
+    /// meant to be a decision an established player makes, and picking a fight with another crew should
+    /// cost about as much thought. It is also the whole of what the crew being declared on is
+    /// guaranteed to win, which is why it cannot be nominal - a free declaration is an insult, and an
+    /// insult is not a war.
+    /// </summary>
+    public long Stake { get; set; } = 250_000;
+
+    /// <summary>
+    /// What the loser's treasury pays the winner on top of the stake, and the ceiling on it.
+    ///
+    /// A share rather than a number, so a war between two poor crews is fought over the stake and a
+    /// war between two rich ones is fought over something worth having. Capped because a crew that has
+    /// been saving for a year should not be emptied by two days of raids.
+    /// </summary>
+    public double TributePercent { get; set; } = 15;
+    public long MaxTribute { get; set; } = 5_000_000;
+
+    /// <summary>
+    /// The score it takes to win anything at all.
+    ///
+    /// Without it, declaring on a crew that has stopped playing is a wage: one raid nobody contests
+    /// wins the war and takes a cut of whatever they had saved. A war has to be fought to be won, and
+    /// this is the line under "fought".
+    /// </summary>
+    public int MinScoreToWin { get; set; } = 6;
+
+    /// <summary>
+    /// How long the same two crews must wait before doing it again. The second half of the answer to
+    /// farming a dormant crew: even a war that is worth winning cannot be re-declared every other day.
+    /// </summary>
+    public int CooldownHours { get; set; } = 72;
+
+    /// <summary>
+    /// What the things a crew already does are worth once there is a war on.
+    ///
+    /// Nothing new is scored. A raid, a defence and a piece of ground are the three outcomes the combat
+    /// system already produces, and a war is only a reason to go and produce them against one
+    /// particular crew. Ground is worth the most because it is the hardest and it lasts; a defence is
+    /// worth something real because a crew that only ever attacks should not beat a crew that turns
+    /// every raid away.
+    /// </summary>
+    public int PointsForRaidWon { get; set; } = 3;
+    public int PointsForDefenceHeld { get; set; } = 2;
+    public int PointsForGroundTaken { get; set; } = 5;
+}
+
 public sealed class RivalCrewOptions
 {
     public string Name { get; set; } = string.Empty;

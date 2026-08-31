@@ -228,6 +228,9 @@ public sealed class CombatMissionService(
                 // asking. Here rather than inside Complete, which is synchronous and has no business
                 // becoming a database round trip.
                 await alliances.CloseOpenAssistCallsAsync(mission.Id, nowUtc, cancellationToken);
+                // And it counts, if the two crews have a war on. After Complete rather than inside it,
+                // because a territory raid only knows who holds the ground once Complete has settled it.
+                await alliances.ScoreWarAsync(mission, nowUtc, cancellationToken);
                 updates++;
             }
         }

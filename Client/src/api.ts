@@ -455,7 +455,45 @@ export type AllianceSummary = {
   youFounded: boolean
   cityControlThugs: number
   controlledCities: AllianceCityControl[]
+  /** Wars settled their way and against them. A crew has a record now. */
+  warsWon: number
+  warsLost: number
+  /** Who they are fighting right now. Nobody may declare on a crew already in one. */
+  atWarWith?: string | null
   rank: number
+}
+
+/** A war, told from the point of view of the crew reading it. */
+export type AllianceWar = {
+  id: number
+  opponentAllianceId: number
+  opponentName: string
+  youDeclared: boolean
+  declaredByName: string
+  stake: number
+  yourScore: number
+  theirScore: number
+  startedAtUtc: string
+  endsAtUtc: string
+  secondsRemaining: number
+  settled: boolean
+  /** Null while it runs, and on a war nobody won. */
+  youWon?: boolean | null
+  tribute: number
+  outcome?: string | null
+}
+
+export type AllianceWarTerms = {
+  durationHours: number
+  stake: number
+  tributePercent: number
+  maxTribute: number
+  minScoreToWin: number
+  cooldownHours: number
+  pointsForRaidWon: number
+  pointsForDefenceHeld: number
+  pointsForGroundTaken: number
+  youCanDeclare: boolean
 }
 
 export type AllianceCityControl = {
@@ -589,6 +627,10 @@ export type AllianceBoard = {
   doors: AllianceDoor[]
   requests: AllianceRequest[]
   pacts: AlliancePact[]
+  /** The war on right now, or null. */
+  war?: AllianceWar | null
+  warHistory: AllianceWar[]
+  warTerms: AllianceWarTerms
   assistCalls: AllianceAssistCall[]
   transfers: AllianceTransfer[]
   board: AllianceSummary[]
@@ -1515,6 +1557,8 @@ export const api = {
     request<ActionResult>('/api/game/alliances/pacts', { method: 'POST', body: JSON.stringify({ allianceId }) }),
   answerAlliancePact: (pactId: number, accept: boolean) =>
     request<ActionResult>('/api/game/alliances/pacts/answer', { method: 'POST', body: JSON.stringify({ pactId, accept }) }),
+  declareWar: (allianceId: number) =>
+    request<ActionResult>('/api/game/alliance/war', { method: 'POST', body: JSON.stringify({ allianceId }) }),
   cancelAlliancePact: (pactId: number) =>
     request<ActionResult>('/api/game/alliances/pacts/cancel', { method: 'POST', body: JSON.stringify({ pactId, accept: false }) }),
   /** Takes back whatever is left of what you sent, once the fight it was sent to is over. */

@@ -204,6 +204,8 @@ var tests = new (string Name, Action Test)[]
     ("one box on the form is one name underneath", OneBoxOnTheFormIsOneNameUnderneath),
     ("money is dollars wherever the server happens to be", MoneyIsDollarsWhereverTheServerIs),
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
+    ("a war has a clock, a score and a pot", AWarHasAClockAScoreAndAPot),
+    ("a war nobody fought pays nobody", AWarNobodyFoughtPaysNobody),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
@@ -4164,6 +4166,133 @@ static (Player Ally, Player Defender, CombatMission Mission, AllianceAssistCall 
         .GetAwaiter().GetResult();
     world.Db.SaveChanges();
     return (ally, defender, mission, call);
+}
+
+/// <summary>
+/// The thing a crew never had: a reason to act, on a clock, with something on the table. This is the
+/// whole arc - declared, scored off fights that were happening anyway, settled, paid.
+/// </summary>
+static void AWarHasAClockAScoreAndAPot()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var config = options.Alliances.War;
+    var alliances = world.Alliances;
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var ours = world.Crew("Riverworks");
+    var theirs = world.Crew("The Causeway Set");
+    ours.Treasury = 2_000_000;
+    theirs.Treasury = 4_000_000;
+    var boss = world.Member("Boss", ours);
+    var enemy = world.Member("Enemy", theirs);
+    world.Db.SaveChanges();
+
+    var war = alliances.DeclareWarAsync(boss, theirs.Id, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // The stake leaves on the day it is declared, so the decision is felt when it is made.
+    AssertEqual(config.Stake, war.Stake);
+    AssertEqual(2_000_000 - config.Stake, ours.Treasury);
+    AssertEqual(now.AddHours(config.DurationHours), war.EndsAtUtc);
+
+    // One war at a time, either way round, and never on people you hold a truce with.
+    AssertRuleError(() => alliances.DeclareWarAsync(boss, theirs.Id, now, default).GetAwaiter().GetResult(),
+        "declaring a second war while one is running");
+    AssertRuleError(() => alliances.DeclareWarAsync(boss, ours.Id, now, default).GetAwaiter().GetResult(),
+        "declaring war on yourselves");
+
+    // Fights that were happening anyway are what score it. Nothing new is counted.
+    Score(world, boss, enemy, "Victory", null, now);
+    AssertEqual(config.PointsForRaidWon, war.DeclaringScore);
+    Score(world, boss, enemy, "Victory", 1, now);
+    AssertEqual(config.PointsForRaidWon + config.PointsForGroundTaken, war.DeclaringScore);
+    Score(world, enemy, boss, "Defeat", null, now);
+    // A raid the other crew failed to land scores for the side that turned it away, which is this one.
+    AssertEqual(config.PointsForRaidWon + config.PointsForGroundTaken + config.PointsForDefenceHeld, war.DeclaringScore);
+    // A standstill is nobody's, which is why a war cannot be won by refusing to resolve anything.
+    var before = war.DeclaringScore + war.TargetScore;
+    Score(world, boss, enemy, "Standstill", null, now);
+    AssertEqual(before, war.DeclaringScore + war.TargetScore);
+    Score(world, enemy, boss, "Victory", null, now);
+    AssertEqual(config.PointsForRaidWon, war.TargetScore);
+
+    // Nothing settles while the clock is still running.
+    AssertEqual(0, alliances.SettleDueWarsAsync(war.EndsAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult());
+    AssertEqual(AllianceWarStatuses.Active, war.Status);
+
+    var theirTreasuryBefore = theirs.Treasury;
+    AssertEqual(1, alliances.SettleDueWarsAsync(war.EndsAtUtc, default).GetAwaiter().GetResult());
+    world.Db.SaveChanges();
+
+    var tribute = (long)Math.Min(config.MaxTribute, theirTreasuryBefore * config.TributePercent / 100.0);
+    AssertEqual(AllianceWarStatuses.Settled, war.Status);
+    AssertEqual(ours.Id, war.WinnerAllianceId);
+    AssertEqual(tribute, war.Tribute);
+    // The winner takes back their own stake and the loser's cut on top of it.
+    AssertEqual(2_000_000 - config.Stake + config.Stake + tribute, ours.Treasury);
+    AssertEqual(theirTreasuryBefore - tribute, theirs.Treasury);
+    AssertTrue(war.Outcome is not null, "a settled war says what happened");
+
+    // Settling twice must not pay twice.
+    AssertEqual(0, alliances.SettleDueWarsAsync(war.EndsAtUtc.AddHours(1), default).GetAwaiter().GetResult());
+    AssertEqual(2_000_000 - config.Stake + config.Stake + tribute, ours.Treasury);
+
+    // And the same two crews cannot go straight back at each other.
+    AssertRuleError(() => alliances.DeclareWarAsync(boss, theirs.Id, war.EndsAtUtc.AddHours(1), default).GetAwaiter().GetResult(),
+        "re-declaring inside the cooldown");
+}
+
+/// <summary>
+/// The hole every war system has: declaring on a crew that has stopped playing and drawing a wage off
+/// them. A war has to be fought to be won, and the stake goes home when it was not.
+/// </summary>
+static void AWarNobodyFoughtPaysNobody()
+{
+    using var world = NewCrewWorld();
+    var config = world.Options.Alliances.War;
+    var alliances = world.Alliances;
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var ours = world.Crew("Riverworks");
+    var dormant = world.Crew("The Quiet Ones");
+    ours.Treasury = 1_000_000;
+    dormant.Treasury = 9_000_000;
+    var boss = world.Member("Boss", ours);
+    var sleeper = world.Member("Sleeper", dormant);
+    world.Db.SaveChanges();
+
+    var war = alliances.DeclareWarAsync(boss, dormant.Id, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    // One unanswered raid is not a war, however rich the crew on the other end of it.
+    Score(world, boss, sleeper, "Victory", null, now);
+    AssertTrue(war.DeclaringScore < config.MinScoreToWin, "one raid should not clear the bar");
+
+    alliances.SettleDueWarsAsync(war.EndsAtUtc, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+
+    AssertTrue(war.WinnerAllianceId is null, "nobody wins a war nobody fought");
+    AssertEqual(0L, war.Tribute);
+    AssertEqual(9_000_000, dormant.Treasury);
+    // The stake goes home rather than being forfeit: it was not lost, the war simply did not happen.
+    AssertEqual(1_000_000, ours.Treasury);
+}
+
+/// <summary>Runs one finished fight past the war scorer, which is all the war cares about.</summary>
+static void Score(CrewWorld world, Player attacker, Player defender, string outcome, long? territoryId, DateTime nowUtc)
+{
+    var mission = new CombatMission
+    {
+        AttackerId = attacker.Id,
+        Attacker = attacker,
+        DefenderId = defender.Id,
+        Defender = defender,
+        Status = "Complete",
+        Outcome = outcome,
+        TerritoryId = territoryId
+    };
+    world.Alliances.ScoreWarAsync(mission, nowUtc, default).GetAwaiter().GetResult();
 }
 
 static void MakePact(CrewWorld world, Player asker, long targetId, Player answerer)

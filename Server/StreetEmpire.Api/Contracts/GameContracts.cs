@@ -121,6 +121,46 @@ public sealed record AlliancePactResponse(
     bool YoursToAnswer,
     DateTime CreatedAtUtc);
 
+/// <summary>
+/// A war, from the point of view of one of the two crews in it. Everything is stated from that side -
+/// "your score", "theirs" - because a crew reading its own war page should never have to work out
+/// which of two names it is.
+/// </summary>
+public sealed record AllianceWarResponse(
+    long Id,
+    long OpponentAllianceId,
+    string OpponentName,
+    /// <summary>Whether this crew is the one that declared it, which is whose stake is on the table.</summary>
+    bool YouDeclared,
+    string DeclaredByName,
+    long Stake,
+    int YourScore,
+    int TheirScore,
+    DateTime StartedAtUtc,
+    DateTime EndsAtUtc,
+    int SecondsRemaining,
+    bool Settled,
+    /// <summary>Null while it runs, and on a war nobody won.</summary>
+    bool? YouWon,
+    long Tribute,
+    string? Outcome);
+
+/// <summary>What a war costs, runs for and pays, so the page can say so before anybody commits to one.</summary>
+public sealed record AllianceWarTermsResponse(
+    int DurationHours,
+    long Stake,
+    int TributePercent,
+    long MaxTribute,
+    int MinScoreToWin,
+    int CooldownHours,
+    int PointsForRaidWon,
+    int PointsForDefenceHeld,
+    int PointsForGroundTaken,
+    /// <summary>Whether this viewer's rank lets them declare one at all.</summary>
+    bool YouCanDeclare);
+
+public sealed record DeclareWarRequest(long AllianceId);
+
 public sealed record AllianceAssistCallResponse(
     long Id,
     long CombatMissionId,
@@ -200,6 +240,11 @@ public sealed record AllianceSummaryResponse(
     bool YouFounded,
     int CityControlThugs,
     IReadOnlyList<AllianceCityControlResponse> ControlledCities,
+    /// <summary>Wars settled in their favour and against them. A crew has a record now.</summary>
+    int WarsWon = 0,
+    int WarsLost = 0,
+    /// <summary>Who they are fighting right now, or null. Nobody may declare on a crew already in one.</summary>
+    string? AtWarWith = null,
     int Rank = 0);
 
 public sealed record AllianceCityControlResponse(string City, int Territories, int BonusThugs);
@@ -244,6 +289,11 @@ public sealed record AllianceBoardResponse(
     /// <summary>Asks waiting on somebody: invitations to the viewer, applications to their crew.</summary>
     IReadOnlyList<AllianceRequestResponse> Requests,
     IReadOnlyList<AlliancePactResponse> Pacts,
+    /// <summary>The war on right now, or null.</summary>
+    AllianceWarResponse? War,
+    /// <summary>What this crew has been through. The record everybody else reads them by.</summary>
+    IReadOnlyList<AllianceWarResponse> WarHistory,
+    AllianceWarTermsResponse WarTerms,
     IReadOnlyList<AllianceAssistCallResponse> AssistCalls,
     IReadOnlyList<AllianceTransferResponse> Transfers,
     IReadOnlyList<AllianceSummaryResponse> Board);

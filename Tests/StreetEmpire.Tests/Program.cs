@@ -82,6 +82,7 @@ var tests = new (string Name, Action Test)[]
     ("a crew too big for a full shift is told the shorter one", ShortShiftsAreASupplyAnswer),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
     ("ground is worth what has been put into it", GroundIsWorthWhatWasPutIntoIt),
+    ("a bigger building actually lets you hold more ground", ABiggerBuildingHoldsMoreGround),
     ("working ground up costs money, turns and time", WorkingGroundUpIsPaidForUpFront),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
@@ -5765,6 +5766,91 @@ static void GroundIsWorthWhatWasPutIntoIt()
 /// The purchase itself: what it takes, when it lands, and the ways it is refused. Run against a
 /// database because the ground is a row and the rules read the rest of the map.
 /// </summary>
+/// <summary>
+/// The tier ladder's second promise: a bigger building runs more ground. Reported as not working from
+/// a live game - a Warehouse that would not take a second piece - so this walks the whole path the
+/// player walks rather than asserting on the cap in isolation.
+/// </summary>
+static void ABiggerBuildingHoldsMoreGround()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var service = new TerritoryService(world.Db, Snapshot(options));
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    // The table itself says a Warehouse runs two.
+    AssertEqual(1, service.HoldingCapFor(new Hideout { Tier = 1 }));
+    AssertEqual(2, service.HoldingCapFor(new Hideout { Tier = 2 }));
+
+    var player = world.Member("Holder", thugs: 40);
+    player.Turns = 200;
+    player.Hideout!.Tier = 2;
+    var first = new Territory { City = "Detroit", Name = "Eight Mile Strip", Type = "corner" };
+    var second = new Territory { City = "Detroit", Name = "Cass Corridor", Type = "corner" };
+    world.Db.Territories.AddRange(first, second);
+    world.Db.SaveChanges();
+
+    service.ClaimAsync(player, first.Id, 10, null, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(player.Id, first.HolderId);
+
+    // The one that was reported as refused.
+    service.ClaimAsync(player, second.Id, 10, null, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(player.Id, second.HolderId);
+
+    // And the cap still bites at the third, or it is not a cap.
+    var third = new Territory { City = "Detroit", Name = "Delray Docks", Type = "dock" };
+    world.Db.Territories.Add(third);
+    world.Db.SaveChanges();
+    AssertRuleError(() => service.ClaimAsync(player, third.Id, 10, null, now, default).GetAwaiter().GetResult(),
+        "a third piece on a building that runs two");
+
+    // A build that has been paid for but has not landed is still a Trap House, which is the most
+    // likely honest explanation for the report: the caps do not move until the work finishes.
+    var building = world.Member("Building", thugs: 40);
+    building.Turns = 200;
+    building.Hideout!.Tier = 1;
+    building.Hideout.UpgradingToTier = 2;
+    building.Hideout.UpgradeCompletesAtUtc = now.AddMinutes(30);
+    AssertEqual(1, service.HoldingCapFor(building.Hideout));
+    var hideouts = CreateHideouts(options);
+    AssertTrue(!hideouts.CompleteBuild(building.Hideout, now.AddMinutes(29)), "an unfinished build is unfinished");
+    AssertTrue(hideouts.CompleteBuild(building.Hideout, now.AddMinutes(30)), "and lands on its own clock");
+    AssertEqual(2, service.HoldingCapFor(building.Hideout));
+
+    // Which is the whole reported fault: a build that has finished but has not been settled still
+    // reports the caps of the building it replaced, and the map page is where those caps are read.
+    // Every page that shows player state has to settle the clock first, or it shows yesterday's.
+    var stale = world.Member("Stale", thugs: 40);
+    stale.Hideout!.Tier = 1;
+    stale.Hideout.UpgradingToTier = 2;
+    stale.Hideout.UpgradeCompletesAtUtc = now.AddMinutes(-1);
+    AssertEqual(1, service.HoldingCapFor(stale.Hideout));
+    AssertTrue(hideouts.CompleteBuild(stale.Hideout, now), "a finished build settles the moment anybody looks");
+    AssertEqual(2, service.HoldingCapFor(stale.Hideout));
+
+    // And the reading the map takes is the same reading the claim takes, so a page can never offer
+    // fewer plots than the server would actually allow.
+    var mapReads = TerritoryBoardAdvancesTheClock();
+    AssertTrue(mapReads, "the territory board must advance the player clock before it reads the caps");
+}
+
+/// <summary>
+/// Reads the endpoint rather than trusting it. The board is the one page whose numbers come off the
+/// hideout, and it was the one page that never settled a finished build before reading it.
+/// </summary>
+static bool TerritoryBoardAdvancesTheClock()
+{
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    var source = File.ReadAllText(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Endpoints", "TerritoryEndpoints.cs"));
+    var board = source[source.IndexOf("/api/game/territories\"", StringComparison.Ordinal)..];
+    board = board[..board.IndexOf("/api/game/territories/claim", StringComparison.Ordinal)];
+    return board.Contains("clock.AdvanceAsync", StringComparison.Ordinal);
+}
+
 static void WorkingGroundUpIsPaidForUpFront()
 {
     using var world = NewCrewWorld();

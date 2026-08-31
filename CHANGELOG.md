@@ -478,6 +478,18 @@
   the answer the page is reporting.
 
 ### Fixed
+- **A finished building did not raise the ground you could run until something else happened.** Upgrade
+  to the Warehouse, wait out the thirty-minute build, open the map, and it still said one of one piece
+  of ground and offered no button to take a second - while the claim endpoint behind that button would
+  have allowed it. The tier only lands when a player's clock is advanced, every page that shows player
+  state does that first, and the map was the one page that did not - which is the page whose numbers
+  are read off the building.
+- **A full turn bank stopped the game asking the server anything at all.** The refresh was tied to the
+  countdown to the next turn, so at a full bank it stopped - and turns are not the only thing settled
+  when somebody is looked at. A finished building, a mule landing, work finishing on a corner, a bail
+  window running out and a war's clock all run off that same call. Sitting on a full bank is exactly
+  the state a player is in while they wait for a build, which is how the two of these found each other.
+  The countdown still stops, because there is nothing to count towards. The asking carries on.
 - **Starting work on your own ground reported itself as losing it.** Buying the first level of
   development on a corner landed in the bell as "You lost ground" over a sentence saying you had just
   started building on it. The rule it broke was already written down in the alerts code: GROUND is the

@@ -1113,6 +1113,8 @@ function App() {
     if (!(routePage() in pageMeta)) writeRoute(activePage)
   }, [])
   useEffect(() => {
+    // Still stops at a full bank: this one is the countdown to the next turn, and there is nothing to
+    // count towards. What must not stop is the asking, which is the effect below.
     if (!dashboard || dashboard.turns >= dashboard.maxTurns) return
     const timer = window.setInterval(() => {
       setTickSeconds(s => {
@@ -1125,6 +1127,21 @@ function App() {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [dashboard?.playerId, dashboard?.turns, dashboard?.maxTurns, dashboard?.turnTickMinutes])
+  /*
+    A full turn bank used to stop this screen refreshing at all, and turns are not the only thing the
+    server settles when somebody is looked at. A finished building, a mule landing, work finishing on
+    a corner, a bail window running out, a war's clock - every one of those is settled on the player's
+    own clock, and none of them ran for a player sitting on a full bank doing nothing.
+
+    Which is the state a player is in precisely when they are waiting: upgrade the building, spend
+    nothing for thirty minutes, and the tier that decides how much ground you may run never lands.
+    The countdown above still stops - there is nothing to count towards - but the asking does not.
+  */
+  useEffect(() => {
+    if (!dashboard || dashboard.turns < dashboard.maxTurns) return
+    const timer = window.setInterval(() => { void refresh() }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [dashboard?.playerId, dashboard?.turns, dashboard?.maxTurns])
   useEffect(() => {
     if (!dashboard || !hasActiveMission) return
     let inFlight = false

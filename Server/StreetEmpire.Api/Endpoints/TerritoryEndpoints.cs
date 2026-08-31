@@ -20,6 +20,7 @@ internal static class TerritoryEndpoints
             TerritoryService territories,
             PimpRoster pimps,
             CombatResolutionService combatResolver,
+            PlayerClock clock,
             IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
         {
@@ -28,6 +29,13 @@ internal static class TerritoryEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            // This page is the one that reads the building to decide how much ground the player may
+            // run, and it was the one page that never settled a finished build. A Warehouse paid for
+            // and finished still reported a Trap House's single plot until something else happened to
+            // advance the clock - so the map refused a second piece the claim endpoint would have
+            // allowed, and offered no button to find that out with.
+            if ((await clock.AdvanceAsync(player, now, db, ct)).Changed)
+                await db.SaveChangesAsync(ct);
             await territories.SeedAsync(ct);
 
             // Your town and nowhere else. The other cities exist and rivals hold ground in them, but

@@ -255,6 +255,8 @@ export type HideoutTierUpgrade = {
   maxPimps: number
   maxHoes: number
   maxThugs: number
+  /** Turns the building holds at once. The half of the purchase that is not room for people. */
+  maxTurns: number
 }
 
 export type HideoutBuild = {

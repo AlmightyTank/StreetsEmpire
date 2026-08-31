@@ -373,7 +373,8 @@ internal static class ResponseMappers
                     nextTier.BuildMinutes,
                     nextTier.MaxPimps,
                     nextTier.MaxHoes,
-                    nextTier.MaxThugs),
+                    nextTier.MaxThugs,
+                    options.Hideout.TurnBankAtTier(nextTier.Level, options.MaxTurns)),
             building,
             Math.Max(1, options.WorkshopCraftMinutesPerTurn),
             craft is null

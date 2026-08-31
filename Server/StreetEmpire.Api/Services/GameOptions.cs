@@ -6,6 +6,11 @@ public sealed class GameOptions
 {
     public int TurnsPerTick { get; set; } = 2;
     public int TurnTickMinutes { get; set; } = 10;
+
+    /// <summary>
+    /// The bank a player starts life with, and the floor under every building above it. What a
+    /// particular player can actually hold is <see cref="MaxTurnsFor"/>, because the building raises it.
+    /// </summary>
     public int MaxTurns { get; set; } = 200;
     /// <summary>
     /// The opening bank. Half of the cap read as a courtesy and played as a wall: a hundred turns at
@@ -39,6 +44,22 @@ public sealed class GameOptions
         var room = Math.Clamp(1 - EconomyService.PlunderOf(player, this) / (double)ceiling, 0, 1);
         return Math.Max(TurnsPerTick, (int)Math.Round(TurnsPerTick * (1 + (boost - 1) * room)));
     }
+
+    /// <summary>
+    /// The turn bank this player's building holds.
+    ///
+    /// The rate is deliberately not on this ladder. Everything in the game is priced per turn - the
+    /// gross of a shift, the heat it draws, what a drive-by costs, what a tier costs - so paying a
+    /// bigger player more turns an hour would inflate every one of those numbers and need all of them
+    /// retuned. A bigger bank changes none of it: income per hour is untouched and a day is still
+    /// worth the same 288 turns. What it changes is how much of that a player who is not at the screen
+    /// actually keeps, and how long one sitting is allowed to be.
+    ///
+    /// Which is the thing worth buying. At 200 the bank fills in under seventeen hours, so anybody who
+    /// sleeps and then works throws away most of a third of what the game owes them every day, and
+    /// there was nothing on any shop page that could stop it happening. Now the building can.
+    /// </summary>
+    public int MaxTurnsFor(Player player) => Hideout.TurnBankFor(player.Hideout, MaxTurns);
 
     public long StartingCash { get; set; } = 5_000;
     public long StartingBankCash { get; set; } = 0;
@@ -716,6 +737,27 @@ public sealed class HideoutOptions
     public int LevelOfIntelligence(Hideout? hideout) => hideout?.IntelligenceLevel ?? 0;
 
     /// <summary>
+    /// The turn bank a building of this size holds, never below the opening one.
+    ///
+    /// Read as the best of every tier at or below the one standing rather than the row that matches
+    /// it, so the ladder can only ever climb. A table that left a middle row's number out would
+    /// otherwise take a bank away from somebody for upgrading, which is the one thing an upgrade must
+    /// never do.
+    /// </summary>
+    public int TurnBankFor(Hideout? hideout, int opening)
+        => TurnBankAtTier(hideout?.Tier ?? 1, opening);
+
+    /// <summary>The same answer for a building nobody has bought yet, so an upgrade can be advertised.</summary>
+    public int TurnBankAtTier(int tier, int opening)
+    {
+        var held = opening;
+        foreach (var candidate in Tiers)
+            if (candidate.Level <= tier && candidate.MaxTurns > held)
+                held = candidate.MaxTurns;
+        return held;
+    }
+
+    /// <summary>
     /// How much notice each contraband good draws per unit held. Weighted rather than flat because
     /// they are not equally incriminating: a coke lab's output is the worst thing to be found with,
     /// while cut is mostly baking soda and barely registers despite where it is made.
@@ -784,10 +826,14 @@ public sealed class HideoutOptions
         if (Tiers.Count == 0)
             Tiers =
             [
+                // The turn banks are hours away from the screen, not round numbers. At twelve turns an
+                // hour the opening 200 is gone in under seventeen, which is a night's sleep and a
+                // morning; 300 is a whole day, 450 is a day and a half, and 650 is a weekend. Each one
+                // is what that building is actually promising: that being away from it costs nothing.
                 new HideoutTierOptions { Level = 1, Name = "Trap House", MaxPimps = 6, MaxHoes = 50, MaxThugs = 25, MaxRides = 2 },
-                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 300_000, UpgradeTurns = 40, BuildMinutes = 30 },
-                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 1_500_000, UpgradeTurns = 80, BuildMinutes = 120 },
-                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 7_200_000, UpgradeTurns = 120, BuildMinutes = 360 }
+                new HideoutTierOptions { Level = 2, Name = "Warehouse", MaxTurns = 300, MaxPimps = 10, MaxHoes = 85, MaxThugs = 45, MaxRides = 5, UpgradeCost = 300_000, UpgradeTurns = 40, BuildMinutes = 30 },
+                new HideoutTierOptions { Level = 3, Name = "Nightclub", MaxTurns = 450, MaxPimps = 15, MaxHoes = 130, MaxThugs = 70, MaxRides = 9, UpgradeCost = 1_500_000, UpgradeTurns = 80, BuildMinutes = 120 },
+                new HideoutTierOptions { Level = 4, Name = "Penthouse", MaxTurns = 650, MaxPimps = 22, MaxHoes = 200, MaxThugs = 110, MaxRides = 15, UpgradeCost = 7_200_000, UpgradeTurns = 120, BuildMinutes = 360 }
             ];
 
         // Every level holds a full 20-turn action for the crew it supports: condoms at one per 12 turns
@@ -1258,6 +1304,16 @@ public sealed class HideoutTierOptions
     /// House guard and treating the jacking strike as somebody else's problem.
     /// </summary>
     public int MaxRides { get; set; } = 2;
+
+    /// <summary>
+    /// Turns the building can hold at once. Zero means it adds nothing to the opening bank, which is
+    /// what the first tier is: the Trap House leaves <see cref="GameOptions.MaxTurns"/> as it found it,
+    /// so the one number that decides a new player's bank stays the one number in config.
+    ///
+    /// The first thing a tier sells that is not room for people. A player whose crew is held down by
+    /// their storage room rather than their building had no reason at all to want the next one.
+    /// </summary>
+    public int MaxTurns { get; set; }
 
     /// <summary>What moving up to this tier costs. Tier 1 is where everyone starts, so it costs nothing.</summary>
     public long UpgradeCost { get; set; }

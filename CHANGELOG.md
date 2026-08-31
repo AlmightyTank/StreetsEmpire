@@ -31,6 +31,31 @@
   happened.
 
 ### Changed
+- **The building holds the turn bank now, and the rate never moves.** Turns come back at two every ten
+  minutes, which is 288 a day, against a bank of 200 that fills in sixteen hours and forty minutes. So
+  anybody who sleeps eight hours and then does anything else with their day threw away most of ninety
+  turns before they got back to the screen, every day, and there was nothing on any shop page they
+  could buy to stop it. The game owed them and then quietly stopped counting.
+- The rate is the wrong number to fix it with. Everything here is priced per turn - the gross of a
+  shift, the 0.15 heat it draws, four turns a drive-by, twenty a full action, forty and eighty and a
+  hundred and twenty for the tiers - so paying a grown empire more turns an hour inflates every one of
+  those at once and needs all of them retuned. The bank costs none of that. Income per hour is
+  identical, a day is still worth the same 288, and the only thing that changes is how much of what
+  they are already owed is still there when they come back.
+- So it is the building that holds it: 300 turns at the Warehouse, 450 at the Nightclub, 650 at the
+  Penthouse, and the Trap House exactly where it was, so nothing about a new player moves. Those are
+  hours away from the screen rather than round numbers - a whole day, a day and a half, a weekend -
+  and it is the first thing a tier has ever sold that is not room for more people, which matters most
+  to the player whose crew is held down by their storage room and who therefore had no reason to want
+  the next building at all.
+- The cost is honest and it is the heat. A bank is also a night's budget for the street, so a Penthouse
+  emptied into shifts in one sitting is about 97 heat, which is Hunted and most of a day and a half to
+  cool off. That is the trade rather than an oversight: a bigger night gets you noticed more. Nobody
+  gains a way to grind one rival either, because a strike is rationed by the twenty-minute shield over
+  its victim and never by what the attacker can afford.
+- The upgrade page says so, because a number nobody is told about is not a feature. Moving up now
+  quotes the bank against the one you hold and both of them in hours, and says outright that the rate
+  is not what changed.
 - **Working the streets: the district picker was a gross ladder, and now it is a choice.** Five
   districts, five sets of multipliers, and only one of the columns grew with the house. Gross scales
   with every hoe on the street; recruits and finds are flat per turn and the law's interest is priced

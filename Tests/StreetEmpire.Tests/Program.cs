@@ -76,6 +76,7 @@ var tests = new (string Name, Action Test)[]
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
     ("turns come back faster while you are small", EarlyGameTurnsTaper),
+    ("the building holds the turn bank, and never the rate", TheBuildingHoldsTheTurnBank),
     ("the first tier always has something worth saving for", TheFirstTierHasNoDeadZone),
     ("a crew too big for a full shift is told the shorter one", ShortShiftsAreASupplyAnswer),
     ("territory effects add up across the ground held", TerritoryEffectsAddUp),
@@ -4926,6 +4927,63 @@ static void EarlyGameTurnsTaper()
     earning.LastTurnUpdateUtc = DateTime.UtcNow.AddMinutes(-options.TurnTickMinutes);
     clock.Refresh(earning, DateTime.UtcNow);
     AssertEqual(opening, earning.Turns);
+}
+
+static void TheBuildingHoldsTheTurnBank()
+{
+    var options = Resolve(new GameOptions());
+
+    // A player in the opening building banks exactly what the game opens at, so nothing about a new
+    // player moved.
+    var trapHouse = Rookie(options);
+    AssertEqual(options.MaxTurns, options.MaxTurnsFor(trapHouse));
+
+    // Every building above it holds more, and the ladder only ever climbs.
+    var last = options.MaxTurnsFor(trapHouse);
+    foreach (var tier in options.Hideout.Tiers.OrderBy(x => x.Level).Skip(1))
+    {
+        var owner = Rookie(options);
+        owner.Hideout = new Hideout { Tier = tier.Level };
+        var bank = options.MaxTurnsFor(owner);
+        AssertTrue(bank > last, $"the {tier.Name} holds more than the building below it ({bank} against {last})");
+        last = bank;
+    }
+
+    // And the rate is untouched at every one of them, which is the whole point: a bigger building
+    // keeps more of what a player is owed rather than paying them any faster.
+    var penthouse = Rookie(options);
+    penthouse.Hideout = new Hideout { Tier = options.Hideout.Tiers.Max(x => x.Level) };
+    penthouse.BankCash = options.EarlyGameNetWorthCeiling * 4;
+    var trapVeteran = Rookie(options);
+    trapVeteran.BankCash = options.EarlyGameNetWorthCeiling * 4;
+    AssertEqual(options.TurnsPerTickFor(trapVeteran), options.TurnsPerTickFor(penthouse));
+
+    // A refresh actually pays into the bigger bank rather than stopping at the opening one. Long
+    // enough away to overfill a Trap House twice over.
+    var clock = CreateTurns(options);
+    var away = DateTime.UtcNow.AddHours(-48);
+    var small = Rookie(options);
+    small.Turns = 0;
+    small.LastTurnUpdateUtc = away;
+    clock.Refresh(small, DateTime.UtcNow);
+    AssertEqual(options.MaxTurns, small.Turns);
+
+    var big = Rookie(options);
+    big.Hideout = new Hideout { Tier = 2 };
+    big.Turns = 0;
+    big.LastTurnUpdateUtc = away;
+    clock.Refresh(big, DateTime.UtcNow);
+    AssertTrue(big.Turns > small.Turns, $"the Warehouse keeps turns the Trap House threw away ({big.Turns} against {small.Turns})");
+    AssertEqual(options.MaxTurnsFor(big), big.Turns);
+
+    // A table that forgot a middle rung must not take a bank away from anybody for upgrading.
+    var gappy = Resolve(new GameOptions());
+    gappy.Hideout.Tiers.Single(x => x.Level == 3).MaxTurns = 0;
+    var third = Rookie(gappy);
+    third.Hideout = new Hideout { Tier = 3 };
+    var second = Rookie(gappy);
+    second.Hideout = new Hideout { Tier = 2 };
+    AssertTrue(gappy.MaxTurnsFor(third) >= gappy.MaxTurnsFor(second), "the ladder never steps down");
 }
 
 static void GuidancePointsAtTheGame()

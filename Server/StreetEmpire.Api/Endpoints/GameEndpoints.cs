@@ -184,7 +184,7 @@ internal static class GameEndpoints
                 cityRank,
                 cityPlayers,
                 player.Turns,
-                opts.MaxTurns,
+                opts.MaxTurnsFor(player),
                 opts.MaxActionTurns,
                 // The rate this player actually earns at, not the base one. Reporting the base while
                 // paying the boosted rate would make the strip quietly wrong for every new player.

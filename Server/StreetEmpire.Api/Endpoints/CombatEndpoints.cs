@@ -379,7 +379,7 @@ internal static class CombatEndpoints
                 passive?.Coke ?? 0,
                 builds,
                 player.Turns,
-                gameOptions.Value.MaxTurns,
+                gameOptions.Value.MaxTurnsFor(player),
                 player.CombatProtectionUntilUtc,
                 rankBefore,
                 rankNow,

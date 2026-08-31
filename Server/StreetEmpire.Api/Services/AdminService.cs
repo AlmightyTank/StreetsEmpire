@@ -92,7 +92,7 @@ public sealed class AdminService(
 
         // Turns still respect the cap, and the pimp roster has to follow its counter.
         if (key == "turns")
-            target.Turns = Math.Min(target.Turns, _options.MaxTurns);
+            target.Turns = Math.Min(target.Turns, _options.MaxTurnsFor(target));
         if (key == "pimps")
             pimps.Reconcile(target, nowUtc);
 

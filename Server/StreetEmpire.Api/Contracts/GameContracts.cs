@@ -1049,7 +1049,13 @@ public sealed record HideoutTierUpgradeResponse(
     int BuildMinutes,
     int MaxPimps,
     int MaxHoes,
-    int MaxThugs);
+    int MaxThugs,
+    /// <summary>
+    /// The turn bank the building holds. Reported because it is the half of the purchase a player
+    /// cannot see anywhere else: crew caps are on the page they are hiring from, and a bank they were
+    /// never told about is an upgrade that silently stops throwing their turns away.
+    /// </summary>
+    int MaxTurns);
 
 /// <summary>A tier build in progress. The hideout keeps its old caps until this lands.</summary>
 public sealed record HideoutBuildResponse(

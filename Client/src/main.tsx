@@ -2923,6 +2923,12 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
     return () => window.clearInterval(timer)
   }, [building?.completesAtUtc])
 
+  // Hours of being somewhere else, which is what a turn bank actually buys. Read off the rate this
+  // player earns at rather than the base one, so a new player is told the truth about their own clock.
+  const hoursAway = (turns: number) => dashboard.turnsPerTick > 0
+    ? Math.round(turns / dashboard.turnsPerTick * dashboard.turnTickMinutes / 60)
+    : 0
+
   return <section className="card p-3 gcol-full">
     <div className="panel-title">
       <h2>The Building</h2>
@@ -2949,6 +2955,16 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
             small to hold. Your crew reaches that ceiling as the store grows into it: a room only ever
             supplies what it can feed for a full shift, and that is the number the caps show.
           </p>
+          {/* The half of the purchase nothing else on the page mentions. A bigger building does not
+              pay turns any faster - nothing does - it holds more of the ones you are already owed, so
+              being away from the game for a night stops throwing them away. */}
+          {next.maxTurns > dashboard.maxTurns && <p>
+            It also holds <strong>{number.format(next.maxTurns)} turns</strong> against your{' '}
+            {number.format(dashboard.maxTurns)}: {hoursAway(next.maxTurns)} hours away from this screen
+            before the bank fills and stops, rather than {hoursAway(dashboard.maxTurns)}. Turns come
+            back at the same rate they always did. What changes is how many of them are still there
+            when you get back.
+          </p>}
           <div className="room-row">
             <div className="room-copy">
               <strong>{next.name}</strong>

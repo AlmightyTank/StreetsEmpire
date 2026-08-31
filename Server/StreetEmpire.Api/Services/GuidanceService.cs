@@ -163,7 +163,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
             // A full bank earns nothing further, which is worth saying - but as part of this row
             // rather than beside it. Two rows both meaning "go and act" is the noise this panel
             // exists to remove, and a new player starts at the cap so they met it immediately.
-            var full = player.Turns >= _options.MaxTurns
+            var full = player.Turns >= _options.MaxTurnsFor(player)
                 ? " Your bank is full, so anything you earn from here is thrown away until you spend some."
                 : string.Empty;
             Add(21, "Work the streets",

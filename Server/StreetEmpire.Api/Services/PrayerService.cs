@@ -215,7 +215,7 @@ public sealed class PrayerService(IOptionsSnapshot<GameOptions> options, IGameRa
                 break;
 
             case "turns":
-                player.Turns = Math.Min(_options.MaxTurns, player.Turns + config.TurnsBlessing);
+                player.Turns = Math.Min(_options.MaxTurnsFor(player), player.Turns + config.TurnsBlessing);
                 break;
         }
     }

@@ -846,7 +846,7 @@ public sealed class BotSimulationService(
             try
             {
                 var (worked, level, _) = await territories.DevelopAsync(bot, ground.Id, nowUtc, ct);
-                AddLog(bot, before, "GROUND", level.Turns, nowUtc, $"AI: Started working {worked.Name} up to {level.Name}.");
+                AddLog(bot, before, "TERRITORY", level.Turns, nowUtc, $"AI: Started working {worked.Name} up to {level.Name}.");
                 return 1;
             }
             catch (GameRuleException)

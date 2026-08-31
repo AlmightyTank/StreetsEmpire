@@ -75,6 +75,7 @@ var tests = new (string Name, Action Test)[]
     ("stepping on coke turns cut into more of it", CuttingStretchesWhatYouAlreadyHold),
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
+    ("a shift reports what happened and never what did not", AShiftNamesOnlyWhatHappened),
     ("turns come back faster while you are small", EarlyGameTurnsTaper),
     ("the building holds the turn bank, and never the rate", TheBuildingHoldsTheTurnBank),
     ("the first tier always has something worth saving for", TheFirstTierHasNoDeadZone),
@@ -2761,6 +2762,27 @@ static void EveryAlertKindAnswersToASwitch()
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
     AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+
+    // Ground, which now has three separate things to say and had two of them filed under the word that
+    // means the worst one. Buying an upgrade for a corner you hold was landing in the bell as "You lost
+    // ground" over a sentence saying you had started building on it - because GROUND is the action for
+    // ground news happening to you, and starting work is something you did.
+    AssertTrue(!DefenceAlerts.IsNotification("TERRITORY", "Started working Eight Mile Strip up to Staked Out for $150,000."),
+        "working your own ground up is an action, not something done to you");
+    AssertTrue(DefenceAlerts.ToAlert(3, "TERRITORY", "Started working it up.", now, null) is null,
+        "and it should never reach the bell at all");
+
+    // The other end of the same job does reach the bell, because it lands on the clock while nobody is
+    // watching - and it is good news, which is the whole reason it cannot share GROUND's headline.
+    AssertTrue(DefenceAlerts.IsNotification("GROUNDWORK", "The work at Eight Mile Strip is finished."),
+        "work finishing while you were away is news");
+    var worked = DefenceAlerts.ToAlert(4, "GROUNDWORK", "The work is finished.", now, null);
+    AssertTrue(worked is { Kind: "groundwork", Tone: "good" }, "and it is reported as the good news it is");
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("groundwork"));
+
+    // Ground actually changing hands still reads the way it always did.
+    AssertTrue(DefenceAlerts.ToAlert(5, "GROUND", "Somebody took it from you.", now, null) is { Tone: "bad" },
+        "losing ground is still bad news");
 }
 
 static void IntelligenceGoesColdAndYourOwnHouseNever()
@@ -5251,6 +5273,66 @@ static void TheBuildingHoldsTheTurnBank()
     var second = Rookie(gappy);
     second.Hideout = new Hideout { Tier = 2 };
     AssertTrue(gappy.MaxTurnsFor(third) >= gappy.MaxTurnsFor(second), "the ladder never steps down");
+}
+
+/// <summary>
+/// A shift summary is the sentence this game says most often, and it was padding itself with the
+/// things that did not happen: every list in it was gated on a total being positive and then printed
+/// all of its parts, so one find on the street reported the three goods that were not found.
+/// </summary>
+static void AShiftNamesOnlyWhatHappened()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+
+    var player = Rookie(options);
+    player.Hoes = 40;
+    player.Thugs = 10;
+    player.Pistols = 10;
+    player.Pimps = 4;
+    player.Condoms = 500;
+    player.Beer = 500;
+    player.Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 4 };
+    var summary = economy.Scout(player, 10).Summary;
+
+    // The work and the money, in that order, in sentences rather than in a ledger.
+    AssertTrue(summary.StartsWith("Worked the ", StringComparison.Ordinal), $"a shift opens on the shift: {summary}");
+    AssertTrue(summary.Contains(" and grossed $", StringComparison.Ordinal), "the gross belongs to the sentence about working");
+    AssertTrue(summary.Contains("The crew took $", StringComparison.Ordinal) && summary.Contains("you kept $", StringComparison.Ordinal),
+        "and who got the money is one sentence, not three semicolons");
+    AssertTrue(!summary.Contains(';'), $"nothing here should read like a receipt: {summary}");
+
+    // Nothing that did not happen is mentioned, and nothing is offered a plural it may not need.
+    AssertTrue(!summary.Contains("(s)", StringComparison.Ordinal), $"no form-letter plurals: {summary}");
+    AssertTrue(!summary.Contains(" 0 ", StringComparison.Ordinal), $"a shift should not report nothings: {summary}");
+    AssertTrue(!summary.Contains("Found 0", StringComparison.Ordinal), "the find table only names what was found");
+
+    // The tally itself, which is the thing that was wrong: one term, no empty ones beside it.
+    var oneFind = TallyOf(2, 0, 0, 0);
+    AssertEqual("2 condoms", oneFind);
+    AssertEqual("1 condom", TallyOf(1, 0, 0, 0));
+    // Beer, weed and coke take no s, which is why the plural is per word rather than one rule.
+    AssertEqual("3 beer", TallyOf(0, 3, 0, 0));
+    AssertEqual("2 weed and 1 coke", TallyOf(0, 0, 2, 1));
+    AssertEqual("1 condom, 2 beer and 3 weed", TallyOf(1, 2, 3, 0));
+    AssertEqual(string.Empty, TallyOf(0, 0, 0, 0));
+
+    // Mirrors the private helper in EconomyService. Kept here rather than made public: what is under
+    // test is the sentence, and this is only the shape the sentence is built from.
+    static string TallyOf(int condoms, int beer, int weed, int coke)
+    {
+        var parts = new List<string>();
+        if (condoms > 0) parts.Add($"{condoms:N0} {(condoms == 1 ? "condom" : "condoms")}");
+        if (beer > 0) parts.Add($"{beer:N0} beer");
+        if (weed > 0) parts.Add($"{weed:N0} weed");
+        if (coke > 0) parts.Add($"{coke:N0} coke");
+        return parts.Count switch
+        {
+            0 => string.Empty,
+            1 => parts[0],
+            _ => $"{string.Join(", ", parts[..^1])} and {parts[^1]}"
+        };
+    }
 }
 
 static void GuidancePointsAtTheGame()

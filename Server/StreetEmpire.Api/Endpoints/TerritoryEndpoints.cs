@@ -158,7 +158,10 @@ internal static class TerritoryEndpoints
             {
                 var (ground, level, fromBank) = await territories.DevelopAsync(player, request.TerritoryId, now, ct);
                 var summary = $"Started working {ground.Name} up to {level.Name} for {level.Cost:C0}.";
-                AddLog(db, player, before, "GROUND", level.Turns, summary, now);
+                // TERRITORY, not GROUND: this is ground the player acted on, and GROUND is the
+                // action reserved for ground news happening to them. Filed under the wrong one it
+                // reads back as "You lost ground" over a sentence saying you bought some.
+                AddLog(db, player, before, "TERRITORY", level.Turns, summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
                 {

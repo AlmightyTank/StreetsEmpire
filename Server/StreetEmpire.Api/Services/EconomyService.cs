@@ -454,38 +454,64 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var walkouts = pimps.SettleStreetWork(player, turns, (player.HoeHappiness + player.ThugHappiness) / 2, DateTime.UtcNow);
         var overflow = hideout.Settle(player, stockBefore);
 
-        var summary = string.Empty;
-        if (restock.Any)
-            summary += $"Auto-bought {restock.Describe()} for ${restock.Cost:N0}. ";
-        summary += $"Worked the {where.Name} for {turns} turn{Plural(turns)}. Grossed ${gross:N0}; crew cut was ${crewPayout:N0}; you kept ${playerProfit:N0}.";
+        // The shift, in the order it happened to you rather than in the order the code worked it out.
+        //
+        // It used to open on the auto-buy - a $630 receipt printed before the reader knew what the
+        // night made - then set out three money figures separated by semicolons, then explained the
+        // bonus that had produced the first of them, then listed every good on the find table
+        // including the three there were none of. "Found 0 condoms, 0 beer, 2 weed, and 0 coke" is
+        // one fact and three noises, and it happened because every one of these lines was gated on a
+        // sum being positive while printing all of its parts.
+        //
+        // So: the work and what it grossed, with the bonus attached to the number it actually moved;
+        // then who got the money; then the incidental cost; then only the things there were any of.
+        var groundBonusPercent = territory?.StreetIncomePercent ?? 0;
+        var lifted = streetBonusPercent <= 0
+            ? string.Empty
+            : groundBonusPercent > 0 && streetBonusPercent > groundBonusPercent
+                ? $", with your hustlers and your corners adding {streetBonusPercent}%"
+                : groundBonusPercent == streetBonusPercent
+                    ? $", with your corners adding {streetBonusPercent}%"
+                    : $", with your hustlers adding {streetBonusPercent}%";
+
+        var summary = $"Worked the {where.Name} for {turns} turn{Plural(turns)} and grossed ${gross:N0}{lifted}."
+            + $" The crew took ${crewPayout:N0} and you kept ${playerProfit:N0}.";
         if (dues > 0)
             summary += $" {player.Alliance!.Name} took ${dues:N0} in dues.";
-        if (recruitedPimps + recruitedHoes + recruitedThugs > 0)
-            summary += $" Recruited {recruitedPimps} pimp(s), {recruitedHoes} hoe(s), and {recruitedThugs} thug(s).";
+        if (restock.Any)
+            summary += $" Restocked {restock.Describe()} for ${restock.Cost:N0}.";
+
+        var recruited = Tally((recruitedPimps, "pimp", "pimps"), (recruitedHoes, "hoe", "hoes"), (recruitedThugs, "thug", "thugs"));
+        if (recruited.Length > 0)
+            summary += $" Took on {recruited}.";
         // Said out loud, because an invisible multiplier on the odds is a player wondering why the same
         // shift keeps turning up more people. Only when it found somebody: on a shift that recruited
         // nobody it is a boast about nothing.
-        if (reach > 1 && recruitedPimps + recruitedHoes + recruitedThugs > 0)
+        if (reach > 1 && recruited.Length > 0)
             summary += $" Word gets around a house your size, and {Math.Round((reach - 1) * 100)}% more of them came to you.";
         if (recruitedPimpNames.Count > 0)
             summary += $" {string.Join(" and ", recruitedPimpNames)} signed on.";
-        var groundBonusPercent = territory?.StreetIncomePercent ?? 0;
-        if (streetBonusPercent > 0)
-            summary += groundBonusPercent > 0 && streetBonusPercent > groundBonusPercent
-                ? $" Your hustlers and your corners added {streetBonusPercent}% to the take."
-                : groundBonusPercent == streetBonusPercent
-                    ? $" Your corners added {streetBonusPercent}% to the take."
-                    : $" Your hustlers added {streetBonusPercent}% to the take.";
         if (recruitsTurnedAway > 0)
-            summary += $" {recruitsTurnedAway} recruit(s) walked because your hideout is full.";
-        if (condomsFound + beerFound + weedFound + cokeFound > 0)
-            summary += $" Found {condomsFound} condoms, {beerFound} beer, {weedFound} weed, and {cokeFound} coke.";
-        if (condomShortage > 0) summary += $" Condom shortage: {condomShortage}.";
-        if (beerShortage > 0) summary += $" Beer shortage: {beerShortage}.";
-        if (unmanagedHoes > 0) summary += $" {unmanagedHoes} hoe(s) are beyond your pimp management capacity.";
-        if (uncoveredThugs > 0) summary += $" {uncoveredThugs} thug(s) do not have weapons.";
-        if (hoeDeserters > 0 || thugDeserters > 0)
-            summary += $" {hoeDeserters} hoe(s) and {thugDeserters} thug(s) walked out due to low morale.";
+            summary += $" {recruitsTurnedAway:N0} recruit{Plural(recruitsTurnedAway)} walked because your hideout is full.";
+
+        // Beer, weed and coke do not take an s. The find table is the one list in the game that mixes
+        // a countable noun in with three mass nouns, which is why the plural is per-word rather than
+        // one rule applied to all of them.
+        var found = Tally((condomsFound, "condom", "condoms"), (beerFound, "beer", "beer"), (weedFound, "weed", "weed"), (cokeFound, "coke", "coke"));
+        if (found.Length > 0)
+            summary += $" Picked up {found} on the street.";
+
+        if (condomShortage > 0)
+            summary += $" You ran {condomShortage:N0} condom{Plural(condomShortage)} short.";
+        if (beerShortage > 0)
+            summary += $" You ran {beerShortage:N0} short on beer.";
+        if (unmanagedHoes > 0)
+            summary += $" {unmanagedHoes:N0} hoe{Plural(unmanagedHoes)} worked with no pimp watching.";
+        if (uncoveredThugs > 0)
+            summary += $" {uncoveredThugs:N0} thug{Plural(uncoveredThugs)} went out without a gun.";
+        var deserted = Tally((hoeDeserters, "hoe", "hoes"), (thugDeserters, "thug", "thugs"));
+        if (deserted.Length > 0)
+            summary += $" {deserted} walked out over morale.";
         foreach (var walkout in walkouts)
             summary += $" {walkout.Name} had enough and walked out on you.";
         summary += overflow.Describe();
@@ -1670,6 +1696,29 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         };
 
     private static string Plural(int value) => value == 1 ? string.Empty : "s";
+
+    /// <summary>
+    /// Names the things there were actually any of, and nothing else.
+    ///
+    /// Every list in a shift summary used to be gated on its total being positive and then printed
+    /// all of its parts, so one find on the street reported the three goods that were not found, and
+    /// recruiting a single hoe announced nought pimps and nought thugs alongside her. A tally that
+    /// drops the empty terms is the whole fix, and the singular and plural forms are given per word
+    /// because this game counts condoms and hoes but also beer, weed and coke.
+    /// </summary>
+    private static string Tally(params (int Count, string One, string Many)[] items)
+    {
+        var parts = items
+            .Where(x => x.Count > 0)
+            .Select(x => $"{x.Count:N0} {(x.Count == 1 ? x.One : x.Many)}")
+            .ToList();
+        return parts.Count switch
+        {
+            0 => string.Empty,
+            1 => parts[0],
+            _ => $"{string.Join(", ", parts[..^1])} and {parts[^1]}"
+        };
+    }
 }
 
 public sealed class GameRuleException(string message) : Exception(message);

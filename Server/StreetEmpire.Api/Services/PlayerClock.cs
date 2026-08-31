@@ -129,7 +129,7 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
                 continue;
             worked = true;
             if (db is not null)
-                AddLog(db, player, Snapshot(player), "GROUND", 0,
+                AddLog(db, player, Snapshot(player), "GROUNDWORK", 0,
                     $"The work at {ground.Name} is finished. It runs as {territories.DevelopmentName(level ?? ground.DevelopmentLevel)} ground now.",
                     nowUtc);
         }

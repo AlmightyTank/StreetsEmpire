@@ -120,6 +120,11 @@ public static class DefenceAlerts
             "MULE" when summary.Contains("was stopped", StringComparison.Ordinal)
                 => new AlertResponse($"log-{logId}", "mule", "Your mule was stopped", summary, "bad", unread, createdAtUtc),
             "MULE" => new AlertResponse($"log-{logId}", "mule", "Your mule is back", summary, "good", unread, createdAtUtc),
+            // Work landing on a corner while the player was away. Its own action rather than a
+            // fourth reading of GROUND, for the reason the comment on IsNotificationRow already
+            // gives: telling these apart by how the sentence ends breaks the moment there is
+            // another kind of ground notice, and there now is.
+            "GROUNDWORK" => new AlertResponse($"log-{logId}", "groundwork", "Your ground is worked up", summary, "good", unread, createdAtUtc),
             "GROUND" when summary.Contains("held", StringComparison.OrdinalIgnoreCase)
                 => new AlertResponse($"log-{logId}", "ground", "Your ground held", summary, "good", unread, createdAtUtc),
             "GROUND"
@@ -149,6 +154,10 @@ public static class DefenceAlerts
                // belongs in activity. A separate action rather than matching how the sentence ends,
                // which broke the moment a second kind of ground notice existed.
                || log.Action == "GROUND"
+               // Ground finishes being worked up on the holder's clock, which means it lands while
+               // they are somewhere else. That is the definition above, so it is news rather than
+               // activity - and unlike GROUND it is good news.
+               || log.Action == "GROUNDWORK"
                || log.Action == "BUST"
                // A run settles on the clock rather than on a request, so it is news, not activity.
                || log.Action == "MULE"

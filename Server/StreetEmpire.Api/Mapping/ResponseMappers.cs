@@ -31,6 +31,19 @@ internal static class ResponseMappers
     internal static string? PublicDiscordUsername(PlayerAccount account)
         => account.ShowDiscordOnProfile ? account.DiscordUsername : null;
 
+    internal static IReadOnlyList<ProfileBadgeResponse> ProfileBadges(PlayerAccount account, bool publicOnly = false)
+    {
+        var badges = new List<ProfileBadgeResponse>();
+        if (account.DiscordUserId is not null && (!publicOnly || account.ShowDiscordOnProfile))
+            badges.Add(new ProfileBadgeResponse(
+                "discord-connected",
+                "Discord connected",
+                "This player has linked a Discord account.",
+                "discord"));
+
+        return badges;
+    }
+
     /// <summary>
     /// Whether the message button is drawn, and why not. The rule itself lives in DirectMessages, which
     /// is also what refuses the send - these were two copies of one switch until the pact case needed a
@@ -132,7 +145,8 @@ internal static class ResponseMappers
             player.Hoes,
             player.Thugs,
             player.Weapons,
-            TitleService.For(player.Id, titles ?? [], player.Account.FeaturedTitle),
+            ProfileBadges(player.Account, publicOnly: true),
+            TitleService.For(player.Account, titles ?? [], publicOnly: true),
             player.Rides,
             AverageMorale(player),
             ToCombatReadiness(player, options),
@@ -188,7 +202,8 @@ internal static class ResponseMappers
             // than none. A zero would be a claim - "they have no medicine" - and it is the claim an
             // attacker would act on, which makes it the wrong thing to say when nobody has looked.
             intel.Level >= IntelLevels.Armoury ? ToWeaponRack(player, options) : [],
-            TitleService.For(player.Id, titles ?? [], player.Account.FeaturedTitle),
+            ProfileBadges(player.Account, publicOnly: true),
+            TitleService.For(player.Account, titles ?? [], publicOnly: true),
             intel.Level >= IntelLevels.Stock ? player.Rides : null,
             intel.Level >= IntelLevels.Stock ? player.Medicine : null,
             intel.Level >= IntelLevels.Stock ? player.Weed : null,

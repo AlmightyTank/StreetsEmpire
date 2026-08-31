@@ -15,7 +15,8 @@ public sealed class CombatMissionService(
     PimpRoster pimps,
     EconomyService economy,
     TerritoryService territories,
-    AllianceService alliances)
+    AllianceService alliances,
+    DiscordDirectMessages discordDms)
 {
     // Shared so the cancel path and the lane query cannot drift apart on the spelling.
     private const string CanceledOutcome = "Canceled";
@@ -189,6 +190,7 @@ public sealed class CombatMissionService(
             .Include(x => x.Attacker).ThenInclude(x => x.Hideout)
             .Include(x => x.Attacker).ThenInclude(x => x.Crew)
             .Include(x => x.Defender).ThenInclude(x => x.Crew)
+            .Include(x => x.Defender).ThenInclude(x => x.Account)
             .Include(x => x.CommanderPimp)
             .Include(x => x.Events)
             // Tracked, not AsNoTracking: a won raid writes the new holder onto this row. The garrison
@@ -201,6 +203,7 @@ public sealed class CombatMissionService(
             .ToListAsync(cancellationToken);
 
         var updates = 0;
+        var completed = new List<CombatMission>();
         foreach (var mission in missions)
         {
             if (mission.Status == "Traveling" && mission.ArrivesAtUtc <= nowUtc)
@@ -220,6 +223,7 @@ public sealed class CombatMissionService(
             if (mission.Status == "Returning" && mission.ReturnsAtUtc <= nowUtc)
             {
                 Complete(mission, nowUtc);
+                completed.Add(mission);
                 // Nobody can help with a fight that is finished, so the calls nobody answered stop
                 // asking. Here rather than inside Complete, which is synchronous and has no business
                 // becoming a database round trip.
@@ -230,6 +234,9 @@ public sealed class CombatMissionService(
 
         if (updates > 0)
             await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var mission in completed)
+            await TellDefenderAsync(mission, nowUtc, cancellationToken);
 
         return updates;
     }
@@ -783,6 +790,49 @@ public sealed class CombatMissionService(
             ? $"{mission.Attacker.Name}'s crew returned from {mission.Defender.Name} with ${mission.CashStolen:N0}, {mission.WeedStolen:N0} weed, and {mission.CokeStolen:N0} coke."
             : mission.Summary,
             nowUtc);
+    }
+
+    private async Task TellDefenderAsync(CombatMission mission, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var log = new CombatLog
+        {
+            Id = mission.Id,
+            Attacker = mission.Attacker,
+            Defender = mission.Defender,
+            AttackerId = mission.AttackerId,
+            DefenderId = mission.DefenderId,
+            Method = AttackMethods.Raid,
+            Outcome = mission.Outcome,
+            CashStolen = mission.CashStolen,
+            WeedStolen = mission.WeedStolen,
+            CokeStolen = mission.CokeStolen,
+            DefenderThugsLost = mission.DefenderThugsLost,
+            DefenderHoesLost = mission.DefenderHoesLost,
+            DefenderWeaponsLost = mission.DefenderWeaponsLost,
+            DefenderPimpsLost = mission.DefenderPimpsLost,
+            CreatedAtUtc = nowUtc
+        };
+        string headline;
+        string detail;
+        if (mission.TerritoryId is null)
+        {
+            var alert = DefenceAlerts.Describe(log, mission.Defender.CombatAlertsSeenAtUtc);
+            headline = alert.Headline;
+            detail = alert.Detail;
+        }
+        else
+        {
+            headline = mission.Outcome == "Victory" ? "You lost ground" : "Your ground held";
+            detail = mission.Summary;
+        }
+
+        await discordDms.TellGameAlertAsync(
+            mission.Defender.Account,
+            AlertCategory.Combat,
+            headline,
+            detail,
+            nowUtc,
+            cancellationToken);
     }
 
     private void ApplyMoraleAftermath(CombatMission mission)

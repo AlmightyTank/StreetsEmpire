@@ -31,6 +31,63 @@
   happened.
 
 ### Changed
+- **Working the streets: the district picker was a gross ladder, and now it is a choice.** Five
+  districts, five sets of multipliers, and only one of the columns grew with the house. Gross scales
+  with every hoe on the street; recruits and finds are flat per turn and the law's interest is priced
+  in flat bail. So the ranking never changed after the first hour of play - Casino, Nightclub, Low
+  Rent, Ghetto, Slums, read straight down the gross column - and by a Trap House full of hoes the
+  Casino's extra take was worth more per shift than the entire recruit and find spread put together.
+- Worst of it was that the neutral district, the default, the one most shifts are worked in, was
+  strictly the worse choice at every crew size. The Nightclub paid 115 against Low Rent's 100 and
+  gave up only finds worth a couple of hundred dollars and heat that costs almost nothing. There was
+  no size of house and no goal for which Low Rent was the right answer.
+- The districts that pay in crew now pay for it out of the take. The Nightclub earns 90 and the
+  Ghetto 85, so going for people or for product costs you money rather than being free money with a
+  bonus, and Low Rent is what you work when what you want is the money. The Casino comes down from
+  145 to 130 and its heat goes up from 175 to 200, and the Slums come up from 55 to 65 so that going
+  quiet for a night of thug recruitment is not a third of your income.
+- **The street turns up more people for a bigger house.** The other half of the same problem, and the
+  arrest rules already wrote the diagnosis: recruits were flat per turn, so a shift was pure upside
+  that quietly stopped mattering as the house grew. The answer there was a risk that scales with the
+  crew, which takes the flat trickle away without giving a growing house anything back. Word of mouth
+  is the half that was missing - a bigger operation is more visible to the people who might join it,
+  so every recruit roll now scales with the crew on the street, doubling at a hundred heads and capped
+  at two and a half times. Capped because recruits feed the crew that sets the multiplier, and an
+  uncapped version is a growth loop that outruns every building in the game.
+- The step is sized against the crew ladder rather than picked round. At sixty the cap landed at ninety
+  heads, which a full Trap House of seventy-five very nearly reaches and a Warehouse of a hundred and
+  thirty blows straight past, so the multiplier saturated at the first tier and stopped telling the
+  buildings apart - which is the one thing it exists to do. At a hundred it lands at a hundred and
+  fifty, and every tier sits somewhere different on it: a Trap House at 1.75, a Warehouse at 2.3, a
+  Nightclub and a Penthouse at the cap.
+- It is read off the crew the shift started with, so somebody picked up on turn three does not raise
+  the odds for turn four, and the shift says so in words rather than moving the odds silently.
+- **Free recruitment is a trickle now, not a supply line.** The base rates come down to 0.0024, 0.024
+  and 0.008 a turn for pimps, hoes and thugs. Part of that pays for the scale above - left where they
+  were, a reach running to two and a half times would not have redistributed what the street finds, it
+  would have printed more of it, eleven hoes a shift in the Nightclub and a maxed Penthouse recruited
+  from empty in three days of turns.
+- The rest is the older problem the scale only made visible. Capacity is what actually gates income
+  here: a shift is worth what the hideout has room for, which is what the tier ladder charges 300,000
+  dollars and up for. A street that tops a house up to its own ceiling for nothing is the game handing
+  that out, and it made the crew shop decorative - 150 hoes is 112,500 dollars to hire, which a
+  fifty-hoe house grosses in about seven hours, and nobody ever needed to spend it.
+- At full reach a house now finds half of what every house used to find, and a small one a fifth: about
+  1.2 hoes a shift in Low Rent at the top of the curve against 2.4 on the old flat rate, and half a hoe
+  a shift for somebody just starting. Filling a Penthouse from the street alone went from three days of
+  turns to nearly nine, so hiring is the fast way to a big crew again and the street is the free one.
+- **Being short of pimps or guns costs a share of the crew now, and follows the length of the shift.**
+  These were the last two per-head morale charges left, and they had both the faults the supply
+  shortages were fixed for plus one of their own. Charged per head, twenty unmanaged hoes cost the
+  same whether they were twenty of twenty-five or twenty of two hundred; charged per shift rather
+  than per turn, they were the only part of a shift that did not care how long it was, so a one-turn
+  look at the street was billed the same as a full twenty-turn night and the rational play was always
+  to max the slider.
+- Both are now rates: 0.7 and 1.0 a turn against the share of the crew in that state, so a full shift
+  with no pimps at all costs 14 and one with no guns at all costs 20, and a house running a third of
+  its hoes unmanaged pays a third of that. Two hundred hoes on ten pimps used to lose 20 morale a
+  shift, which is seven shifts' worth of earning for a house that is merely under-officered; it now
+  loses 5. Going out with nobody managing anybody is the case that got worse, and should have.
 - **A trip to the bank costs turns.** Banking was free, instant and unlimited, which made the bank
   strictly better than the safe in every case: cash on hand is what a raid and a roadblock take, bank
   cash is what neither can, and moving between them cost nothing at all. A player with any discipline

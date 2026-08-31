@@ -98,14 +98,16 @@ public sealed class DiscordAnnouncementSender(
         return new
         {
             username = string.IsNullOrWhiteSpace(username) ? "Street Empire" : username.Trim(),
+            allowed_mentions = new { parse = Array.Empty<string>() },
             embeds = new[]
             {
                 new
                 {
-                    title = post.Version is null ? post.Title : $"{post.Title} ({post.Version})",
+                    title = Limit(post.Version is null ? post.Title : $"{post.Title} ({post.Version})", 256),
                     description = Limit(post.Body, 3_500),
                     color = SeverityColor(post.Severity),
                     fields,
+                    footer = new { text = $"{post.Category} - {post.Severity}" },
                     timestamp = post.PublishedAtUtc,
                 },
             },

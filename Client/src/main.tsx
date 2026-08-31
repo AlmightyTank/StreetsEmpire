@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -189,6 +189,7 @@ const discordPendingKey = 'street-empire.discord.pending'
  */
 const discordOutcomes: Partial<Record<DiscordOutcome, { text: string, bad?: boolean }>> = {
   connected: { text: 'Discord connected.' },
+  'connected-reward': { text: 'Discord connected. Link reward paid: $10,000, 25 condoms, 25 beer.' },
   synced: { text: 'Discord profile refreshed.' },
   'already-connected': { text: 'This account already has a Discord connected. Disconnect that one first.', bad: true },
   cancelled: { text: 'Discord sign-in was cancelled.' },
@@ -3616,7 +3617,7 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
   </div>
 }
 
-const ADMIN_TABS = ['overview', 'players', 'ai', 'config', 'updates', 'liveops', 'audit'] as const
+const ADMIN_TABS = ['overview', 'players', 'ai', 'config', 'titles', 'updates', 'liveops', 'audit'] as const
 type AdminTab = typeof ADMIN_TABS[number]
 
 const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
@@ -3624,6 +3625,7 @@ const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
   players: { label: 'Players', kicker: 'Search and enforcement' },
   ai: { label: 'AI Rivals', kicker: 'Seed, run, automate' },
   config: { label: 'Tuning', kicker: 'Runtime values' },
+  titles: { label: 'Titles', kicker: 'Create earned names' },
   updates: { label: 'Updates', kicker: 'Patch notes and events' },
   liveops: { label: 'Live Ops', kicker: 'Maintenance and banners' },
   audit: { label: 'Audit', kicker: 'Who changed what' }
@@ -3667,6 +3669,7 @@ function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
     {tab === 'players' && <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />}
     {tab === 'ai' && <AdminAiTab ctx={ctx} />}
     {tab === 'config' && <><AdminConfigPanel busy={ctx.busy} /><AdminEconomyReadout overview={ctx.overview} /></>}
+    {tab === 'titles' && <AdminTitlesPanel busy={ctx.busy} />}
     {tab === 'updates' && <AdminUpdatesPanel busy={ctx.busy} />}
     {tab === 'liveops' && <AdminLiveOpsPanel busy={ctx.busy} />}
     {tab === 'audit' && <AdminAuditPanel />}
@@ -3712,6 +3715,164 @@ function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
   </section>
 }
 
+function AdminTitlesPanel({ busy }: { busy: boolean }) {
+  const [titles, setTitles] = useState<AdminCustomTitle[]>([])
+  const [criteria, setCriteria] = useState<CustomTitleCriteria[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [draft, setDraft] = useState<AdminCustomTitleDraft>(() => emptyCustomTitleDraft())
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [working, setWorking] = useState(false)
+  const selected = titles.find(title => title.id === selectedId) ?? null
+  const selectedCriteria = criteria.find(x => x.key === draft.criteria) ?? criteria[0]
+
+  const load = async () => {
+    try {
+      const board = await opsApi.customTitles()
+      setTitles(board.titles)
+      setCriteria(board.criteria)
+      setDraft(current => current.criteria ? current : { ...current, criteria: board.criteria[0]?.key ?? 'net-worth-at-least' })
+    } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load() }, [])
+
+  const edit = (title: AdminCustomTitle) => {
+    setSelectedId(title.id)
+    setDraft({
+      key: title.key,
+      title: title.title,
+      detail: title.detail,
+      criteria: title.criteria,
+      threshold: title.threshold,
+      textValue: title.textValue ?? '',
+      isActive: title.isActive,
+      reason: '',
+    })
+    setMessage('')
+    setError('')
+  }
+
+  const reset = () => {
+    setSelectedId(null)
+    setDraft(emptyCustomTitleDraft(criteria[0]?.key))
+    setMessage('')
+    setError('')
+  }
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const body = {
+        ...draft,
+        key: draft.key?.trim() || null,
+        title: draft.title?.trim() || null,
+        detail: draft.detail?.trim() || null,
+        textValue: draft.textValue?.trim() || null,
+        threshold: selectedCriteria?.needsThreshold ? Number(draft.threshold ?? 0) : 0,
+        reason: draft.reason?.trim() || null,
+      }
+      const saved = selected
+        ? await opsApi.updateCustomTitle(selected.id, body)
+        : await opsApi.createCustomTitle(body)
+      setSelectedId(saved.id)
+      setDraft({
+        key: saved.key,
+        title: saved.title,
+        detail: saved.detail,
+        criteria: saved.criteria,
+        threshold: saved.threshold,
+        textValue: saved.textValue ?? '',
+        isActive: saved.isActive,
+        reason: '',
+      })
+      setMessage(selected ? 'Title saved.' : 'Title created.')
+      await load()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const locked = busy || working
+  return <div className="d-grid gtc-1 gtc-xl-split-60 gap-3 align-items-start gcol-full">
+    <section className="card p-3">
+      <div className="panel-title"><h2>Custom Titles</h2><span>{titles.length} defined</span></div>
+      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+      {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
+      <div className="d-flex flex-wrap gap-2 mb-3">
+        <button className="btn btn-primary btn-sm" type="button" onClick={reset}>New title</button>
+        <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void load()}>Refresh</button>
+      </div>
+      <div className="d-grid gap-1">
+        {titles.length === 0 && <p className="text-body-tertiary small mb-0">No custom titles yet.</p>}
+        {titles.map(title => <button
+          className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${selectedId === title.id ? 'active border-primary' : ''}`}
+          type="button"
+          key={title.id}
+          onClick={() => edit(title)}
+        >
+          <span className="d-flex flex-wrap gap-2 align-items-center min-w-0">
+            <strong className="text-truncate">{title.title}</strong>
+            <span className="badge rounded-pill text-bg-secondary">{title.key}</span>
+            <span className={`badge rounded-pill ${title.isActive ? 'text-bg-success' : 'text-bg-light border'}`}>{title.isActive ? 'Active' : 'Paused'}</span>
+          </span>
+          <small className="text-body-tertiary text-truncate">{title.criteria}{title.threshold > 0 ? ` ${number.format(title.threshold)}` : ''}{title.textValue ? ` ${title.textValue}` : ''}</small>
+        </button>)}
+      </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>{selected ? 'Edit Title' : 'New Title'}</h2><span>{draft.key || 'achievement'}</span></div>
+      <form className="d-grid gap-3" onSubmit={save}>
+        <div className="d-grid gtc-1 gtc-md-2 gap-3">
+          <label className="field">
+            Key
+            <input className="form-control" maxLength={32} value={draft.key ?? ''} onChange={event => setDraft({ ...draft, key: event.target.value })} placeholder="millionaire" required />
+          </label>
+          <label className="field">
+            Title
+            <input className="form-control" maxLength={64} value={draft.title ?? ''} onChange={event => setDraft({ ...draft, title: event.target.value })} placeholder="Millionaire" required />
+          </label>
+        </div>
+        <label className="field">
+          Detail
+          <input className="form-control" maxLength={240} value={draft.detail ?? ''} onChange={event => setDraft({ ...draft, detail: event.target.value })} placeholder="Reached $1,000,000 net worth." />
+        </label>
+        <div className="d-grid gtc-1 gtc-md-2 gap-3">
+          <label className="field">
+            Earned by
+            <select className="form-select" value={draft.criteria ?? criteria[0]?.key ?? ''} onChange={event => setDraft({ ...draft, criteria: event.target.value })}>
+              {criteria.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select>
+          </label>
+          {selectedCriteria?.needsThreshold
+            ? <label className="field">
+              Threshold
+              <input className="form-control" type="number" min={1} step={1} value={draft.threshold ?? 0} onChange={event => setDraft({ ...draft, threshold: Number(event.target.value) })} />
+            </label>
+            : selectedCriteria?.needsText
+            ? <label className="field">
+              Name
+              <input className="form-control" maxLength={64} value={draft.textValue ?? ''} onChange={event => setDraft({ ...draft, textValue: event.target.value })} placeholder={draft.criteria === 'city-is' ? 'Chicago' : 'The Eastside Table'} />
+            </label>
+            : <div className="d-flex align-items-end"><small className="text-body-tertiary">No extra value needed.</small></div>}
+        </div>
+        <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+          <input className="form-check-input" type="checkbox" checked={draft.isActive ?? true} onChange={event => setDraft({ ...draft, isActive: event.target.checked })} />
+          <span>Active</span>
+        </label>
+        <label className="field">
+          Audit reason
+          <input className="form-control" value={draft.reason ?? ''} onChange={event => setDraft({ ...draft, reason: event.target.value })} placeholder="Added a new milestone title" />
+        </label>
+        <div className="d-flex flex-wrap gap-2">
+          <button className="btn btn-primary" disabled={locked}>{locked ? 'Working...' : selected ? 'Save Title' : 'Create Title'}</button>
+          {selected && <button className="btn btn-secondary" type="button" disabled={locked} onClick={reset}>Clear Form</button>}
+        </div>
+      </form>
+    </section>
+  </div>
+}
+
 function AdminUpdatesPanel({ busy }: { busy: boolean }) {
   const [posts, setPosts] = useState<AdminGameAnnouncement[]>([])
   const [delivery, setDelivery] = useState<AnnouncementDeliverySettings | null>(null)
@@ -3729,6 +3890,10 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
   const [discordTopTenRoleId, setDiscordTopTenRoleId] = useState('')
   const [discordCrewBossRoleId, setDiscordCrewBossRoleId] = useState('')
   const [discordCityRoleMap, setDiscordCityRoleMap] = useState('')
+  const [discordCrewRoleMap, setDiscordCrewRoleMap] = useState('')
+  const [discordCrewChannelMap, setDiscordCrewChannelMap] = useState('')
+  const [discordTitleRoleMap, setDiscordTitleRoleMap] = useState('')
+  const [discordConsole, setDiscordConsole] = useState<string[]>([])
   const [reason, setReason] = useState('')
   const [deliveryReason, setDeliveryReason] = useState('')
   const [discordReason, setDiscordReason] = useState('')
@@ -3762,6 +3927,14 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
     setDiscordTopTenRoleId(next.topTenRoleId ?? '')
     setDiscordCrewBossRoleId(next.crewBossRoleId ?? '')
     setDiscordCityRoleMap(next.cityRoleMap ?? '')
+    setDiscordCrewRoleMap(next.crewRoleMap ?? '')
+    setDiscordCrewChannelMap(next.crewChannelMap ?? '')
+    setDiscordTitleRoleMap(next.titleRoleMap ?? '')
+  }
+
+  const logDiscord = (line: string, issues: string[] = []) => {
+    const stamp = new Date().toLocaleTimeString()
+    setDiscordConsole(previous => [`${stamp} ${line}`, ...issues.map(issue => `${stamp} ! ${issue}`), ...previous].slice(0, 10))
   }
 
   const loadDiscord = async () => {
@@ -3863,12 +4036,16 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
         topTenRoleId: discordTopTenRoleId.trim() || null,
         crewBossRoleId: discordCrewBossRoleId.trim() || null,
         cityRoleMap: discordCityRoleMap,
+        crewRoleMap: discordCrewRoleMap,
+        crewChannelMap: discordCrewChannelMap,
+        titleRoleMap: discordTitleRoleMap,
         reason: discordReason.trim() || null,
       })
       applyDiscordSettings(next)
       setDiscordBotToken('')
       setDiscordPublicKey('')
       setDiscordReason('')
+      logDiscord('Saved Discord bot settings.')
       setMessage('Discord integration settings saved.')
     } catch (e) { setError((e as Error).message) }
     finally { setWorking(false) }
@@ -3886,6 +4063,7 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
       if (kind === 'token') setDiscordBotToken('')
       if (kind === 'key') setDiscordPublicKey('')
       setDiscordReason('')
+      logDiscord(kind === 'token' ? 'Cleared the saved bot token.' : 'Cleared the saved public key.')
       setMessage(kind === 'token' ? 'Discord bot token cleared.' : 'Discord public key cleared.')
     } catch (e) { setError((e as Error).message) }
     finally { setWorking(false) }
@@ -3895,6 +4073,7 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
     setWorking(true); setError(''); setMessage('')
     try {
       const result = await opsApi.registerDiscordCommands()
+      logDiscord(`Registered ${result.registered} slash command${result.registered === 1 ? '' : 's'}.`)
       setMessage(`Registered ${result.registered} slash command${result.registered === 1 ? '' : 's'} in Discord.`)
       await loadDiscord()
     } catch (e) { setError((e as Error).message) }
@@ -3906,7 +4085,32 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
     try {
       const result: DiscordRoleSyncResult = await opsApi.syncDiscordRoles()
       const tail = result.errors.length > 0 ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} reported.` : ''
+      logDiscord(`Synced roles for ${result.syncedPlayers}/${result.linkedPlayers} linked members: +${result.rolesAdded} / -${result.rolesRemoved}.`, result.errors)
       setMessage(`Synced ${result.syncedPlayers} linked member${result.syncedPlayers === 1 ? '' : 's'}: +${result.rolesAdded} / -${result.rolesRemoved}.${tail}`)
+      await loadDiscord()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const ensureDiscordRoles = async () => {
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const result = await opsApi.ensureDiscordRoles()
+      const tail = result.errors.length > 0 ? ` ${result.errors.length} role${result.errors.length === 1 ? '' : 's'} could not be created.` : ''
+      logDiscord(`Role maps ready: ${result.cityRoles} city, ${result.crewRoles} crew, ${result.titleRoles} title. Created ${result.createdRoles}, reused ${result.reusedRoles}.`, result.errors)
+      setMessage(`Role maps ready: ${result.cityRoles} city, ${result.crewRoles} crew, ${result.titleRoles} title. Created ${result.createdRoles}, reused ${result.reusedRoles}.${tail}`)
+      await loadDiscord()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const syncDiscordCrewChannels = async () => {
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const result: DiscordCrewChannelSyncResult = await opsApi.syncDiscordCrewChannels()
+      const tail = result.errors.length > 0 ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} reported.` : ''
+      logDiscord(`Crew channels synced: ${result.channels}/${result.crews} mapped. Created ${result.createdChannels}, reused ${result.reusedChannels}, updated ${result.updatedChannels}.`, result.errors)
+      setMessage(`Crew channels synced: ${result.channels}/${result.crews} mapped. Created ${result.createdChannels}, reused ${result.reusedChannels}, updated ${result.updatedChannels}.${tail}`)
       await loadDiscord()
     } catch (e) { setError((e as Error).message) }
     finally { setWorking(false) }
@@ -4190,18 +4394,40 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
             <textarea className="form-control" rows={5} value={discordCityRoleMap} onChange={event => setDiscordCityRoleMap(event.target.value)} placeholder={'Chicago=123456789012345678\nMiami=234567890123456789'} />
           </label>
           <label className="field">
+            Crew roles
+            <textarea className="form-control" rows={5} value={discordCrewRoleMap} onChange={event => setDiscordCrewRoleMap(event.target.value)} placeholder={'The Eastside Table=123456789012345678\nThe Southside Table=234567890123456789'} />
+          </label>
+          <label className="field">
+            Crew channels
+            <textarea className="form-control" rows={5} value={discordCrewChannelMap} onChange={event => setDiscordCrewChannelMap(event.target.value)} placeholder={'The Eastside Table=123456789012345678\nThe Southside Table=234567890123456789'} />
+            <small className="form-text">Run crew channel sync to let the bot create and fill this map.</small>
+          </label>
+          <label className="field">
+            Title roles
+            <textarea className="form-control" rows={5} value={discordTitleRoleMap} onChange={event => setDiscordTitleRoleMap(event.target.value)} placeholder={'killer=123456789012345678\nwheelman=234567890123456789\ndiscord-connected=345678901234567890'} />
+          </label>
+          <label className="field">
             Audit reason
             <input className="form-control" value={discordReason} onChange={event => setDiscordReason(event.target.value)} placeholder="Added Discord role sync" />
           </label>
           <div className="d-flex flex-wrap gap-2">
             <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Bot Settings'}</button>
             <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void registerDiscordCommands()}>Register slash commands</button>
+            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void ensureDiscordRoles()}>Create role maps</button>
+            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void syncDiscordCrewChannels()}>Sync crew channels</button>
             <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void syncDiscordRoles()}>Sync roles now</button>
             <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !discord?.usesStoredBotToken} onClick={() => void clearDiscordSecret('token')}>Clear token</button>
             <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !discord?.publicKeyConfigured} onClick={() => void clearDiscordSecret('key')}>Clear key</button>
           </div>
+          <div className="border rounded bg-body-secondary p-2 d-grid gap-1">
+            <strong className="small">Discord Console</strong>
+            {discordConsole.length === 0
+              ? <small className="text-body-tertiary">No bot actions have run in this browser session.</small>
+              : discordConsole.map((line, index) => <small className="font-monospace text-body-tertiary" key={`${line}-${index}`}>{line}</small>)}
+          </div>
           {discord && <small className="text-body-tertiary">
             Commands {discord.commandsRegisteredAtUtc ? new Date(discord.commandsRegisteredAtUtc).toLocaleString() : 'not registered'}.
+            {' '}Crew channels {discord.crewChannelsSyncedAtUtc ? new Date(discord.crewChannelsSyncedAtUtc).toLocaleString() : 'not synced'}.
             {' '}Roles {discord.rolesSyncedAtUtc ? new Date(discord.rolesSyncedAtUtc).toLocaleString() : 'not synced'}.
             {' '}Gateway {discord.gatewayHeartbeatAtUtc ? `heartbeat ${new Date(discord.gatewayHeartbeatAtUtc).toLocaleString()}` : 'no heartbeat yet'}.
           </small>}
@@ -4209,6 +4435,19 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
       </section>
     </div>
   </div>
+}
+
+function emptyCustomTitleDraft(criteria = 'net-worth-at-least'): AdminCustomTitleDraft {
+  return {
+    key: '',
+    title: '',
+    detail: '',
+    criteria,
+    threshold: 1,
+    textValue: '',
+    isActive: true,
+    reason: '',
+  }
 }
 
 function emptyAnnouncementDraft(): AdminGameAnnouncementDraft {
@@ -4240,7 +4479,7 @@ function discordBotInviteUrl(settings: DiscordIntegrationSettings | null, applic
   const params = new URLSearchParams({
     client_id: clientId,
     scope: 'bot applications.commands',
-    permissions: '268435456',
+    permissions: '268435472',
   })
   const guild = (guildId.trim() || settings?.guildId || '').trim()
   if (/^\d+$/.test(guild)) {
@@ -5405,6 +5644,16 @@ function PlayerProfileDialog({ playerId, currentPlayerId, onClose }: {
   </>
 }
 
+function ProfileBadgeStrip({ badges }: { badges: PlayerProfile['profileBadges'] }) {
+  if (badges.length === 0) return null
+  return <div className="d-flex flex-wrap gap-1 mt-1">
+    {badges.map(badge => <span className="badge text-bg-secondary d-inline-flex align-items-center gap-1" title={badge.detail} key={badge.key}>
+      {badge.key === 'discord-connected' && <i className="bi bi-discord" aria-hidden="true" />}
+      {badge.label}
+    </span>)}
+  </div>
+}
+
 /**
  * One player, as everybody else sees them.
  *
@@ -5434,6 +5683,7 @@ function PlayerCardHeader({ profile, isSelf }: { profile: PlayerProfile, isSelf:
               <i className="bi bi-discord me-1" aria-hidden="true" />
               {profile.publicDiscordUsername}
             </small>}
+            <ProfileBadgeStrip badges={profile.profileBadges ?? []} />
             {profile.profileTagline && <small className={`d-block ${profileAccentClass(profile.profileAccent)}`}>{profile.profileTagline}</small>}
             {profile.titles.length > 0 && <small className="d-block mt-1 text-primary small">{profile.titles.join(' / ')}</small>}
           </div>
@@ -7519,6 +7769,7 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
           {(account.profilePronouns || account.profileLocation) && <small className="d-block text-body-tertiary text-truncate">
             {[account.profilePronouns, account.profileLocation].filter(Boolean).join(' / ')}
           </small>}
+          <ProfileBadgeStrip badges={account.profileBadges ?? []} />
         </div>
       </div>
       <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
@@ -7979,6 +8230,20 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
           {account.discordLinkedAtUtc && <> since {new Date(account.discordLinkedAtUtc).toLocaleDateString()}</>}.
           That Discord account signs straight in, on any browser, without a password.
         </p>
+        {account.discordLinkRewardClaimedAtUtc && <div className="alert alert-success">
+          Link reward claimed: $10,000, 25 condoms, 25 beer, and the Discord Connected title.
+        </div>}
+        {!account.discordLinkRewardClaimedAtUtc && <div className="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <span>Claim your first-link reward: $10,000, 25 condoms, 25 beer, and the Discord Connected title.</span>
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            disabled={busy}
+            onClick={() => void run(() => api.claimDiscordLinkReward(), 'Discord link reward claimed.')}
+          >
+            {busy ? 'Working...' : 'Claim reward'}
+          </button>
+        </div>}
         <div className="border rounded bg-body-secondary p-3 mb-3 d-grid gap-3">
           <div className="d-flex align-items-center gap-3 min-w-0">
             {account.discordAvatarUrl
@@ -8061,6 +8326,9 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
           <p>
             Connect one and it becomes a way in: one button on the sign-in screen, no password typed.
             You keep your username and password either way.
+          </p>
+          <p className="text-body-tertiary small">
+            First link pays $10,000, 25 condoms, 25 beer, and unlocks the Discord Connected title.
           </p>
           {/*
             A link, not a button. Connecting is the same round trip through Discord that signing in is,
@@ -8163,6 +8431,10 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
   const [security, setSecurity] = useState(account.emailSecurityNotices)
   const [combat, setCombat] = useState(account.emailCombatNotices)
   const [alliance, setAlliance] = useState(account.emailAllianceNotices)
+  const [discordSecurity, setDiscordSecurity] = useState(account.discordSecurityNotices)
+  const [discordCombat, setDiscordCombat] = useState(account.discordCombatNotices)
+  const [discordCrew, setDiscordCrew] = useState(account.discordCrewNotices)
+  const [discordMarket, setDiscordMarket] = useState(account.discordMarketNotices)
   const [bellCombat, setBellCombat] = useState(account.noticeCombat)
   const [bellCrew, setBellCrew] = useState(account.noticeCrew)
   const [bellMarket, setBellMarket] = useState(account.noticeMarket)
@@ -8171,16 +8443,25 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
     setSecurity(account.emailSecurityNotices)
     setCombat(account.emailCombatNotices)
     setAlliance(account.emailAllianceNotices)
+    setDiscordSecurity(account.discordSecurityNotices)
+    setDiscordCombat(account.discordCombatNotices)
+    setDiscordCrew(account.discordCrewNotices)
+    setDiscordMarket(account.discordMarketNotices)
     setBellCombat(account.noticeCombat)
     setBellCrew(account.noticeCrew)
     setBellMarket(account.noticeMarket)
   }, [account.syncDiscordAvatar, account.emailSecurityNotices, account.emailCombatNotices, account.emailAllianceNotices,
-      account.noticeCombat, account.noticeCrew, account.noticeMarket])
+      account.discordSecurityNotices, account.discordCombatNotices, account.discordCrewNotices,
+      account.discordMarketNotices, account.noticeCombat, account.noticeCrew, account.noticeMarket])
 
   const changed = syncDiscord !== account.syncDiscordAvatar
     || security !== account.emailSecurityNotices
     || combat !== account.emailCombatNotices
     || alliance !== account.emailAllianceNotices
+    || discordSecurity !== account.discordSecurityNotices
+    || discordCombat !== account.discordCombatNotices
+    || discordCrew !== account.discordCrewNotices
+    || discordMarket !== account.discordMarketNotices
     || bellCombat !== account.noticeCombat
     || bellCrew !== account.noticeCrew
     || bellMarket !== account.noticeMarket
@@ -8188,12 +8469,23 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
   const save = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     void run(
-      () => api.setNotificationPreferences(syncDiscord, security, combat, alliance, bellCombat, bellCrew, bellMarket),
+      () => api.setNotificationPreferences(
+        syncDiscord,
+        security,
+        combat,
+        alliance,
+        discordSecurity,
+        discordCombat,
+        discordCrew,
+        discordMarket,
+        bellCombat,
+        bellCrew,
+        bellMarket),
       'Alert settings saved.')
   }
 
   return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title"><h2>Alerts</h2><span>{security || combat || alliance ? 'On' : 'Quiet'}</span></div>
+    <div className="panel-title"><h2>Alerts</h2><span>{security || combat || alliance || discordSecurity || discordCombat || discordCrew || discordMarket ? 'On' : 'Quiet'}</span></div>
     <form className="d-grid gap-3" onSubmit={save}>
       <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
         <input
@@ -8260,6 +8552,40 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
         />
       </div>
 
+      <div>
+        <span className="eyebrow d-block mb-2">By Discord DM</span>
+        <div className="d-grid gtc-1 gtc-md-4 gap-2">
+          <NoticeToggle
+            label="Security"
+            detail={account.discordConnected ? 'Password, Discord, sessions, and account access.' : 'Connect Discord before turning this on.'}
+            checked={discordSecurity}
+            disabled={!account.discordConnected}
+            onChange={setDiscordSecurity}
+          />
+          <NoticeToggle
+            label="Combat"
+            detail={account.discordConnected ? 'Raids on your house, and ground won or lost.' : 'Connect Discord before turning this on.'}
+            checked={discordCombat}
+            disabled={!account.discordConnected}
+            onChange={setDiscordCombat}
+          />
+          <NoticeToggle
+            label="Crew"
+            detail={account.discordConnected ? 'Allies calling for help or crew business that needs eyes.' : 'Connect Discord before turning this on.'}
+            checked={discordCrew}
+            disabled={!account.discordConnected}
+            onChange={setDiscordCrew}
+          />
+          <NoticeToggle
+            label="Market"
+            detail={account.discordConnected ? 'Somebody buying what you put up for sale.' : 'Connect Discord before turning this on.'}
+            checked={discordMarket}
+            disabled={!account.discordConnected}
+            onChange={setDiscordMarket}
+          />
+        </div>
+      </div>
+
       {/*
         A different channel, not a duplicate of the three above. Somebody who wants no mail at all still
         wants the bell, and somebody who wants mail about a raid does not necessarily want it about a
@@ -8301,10 +8627,11 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
   </section>
 }
 
-function NoticeToggle({ label, detail, checked, onChange }: {
+function NoticeToggle({ label, detail, checked, disabled, onChange }: {
   label: string
   detail: string
   checked: boolean
+  disabled?: boolean
   onChange: (value: boolean) => void
 }) {
   return <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${checked ? 'border-primary' : ''}`}>
@@ -8312,6 +8639,7 @@ function NoticeToggle({ label, detail, checked, onChange }: {
       className="form-check-input"
       type="checkbox"
       checked={checked}
+      disabled={disabled}
       onChange={event => onChange(event.target.checked)}
     />
     <strong className="d-block">{label}</strong>

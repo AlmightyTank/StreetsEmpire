@@ -46,7 +46,8 @@ public enum AccountChange
 public sealed class AccountNotices(
     IEmailSender sender,
     IOptions<EmailOptions> options,
-    ILogger<AccountNotices> logger)
+    ILogger<AccountNotices> logger,
+    DiscordDirectMessages? discord = null)
 {
     /// <summary>
     /// Tells the account's own confirmed address, and does nothing when there is not one.
@@ -58,10 +59,14 @@ public sealed class AccountNotices(
     /// never confirmed gets no notices at all, which is one more reason the account page pushes to
     /// confirm.
     /// </summary>
-    public Task TellAccountAsync(PlayerAccount account, AccountChange change, string? detail, CancellationToken ct)
-        => account is { EmailVerified: true, Email: not null, EmailSecurityNotices: true }
-            ? SendAsync(account.Email, account.Player?.Name ?? account.Username, change, detail, ct)
-            : Task.CompletedTask;
+    public async Task TellAccountAsync(PlayerAccount account, AccountChange change, string? detail, CancellationToken ct)
+    {
+        if (account is { EmailVerified: true, Email: not null, EmailSecurityNotices: true })
+            await SendAsync(account.Email, account.Player?.Name ?? account.Username, change, detail, ct);
+
+        if (discord is not null)
+            await discord.TellAccountAsync(account, change, detail, ct);
+    }
 
     /// <summary>
     /// Tells an address the account is about to stop pointing at.
@@ -147,7 +152,7 @@ public static class AccountNoticeEmail
     /// Context the sentence needs and the enum cannot carry - which Discord handle, which address the
     /// account moved to. Never a secret.
     /// </param>
-    private static (string Subject, string Happened) Describe(AccountChange change, string? detail) => change switch
+    internal static (string Subject, string Happened) Describe(AccountChange change, string? detail) => change switch
     {
         AccountChange.PasswordSet => (
             "a password was set on your account",

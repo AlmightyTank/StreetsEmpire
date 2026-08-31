@@ -73,7 +73,7 @@ public sealed class MarketService(GameDbContext db, HideoutService hideouts, IOp
     {
         TravelGate.EnsureLanded(buyer);
         var listing = await db.MarketListings
-            .Include(x => x.Seller)
+            .Include(x => x.Seller).ThenInclude(x => x.Account)
             .SingleOrDefaultAsync(x => x.Id == listingId, ct)
             ?? throw new GameRuleException("That listing is gone.");
 

@@ -343,15 +343,20 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var weedFound = 0;
         var cokeFound = 0;
 
+        // Word of mouth. Read off the crew the shift started with rather than the running count, so a
+        // recruit picked up on turn three does not raise the odds for turn four - within one shift the
+        // street is as busy as it was when they walked out on to it.
+        var reach = street.RecruitScaleFor(hoesBefore + thugsBefore);
+
         for (var i = 0; i < turns; i++)
         {
             gross += street.BaseGrossPerTurn
                 + player.Hoes * Roll(street.HoeGrossPerTurn)
                 + player.Pimps * Roll(street.PimpGrossPerTurn);
 
-            if (RollChance(street.PimpRecruitChance * where.Scale(where.PimpRecruitPercent))) recruitedPimps++;
-            if (RollChance(street.HoeRecruitChance * where.Scale(where.HoeRecruitPercent))) recruitedHoes++;
-            if (RollChance(street.ThugRecruitChance * where.Scale(where.ThugRecruitPercent))) recruitedThugs++;
+            if (RollChance(street.PimpRecruitChance * where.Scale(where.PimpRecruitPercent) * reach)) recruitedPimps++;
+            if (RollChance(street.HoeRecruitChance * where.Scale(where.HoeRecruitPercent) * reach)) recruitedHoes++;
+            if (RollChance(street.ThugRecruitChance * where.Scale(where.ThugRecruitPercent) * reach)) recruitedThugs++;
 
             var finds = where.Scale(where.FindPercent);
             condomsFound += RollFind(street.Finds.Condoms, finds);
@@ -434,10 +439,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var hoeDelta = morale.HoeStreetWorkGainPerTurn * turns
             + cutEffect
             - ShortagePenalty(condomShortage, condomsNeeded, turns, morale.CondomShortagePenalty)
-            - unmanagedHoes * morale.UnmanagedHoePenalty;
+            - ShortagePenalty(unmanagedHoes, player.Hoes, turns, morale.UnmanagedHoePenalty);
         var thugDelta = morale.ThugStreetWorkGainPerTurn * turns
             - ShortagePenalty(beerShortage, beerNeeded, turns, morale.BeerShortagePenalty)
-            - uncoveredThugs * morale.UncoveredThugPenalty;
+            - ShortagePenalty(uncoveredThugs, player.Thugs, turns, morale.UncoveredThugPenalty);
 
         player.HoeHappiness = ClampHappiness(player.HoeHappiness + hoeDelta);
         player.ThugHappiness = ClampHappiness(player.ThugHappiness + thugDelta);
@@ -457,6 +462,11 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             summary += $" {player.Alliance!.Name} took ${dues:N0} in dues.";
         if (recruitedPimps + recruitedHoes + recruitedThugs > 0)
             summary += $" Recruited {recruitedPimps} pimp(s), {recruitedHoes} hoe(s), and {recruitedThugs} thug(s).";
+        // Said out loud, because an invisible multiplier on the odds is a player wondering why the same
+        // shift keeps turning up more people. Only when it found somebody: on a shift that recruited
+        // nobody it is a boast about nothing.
+        if (reach > 1 && recruitedPimps + recruitedHoes + recruitedThugs > 0)
+            summary += $" Word gets around a house your size, and {Math.Round((reach - 1) * 100)}% more of them came to you.";
         if (recruitedPimpNames.Count > 0)
             summary += $" {string.Join(" and ", recruitedPimpNames)} signed on.";
         var groundBonusPercent = territory?.StreetIncomePercent ?? 0;
@@ -487,6 +497,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             ["districtName"] = where.Name,
             ["hustlerBonusPercent"] = streetBonusPercent,
             ["grossBeforeHustlers"] = grossBeforeBonus,
+            ["recruitReachPercent"] = (int)Math.Round(reach * 100),
             ["autoBoughtCondoms"] = restock.Condoms,
             ["autoBoughtBeer"] = restock.Beer,
             ["autoBuyCost"] = restock.Cost,
@@ -1588,8 +1599,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     }
 
     /// <summary>
-    /// What running short on upkeep costs, as a share of the upkeep that was missed rather than a flat
-    /// charge per missing unit.
+    /// What going out short of something costs - condoms, beer, pimps to manage them, guns to arm them
+    /// - as a share of the crew or the upkeep that was missing rather than a flat charge per head.
     ///
     /// Charged per unit, the penalty grew with the crew while the morale a shift earns did not, so the
     /// two came apart as a player got bigger. A crew of 59 needs 98 condoms for a full shift and a

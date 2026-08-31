@@ -51,6 +51,7 @@ public sealed record AccountResponse(
     string? ProfileLocation,
     string ProfileAccent,
     string ProfileBanner,
+    IReadOnlyList<ProfileBadgeResponse> ProfileBadges,
     /// <summary>
     /// The key they chose, held or not - the picker shows it selected either way, because a title lost
     /// this afternoon is one they may hold again tomorrow. What they currently hold is a live question
@@ -67,7 +68,12 @@ public sealed record AccountResponse(
     bool EmailSecurityNotices,
     bool EmailCombatNotices,
     bool EmailAllianceNotices,
+    bool DiscordSecurityNotices,
+    bool DiscordCombatNotices,
+    bool DiscordCrewNotices,
+    bool DiscordMarketNotices,
     bool DiscordConfigured,
+    DateTime? DiscordLinkRewardClaimedAtUtc,
     DateTime CreatedAtUtc);
 
 /// <summary>
@@ -151,6 +157,10 @@ public sealed record ChangeNotificationPreferencesRequest(
     bool? EmailSecurityNotices,
     bool? EmailCombatNotices,
     bool? EmailAllianceNotices,
+    bool? DiscordSecurityNotices,
+    bool? DiscordCombatNotices,
+    bool? DiscordCrewNotices,
+    bool? DiscordMarketNotices,
     bool? NoticeCombat = null,
     bool? NoticeCrew = null,
     bool? NoticeMarket = null);

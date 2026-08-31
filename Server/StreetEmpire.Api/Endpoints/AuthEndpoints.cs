@@ -264,24 +264,25 @@ internal static class AuthEndpoints
             // Nobody's yet, and somebody is signed in: this is the connect button on the account page.
             if (Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
             {
-                var current = await db.Accounts.SingleOrDefaultAsync(x => x.Id == accountId, ct);
+                var current = await db.Accounts.Include(x => x.Player).SingleOrDefaultAsync(x => x.Id == accountId, ct);
                 if (current is null)
                     return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "failed"));
                 if (current.DiscordUserId is not null)
                     return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "already-connected"));
 
+                var nowUtc = DateTime.UtcNow;
                 current.DiscordUserId = profile.Id;
                 ApplyDiscordProfile(current, profile);
-                current.DiscordLinkedAtUtc = DateTime.UtcNow;
+                current.DiscordLinkedAtUtc = nowUtc;
+                var reward = DiscordLinkRewards.GrantOnce(current, current.Player, nowUtc);
                 await db.SaveChangesAsync(ct);
 
                 // A connection made by somebody else is a permanent way in that needs no password, so
                 // this is worth a notice even though the player is standing right here having asked
-                // for it. The account has to be loaded with its player for the notice to have a name.
-                await db.Entry(current).Reference(x => x.Player).LoadAsync(ct);
+                // for it.
                 await notices.TellAccountAsync(current, AccountChange.DiscordConnected, profile.DisplayName, ct);
 
-                return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, "connected"));
+                return Results.Redirect(DiscordReturnUrls.WithOutcome(returnUrl, reward.Awarded ? "connected-reward" : "connected"));
             }
 
             // Nobody's, and nobody signed in: a new player who still has to name themselves. The
@@ -354,6 +355,7 @@ internal static class AuthEndpoints
                 return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Player name is already taken." });
 
             var isFirstAccount = !await db.Accounts.AnyAsync(ct);
+            var nowUtc = DateTime.UtcNow;
             var account = new PlayerAccount
             {
                 Username = username,
@@ -366,10 +368,11 @@ internal static class AuthEndpoints
                 DiscordAvatarHash = profile.AvatarHash,
                 AvatarSource = profile.AvatarHash is null ? AccountAvatarSource.None : AccountAvatarSource.Discord,
                 SyncDiscordAvatar = profile.AvatarHash is not null,
-                DiscordLinkedAtUtc = DateTime.UtcNow,
+                DiscordLinkedAtUtc = nowUtc,
             };
             account.SetEmail(email);
             var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? cities.FirstOrDefault() ?? "New York", opts, pimps);
+            DiscordLinkRewards.GrantOnce(account, player, nowUtc);
 
             db.Accounts.Add(account);
             db.Players.Add(player);

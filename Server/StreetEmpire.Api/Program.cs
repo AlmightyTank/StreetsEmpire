@@ -91,6 +91,7 @@ builder.Services.Configure<AnnouncementOptions>(builder.Configuration.GetSection
 builder.Services.AddHttpClient<DiscordAnnouncementSender>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.Configure<DiscordIntegrationOptions>(builder.Configuration.GetSection("Discord"));
 builder.Services.AddHttpClient<DiscordGuildIntegration>(client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddHttpClient<DiscordDirectMessages>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<DiscordGatewayState>();
 builder.Services.AddHostedService<DiscordGatewayService>();
 
@@ -557,6 +558,7 @@ app.MapContractEndpoints();
 app.MapChatEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();
+app.MapAdminTitleEndpoints();
 
 // Anything that is not an API route and not a file on disk is the client's own routing to resolve, so
 // it gets the shell and works it out in the browser.

@@ -19,7 +19,8 @@ public sealed class AllianceService(
     IOptionsSnapshot<GameOptions> options,
     EconomyService economy,
     HideoutService? hideouts = null,
-    TerritoryService? territories = null)
+    TerritoryService? territories = null,
+    DiscordDirectMessages? discordDms = null)
 {
     private readonly GameOptions _options = options.Value;
 
@@ -79,6 +80,7 @@ public sealed class AllianceService(
 
         var receiver = await db.Players
             .Include(x => x.Hideout)
+            .Include(x => x.Account)
             .SingleOrDefaultAsync(x => x.Id == receiverId, cancellationToken)
             ?? throw new GameRuleException("No such player.");
         if (receiver.AllianceId != allianceId)
@@ -103,7 +105,7 @@ public sealed class AllianceService(
         // The receiver is told, for the same reason a market sale tells the seller: it happened to them
         // rather than because of them. Guns and thugs arriving unannounced is the version of this that
         // players notice a week later while wondering where their crew came from.
-        Tell(receiver, $"{sender.Name} sent you {quantity:N0} {key}.", nowUtc);
+        await TellAsync(receiver, $"{sender.Name} sent you {quantity:N0} {key}.", nowUtc, cancellationToken);
         return transfer;
     }
 
@@ -115,10 +117,18 @@ public sealed class AllianceService(
     /// Never to a bot. Ten minutes of a test world wrote 129 assist notices and 119 of them went to
     /// accounts that will never open a bell.
     /// </summary>
-    private void Tell(Player recipient, string summary, DateTime nowUtc)
+    private async Task TellAsync(Player recipient, string summary, DateTime nowUtc, CancellationToken cancellationToken)
     {
         if (recipient.Account?.IsBot == true) return;
         Tell(recipient.Id, summary, nowUtc);
+        if (discordDms is not null && recipient.Account is not null)
+            await discordDms.TellGameAlertAsync(
+                recipient.Account,
+                AlertCategory.Crew,
+                "Crew business needs eyes",
+                summary,
+                nowUtc,
+                cancellationToken);
     }
 
     /// <summary>By id, for the caller that has already left the bots out of its query.</summary>
@@ -267,14 +277,15 @@ public sealed class AllianceService(
         // is the difference between fetching a handful of rows and fetching a whole world's worth. Ten
         // minutes of a bot world produced 129 of these notices and 119 went to accounts that will never
         // open a bell - permanent storage, and weight in every alert query afterwards, for nobody.
-        var allyMembers = await db.Players.AsNoTracking()
+        var allyMembers = await db.Players
+            .Include(x => x.Account)
+            .AsNoTracking()
             .Where(x => x.AllianceId != null && allyIds.Contains(x.AllianceId.Value) && !x.Account.IsBot)
-            .Select(x => new { x.Id })
             .ToListAsync(cancellationToken);
 
         foreach (var member in allyMembers)
-            Tell(member.Id, $"{mission.Defender.Name} is under attack and your crews have a pact. "
-                            + "Send thugs or guns from the alliance board.", nowUtc);
+            await TellAsync(member, $"{mission.Defender.Name} is under attack and your crews have a pact. "
+                                    + "Send thugs or guns from the alliance board.", nowUtc, cancellationToken);
 
         return calls;
     }
@@ -624,7 +635,9 @@ public sealed class AllianceService(
             EnsurePower(actor, alliance, AlliancePower.Invite);
 
             var id = subjectId ?? throw new GameRuleException("Say who you are asking.");
-            subject = await db.Players.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
+            subject = await db.Players
+                .Include(x => x.Account)
+                .SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
                 ?? throw new GameRuleException("No such player.");
             if (subject.Id == actor.Id)
                 throw new GameRuleException("You are already in it.");
@@ -684,7 +697,7 @@ public sealed class AllianceService(
         // them they did it would be telling them what they just typed - the crew's leaders are the ones
         // who did not know, and their side of this is the alliance board.
         if (kind == AllianceRequestKind.Invitation)
-            Tell(subject, $"{alliance.Name} invited you to join. Answer it on the alliance board.", nowUtc);
+            await TellAsync(subject, $"{alliance.Name} invited you to join. Answer it on the alliance board.", nowUtc, cancellationToken);
 
         return request;
     }

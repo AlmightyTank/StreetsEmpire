@@ -94,6 +94,21 @@ internal static class DiscordEndpoints
                     settings.DiscordCityRoleMapJson = DiscordGuildIntegration.CityRoleMapJson(request.CityRoleMap);
                     changes.Add("Discord city role map updated");
                 }
+                if (request.CrewRoleMap is not null)
+                {
+                    settings.DiscordCrewRoleMapJson = DiscordGuildIntegration.CrewRoleMapJson(request.CrewRoleMap);
+                    changes.Add("Discord crew role map updated");
+                }
+                if (request.CrewChannelMap is not null)
+                {
+                    settings.DiscordCrewChannelMapJson = DiscordGuildIntegration.CrewChannelMapJson(request.CrewChannelMap);
+                    changes.Add("Discord crew channel map updated");
+                }
+                if (request.TitleRoleMap is not null)
+                {
+                    settings.DiscordTitleRoleMapJson = DiscordGuildIntegration.TitleRoleMapJson(request.TitleRoleMap);
+                    changes.Add("Discord title role map updated");
+                }
             }
             catch (GameRuleException ex)
             {
@@ -109,6 +124,58 @@ internal static class DiscordEndpoints
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(await discord.SettingsResponseAsync(ct));
+        }).RequireAuthorization();
+
+        app.MapPost("/api/admin/discord/ensure-roles", async (
+            CurrentPlayerService current,
+            GameDbContext db,
+            AdminService admins,
+            DiscordGuildIntegration discord,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            try
+            {
+                var result = await discord.EnsureRoleMapsAsync(admin.Account.Username, ct);
+                admins.Record(admin.Account, "DiscordRoles", null,
+                    $"ensured {result.EnsuredRoles:N0} Discord role map entrie(s), created {result.CreatedRoles:N0}, reused {result.ReusedRoles:N0}",
+                    null, result.EnsuredAtUtc);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+        app.MapPost("/api/admin/discord/sync-crew-channels", async (
+            CurrentPlayerService current,
+            GameDbContext db,
+            AdminService admins,
+            DiscordGuildIntegration discord,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            try
+            {
+                var result = await discord.SyncCrewChannelsAsync(admin.Account.Username, ct);
+                admins.Record(admin.Account, "DiscordCrewChannels", null,
+                    $"synced {result.Channels:N0} Discord crew channel(s), created {result.CreatedChannels:N0}, reused {result.ReusedChannels:N0}, updated {result.UpdatedChannels:N0}",
+                    null, result.SyncedAtUtc);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         }).RequireAuthorization();
 
         app.MapPost("/api/admin/discord/sync-roles", async (

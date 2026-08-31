@@ -602,6 +602,51 @@ export type PlayerTitle = {
   detail: string
 }
 
+export type CustomTitleCriteria = {
+  key: string
+  label: string
+  needsThreshold: boolean
+  needsText: boolean
+}
+
+export type AdminCustomTitle = {
+  id: number
+  key: string
+  title: string
+  detail: string
+  criteria: string
+  threshold: number
+  textValue?: string | null
+  isActive: boolean
+  createdAtUtc: string
+  createdByUsername: string
+  updatedAtUtc?: string | null
+  updatedByUsername?: string | null
+}
+
+export type AdminCustomTitleBoard = {
+  criteria: CustomTitleCriteria[]
+  titles: AdminCustomTitle[]
+}
+
+export type AdminCustomTitleDraft = {
+  key?: string | null
+  title?: string | null
+  detail?: string | null
+  criteria?: string | null
+  threshold?: number | null
+  textValue?: string | null
+  isActive?: boolean
+  reason?: string | null
+}
+
+export type ProfileBadge = {
+  key: string
+  label: string
+  detail: string
+  tone: string
+}
+
 export type CityMarket = {
   city: string
   weed: string
@@ -704,6 +749,7 @@ export type PlayerTarget = {
   hoes: number
   thugs: number
   weapons: number
+  profileBadges: ProfileBadge[]
   /** Names they have earned today. Empty for almost everybody, which is what makes them worth having. */
   titles: string[]
   rides: number
@@ -1208,6 +1254,7 @@ export type Account = {
   profileLocation: string | null
   profileAccent: 'Gold' | 'Teal' | 'Rose' | 'Steel'
   profileBanner: ProfileBanner
+  profileBadges: ProfileBadge[]
   /** The title key they lead with, held or not. What they hold today comes from `myTitles()`. */
   featuredTitle: string | null
   showDiscordOnProfile: boolean
@@ -1221,8 +1268,13 @@ export type Account = {
   emailSecurityNotices: boolean
   emailCombatNotices: boolean
   emailAllianceNotices: boolean
+  discordSecurityNotices: boolean
+  discordCombatNotices: boolean
+  discordCrewNotices: boolean
+  discordMarketNotices: boolean
   /** False when the server has no Discord credentials, which hides the connect button entirely. */
   discordConfigured: boolean
+  discordLinkRewardClaimedAtUtc: string | null
   createdAtUtc: string
 }
 
@@ -1234,7 +1286,7 @@ export type DiscordSignUpTicket = { suggestedUsername: string, discordUsername: 
  * wiped from the address bar so a reload does not replay the message.
  */
 export type DiscordOutcome =
-  | 'signed-in' | 'connected' | 'sign-up' | 'cancelled'
+  | 'signed-in' | 'connected' | 'connected-reward' | 'sign-up' | 'cancelled'
   | 'failed' | 'locked' | 'already-connected' | 'unavailable' | 'synced'
 
 /**
@@ -1330,6 +1382,10 @@ export const api = {
     emailSecurityNotices: boolean,
     emailCombatNotices: boolean,
     emailAllianceNotices: boolean,
+    discordSecurityNotices: boolean,
+    discordCombatNotices: boolean,
+    discordCrewNotices: boolean,
+    discordMarketNotices: boolean,
     noticeCombat: boolean,
     noticeCrew: boolean,
     noticeMarket: boolean) =>
@@ -1340,6 +1396,10 @@ export const api = {
         emailSecurityNotices,
         emailCombatNotices,
         emailAllianceNotices,
+        discordSecurityNotices,
+        discordCombatNotices,
+        discordCrewNotices,
+        discordMarketNotices,
         noticeCombat,
         noticeCrew,
         noticeMarket,
@@ -1356,6 +1416,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ currentPassword: currentPassword || null }),
     }),
+  claimDiscordLinkReward: () => request<Account>('/api/account/discord/reward', { method: 'POST' }),
   /** Issues a fresh code and retires whatever was outstanding. Refused inside the resend cooldown. */
   sendEmailCode: () => request<Account>('/api/account/email/verify/send', { method: 'POST' }),
   confirmEmail: (code: string) =>
@@ -1883,7 +1944,11 @@ export type DiscordIntegrationSettings = {
   topTenRoleId?: string | null
   crewBossRoleId?: string | null
   cityRoleMap: string
+  crewRoleMap: string
+  crewChannelMap: string
+  titleRoleMap: string
   rolesSyncedAtUtc?: string | null
+  crewChannelsSyncedAtUtc?: string | null
   commandsRegisteredAtUtc?: string | null
   updatedAtUtc: string
   updatedBy?: string | null
@@ -1896,6 +1961,27 @@ export type DiscordRoleSyncResult = {
   skippedPlayers: number
   rolesAdded: number
   rolesRemoved: number
+  errors: string[]
+  syncedAtUtc: string
+}
+
+export type DiscordRoleEnsureResult = {
+  ensuredRoles: number
+  createdRoles: number
+  reusedRoles: number
+  cityRoles: number
+  crewRoles: number
+  titleRoles: number
+  errors: string[]
+  ensuredAtUtc: string
+}
+
+export type DiscordCrewChannelSyncResult = {
+  crews: number
+  channels: number
+  createdChannels: number
+  reusedChannels: number
+  updatedChannels: number
   errors: string[]
   syncedAtUtc: string
 }
@@ -1933,12 +2019,22 @@ export const opsApi = {
     topTenRoleId?: string | null
     crewBossRoleId?: string | null
     cityRoleMap?: string | null
+    crewRoleMap?: string | null
+    crewChannelMap?: string | null
+    titleRoleMap?: string | null
     clearBotToken?: boolean
     clearPublicKey?: boolean
     reason?: string | null
   }) => request<DiscordIntegrationSettings>('/api/admin/discord', { method: 'PUT', body: JSON.stringify(body) }),
+  ensureDiscordRoles: () => request<DiscordRoleEnsureResult>('/api/admin/discord/ensure-roles', { method: 'POST' }),
+  syncDiscordCrewChannels: () => request<DiscordCrewChannelSyncResult>('/api/admin/discord/sync-crew-channels', { method: 'POST' }),
   syncDiscordRoles: () => request<DiscordRoleSyncResult>('/api/admin/discord/sync-roles', { method: 'POST' }),
   registerDiscordCommands: () => request<DiscordCommandRegistrationResult>('/api/admin/discord/register-commands', { method: 'POST' }),
+  customTitles: () => request<AdminCustomTitleBoard>('/api/admin/titles'),
+  createCustomTitle: (body: AdminCustomTitleDraft) =>
+    request<AdminCustomTitle>('/api/admin/titles', { method: 'POST', body: JSON.stringify(body) }),
+  updateCustomTitle: (id: number, body: AdminCustomTitleDraft) =>
+    request<AdminCustomTitle>(`/api/admin/titles/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   createUpdate: (body: AdminGameAnnouncementDraft) =>
     request<AdminGameAnnouncement>('/api/admin/updates', { method: 'POST', body: JSON.stringify(body) }),
   updatePost: (id: number, body: AdminGameAnnouncementDraft) =>

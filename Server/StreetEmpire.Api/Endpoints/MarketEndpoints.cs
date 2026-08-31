@@ -101,6 +101,7 @@ internal static class MarketEndpoints
             CurrentPlayerService current,
             GameDbContext db,
             MarketService market,
+            DiscordDirectMessages discordDms,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -115,15 +116,23 @@ internal static class MarketEndpoints
                 var summary = $"Bought {purchase.Quantity:N0} {item} from {purchase.Listing.Seller.Name} for {purchase.Cost:C0}.";
                 AddLog(db, player, before, "MARKET", 0, summary, now);
                 // The seller is told, because a sale happens to them rather than because of them.
+                var sellerNotice = $"{player.Name} bought {purchase.Quantity:N0} {item} off you for {purchase.SellerPayout:C0} after the house took {purchase.HouseCut:C0}.";
                 db.ActionLogs.Add(new Models.GameActionLog
                 {
                     PlayerId = purchase.Listing.SellerId,
                     Action = "SALE",
-                    Summary = $"{player.Name} bought {purchase.Quantity:N0} {item} off you for {purchase.SellerPayout:C0} after the house took {purchase.HouseCut:C0}.",
+                    Summary = sellerNotice,
                     BankDelta = purchase.SellerPayout,
                     CreatedAtUtc = now
                 });
                 await db.SaveChangesAsync(ct);
+                await discordDms.TellGameAlertAsync(
+                    purchase.Listing.Seller.Account,
+                    AlertCategory.Market,
+                    "Something of yours sold",
+                    sellerNotice,
+                    now,
+                    ct);
                 return Results.Ok(new ActionResultResponse(summary, player.Turns, new Dictionary<string, object?>
                 {
                     ["quantity"] = purchase.Quantity,

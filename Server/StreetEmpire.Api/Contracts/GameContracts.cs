@@ -294,6 +294,42 @@ public sealed record PlayerTitleResponse(
     long Value,
     string Detail);
 
+public sealed record CustomTitleCriteriaResponse(
+    string Key,
+    string Label,
+    bool NeedsThreshold,
+    bool NeedsText);
+
+public sealed record AdminCustomTitleResponse(
+    long Id,
+    string Key,
+    string Title,
+    string Detail,
+    string Criteria,
+    long Threshold,
+    string? TextValue,
+    bool IsActive,
+    DateTime CreatedAtUtc,
+    string CreatedByUsername,
+    DateTime? UpdatedAtUtc,
+    string? UpdatedByUsername);
+
+public sealed record AdminCustomTitleRequest(
+    string? Key,
+    string? Title,
+    string? Detail,
+    string? Criteria,
+    long? Threshold,
+    string? TextValue,
+    bool? IsActive,
+    string? Reason);
+
+public sealed record ProfileBadgeResponse(
+    string Key,
+    string Label,
+    string Detail,
+    string Tone);
+
 /// <summary>
 /// One shelf of the gun rack, as the player sees it. Carries what a gun is worth in a fight as well as
 /// what it costs, because that ratio is the entire decision and working it out from two other panels is
@@ -583,6 +619,7 @@ public sealed record PlayerTargetResponse(
     int Hoes,
     int Thugs,
     int Weapons,
+    IReadOnlyList<ProfileBadgeResponse> ProfileBadges,
     /// <summary>Names they have earned today, so the list says who somebody is before you open them.</summary>
     IReadOnlyList<string> Titles,
     /// <summary>Rides parked here, since an unguarded garage is what a jacking is looking for.</summary>
@@ -629,6 +666,7 @@ public sealed record PlayerProfileResponse(
     int Weapons,
     /// <summary>What they are armed with, not merely how many. A house of rifles is a different fight.</summary>
     IReadOnlyList<WeaponTierResponse> WeaponRack,
+    IReadOnlyList<ProfileBadgeResponse> ProfileBadges,
     /// <summary>Names they have earned today. Empty for almost everybody, which is what makes them worth having.</summary>
     IReadOnlyList<string> Titles,
     int? Rides,
@@ -1429,7 +1467,11 @@ public sealed record DiscordIntegrationSettingsResponse(
     string? TopTenRoleId,
     string? CrewBossRoleId,
     string CityRoleMap,
+    string CrewRoleMap,
+    string CrewChannelMap,
+    string TitleRoleMap,
     DateTime? RolesSyncedAtUtc,
+    DateTime? CrewChannelsSyncedAtUtc,
     DateTime? CommandsRegisteredAtUtc,
     DateTime UpdatedAtUtc,
     string? UpdatedBy);
@@ -1443,6 +1485,9 @@ public sealed record DiscordIntegrationSettingsRequest(
     string? TopTenRoleId,
     string? CrewBossRoleId,
     string? CityRoleMap,
+    string? CrewRoleMap,
+    string? CrewChannelMap,
+    string? TitleRoleMap,
     bool ClearBotToken,
     bool ClearPublicKey,
     string? Reason);
@@ -1454,6 +1499,25 @@ public sealed record DiscordRoleSyncResponse(
     int SkippedPlayers,
     int RolesAdded,
     int RolesRemoved,
+    IReadOnlyList<string> Errors,
+    DateTime SyncedAtUtc);
+
+public sealed record DiscordRoleEnsureResponse(
+    int EnsuredRoles,
+    int CreatedRoles,
+    int ReusedRoles,
+    int CityRoles,
+    int CrewRoles,
+    int TitleRoles,
+    IReadOnlyList<string> Errors,
+    DateTime EnsuredAtUtc);
+
+public sealed record DiscordCrewChannelSyncResponse(
+    int Crews,
+    int Channels,
+    int CreatedChannels,
+    int ReusedChannels,
+    int UpdatedChannels,
     IReadOnlyList<string> Errors,
     DateTime SyncedAtUtc);
 

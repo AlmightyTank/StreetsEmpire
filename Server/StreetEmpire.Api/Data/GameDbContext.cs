@@ -36,6 +36,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationMember> ConversationMembers => Set<ConversationMember>();
     public DbSet<GameAnnouncement> GameAnnouncements => Set<GameAnnouncement>();
+    public DbSet<CustomTitle> CustomTitles => Set<CustomTitle>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +77,10 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.EmailSecurityNotices).HasDefaultValue(true);
             entity.Property(x => x.EmailCombatNotices).HasDefaultValue(true);
             entity.Property(x => x.EmailAllianceNotices).HasDefaultValue(true);
+            entity.Property(x => x.DiscordSecurityNotices).HasDefaultValue(false);
+            entity.Property(x => x.DiscordCombatNotices).HasDefaultValue(false);
+            entity.Property(x => x.DiscordCrewNotices).HasDefaultValue(false);
+            entity.Property(x => x.DiscordMarketNotices).HasDefaultValue(false);
             entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)
@@ -96,6 +101,18 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
 
             entity.Property(x => x.IpAddress).HasMaxLength(45);
             entity.Property(x => x.UserAgent).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<CustomTitle>(entity =>
+        {
+            entity.HasIndex(x => x.Key).IsUnique();
+            entity.Property(x => x.Key).HasMaxLength(32);
+            entity.Property(x => x.Title).HasMaxLength(64);
+            entity.Property(x => x.Detail).HasMaxLength(240);
+            entity.Property(x => x.Criteria).HasMaxLength(32);
+            entity.Property(x => x.TextValue).HasMaxLength(64);
+            entity.Property(x => x.CreatedByUsername).HasMaxLength(32);
+            entity.Property(x => x.UpdatedByUsername).HasMaxLength(32);
         });
 
         modelBuilder.Entity<HideoutIntel>(entity =>
@@ -460,6 +477,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.DiscordLinkedRoleId).HasMaxLength(32);
             entity.Property(x => x.DiscordTopTenRoleId).HasMaxLength(32);
             entity.Property(x => x.DiscordCrewBossRoleId).HasMaxLength(32);
+            entity.Property(x => x.DiscordCrewRoleMapJson);
+            entity.Property(x => x.DiscordTitleRoleMapJson);
             entity.Property(x => x.UpdatedBy).HasMaxLength(32);
             // Seeded so the single row always exists and readers never have to cope with its absence.
             entity.HasData(new GameSetting { Id = 1, UpdatedAtUtc = new DateTime(2026, 8, 12, 0, 0, 0, DateTimeKind.Utc) });

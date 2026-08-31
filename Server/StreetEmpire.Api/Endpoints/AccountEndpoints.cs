@@ -261,7 +261,10 @@ internal static class AccountEndpoints
             if (current?.Player is null) return Results.Unauthorized();
 
             var board = await titles.BoardAsync(DateTime.UtcNow, ct);
-            return Results.Ok(board.Where(x => x.PlayerId == current.Player.Id).ToList());
+            return Results.Ok(board
+                .Where(x => x.PlayerId == current.Player.Id)
+                .Concat(TitleService.AccountTitles(current))
+                .ToList());
         });
 
         // Where you are signed in. Active only: a revoked row is not somewhere you are signed in, and
@@ -374,6 +377,7 @@ internal static class AccountEndpoints
             GameDbContext db,
             DiscordAuthService discord,
             EmailVerificationService verification,
+            TitleService titles,
             CancellationToken ct) =>
         {
             var current = await LoadAsync(http, db, ct);
@@ -410,7 +414,7 @@ internal static class AccountEndpoints
             {
                 var key = featured.Trim().ToLowerInvariant();
                 if (key.Length == 0) current.FeaturedTitle = null;
-                else if (TitleService.IsTitleKey(key)) current.FeaturedTitle = key;
+                else if (await titles.IsTitleKeyAsync(key, ct)) current.FeaturedTitle = key;
                 else return Results.BadRequest(new { error = "That is not a title this game hands out." });
             }
             await db.SaveChangesAsync(ct);
@@ -476,6 +480,14 @@ internal static class AccountEndpoints
                 current.EmailCombatNotices = combat;
             if (request.EmailAllianceNotices is { } alliance)
                 current.EmailAllianceNotices = alliance;
+            if (request.DiscordSecurityNotices is { } discordSecurity)
+                current.DiscordSecurityNotices = discordSecurity && current.DiscordUserId is not null;
+            if (request.DiscordCombatNotices is { } discordCombat)
+                current.DiscordCombatNotices = discordCombat && current.DiscordUserId is not null;
+            if (request.DiscordCrewNotices is { } discordCrew)
+                current.DiscordCrewNotices = discordCrew && current.DiscordUserId is not null;
+            if (request.DiscordMarketNotices is { } discordMarket)
+                current.DiscordMarketNotices = discordMarket && current.DiscordUserId is not null;
 
             if (request.NoticeCombat is { } noticeCombat)
                 current.NoticeCombat = noticeCombat;
@@ -538,6 +550,26 @@ internal static class AccountEndpoints
             current.CustomAvatarUpdatedAtUtc = null;
             if (current.AvatarSource == AccountAvatarSource.Custom)
                 current.AvatarSource = AccountAvatarSource.None;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        });
+
+        account.MapPost("/discord/reward", async (
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current?.Player is null) return Results.Unauthorized();
+            if (current.DiscordUserId is null)
+                return Results.BadRequest(new { error = "Connect Discord before claiming the link reward." });
+
+            var reward = DiscordLinkRewards.GrantOnce(current, current.Player, DateTime.UtcNow);
+            if (!reward.Awarded)
+                return Results.BadRequest(new { error = "That Discord link reward has already been claimed." });
+
             await db.SaveChangesAsync(ct);
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
@@ -749,6 +781,7 @@ internal static class AccountEndpoints
             account.ProfileLocation,
             account.ProfileAccent.ToString(),
             account.ProfileBanner.ToString(),
+            StreetEmpire.Api.Mapping.ResponseMappers.ProfileBadges(account),
             account.FeaturedTitle,
             account.ShowDiscordOnProfile,
             account.ShowActivityOnProfile,
@@ -760,7 +793,12 @@ internal static class AccountEndpoints
             account.EmailSecurityNotices,
             account.EmailCombatNotices,
             account.EmailAllianceNotices,
+            account.DiscordSecurityNotices,
+            account.DiscordCombatNotices,
+            account.DiscordCrewNotices,
+            account.DiscordMarketNotices,
             discord.Options.IsConfigured,
+            account.DiscordLinkRewardClaimedAtUtc,
             account.CreatedAtUtc);
     }
 }

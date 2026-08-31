@@ -153,6 +153,8 @@ var tests = new (string Name, Action Test)[]
     ("praying is answered, and can never pay", PrayingIsAnsweredAndNeverPays),
     ("titles name the leader of each category, both ways round", TitlesNameLeadersBothWaysRound),
     ("every district is worth going to for something", DistrictsAreWorthChoosingBetween),
+    ("the street turns up more people for a bigger house", RecruitingScalesWithTheCrewOnTheStreet),
+    ("being short of pimps or guns costs a share, and follows the shift", OverhangPenaltiesAreAShareAndFollowTheShift),
     ("a crew is people who have agreed not to rob each other", AllianceIsATruce),
     ("dues come off the gross beside the crew cut, and never compound", DuesComeOffTheGross),
     ("the pool amplifies a crew rather than replacing one", PoolAmplifiesRatherThanReplaces),
@@ -175,6 +177,8 @@ var tests = new (string Name, Action Test)[]
     ("both doors put down exactly the same player", BothDoorsPutDownTheSamePlayer),
     ("an account can never end up with no way in", AnAccountAlwaysKeepsAWayIn),
     ("a Discord handle always suggests a usable username", ADiscordHandleAlwaysSuggestsAUsableUsername),
+    ("Discord link rewards pay once", DiscordLinkRewardsPayOnce),
+    ("Discord link unlocks a badge and title", DiscordLinkUnlocksABadgeAndTitle),
     ("a Discord ticket cannot be read, forged, or replayed elsewhere", ADiscordTicketCannotBeForged),
     ("Discord is off until it is configured", DiscordIsOffUntilItIsConfigured),
     ("the browser only ever comes back somewhere already trusted", ReturnUrlsAreOnlyEverOnesAlreadyTrusted),
@@ -199,13 +203,18 @@ var tests = new (string Name, Action Test)[]
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
+    ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
-    ("Discord city role maps are written for humans and stored for machines", DiscordCityRoleMapsAreHumanWritable),
+    ("announcement delivery sends Discord embeds", AnnouncementDeliverySendsDiscordEmbeds),
+    ("Discord role maps are written for humans and stored for machines", DiscordRoleMapsAreHumanWritable),
+    ("Discord role sync selects city, crew, and title roles", DiscordRoleSyncSelectsCityCrewAndTitleRoles),
+    ("Discord crew channel sync creates private crew rooms", DiscordCrewChannelSyncCreatesPrivateCrewRooms),
     ("Discord server commands resolve through the API", DiscordServerCommandsResolveThroughTheApi),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
+    ("custom titles are created and earned by rules", CustomTitlesAreCreatedAndEarnedByRules),
     ("a recovery code is read the way it looks on paper", ARecoveryCodeIsReadTheWayItLooks),
     ("intelligence goes cold, and your own house never does", IntelligenceGoesColdAndYourOwnHouseNever),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
@@ -1876,6 +1885,61 @@ static void ADiscordHandleAlwaysSuggestsAUsableUsername()
     AssertEqual("SamSmith", AccountSetup.SuggestUsername("Sam.Smith"));
 }
 
+static void DiscordLinkRewardsPayOnce()
+{
+    var now = new DateTime(2026, 8, 30, 12, 0, 0, DateTimeKind.Utc);
+    var account = new PlayerAccount { DiscordUserId = "1234567890" };
+    var player = new Player { Account = account, Cash = 50, Condoms = 2, Beer = 3 };
+    account.Player = player;
+
+    var first = DiscordLinkRewards.GrantOnce(account, player, now);
+    AssertTrue(first.Awarded, "the first Discord link should pay");
+    AssertEqual(DiscordLinkRewards.Cash + 50, player.Cash);
+    AssertEqual(DiscordLinkRewards.Condoms + 2, player.Condoms);
+    AssertEqual(DiscordLinkRewards.Beer + 3, player.Beer);
+    AssertEqual(now, account.DiscordLinkRewardClaimedAtUtc);
+
+    var second = DiscordLinkRewards.GrantOnce(account, player, now.AddMinutes(5));
+    AssertTrue(!second.Awarded, "a reconnect should not pay twice");
+    AssertEqual(DiscordLinkRewards.Cash + 50, player.Cash);
+    AssertEqual(DiscordLinkRewards.Condoms + 2, player.Condoms);
+    AssertEqual(DiscordLinkRewards.Beer + 3, player.Beer);
+
+    var unlinked = new PlayerAccount();
+    AssertTrue(!DiscordLinkRewards.GrantOnce(unlinked, new Player { Account = unlinked }, now).Awarded,
+        "no Discord identity means no Discord reward");
+}
+
+static void DiscordLinkUnlocksABadgeAndTitle()
+{
+    var playerId = Guid.NewGuid();
+    var account = new PlayerAccount
+    {
+        DiscordUserId = "1234567890",
+        DiscordUsername = "runner",
+        FeaturedTitle = TitleService.DiscordConnectedKey,
+    };
+    var player = new Player { Id = playerId, Name = "Runner", Account = account };
+    account.Player = player;
+
+    var accountTitle = TitleService.AccountTitles(account).Single();
+    AssertEqual(TitleService.DiscordConnectedKey, accountTitle.Key);
+    AssertEqual(TitleService.DiscordConnectedTitle, accountTitle.Title);
+
+    AssertEqual(TitleService.DiscordConnectedTitle, TitleService.For(account, [])[0]);
+
+    // Public profile display follows the existing Discord visibility switch, because a badge or title
+    // says the same thing as the handle: this empire is linked to Discord.
+    AssertEqual(0, ProfileBadges(account, publicOnly: true).Count);
+    AssertEqual(0, TitleService.For(account, [], publicOnly: true).Count);
+
+    account.ShowDiscordOnProfile = true;
+    var publicBadges = ProfileBadges(account, publicOnly: true);
+    AssertEqual(1, publicBadges.Count);
+    AssertEqual("discord-connected", publicBadges[0].Key);
+    AssertEqual(TitleService.DiscordConnectedTitle, TitleService.For(account, [], publicOnly: true)[0]);
+}
+
 static void ADiscordTicketCannotBeForged()
 {
     var tickets = new DiscordTickets(DataProtectionProvider.Create("StreetEmpire.Tests"));
@@ -2802,6 +2866,64 @@ static void AChosenTitleLeadsAndSurvivesLosingIt()
     AssertTrue(!TitleService.IsTitleKey("emperor"), "emperor is not");
 }
 
+static void CustomTitlesAreCreatedAndEarnedByRules()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"custom-titles-{Guid.NewGuid()}")
+        .Options);
+    var options = Resolve(new GameOptions());
+    var admin = new PlayerAccount { Username = "admin", IsAdmin = true };
+    var richAccount = new PlayerAccount { Username = "rich" };
+    var poorAccount = new PlayerAccount { Username = "poor" };
+    var (rich, _) = AccountSetup.NewPlayer(richAccount, "Rich", "Chicago", options, CreateRoster(options));
+    var (poor, _) = AccountSetup.NewPlayer(poorAccount, "Poor", "Miami", options, CreateRoster(options));
+    rich.Cash = 1_250_000;
+    poor.Cash = 50_000;
+
+    db.Accounts.Add(admin);
+    db.Players.AddRange(rich, poor);
+    db.SaveChanges();
+
+    var service = new TitleService(db, Snapshot(options), CreateEconomy(options));
+    var saved = service.CreateCustomTitleAsync(new AdminCustomTitleRequest(
+            "millionaire",
+            "Millionaire",
+            "",
+            CustomTitleCriteria.NetWorthAtLeast,
+            1_000_000,
+            null,
+            true,
+            "testing"),
+        admin,
+        DateTime.UtcNow,
+        default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual("millionaire", saved.Key);
+    AssertTrue(service.IsTitleKeyAsync("millionaire", default).GetAwaiter().GetResult(),
+        "custom title keys should be accepted by the profile picker");
+
+    var board = service.BoardAsync(DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertTrue(board.Any(x => x.Key == "millionaire" && x.PlayerId == rich.Id && x.Title == "Millionaire"),
+        "a player over the threshold should hold the custom title");
+    AssertTrue(!board.Any(x => x.Key == "millionaire" && x.PlayerId == poor.Id),
+        "a player under the threshold should not hold the custom title");
+
+    AssertRuleError(() => service.CreateCustomTitleAsync(new AdminCustomTitleRequest(
+            "killer",
+            "Reserved",
+            "",
+            CustomTitleCriteria.CashAtLeast,
+            1,
+            null,
+            true,
+            null),
+        admin,
+        DateTime.UtcNow,
+        default).GetAwaiter().GetResult(),
+        "a custom title reuses a built-in key");
+}
+
 static void TheSweepNeverTakesAFightInFlight()
 {
     // The action log and the combat log are the two biggest tables here and were the only growing ones
@@ -2890,10 +3012,69 @@ static void ANewColumnDoesNotSwitchAnythingOff()
         AssertEqual(true, property!.GetDefaultValue());
     }
 
+    foreach (var name in new[] { "DiscordSecurityNotices", "DiscordCombatNotices", "DiscordCrewNotices", "DiscordMarketNotices" })
+    {
+        var property = account.FindProperty(name);
+        AssertTrue(property is not null, $"{name} should be mapped");
+        AssertEqual(false, property!.GetDefaultValue());
+    }
+
     // The C# side too, since a row inserted by the app never consults the database default.
     var fresh = new PlayerAccount();
     AssertTrue(fresh.ShowActivityOnProfile, "a new account shows its activity");
     AssertTrue(fresh.NoticeCombat && fresh.NoticeCrew && fresh.NoticeMarket, "a new account hears everything");
+    AssertTrue(!fresh.DiscordSecurityNotices && !fresh.DiscordCombatNotices && !fresh.DiscordCrewNotices && !fresh.DiscordMarketNotices,
+        "Discord DMs are opt-in");
+}
+
+static void DiscordDmsAreOptInAndSentByTheBot()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-dms-{Guid.NewGuid()}")
+        .Options);
+    var http = new RecordingHttpHandler(request =>
+    {
+        if (request.RequestUri?.AbsolutePath == "/api/v10/users/@me/channels")
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"id":"444444444444444444"}""")
+            };
+
+        return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"id":"555555555555555555"}""")
+        };
+    });
+    var sender = new DiscordDirectMessages(
+        new HttpClient(http),
+        db,
+        Options(new DiscordIntegrationOptions { BotToken = "bot-token" }),
+        NullLogger<DiscordDirectMessages>.Instance);
+
+    var account = new PlayerAccount
+    {
+        Username = "sam",
+        DiscordUserId = "777777777777777777"
+    };
+    sender.TellAccountAsync(account, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(0, http.Requests.Count);
+
+    account.DiscordSecurityNotices = true;
+    sender.TellAccountAsync(account, AccountChange.PasswordChanged, null, default).GetAwaiter().GetResult();
+    AssertEqual(2, http.Requests.Count);
+    AssertEqual("Bot", http.Requests[0].AuthorizationScheme);
+    AssertEqual("bot-token", http.Requests[0].AuthorizationParameter);
+    AssertTrue(http.Requests[0].Body.Contains("777777777777777777"), "the DM channel opens with the linked Discord id");
+    AssertTrue(http.Requests[1].Uri.EndsWith("/channels/444444444444444444/messages", StringComparison.Ordinal),
+        "the message should be sent to the DM channel Discord returned");
+    AssertTrue(http.Requests[1].Body.Contains("password"), "the account notice copy should be sent");
+    AssertTrue(http.Requests[1].Body.Contains("\"parse\":[]"), "Discord DMs should suppress mentions");
+
+    var gameQuiet = new PlayerAccount { Username = "quiet", DiscordUserId = "888888888888888888" };
+    AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Combat), "game DMs start off");
+    gameQuiet.DiscordCombatNotices = true;
+    AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Combat), "combat can be opted into");
+    AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Market), "one Discord game switch should not imply another");
 }
 
 static void GameUpdatesShowWhatIsVisibleAndStillNew()
@@ -3023,7 +3204,36 @@ static void AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig()
     AssertTrue(!DiscordAnnouncementSender.IsAllowedWebhookUrl("https://example.com/hook"), "only Discord webhook hosts should be allowed");
 }
 
-static void DiscordCityRoleMapsAreHumanWritable()
+static void AnnouncementDeliverySendsDiscordEmbeds()
+{
+    var payload = DiscordAnnouncementSender.BuildPayload(new GameAnnouncement
+    {
+        Title = "Make rival numbers discoverable",
+        Body = "Rival stats now have to be found in-game before they become reliable.",
+        Category = "Patch",
+        Severity = "Warning",
+        Version = "v0.4.0",
+        Added = "Street Wire embeds",
+        Changed = "Discord posts now use structured fields",
+        Fixed = "Webhook posts no longer risk accidental mentions",
+        KnownIssues = "Older posts were plain text",
+        PublishedAtUtc = new DateTime(2026, 8, 30, 12, 0, 0, DateTimeKind.Utc)
+    }, "Street Wire");
+
+    using var json = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+    var root = json.RootElement;
+    AssertEqual("Street Wire", root.GetProperty("username").GetString());
+    AssertEqual(0, root.GetProperty("allowed_mentions").GetProperty("parse").GetArrayLength());
+    var embed = root.GetProperty("embeds")[0];
+    AssertEqual("Make rival numbers discoverable (v0.4.0)", embed.GetProperty("title").GetString());
+    AssertEqual(0xffc107, embed.GetProperty("color").GetInt32());
+    AssertEqual("Patch - Warning", embed.GetProperty("footer").GetProperty("text").GetString());
+    AssertEqual(4, embed.GetProperty("fields").GetArrayLength());
+    AssertEqual("Added", embed.GetProperty("fields")[0].GetProperty("name").GetString());
+    AssertEqual("Street Wire embeds", embed.GetProperty("fields")[0].GetProperty("value").GetString());
+}
+
+static void DiscordRoleMapsAreHumanWritable()
 {
     var json = DiscordGuildIntegration.CityRoleMapJson("""
         Chicago=123456789012345678
@@ -3043,8 +3253,165 @@ static void DiscordCityRoleMapsAreHumanWritable()
     catch (GameRuleException)
     {
     }
+
+    var crews = DiscordGuildIntegration.ParseCrewRoleMap("""
+        The Eastside Table=345678901234567890
+        Southside Table:456789012345678901
+        """);
+    AssertEqual("345678901234567890", crews["The Eastside Table"]);
+    AssertTrue(DiscordGuildIntegration.RoleMapText(crews).Contains("Southside Table=456789012345678901"),
+        "crew role maps should come back as line-oriented text too");
+
+    var titleRoles = DiscordGuildIntegration.ParseTitleRoleMap("""
+        killer=567890123456789012
+        discord-connected:678901234567890123
+        """);
+    AssertEqual("567890123456789012", titleRoles["killer"]);
+    AssertEqual("678901234567890123", titleRoles[TitleService.DiscordConnectedKey]);
+    var customTitleRoles = DiscordGuildIntegration.ParseTitleRoleMap("emperor=789012345678901234");
+    AssertEqual("789012345678901234", customTitleRoles["emperor"]);
+
+    var automatic = DiscordGuildIntegration.AutomaticRoleTargets(
+        Resolve(new GameOptions()),
+        ["The Eastside Table", "The Eastside Table"],
+        [new KeyValuePair<string, string>("emperor", "Emperor")]);
+    AssertTrue(automatic.Any(x => x.Kind == "city" && x.RoleName.StartsWith("StreetEmpire City - ", StringComparison.Ordinal)),
+        "auto-create should include game cities");
+    AssertEqual(1, automatic.Count(x => x.Kind == "crew" && x.Key == "The Eastside Table"));
+    AssertTrue(automatic.Any(x => x.Kind == "title" && x.Key == "killer"),
+        "auto-create should include combat title keys");
+    AssertTrue(automatic.Any(x => x.Kind == "title" && x.Key == TitleService.DiscordConnectedKey),
+        "auto-create should include the account-earned Discord title");
+    AssertTrue(automatic.Any(x => x.Kind == "title" && x.Key == "emperor" && x.RoleName == "StreetEmpire Title - Emperor"),
+        "auto-create should include active custom title keys");
+
     AssertEqual("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         DiscordGuildIntegration.NormalizePublicKey("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"));
+}
+
+static void DiscordRoleSyncSelectsCityCrewAndTitleRoles()
+{
+    var account = new PlayerAccount { DiscordUserId = "777777777777777777" };
+    var crew = new Alliance { Id = 4, Name = "The Eastside Table", FounderId = Guid.NewGuid() };
+    var player = new Player
+    {
+        Id = crew.FounderId,
+        Name = "Runner",
+        City = "Chicago",
+        Alliance = crew,
+        AllianceId = crew.Id,
+        Account = account
+    };
+    account.Player = player;
+
+    var settings = new DiscordGuildIntegration.EffectiveDiscordSettings(
+        "bot-token",
+        "111111111111111111",
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "222222222222222222",
+        "100000000000000001",
+        "100000000000000002",
+        "100000000000000003",
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Chicago"] = "100000000000000004" },
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["The Eastside Table"] = "100000000000000005" },
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["killer"] = "100000000000000006",
+            [TitleService.DiscordConnectedKey] = "100000000000000007"
+        });
+    var board = new List<PlayerTitleResponse>
+    {
+        new("killer", "Body Count", player.Id, player.Name, 9, "did the thing")
+    };
+
+    var desired = DiscordGuildIntegration.DesiredRoleIds(settings, player, rank: 3, board).ToHashSet(StringComparer.Ordinal);
+
+    AssertTrue(desired.Contains("100000000000000001"), "linked role");
+    AssertTrue(desired.Contains("100000000000000002"), "top-ten role");
+    AssertTrue(desired.Contains("100000000000000003"), "crew-boss role");
+    AssertTrue(desired.Contains("100000000000000004"), "city role");
+    AssertTrue(desired.Contains("100000000000000005"), "crew role");
+    AssertTrue(desired.Contains("100000000000000006"), "combat title role");
+    AssertTrue(desired.Contains("100000000000000007"), "account title role");
+}
+
+static void DiscordCrewChannelSyncCreatesPrivateCrewRooms()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-crew-channels-{Guid.NewGuid()}")
+        .Options);
+    var eastside = new Alliance { Name = "The Eastside Table", FounderId = Guid.NewGuid() };
+    var southside = new Alliance { Name = "Southside Table", FounderId = Guid.NewGuid() };
+    db.Alliances.AddRange(eastside, southside);
+    db.GameSettings.Add(new GameSetting
+    {
+        Id = 1,
+        DiscordBotToken = "bot-token",
+        DiscordGuildId = "222222222222222222",
+        DiscordCrewRoleMapJson = DiscordGuildIntegration.CrewRoleMapJson("""
+            The Eastside Table=333333333333333333
+            Southside Table=444444444444444444
+            """),
+        DiscordCrewChannelMapJson = DiscordGuildIntegration.CrewChannelMapJson("The Eastside Table=555555555555555555")
+    });
+    db.SaveChanges();
+
+    var http = new RecordingHttpHandler(request =>
+    {
+        var path = request.RequestUri?.AbsolutePath;
+        if (request.Method == HttpMethod.Get && path == "/api/v10/guilds/222222222222222222/channels")
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""[{"id":"555555555555555555","name":"street-crew-the-eastside-table","type":0}]""")
+            };
+
+        if (request.Method == HttpMethod.Post && path == "/api/v10/guilds/222222222222222222/channels")
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"id":"666666666666666666","name":"street-crew-southside-table","type":0}""")
+            };
+
+        if (request.Method.Method == "PATCH" && path == "/api/v10/channels/555555555555555555")
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"id":"555555555555555555","name":"street-crew-the-eastside-table","type":0}""")
+            };
+
+        return new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest);
+    });
+    var options = Resolve(new GameOptions());
+    var service = new DiscordGuildIntegration(
+        new HttpClient(http),
+        db,
+        Options(new DiscordIntegrationOptions()),
+        Snapshot(options),
+        CreateEconomy(options),
+        new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        new DiscordGatewayState(),
+        NullLogger<DiscordGuildIntegration>.Instance);
+
+    var result = service.SyncCrewChannelsAsync("admin", default).GetAwaiter().GetResult();
+
+    AssertEqual(2, result.Crews);
+    AssertEqual(2, result.Channels);
+    AssertEqual(1, result.CreatedChannels);
+    AssertEqual(1, result.UpdatedChannels);
+    AssertEqual(0, result.Errors.Count);
+    var row = db.GameSettings.Single(x => x.Id == 1);
+    var saved = DiscordGuildIntegration.ParseCrewChannelMap(row.DiscordCrewChannelMapJson);
+    AssertEqual("555555555555555555", saved["The Eastside Table"]);
+    AssertEqual("666666666666666666", saved["Southside Table"]);
+    AssertTrue(row.DiscordCrewChannelsSyncedAtUtc is not null, "the sync timestamp should be stored for the admin console");
+
+    var createBody = http.Requests.Single(x => x.Method == "POST").Body;
+    AssertTrue(createBody.Contains("\"name\":\"street-crew-southside-table\""), "new Discord channels should use stable crew names");
+    AssertTrue(createBody.Contains("\"id\":\"222222222222222222\"") && createBody.Contains("\"deny\":\"1024\""),
+        "crew channels should hide from @everyone by default");
+    AssertTrue(createBody.Contains("\"id\":\"444444444444444444\"") && createBody.Contains("\"allow\":\"68608\""),
+        "crew roles should be allowed to view, send messages, and read history");
+    AssertTrue(http.Requests.Any(x => x.Method == "PATCH" && x.Uri.EndsWith("/channels/555555555555555555", StringComparison.Ordinal)),
+        "existing mapped channels should be kept in sync");
 }
 
 static void DiscordServerCommandsResolveThroughTheApi()
@@ -3079,6 +3446,7 @@ static void DiscordServerCommandsResolveThroughTheApi()
         Options(new DiscordIntegrationOptions()),
         Snapshot(options),
         CreateEconomy(options),
+        new TitleService(db, Snapshot(options), CreateEconomy(options)),
         new DiscordGatewayState(),
         NullLogger<DiscordGuildIntegration>.Instance);
 
@@ -7764,6 +8132,198 @@ static Player Worshipper(GameOptions options, DateTime nowUtc) => new()
 // The source game had five districts and its own guide admits it never found a difference between any
 // of them. Five names on a dropdown that all do the same thing is a wasted click, so the only version
 // worth building is one where each is worth going to for something and costs something to go to.
+/// <summary>
+/// Word of mouth, and the reason the district table needed it.
+///
+/// Recruits were flat per turn, so the street doubled a three-hoe house every shift and moved a
+/// two-hundred-hoe house by a percent. That is the same complaint the arrest rules were written for -
+/// answered there with a risk that scales, and never answered here with anything - and it left the
+/// districts that pay in crew worth the same few thousand a shift for ever while the one that pays in
+/// cash grew with every hoe. A bigger operation is more visible to the people who might join it.
+/// </summary>
+static void RecruitingScalesWithTheCrewOnTheStreet()
+{
+    // The curve on its own, at the two places it bends.
+    var street = new StreetActionOptions { RecruitCrewPerStep = 60, MaxRecruitCrewScale = 2.5 };
+    AssertEqual(1.0, street.RecruitScaleFor(0));
+    AssertEqual(1.5, street.RecruitScaleFor(30));
+    AssertEqual(2.0, street.RecruitScaleFor(60));
+    AssertEqual(2.5, street.RecruitScaleFor(90));
+    // Capped, and the cap is load-bearing: recruits feed the crew that sets this, so an uncapped
+    // version is a growth loop that outruns every building in the game.
+    AssertEqual(2.5, street.RecruitScaleFor(10_000));
+
+    // And the shipped rates sit below the far end of that scale rather than at the near one, so the
+    // scale can never lift anybody past what the old flat rates gave. At full reach a house finds half
+    // of what every house used to find - 0.006, 0.06 and 0.02 against the old 0.012, 0.12 and 0.04 -
+    // and everything below it finds less again. Free crew is a trickle that supplements hiring, not a
+    // supply line that replaces it: capacity is what gates income, and a street that fills a building
+    // on its own hands out the one thing the hideout ladder charges for.
+    var shipped = Resolve(new GameOptions()).StreetAction;
+    var cap = shipped.RecruitScaleFor(int.MaxValue);
+    AssertEqual(0.006, Math.Round(shipped.PimpRecruitChance * cap, 4));
+    AssertEqual(0.06, Math.Round(shipped.HoeRecruitChance * cap, 4));
+    AssertEqual(0.02, Math.Round(shipped.ThugRecruitChance * cap, 4));
+
+    // And the shipped step is sized against the crew ladder rather than picked round. At sixty the cap
+    // landed at ninety heads, which a full Trap House very nearly reaches and a Warehouse blows past,
+    // so the multiplier saturated at the first tier and stopped telling the buildings apart - which is
+    // the one thing it exists to do. Each tier now sits somewhere different on the curve.
+    AssertEqual(100, shipped.RecruitCrewPerStep);
+    AssertEqual(1.75, Math.Round(shipped.RecruitScaleFor(50 + 25), 2));
+    AssertEqual(2.3, Math.Round(shipped.RecruitScaleFor(85 + 45), 2));
+    AssertEqual(2.5, Math.Round(shipped.RecruitScaleFor(130 + 70), 2));
+    AssertEqual(2.5, Math.Round(shipped.RecruitScaleFor(200 + 110), 2));
+
+    static GameOptions Tuning() => new()
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 0,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0.12,
+            ThugRecruitChance = 0,
+            RecruitCrewPerStep = 60,
+            MaxRecruitCrewScale = 2.5,
+            Finds = NoFinds()
+        },
+        Morale = new MoraleOptions
+        {
+            HoesManagedPerPimp = 1_000,
+            CondomShortagePenalty = 0,
+            BeerShortagePenalty = 0,
+            UnmanagedHoePenalty = 0,
+            UncoveredThugPenalty = 0,
+            DesertionThreshold = 0,
+            MaxDesertionChance = 0
+        }
+    };
+
+    // A roll that a 30-head house misses and a 60-head house makes, which is the whole claim: the same
+    // district, the same base chance, and the crew on the street is what decides it.
+    static Player House(int hoes) => new()
+    {
+        Turns = 20,
+        Hoes = hoes,
+        Condoms = 100_000,
+        Beer = 100_000,
+        HoeHappiness = 100,
+        ThugHappiness = 100,
+        Hideout = new Hideout { Tier = 4, StorageLevel = 6 }
+    };
+
+    var small = House(30);
+    var breakdown = RequiredBreakdown(CreateEconomy(Tuning(), new FixedRandom(0.20)).Scout(small, 10));
+    AssertEqual(0, Value<int>(breakdown, "recruitedHoes"));
+
+    var grown = House(60);
+    breakdown = RequiredBreakdown(CreateEconomy(Tuning(), new FixedRandom(0.20)).Scout(grown, 10));
+    AssertEqual(10, Value<int>(breakdown, "recruitedHoes"));
+
+    // And the cap reaches the shift too, rather than reading well in the options: a house of 240 rolls
+    // the same 2.5x as a house of 90 and misses a roll an uncapped 5x would have made.
+    var huge = new Player
+    {
+        Turns = 20,
+        Hoes = 150,
+        Thugs = 90,
+        Condoms = 100_000,
+        Beer = 100_000,
+        HoeHappiness = 100,
+        ThugHappiness = 100,
+        Hideout = new Hideout { Tier = 4, StorageLevel = 6 }
+    };
+    breakdown = RequiredBreakdown(CreateEconomy(Tuning(), new FixedRandom(0.40)).Scout(huge, 10));
+    AssertEqual(0, Value<int>(breakdown, "recruitedHoes"));
+}
+
+/// <summary>
+/// The last two per-head morale charges in the game, and the two faults they kept after the supply
+/// shortages were fixed for exactly the same reasons.
+///
+/// They grew with the crew while the morale a shift earns did not, so twenty unmanaged hoes cost the
+/// same whether they were twenty of twenty-five or twenty of two hundred. And being flat per shift
+/// rather than per turn, they were the only part of a shift that did not care how long it was: a
+/// one-turn look at the street was charged the same as a full twenty-turn night.
+/// </summary>
+static void OverhangPenaltiesAreAShareAndFollowTheShift()
+{
+    static GameOptions Tuning() => new()
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 0,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0,
+            ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Morale = new MoraleOptions
+        {
+            HoesManagedPerPimp = 10,
+            HoeStreetWorkGainPerTurn = 0,
+            ThugStreetWorkGainPerTurn = 0,
+            HoeCutMoraleScalePerTurn = 0,
+            CondomShortagePenalty = 0,
+            BeerShortagePenalty = 0,
+            UnmanagedHoePenalty = 0.7,
+            UncoveredThugPenalty = 1.0,
+            DesertionThreshold = 0,
+            MaxDesertionChance = 0
+        }
+    };
+
+    // Pimps go on through the roster rather than straight on to the counter, because the roster is what
+    // the counter is read back from: a shift re-counts it, so a house with a number and no names is a
+    // house with no pimps at all.
+    static Player House(int pimps, int hoes, int thugs, int pistols)
+    {
+        var player = new Player
+        {
+            Turns = 20,
+            Hoes = hoes,
+            Thugs = thugs,
+            Pistols = pistols,
+            Condoms = 100_000,
+            Beer = 100_000,
+            HoeHappiness = 80,
+            ThugHappiness = 80,
+            Hideout = new Hideout { Tier = 4, StorageLevel = 6 }
+        };
+        CreateRoster(Tuning()).Hire(player, pimps, new DateTime(2026, 8, 30, 12, 0, 0, DateTimeKind.Utc));
+        return player;
+    }
+
+    // Half the hoes unmanaged and half the thugs unarmed, at two crew sizes an order of magnitude
+    // apart. Charged per head this was -2 for the small house and -20 for the big one; charged as a
+    // share it is the same slide, which is the whole point.
+    var small = House(pimps: 1, hoes: 20, thugs: 20, pistols: 10);
+    var large = House(pimps: 10, hoes: 200, thugs: 100, pistols: 50);
+    CreateEconomy(Tuning()).Scout(small, 20, false);
+    CreateEconomy(Tuning()).Scout(large, 20, false);
+
+    // 0.7 a turn wholly unmanaged, half of them, over twenty turns.
+    AssertEqual(73.0, Math.Round(small.HoeHappiness, 1));
+    AssertEqual(73.0, Math.Round(large.HoeHappiness, 1));
+    // And 1.0 a turn wholly unarmed, half of them, over the same shift.
+    AssertEqual(70.0, Math.Round(small.ThugHappiness, 1));
+    AssertEqual(70.0, Math.Round(large.ThugHappiness, 1));
+
+    // And it is a rate now, so a look at the street costs a twentieth of a night out rather than the
+    // same as one. Twenty one-turn shifts and one twenty-turn shift cost the same, which is what stops
+    // shift length being a lever on a charge that has nothing to do with it.
+    var glance = House(pimps: 1, hoes: 20, thugs: 20, pistols: 10);
+    CreateEconomy(Tuning()).Scout(glance, 1, false);
+    AssertEqual(79.65, Math.Round(glance.HoeHappiness, 2));
+    AssertEqual(79.5, Math.Round(glance.ThugHappiness, 2));
+}
+
 static void DistrictsAreWorthChoosingBetween()
 {
     var options = Resolve(new GameOptions());
@@ -7808,6 +8368,18 @@ static void DistrictsAreWorthChoosingBetween()
         AssertTrue(gives < 100 || district.HeatPercent > 100,
             $"{district.Key} is better at something and worse at nothing");
     }
+
+    // And the neutral one is not the worst place to be. Gross is the only column that grows with the
+    // house, so a district that leads on it and gives up nothing that costs real money is strictly
+    // better than the default at every crew size - which is what the Nightclub was, paying 115 against
+    // 100 for eighty percent of the finds. Nothing may out-earn Low Rent and out-recruit it at once.
+    foreach (var district in districts.Where(x => !x.IsDefault))
+        AssertTrue(
+            district.GrossPercent < 100
+            || (district.HoeRecruitPercent <= 100
+                && district.ThugRecruitPercent <= 100
+                && district.PimpRecruitPercent <= 100),
+            $"{district.Key} pays better than the default and recruits better too, so nobody would ever work the default");
 
     // The two that pay best are the two the law is already watching, which is the trade the whole set
     // is built on: what you go home with against how much notice you drew getting it.
@@ -8341,6 +8913,29 @@ sealed class ThrowingEmailSender : IEmailSender
     public Task<bool> SendAsync(EmailMessage message, CancellationToken ct)
         => throw new HttpRequestException("the provider is down");
 }
+
+sealed class RecordingHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+{
+    public List<RecordedHttpRequest> Requests { get; } = [];
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Requests.Add(new RecordedHttpRequest(
+            request.Method.Method,
+            request.RequestUri?.ToString() ?? string.Empty,
+            request.Headers.Authorization?.Scheme,
+            request.Headers.Authorization?.Parameter,
+            request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult() ?? string.Empty));
+        return Task.FromResult(respond(request));
+    }
+}
+
+sealed record RecordedHttpRequest(
+    string Method,
+    string Uri,
+    string? AuthorizationScheme,
+    string? AuthorizationParameter,
+    string Body);
 
 /// <summary>A database of this game's own shape, empty, alive only as long as it is being used.</summary>
 sealed class CrewWorld : IDisposable

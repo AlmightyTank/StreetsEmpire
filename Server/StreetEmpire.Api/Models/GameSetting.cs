@@ -51,7 +51,17 @@ public sealed class GameSetting
     /// <summary>City-to-role mapping as JSON so admins can change the map without a deploy.</summary>
     public string? DiscordCityRoleMapJson { get; set; }
 
+    /// <summary>Crew-name-to-role mapping as JSON so admins can mirror alliance membership.</summary>
+    public string? DiscordCrewRoleMapJson { get; set; }
+
+    /// <summary>Crew-name-to-channel mapping as JSON so admins can keep private crew rooms in Discord.</summary>
+    public string? DiscordCrewChannelMapJson { get; set; }
+
+    /// <summary>Title-key-to-role mapping as JSON so admins can mirror earned titles.</summary>
+    public string? DiscordTitleRoleMapJson { get; set; }
+
     public DateTime? DiscordRolesSyncedAtUtc { get; set; }
+    public DateTime? DiscordCrewChannelsSyncedAtUtc { get; set; }
     public DateTime? DiscordCommandsRegisteredAtUtc { get; set; }
 
     /// <summary>

@@ -1710,10 +1710,64 @@ public sealed class StreetActionOptions
     public int BaseGrossPerTurn { get; set; } = 35;
     public RangeOptions HoeGrossPerTurn { get; set; } = new(18, 30);
     public RangeOptions PimpGrossPerTurn { get; set; } = new(4, 10);
-    public double PimpRecruitChance { get; set; } = 0.012;
-    public double HoeRecruitChance { get; set; } = 0.12;
-    public double ThugRecruitChance { get; set; } = 0.04;
+    /// <summary>
+    /// What a turn of work turns up, before the district and before word of mouth.
+    ///
+    /// Set below the far end of the scale below rather than at the near one, so the scale can never
+    /// lift anybody past what the flat rates used to give. Left where they were, a reach running to
+    /// 2.5x would not have redistributed what the street finds, it would have printed more of it: the
+    /// top of the curve found two and a half times what anybody had ever found before, which is a
+    /// maxed Penthouse recruited from empty in three days of turns.
+    ///
+    /// Halved again on top of that, because free crew that fills a building is free crew that makes
+    /// the crew shop decorative. Capacity is what actually gates income here - the shift is worth what
+    /// the hideout has room for - so a street that tops a house up to its ceiling on its own is the
+    /// game handing out the only thing it charges 300,000 dollars a tier for. At full reach a house
+    /// now finds half of what every house used to find, and a small one finds a fifth of it: enough
+    /// that a shift occasionally turns somebody up, not enough to be a supply line.
+    /// </summary>
+    public double PimpRecruitChance { get; set; } = 0.0024;
+    public double HoeRecruitChance { get; set; } = 0.024;
+    public double ThugRecruitChance { get; set; } = 0.008;
     public FindTableOptions Finds { get; set; } = new();
+
+    /// <summary>
+    /// How many heads on the street it takes to double the odds of picking somebody up, and the
+    /// ceiling on that.
+    ///
+    /// The arrest rules already say why this is here: recruits were flat per turn, so a shift was pure
+    /// upside that quietly stopped mattering as the house grew. The answer there was a risk that
+    /// scales with the crew - which is half a fix, because it takes the flat trickle away without
+    /// giving the growing house anything back, and it left the district table as a plain gross ladder:
+    /// every recruiting district is worth the same few thousand a shift for ever while the Casino's cut
+    /// of the take grows with every hoe.
+    ///
+    /// Word of mouth is the other half. A bigger operation is more visible to the people who might join
+    /// it, so the same shift turns up more of them, and the districts that pay in crew stay worth
+    /// choosing right up to the point the hideout is full - which is exactly when they should stop
+    /// mattering, because there is nowhere left to put anybody.
+    ///
+    /// Capped, and the cap is load-bearing twice over: recruits feed the crew that sets this
+    /// multiplier, so an uncapped version is a growth loop that outruns every building in the game -
+    /// and the base rates above are priced against the cap rather than against the floor, so this
+    /// decides who gets the trickle rather than how big the trickle is.
+    ///
+    /// The step is sized against the crew ladder rather than picked round. At sixty the cap landed at
+    /// ninety heads, which a full Trap House of seventy-five very nearly reaches and a Warehouse of a
+    /// hundred and thirty blows straight past - so the multiplier saturated at the first tier and
+    /// stopped telling the buildings apart, which is the one thing it exists to do. At a hundred it
+    /// lands at a hundred and fifty and every tier sits somewhere different on the curve: a Trap House
+    /// at 1.75, a Warehouse at 2.3, a Nightclub and a Penthouse at the cap.
+    /// </summary>
+    public int RecruitCrewPerStep { get; set; } = 100;
+    public double MaxRecruitCrewScale { get; set; } = 2.5;
+
+    /// <summary>What word of mouth is worth to a house this size, as a multiplier on every recruit roll.</summary>
+    public double RecruitScaleFor(int crewOnStreet)
+        => Math.Clamp(
+            1 + Math.Max(0, crewOnStreet) / (double)Math.Max(1, RecruitCrewPerStep),
+            1,
+            Math.Max(1, MaxRecruitCrewScale));
 
     /// <summary>
     /// Where the crew works. Empty here for the same reason the hideout tables are: the binder appends
@@ -1740,6 +1794,13 @@ public sealed class StreetActionOptions
         //
         // Low Rent is the neutral one and the default, at exactly the base numbers, so a player who
         // never touches the picker works precisely the shift they always did.
+        //
+        // The gross column is the only one that scales with the house, so it is also the only one that
+        // can be allowed a wide spread. At the first tuning the Nightclub paid 115 against Low Rent's
+        // 100 and gave up nothing that costs real money, which made the neutral district - the default,
+        // the one most shifts are worked in - strictly the worse choice at every crew size, and turned
+        // the whole picker into a gross ladder read top-down. The districts that pay in crew now pay
+        // for it out of the take, so choosing one is choosing what the shift was for.
         Districts =
         [
             new StreetDistrictOptions
@@ -1747,19 +1808,19 @@ public sealed class StreetActionOptions
                 Key = "casino",
                 Name = "Casino District",
                 Blurb = "Money everywhere and somebody watching all of it.",
-                GrossPercent = 145,
+                GrossPercent = 130,
                 HoeRecruitPercent = 60,
                 ThugRecruitPercent = 40,
                 PimpRecruitPercent = 100,
                 FindPercent = 40,
-                HeatPercent = 175
+                HeatPercent = 200
             },
             new StreetDistrictOptions
             {
                 Key = "winos",
                 Name = "Wino Slums",
                 Blurb = "Nothing to earn and nobody to stop you. Men who will take any work going.",
-                GrossPercent = 55,
+                GrossPercent = 65,
                 HoeRecruitPercent = 70,
                 ThugRecruitPercent = 220,
                 PimpRecruitPercent = 40,
@@ -1778,19 +1839,19 @@ public sealed class StreetActionOptions
                 Key = "nightclub",
                 Name = "Nightclub District",
                 Blurb = "Where the work finds you. Hoes and the people who manage them.",
-                GrossPercent = 115,
+                GrossPercent = 90,
                 HoeRecruitPercent = 185,
                 ThugRecruitPercent = 60,
                 PimpRecruitPercent = 200,
                 FindPercent = 80,
-                HeatPercent = 120
+                HeatPercent = 130
             },
             new StreetDistrictOptions
             {
                 Key = "ghetto",
                 Name = "Urban Ghetto",
                 Blurb = "Product changes hands on every corner, and the law knows it.",
-                GrossPercent = 80,
+                GrossPercent = 85,
                 HoeRecruitPercent = 90,
                 ThugRecruitPercent = 130,
                 PimpRecruitPercent = 60,
@@ -1879,8 +1940,26 @@ public sealed class MoraleOptions
     /// </summary>
     public double CondomShortagePenalty { get; set; } = 2.25;
     public double BeerShortagePenalty { get; set; } = 2.0;
-    public double UnmanagedHoePenalty { get; set; } = 0.20;
-    public double UncoveredThugPenalty { get; set; } = 0.35;
+
+    /// <summary>
+    /// Morale lost per turn by a crew nobody is managing and a crew nobody armed, scaled by the share
+    /// of them in that state - the same shape as the shortage penalties above, and charged for the same
+    /// reason.
+    ///
+    /// These were the last two per-head charges left, and they had both faults the shortage rates were
+    /// fixed for and one of their own. They grew with the crew while the morale a shift earns did not,
+    /// so twenty unmanaged hoes cost the same whether they were twenty of twenty-five or twenty of two
+    /// hundred; and being flat per shift rather than per turn, they were the only part of a shift that
+    /// did not care how long it was, which quietly priced a one-turn look at the street the same as a
+    /// full twenty-turn night.
+    ///
+    /// The coefficient is now "morale lost per turn when the whole crew is in that state", so a full
+    /// twenty-turn shift with no pimps at all costs 14 and one with no weapons at all costs 20. A house
+    /// running a third of its hoes unmanaged pays a third of that. Both sit well under a full supply
+    /// shortage, because going out unsupplied is worse than going out badly organised.
+    /// </summary>
+    public double UnmanagedHoePenalty { get; set; } = 0.7;
+    public double UncoveredThugPenalty { get; set; } = 1.0;
     public double DesertionThreshold { get; set; } = 25;
     public double MaxDesertionChance { get; set; } = 0.20;
     public double PassiveRecoveryPerTick { get; set; } = 0.35;

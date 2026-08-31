@@ -9,7 +9,8 @@ public sealed class CombatResolutionService(
     GameDbContext db,
     CombatService combat,
     CombatMissionService missions,
-    CombatSchedule schedule)
+    CombatSchedule schedule,
+    DiscordDirectMessages discordDms)
 {
     private static readonly SemaphoreSlim ResolutionLock = new(1, 1);
 
@@ -31,7 +32,7 @@ public sealed class CombatResolutionService(
             var missionUpdates = await missions.ResolveDueAsync(nowUtc, cancellationToken);
             var dueLogs = await db.CombatLogs
                 .Include(x => x.Attacker)
-                .Include(x => x.Defender)
+                .Include(x => x.Defender).ThenInclude(x => x.Account)
                 .Where(x => x.Outcome == "Pending" && x.ResolvesAtUtc <= nowUtc)
                 .OrderBy(x => x.ResolvesAtUtc)
                 .ThenBy(x => x.Id)
@@ -47,6 +48,18 @@ public sealed class CombatResolutionService(
 
             if (dueLogs.Count > 0)
                 await db.SaveChangesAsync(cancellationToken);
+
+            foreach (var log in dueLogs)
+            {
+                var alert = DefenceAlerts.Describe(log, log.Defender.CombatAlertsSeenAtUtc);
+                await discordDms.TellGameAlertAsync(
+                    log.Defender.Account,
+                    AlertCategory.Combat,
+                    alert.Headline,
+                    alert.Detail,
+                    log.CreatedAtUtc,
+                    cancellationToken);
+            }
 
             schedule.SetNextDue(await NextDueAtUtcAsync(cancellationToken));
             return dueLogs.Count + missionUpdates;

@@ -144,6 +144,10 @@ public sealed class PlayerAccount
     public bool EmailSecurityNotices { get; set; } = true;
     public bool EmailCombatNotices { get; set; } = true;
     public bool EmailAllianceNotices { get; set; } = true;
+    public bool DiscordSecurityNotices { get; set; }
+    public bool DiscordCombatNotices { get; set; }
+    public bool DiscordCrewNotices { get; set; }
+    public bool DiscordMarketNotices { get; set; }
 
     /// <summary>
     /// When Discord was last asked what this account is called, which is not the same question as when
@@ -153,6 +157,12 @@ public sealed class PlayerAccount
     public DateTime? DiscordSyncedAtUtc { get; set; }
 
     public DateTime? DiscordLinkedAtUtc { get; set; }
+
+    /// <summary>
+    /// The one-time reward for linking Discord. Kept separate from DiscordLinkedAtUtc so reconnecting
+    /// later does not become a repeatable payout.
+    /// </summary>
+    public DateTime? DiscordLinkRewardClaimedAtUtc { get; set; }
 
     /// <summary>
     /// The newest durable game announcement this account has acknowledged. Null means everything

@@ -6,16 +6,6 @@
 # no certificate for does not get a 404, it gets a failed TLS handshake:
 # ERR_SSL_VERSION_OR_CIPHER_MISMATCH, which reads like a broken server rather than a missing site.
 
-# Caddy-wide options.
-{
-	# Temporarily leave HTTP/3 out of the advertised protocols. Some production clients are failing
-	# with ERR_QUIC_PROTOCOL_ERROR while normal HTTPS over TCP still works, so keep Caddy on h1/h2
-	# until the UDP 443 path is diagnosed end-to-end.
-	servers {
-		protocols h1 h2
-	}
-}
-
 # The game itself.
 {$DOMAIN} {
 	# Compression is free here and nowhere else - the client bundle is around half a megabyte of

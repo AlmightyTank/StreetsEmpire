@@ -155,8 +155,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      # HTTP/3/QUIC is disabled in ops/Caddyfile while the production UDP 443 path is being
-      # investigated, so there is no UDP listener to publish here.
+      # QUIC. Harmless if the host firewall drops it; browsers fall back to TCP.
+      - "443:443/udp"
     volumes:
       - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and ACME account keys live here, and this volume is not optional. Without it every

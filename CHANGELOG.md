@@ -37,6 +37,21 @@
 - The countdown is public, because a season whose end nobody can name is only a rumour that the world
   might be deleted - and the panel says outright when seasons are switched off rather than counting
   down to a date that will pass quietly.
+- **Seasons and the standings have a page of their own.** All of it was one card on the dashboard: a
+  countdown, ten names off the last season, and nothing else - which is a strange amount of room to
+  give the frame the entire game sits inside, and it was answering three different questions in the
+  space for one. Three tabs now. *This Season* is the clock with a bar against it, the day out of
+  thirty, how many empires are in it, where you stand, what a roll takes and what it never takes, what
+  finishing well pays - and the live board, at fifty rows rather than eight, sat beside the clock it is
+  being played against. *Finished* is every season that has ended, any one of which opens as a full
+  table. *Your Record* is what you have to show for all of them: seasons finished, best finish,
+  championships, top tens, and every line you have.
+- A finished season's table is read from the record rather than recomputed, so it cannot disagree with
+  the board people watched all month - and it carries **your own line beside it** whether or not you
+  came in the hundred it shows. Written for everybody rather than only the top is worth nothing if the
+  only way to find yourself in it is to have finished near the top of it.
+- The countdown counts days. It had been reading `719h 04m`, because the formatter it borrowed was
+  written for builds and missions and shifts, all of which finish inside a day. A season is a month.
 - What a first day is now lives in one place, which is what makes any of this safe: signing up builds a
   player around it and a season puts an existing player back through the same call. Two copies of "what
   a new player has" is exactly how two doors end up handing out different amounts of money.

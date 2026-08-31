@@ -210,6 +210,7 @@ var tests = new (string Name, Action Test)[]
     ("a war nobody fought pays nobody", AWarNobodyFoughtPaysNobody),
     ("a season takes the empire and leaves the person", ASeasonTakesTheEmpireAndLeavesThePerson),
     ("a head start is one season deep and never compounds", AHeadStartNeverCompounds),
+    ("the shelf remembers who won and where everybody else came", TheShelfRemembersEveryFinish),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
@@ -4436,6 +4437,68 @@ static void AHeadStartNeverCompounds()
     AssertEqual(SeasonHonours.TopTen, SeasonHonours.For(10));
     AssertTrue(SeasonHonours.For(11) is null, "eleventh is a season played, not an honour won");
     AssertEqual(0L, options.Seasons.HeadStartFor(null));
+}
+
+/// <summary>
+/// The archive, read the way a player reads it: which seasons there have been, who took each of them,
+/// and - the line that makes the shelf worth opening for somebody who has never come top ten - where
+/// they finished themselves.
+///
+/// The record is written for everybody rather than only the winners, and that is worth nothing if the
+/// only way to find your own line in it is to have been at the top of the table.
+/// </summary>
+static void TheShelfRemembersEveryFinish()
+{
+    using var world = NewCrewWorld();
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var first = world.Member("First", cash: 9_000_000);
+    world.Member("Second", cash: 5_000_000);
+    // A field deep enough that a finish can be worth nothing. The honours stop at the top ten, so a
+    // world of three would have handed one to everybody in it and proved the opposite of the point.
+    for (var filler = 3; filler <= 11; filler++)
+        world.Member($"Player{filler}", cash: 1_000_000 - filler * 1_000);
+    var last = world.Member("Last", cash: 1_000);
+    world.Db.SaveChanges();
+
+    // The season being played has no count written down yet, so it is counted live.
+    AssertEqual(12, seasons.PlayersNowAsync(default).GetAwaiter().GetResult());
+
+    var one = seasons.RollAsync(now, default).GetAwaiter().GetResult().Ended;
+
+    // A second season, taken by somebody else, so the shelf carries two different names.
+    last.Cash = 20_000_000;
+    world.Db.SaveChanges();
+    var two = seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default)
+        .GetAwaiter().GetResult().Ended;
+
+    // Found by the number people call it rather than by a row id nobody ever sees.
+    var read = seasons.ByNumberAsync(1, default).GetAwaiter().GetResult();
+    AssertTrue(read is not null && read.Id == one.Id, "a season is found by its number");
+    AssertTrue(seasons.ByNumberAsync(99, default).GetAwaiter().GetResult() is null,
+        "a season nobody has played is not found");
+
+    // Who won each of them, in one query for the whole shelf rather than one per season.
+    var champions = seasons.ChampionsForAsync(new[] { one.Id, two.Id }, default).GetAwaiter().GetResult();
+    AssertEqual(2, champions.Count);
+    AssertEqual("First", champions[one.Id].PlayerName);
+    AssertEqual("Last", champions[two.Id].PlayerName);
+
+    // And where somebody who won nothing came, which is the row a capped table leaves out.
+    var alsoRan = seasons.FinishForAsync(one.Id, last.Id, default).GetAwaiter().GetResult();
+    AssertTrue(alsoRan is not null, "everybody who was in it has a line");
+    AssertEqual(12, alsoRan!.Rank);
+    AssertTrue(alsoRan.Honour is null, "twelfth is a season played, not an honour won");
+    AssertTrue(seasons.FinishForAsync(one.Id, Guid.NewGuid(), default).GetAwaiter().GetResult() is null,
+        "somebody who was not in it has no line in it");
+
+    // The table is capped by whoever is asking, and still reads top first.
+    var top = seasons.TableForAsync(one.Id, 2, default).GetAwaiter().GetResult();
+    AssertEqual(2, top.Count);
+    AssertEqual(1, top[0].Rank);
+    AssertEqual(2, top[1].Rank);
+    AssertEqual(first.Id, top[0].PlayerId);
 }
 
 static SeasonService CreateSeasons(CrewWorld world)

@@ -299,6 +299,48 @@ public sealed record SeasonStandingResponse(
     long NetWorth,
     string? Honour);
 
+/// <summary>
+/// One season on the shelf: what it was called, when it ran, how many were in it, who won it, and
+/// where this player came in it.
+///
+/// The last of those is the field that makes the archive worth opening for somebody who has never
+/// finished top ten. A record that only says who won is a record most people appear nowhere in.
+/// </summary>
+public sealed record SeasonArchiveEntryResponse(
+    int Number,
+    string Name,
+    DateTime StartedAtUtc,
+    DateTime EndsAtUtc,
+    DateTime? EndedAtUtc,
+    /// <summary>Whether this is the one being played. Exactly one season is ever true here.</summary>
+    bool Running,
+    int Players,
+    string? ChampionName,
+    string? ChampionCity,
+    string? ChampionCrewName,
+    long ChampionNetWorth,
+    int? YourRank,
+    string? YourHonour,
+    long? YourNetWorth);
+
+/// <summary>
+/// How one season finished, in full - or as much of it as a page can hold.
+///
+/// <paramref name="You"/> is carried beside the table rather than left to be found in it, because a
+/// table capped at a hundred is exactly the one somebody's own line is missing from.
+/// </summary>
+public sealed record SeasonTableResponse(
+    int Number,
+    string Name,
+    DateTime StartedAtUtc,
+    DateTime EndsAtUtc,
+    DateTime? EndedAtUtc,
+    bool Running,
+    int Players,
+    /// <summary>Empty for the season being played: it has no final table until it has finished.</summary>
+    IReadOnlyList<SeasonStandingResponse> Table,
+    SeasonStandingResponse? You);
+
 /// <summary>One member, as their own crew sees them.</summary>
 public sealed record AllianceMemberResponse(
     Guid PlayerId,

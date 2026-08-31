@@ -176,6 +176,46 @@ public sealed class SeasonService(
             .Take(take)
             .ToListAsync(ct);
 
+    /// <summary>One season by the number people call it, running or long finished.</summary>
+    public async Task<Season?> ByNumberAsync(int number, CancellationToken ct = default)
+        => await db.Seasons.AsNoTracking().FirstOrDefaultAsync(x => x.Number == number, ct);
+
+    /// <summary>
+    /// Who won each of these seasons, in one query rather than one per season.
+    ///
+    /// The archive is a shelf that grows by a row a month, and a query a season would make reading it
+    /// cost more every month it is worth reading.
+    /// </summary>
+    public async Task<Dictionary<long, SeasonResult>> ChampionsForAsync(
+        IEnumerable<long> seasonIds, CancellationToken ct = default)
+    {
+        var ids = seasonIds.ToList();
+        return await db.SeasonResults.AsNoTracking()
+            .Where(x => ids.Contains(x.SeasonId) && x.Rank == 1)
+            .ToDictionaryAsync(x => x.SeasonId, ct);
+    }
+
+    /// <summary>
+    /// Where one player finished one season - the row a table capped at a hundred is most likely to
+    /// have left out.
+    ///
+    /// The record is written for everybody rather than only the top, and that is worth nothing if the
+    /// only way to read your own line in it is to have come in the top hundred.
+    /// </summary>
+    public async Task<SeasonResult?> FinishForAsync(long seasonId, Guid playerId, CancellationToken ct = default)
+        => await db.SeasonResults.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.SeasonId == seasonId && x.PlayerId == playerId, ct);
+
+    /// <summary>
+    /// How many empires are in the world right now.
+    ///
+    /// A finished season carries its own count, written down at the roll. The one being played has
+    /// nothing written down yet, and "how many am I climbing against" is the question that makes a
+    /// position on the board mean anything at all.
+    /// </summary>
+    public async Task<int> PlayersNowAsync(CancellationToken ct = default)
+        => await db.Players.CountAsync(ct);
+
     private Season Open(int number, DateTime nowUtc)
     {
         var season = new Season

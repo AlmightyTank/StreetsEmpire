@@ -500,14 +500,96 @@ internal static class GameEndpoints
                     x.NetWorth,
                     x.Honour,
                     x.Season.EndedAtUtc)).ToList(),
-                table.Select(x => new SeasonStandingResponse(
-                    x.Rank,
-                    x.PlayerName,
-                    x.City,
-                    x.CrewName,
-                    x.NetWorth,
-                    x.Honour)).ToList(),
+                table.Select(Standing).ToList(),
                 previous?.Name));
+        }).RequireAuthorization();
+
+
+        // The whole shelf, newest first: every season the world has had, who won it, and where this
+        // player came in it.
+        //
+        // Its own route rather than more fields on /api/game/season. That one is the panel on the
+        // dashboard and is fetched on every visit, and a list that grows by a row a month has no
+        // business riding along with a countdown.
+        app.MapGet("/api/game/seasons", async (
+            CurrentPlayerService current,
+            SeasonService seasons,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            var shelf = new List<Season> { await seasons.CurrentAsync(now, ct) };
+            shelf.AddRange(await seasons.PastSeasonsAsync(24, ct));
+
+            // Two queries for the whole shelf rather than two per season: who won each, and where this
+            // player finished each.
+            var champions = await seasons.ChampionsForAsync(shelf.Select(x => x.Id), ct);
+            var mine = (await seasons.HonoursForAsync(player.Id, ct)).ToDictionary(x => x.SeasonId);
+            var playingNow = await seasons.PlayersNowAsync(ct);
+
+            return Results.Ok(shelf.Select(season =>
+            {
+                var running = season.Status == SeasonStatuses.Running;
+                var champion = champions.GetValueOrDefault(season.Id);
+                var yours = mine.GetValueOrDefault(season.Id);
+                return new SeasonArchiveEntryResponse(
+                    season.Number,
+                    season.Name,
+                    season.StartedAtUtc,
+                    season.EndsAtUtc,
+                    season.EndedAtUtc,
+                    running,
+                    // A finished season counted itself at the roll. The one being played has nothing
+                    // written down yet, so it is counted now.
+                    running ? playingNow : season.Players,
+                    champion?.PlayerName,
+                    champion?.City,
+                    champion?.CrewName,
+                    champion?.NetWorth ?? 0,
+                    yours?.Rank,
+                    yours?.Honour,
+                    yours?.NetWorth);
+            }).ToList());
+        }).RequireAuthorization();
+
+
+        // How one season finished, read from the record rather than recomputed.
+        app.MapGet("/api/game/seasons/{number:int}", async (
+            int number,
+            CurrentPlayerService current,
+            SeasonService seasons,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var season = await seasons.ByNumberAsync(number, ct);
+            if (season is null)
+                return Results.NotFound(new { error = $"There has never been a season {number}." });
+
+            // The season being played has no final table and will not have one until it is over. The
+            // live board is the answer to that question and already has a route of its own.
+            var running = season.Status == SeasonStatuses.Running;
+            var table = running
+                ? new List<SeasonResult>()
+                : (await seasons.TableForAsync(season.Id, 100, ct)).ToList();
+
+            // Carried beside the table rather than left to be found in it. A hundred rows is the page's
+            // cap and not the record's, and the line most people want is the one it cuts off.
+            var yours = running ? null : await seasons.FinishForAsync(season.Id, player.Id, ct);
+
+            return Results.Ok(new SeasonTableResponse(
+                season.Number,
+                season.Name,
+                season.StartedAtUtc,
+                season.EndsAtUtc,
+                season.EndedAtUtc,
+                running,
+                running ? await seasons.PlayersNowAsync(ct) : season.Players,
+                table.Select(Standing).ToList(),
+                yours is null ? null : Standing(yours)));
         }).RequireAuthorization();
 
 
@@ -790,6 +872,11 @@ internal static class GameEndpoints
                 ? "Pull your garrisons off your ground before leaving town."
                 : null;
         }
+
+        // One finish, as the shelf and the table both show it. Shared so the dashboard panel and the
+        // archive can never disagree about what a row of a season's table is.
+        static SeasonStandingResponse Standing(SeasonResult result)
+            => new(result.Rank, result.PlayerName, result.City, result.CrewName, result.NetWorth, result.Honour);
 
         static string PendingAttackMessage(CombatMission mission)
         {

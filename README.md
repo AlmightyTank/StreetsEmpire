@@ -70,6 +70,35 @@ be flipped without a restart. Ending one by hand is `POST /api/admin/season/roll
 caller type the season's own name to do it - a boolean is something a script sends by accident, and a
 name is something a person has to go and read first.
 
+### The page all of that lives on
+
+Seasons is a destination in the rail now rather than a card on the dashboard, because a card showing a
+countdown and ten names off the last season was a strange amount of room to give the frame the entire
+game sits inside. Three tabs, for the three questions that were being asked of one panel:
+
+| tab | what it answers |
+| --- | --- |
+| This Season | how far through it is, what it takes and keeps, what finishing well pays, and the live board |
+| Finished | every season that has ended, and any one of them as a full table |
+| Your Record | how many you have finished, your best, your championships, and every finish you have |
+
+The live board is the same city-or-world leaderboard as before, at fifty rows rather than eight, sat
+beside the clock it is being played against - which is the pairing that makes a position mean anything.
+
+A finished season's table reads from the record rather than being recomputed, so it can never disagree
+with the board people watched all month, and it carries **your own line beside it** whether or not you
+came in the hundred it shows. The record was written for everybody rather than only the top, and that
+is worth nothing if the only way to find yourself in it is to have finished near the top of it.
+
+Two routes serve it: `GET /api/game/seasons` for the shelf - every season, who won it, and where you
+came - and `GET /api/game/seasons/{number}` for one season's table. Both are their own routes rather
+than more fields on `/api/game/season`, which is the dashboard's panel and is fetched on every visit;
+a list that grows by a row a month has no business riding along with a countdown.
+
+The countdown also learned to count days. `timeUntil` tops out at hours, which is right for a build or
+a mission or a shift, and a season is a month - so the clock had been reading `719h 04m`, which is not
+a number anybody reads as a date.
+
 ## What changed in 0.2.6
 
 0.2.6 was about the account, and about the fact that there was nowhere to put the game.

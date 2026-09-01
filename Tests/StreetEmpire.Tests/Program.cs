@@ -235,6 +235,7 @@ var tests = new (string Name, Action Test)[]
     ("intelligence goes cold, and your own house never does", IntelligenceGoesColdAndYourOwnHouseNever),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
+    ("every place guidance points at is a place the client can open", GuidanceOnlyPointsWhereTheClientCanGo),
     ("the version is written down once and read everywhere else", TheVersionIsWrittenDownOnce),
     ("every account change worth a notice has copy of its own", EveryAccountChangeHasCopyOfItsOwn),
     ("a notice says what happened and never what it was", ANoticeSaysWhatHappenedAndNeverWhatItWas),
@@ -3698,6 +3699,87 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
 
     // And the specific corpse, by name, because it is the one that keeps coming back.
     AssertTrue(!TradeGoods.Keys.Contains("weapons"), "there has been no 'weapons' key since guns split into tiers");
+}
+
+/// <summary>
+/// The other half of the same boundary: the server names a section, and the client has to be able to
+/// open it.
+///
+/// Guidance says "hideout" when it wants a room upgraded, and has no business knowing which page the
+/// client keeps rooms on - which is exactly why this can rot silently. The hideout has already moved
+/// once, from Business to Crew, and the failure when it moves is not an error anywhere: the button
+/// still works, it just takes the player to the Overview and says nothing.
+///
+/// Now that the mapping names a tab as well, there is a second way to be wrong and it is quieter than
+/// the first. A tab key that no longer exists is not a wrong page, it is the right page opening on
+/// whatever it opens on by default, with the thing the player was sent for one click away and nothing
+/// saying which click. So both halves are checked: every name the server can say is answered, and every
+/// tab the answer names is one the destination page actually lists.
+/// </summary>
+static void GuidanceOnlyPointsWhereTheClientCanGo()
+{
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var client = File.ReadAllText(Path.Combine(root!.FullName, "Client", "src", "main.tsx"));
+
+    // The client's own mapping, read out of it: name -> page, and the tab when it names one.
+    var mapped = new Dictionary<string, (string Page, string? Tab)>(StringComparer.Ordinal);
+    foreach (Match m in Regex.Matches(
+        client,
+        @"if \(name === '(?<name>[a-z-]+)'\) return \{ page: '(?<page>[a-z]+)'(?:, tab: '(?<tab>[a-z]+)')? \}"))
+        mapped[m.Groups["name"].Value] = (m.Groups["page"].Value, m.Groups["tab"].Success ? m.Groups["tab"].Value : null);
+
+    AssertTrue(mapped.Count > 0, "flowTarget should be readable, or this test is checking nothing");
+
+    // The tab strips, likewise. A page with no strip has no tabs to be wrong about.
+    var strips = new Dictionary<string, string[]>(StringComparer.Ordinal);
+    foreach (Match m in Regex.Matches(client, @"useRouteTab\('(?<page>[a-z]+)', (?<list>[A-Z_]+), '(?<fallback>[a-z]+)'\)"))
+    {
+        var list = Regex.Match(client, $@"const {m.Groups["list"].Value} = \[(?<keys>[^\]]*)\]");
+        AssertTrue(list.Success, $"{m.Groups["list"].Value} should be a list this test can read");
+        strips[m.Groups["page"].Value] = Regex.Matches(list.Groups["keys"].Value, @"'([a-z]+)'")
+            .Select(x => x.Groups[1].Value)
+            .ToArray();
+    }
+
+    AssertTrue(strips.Count > 0, "the client should have some tab strips, or this test is checking nothing");
+
+    // Every page the client actually draws. A name that is one of these needs no entry in the mapping:
+    // "street" is a page called street, and spelling that out would be a line that can only ever agree
+    // with itself. What must not happen is a name matching neither, which is the silent Overview.
+    var pages = Regex.Matches(client, @"^  ([a-z]+): \{ label: '", RegexOptions.Multiline)
+        .Select(x => x.Groups[1].Value)
+        .ToHashSet(StringComparer.Ordinal);
+    AssertTrue(pages.Count > 0, "the client should name its pages, or this test is checking nothing");
+
+    foreach (var name in GuidancePages.All)
+    {
+        // Answered by name or by being a page outright. Falling through to the Overview is what this is
+        // here to catch: it is not an error, it is a button that goes somewhere else and never says so.
+        AssertTrue(mapped.ContainsKey(name) || pages.Contains(name),
+            $"guidance can say '{name}' and the client maps it nowhere");
+
+        if (!mapped.TryGetValue(name, out var target)) continue;
+
+        // Where it sends people has to be somewhere. Every page with a strip is a page the client draws.
+        AssertTrue(target.Tab is null || strips.ContainsKey(target.Page),
+            $"'{name}' names a tab on '{target.Page}', which has no tabs");
+        AssertTrue(target.Tab is null || strips[target.Page].Contains(target.Tab),
+            $"'{name}' opens '{target.Page}' on a tab called '{target.Tab}', which that page does not have");
+    }
+
+    // And the destinations the client invents for itself - the walkthrough's steps - obey the same
+    // rule, because a tour that lights nothing is worse than no tour.
+    foreach (Match step in Regex.Matches(client, @"page: '(?<page>[a-z]+)',\s*tab: '(?<tab>[a-z]+)',"))
+    {
+        var page = step.Groups["page"].Value;
+        var tab = step.Groups["tab"].Value;
+        AssertTrue(strips.ContainsKey(page), $"a walkthrough step names a tab on '{page}', which has no tabs");
+        AssertTrue(strips[page].Contains(tab), $"a walkthrough step opens '{page}' on '{tab}', which that page does not have");
+    }
     AssertTrue(!AdminService.AdjustableResources.Contains("weapons"), "nor is it an adjustable resource");
     AssertTrue(!Regex.IsMatch(client, @"resource: 'weapons'|<option value=""weapons"">|useState\('weapons'\)"),
         "the client should not name 'weapons' as a key anywhere");

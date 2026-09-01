@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
-import { routePage, routeTab, writeRoute } from './route'
+import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
 import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
@@ -67,8 +67,8 @@ const primaryPages: AppPage[] = ['overview', 'street', 'crew', 'market']
 const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
   overview: { label: 'Overview', short: 'OV', kicker: 'Command centre' },
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
-  crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
-  market: { label: 'Business', short: 'BZ', kicker: 'Shop, rooms, craft, runs' },
+  crew: { label: 'Crew', short: 'CR', kicker: 'Morale, rooms and craft' },
+  market: { label: 'Business', short: 'BZ', kicker: 'Shop, market and runs' },
   recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
   seasons: { label: 'Seasons', short: 'SN', kicker: 'The clock and the record' },
   updates: { label: 'Updates', short: 'UP', kicker: 'Patch notes and events' },
@@ -80,11 +80,41 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
 const updateCategories: GameAnnouncement['category'][] = ['Info', 'Patch', 'Balance', 'Event', 'Maintenance']
 const updateSeverities: GameAnnouncement['severity'][] = ['Info', 'Warning', 'Event', 'Maintenance']
 
-function flowPage(page: string): AppPage {
-  if (page === 'hideout' || page === 'mules') return 'market'
-  if (page === 'territory') return 'recon'
-  if (page === 'patch-notes' || page === 'news') return 'updates'
-  return page in pageMeta ? page as AppPage : 'overview'
+/** Somewhere to send a player: a page, and the tab on it when the destination is more exact. */
+type GoTo = (page: AppPage, tab?: string) => void
+
+/**
+ * Turns a name written elsewhere into somewhere to go.
+ *
+ * The server names a thing rather than a screen. Guidance says "hideout" when it wants a room upgraded
+ * and "market" when it wants stock sold, and an announcement's action link is a path somebody typed
+ * into an admin form. None of those know which page a section lives on, or should have to: this is the
+ * single place that does, and the only thing that has to move when a section does.
+ *
+ * The tab is the half that was missing. Every one of these names a section rather than a page, so
+ * answering with the page alone landed people on its default tab with the thing they were sent for one
+ * click away and nothing saying which click.
+ */
+function flowTarget(name: string): { page: AppPage, tab?: string } {
+  if (name === 'hideout') return { page: 'crew', tab: 'hideout' }
+  if (name === 'crew') return { page: 'crew', tab: 'roster' }
+  // Everything guidance says "market" for is the shop counter: sell stock, bank cash, buy medicine.
+  if (name === 'market') return { page: 'market', tab: 'trade' }
+  if (name === 'mules') return { page: 'market', tab: 'routes' }
+  if (name === 'territory') return { page: 'recon', tab: 'ground' }
+  if (name === 'patch-notes' || name === 'news') return { page: 'updates' }
+  return { page: name in pageMeta ? name as AppPage : 'overview' }
+}
+
+/** The same answer for the places that only need the page, like the callout deciding it is on it. */
+function flowPage(name: string): AppPage {
+  return flowTarget(name).page
+}
+
+/** Sends somebody at a name. The one call every "take me there" button should be making. */
+function goToFlow(onPage: GoTo, name: string): void {
+  const { page, tab } = flowTarget(name)
+  onPage(page, tab)
 }
 
 /**
@@ -199,7 +229,10 @@ const discordOutcomes: Partial<Record<DiscordOutcome, { text: string, bad?: bool
   unavailable: { text: 'Discord sign-in is not set up on this server.', bad: true },
 }
 
-const tourSteps: { page: AppPage, target: string, title: string, body: string }[] = [
+// The tab is as much of the destination as the page is: half of what a newcomer has to learn is
+// which tab a thing lives on, and a step that lit nothing because the panel was one strip away was
+// teaching the opposite of that.
+const tourSteps: { page: AppPage, tab?: string, target: string, title: string, body: string }[] = [
   {
     page: 'overview',
     target: 'status',
@@ -224,7 +257,8 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
       + 'sours the crew.',
   },
   {
-    page: 'market',
+    page: 'crew',
+    tab: 'hideout',
     target: 'rooms',
     title: 'The hideout is the engine',
     body: 'Every room does one job: the store decides how big a crew you can feed, the labs make product '
@@ -233,14 +267,16 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
   },
   {
     page: 'market',
+    tab: 'trade',
     target: 'market-trade',
     title: 'Buying and selling',
     body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
-      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not. '
+      + 'cash and send crew on runs: money on hand is stolen in a raid and money in the bank is not. '
       + 'The trip costs turns, so it is a move you make with a full safe rather than after every shift.',
   },
   {
     page: 'recon',
+    tab: 'targets',
     target: 'targets',
     title: 'Other people',
     body: 'You can look up any player and take what they have, and they can do the same to you. You are only '
@@ -252,7 +288,7 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
 function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
   active: boolean
   stepIndex: number
-  onPage: (page: AppPage) => void
+  onPage: GoTo
   onStep: (index: number) => void
   onClose: () => void
 }) {
@@ -277,7 +313,7 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
   // Drive the page first: a target on another tab does not exist to be measured yet.
   useEffect(() => {
     if (!active || !step) return
-    onPage(step.page)
+    onPage(step.page, step.tab)
   }, [active, stepIndex])
 
   // Measure after the page has had a frame to render, and keep measuring while things move.
@@ -962,7 +998,13 @@ function App() {
     named would be the one being left rather than the one being opened. Writing on the way in puts
     the two in the only order that reads correctly.
   */
-  const setActivePage = (page: AppPage) => { setPage(page); writeRoute(page) }
+  /*
+    The tab is optional and, when it is given, is what the address is written with. Naming one is how
+    anything that knows where it is sending somebody gets them the whole way there: a room rather than
+    the page the room is on, the shop rather than Business. Left out, the page opens on whatever tab it
+    would have anyway, which is what a plain nav click wants.
+  */
+  const setActivePage: GoTo = (page, tab) => { setPage(page); writeRoute(page, tab) }
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   // Fetched rather than hardcoded: the towns come from the territory map, so a city with no ground
   // could never be offered as somewhere to set up.
@@ -1768,7 +1810,7 @@ type PageContext = {
   totalCrew: number
   weaponCoverage: number
   managementCapacity: number
-  setActivePage: (page: AppPage) => void
+  setActivePage: GoTo
   setTargetQuery: (query: string) => void
   setStreetTurns: (turns: number) => void
   setAutoBuySupplies: (enabled: boolean) => void
@@ -2500,20 +2542,33 @@ function ContextualUpdateCallout({ update, onPage }: { update: GameAnnouncement,
   </div>
 }
 
-function UpdateAction({ update, onPage }: { update: GameAnnouncement, onPage: (page: AppPage) => void }) {
+function UpdateAction({ update, onPage }: { update: GameAnnouncement, onPage: GoTo }) {
   if (!update.actionLabel || !update.actionUrl) return null
-  const page = updateActionPage(update.actionUrl)
-  if (page)
-    return <button className="btn btn-secondary btn-sm" type="button" onClick={() => onPage(page)}>{update.actionLabel}</button>
+  const name = updateActionName(update.actionUrl)
+  if (name)
+    return <button className="btn btn-secondary btn-sm" type="button" onClick={() => goToFlow(onPage, name)}>{update.actionLabel}</button>
   return <a className="btn btn-secondary btn-sm" href={update.actionUrl}>{update.actionLabel}</a>
 }
 
-function updateActionPage(url: string): AppPage | null {
+/**
+ * The section an announcement's action link names, or null when it points somewhere off this app.
+ *
+ * The name rather than the page, because the caller wants the tab as well and a page cannot be turned
+ * back into one. The check is still here so a link to somewhere that does not exist stays an anchor:
+ * flowTarget answers every string, and falling back to the Overview would turn a typo into a button
+ * that silently goes to the wrong place.
+ */
+function updateActionName(url: string): string | null {
   if (!url.startsWith('/')) return null
   const name = url.slice(1).split(/[/?#]/)[0] || 'overview'
-  if (name === 'hideout' || name === 'mules' || name === 'territory' || name === 'patch-notes' || name === 'news' || name in pageMeta)
-    return flowPage(name)
-  return null
+  return name === 'hideout' || name === 'mules' || name === 'territory' || name === 'patch-notes' || name === 'news' || name in pageMeta
+    ? name
+    : null
+}
+
+function updateActionPage(url: string): AppPage | null {
+  const name = updateActionName(url)
+  return name === null ? null : flowPage(name)
 }
 
 function clampText(value: string, max: number) {
@@ -2572,7 +2627,7 @@ function StreetPage(ctx: PageContext) {
         storeQty={storeQty}
         setStoreQty={setStoreQty}
         act={act}
-        onMarket={() => setActivePage('market')}
+        onMarket={() => setActivePage('market', 'trade')}
       />
       <div className="control-row">
         <label className="field">Turns<input className="form-control" type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
@@ -2603,7 +2658,38 @@ function StreetPage(ctx: PageContext) {
   </div>
 }
 
+const CREW_TABS = ['roster', 'hideout', 'production'] as const
+
+/**
+ * Everything the crew is made of, in three tabs.
+ *
+ * The hideout and the craft queue used to live under Business, which is where they had been put on the
+ * grounds that both cost money. Almost nothing else about them belonged there. What a room does is set
+ * how many hoes can be fed, how many thugs there is a bed for and how much of a shift can be supplied -
+ * every one of those a number this page already prints, one tab away from the room that decides it -
+ * and the craft queue is the bench arming those thugs. Business is where things are bought and sold;
+ * this is where they are kept, housed and made.
+ */
 function CrewPage(ctx: PageContext) {
+  const [tab, setTab] = useRouteTab('crew', CREW_TABS, 'roster')
+  return <div className="d-grid gap-3">
+    <SectionTabs
+      label="Crew sections"
+      active={tab}
+      onActive={setTab}
+      tabs={[
+        { key: 'roster', label: 'Crew' },
+        { key: 'hideout', label: 'Hideout' },
+        { key: 'production', label: 'Craft Queue' },
+      ]}
+    />
+    {tab === 'roster' && <CrewCorePage {...ctx} />}
+    {tab === 'hideout' && <HideoutPage {...ctx} />}
+    {tab === 'production' && <ProductionPage {...ctx} />}
+  </div>
+}
+
+function CrewCorePage(ctx: PageContext) {
   const { dashboard, busy, crewQty, totalCrew, weaponCoverage, managementCapacity, setCrewQty, act } = ctx
   const combatCrew = dashboard.combatCrew
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start">
@@ -3799,6 +3885,24 @@ function useRouteTab<T extends string>(page: AppPage, allowed: readonly T[], fal
   // too. A player who cannot see how the address bar got there can still reload onto it.
   useEffect(() => { writeRoute(page, tab) }, [page, tab])
 
+  /*
+    And read back, for the tab somebody else asked for.
+
+    Arriving from another page needs none of this: the strip unmounts with the page it was on and the
+    new one reads the address as it mounts. This is the other half - a link that names a tab on the page
+    already open, where nothing remounts and the initial read has long since happened. Without it,
+    "upgrade the storage room" on the Crew page would move nothing, because the destination is the tab
+    next door.
+
+    Guarded on the page and the list, so one strip cannot be moved by an address meant for another, and
+    a tab this page has no branch for is ignored rather than opening a blank. The allowed list is a
+    module constant at every call site, so it is deliberately not a dependency: adding it would rebuild
+    the subscription on a value that never changes.
+  */
+  useEffect(() => onRouteChange((written, asked) => {
+    if (written === page && (allowed as readonly string[]).includes(asked)) setTab(asked as T)
+  }), [page])
+
   return [tab, setTab]
 }
 
@@ -3825,8 +3929,15 @@ function SectionTabs<T extends string>({ label, tabs, active, onActive }: {
   </nav>
 }
 
-const MARKET_TABS = ['trade', 'hideout', 'production', 'routes'] as const
+const MARKET_TABS = ['trade', 'routes'] as const
 
+/**
+ * Buying and selling, and the crew sent out to do it somewhere else.
+ *
+ * The hideout and the craft queue were here and are on Crew now. Both cost money, which was the whole
+ * of what they had in common with a shop - a room decides how big a crew you can feed and how much of a
+ * shift you can supply, and the bench arms the thugs. See CrewPage.
+ */
 function MarketPage(ctx: PageContext) {
   const [tab, setTab] = useRouteTab('market', MARKET_TABS, 'trade')
   return <div className="d-grid gap-3">
@@ -3836,14 +3947,10 @@ function MarketPage(ctx: PageContext) {
       onActive={setTab}
       tabs={[
         { key: 'trade', label: 'Shop' },
-        { key: 'hideout', label: 'Hideout' },
-        { key: 'production', label: 'Craft Queue' },
         { key: 'routes', label: 'Runs' },
       ]}
     />
     {tab === 'trade' && <MarketCorePage {...ctx} />}
-    {tab === 'hideout' && <HideoutPage {...ctx} />}
-    {tab === 'production' && <ProductionPage {...ctx} />}
     {tab === 'routes' && <MulePage {...ctx} />}
   </div>
 }
@@ -5928,7 +6035,7 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
  * first session having clicked one button five times, with the best purchase available to them
  * sitting unmentioned in a room they had no reason to open.
  */
-function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (page: AppPage) => void }) {
+function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: GoTo }) {
   const moves = dashboard.guidance?.moves ?? []
   if (moves.length === 0) return null
 
@@ -5939,7 +6046,7 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (p
         className={`w-100 d-grid gap-1 text-start border rounded p-3 ${move.urgent ? 'border-warning bg-body-tertiary' : 'bg-body-secondary'}`}
         type="button"
         key={move.label}
-        onClick={() => onPage(flowPage(move.page))}
+        onClick={() => goToFlow(onPage, move.page)}
       >
         {/* Advice carries a price, so the cost sits with the label rather than buried in the reason. */}
         <strong className={move.urgent ? 'text-primary' : 'text-body'}>
@@ -5959,7 +6066,7 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (p
  */
 function OpeningLadderPanel({ dashboard, onPage, onTour }: {
   dashboard: Dashboard
-  onPage: (page: AppPage) => void
+  onPage: GoTo
   onTour: () => void
 }) {
   const guidance = dashboard.guidance
@@ -5982,7 +6089,7 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
         className={`ladder-row d-grid gap-2 align-items-start text-start border rounded-2 p-2 ${step.done ? 'done' : step === next ? 'next bg-body-secondary text-body' : 'border-0 bg-transparent'}`}
         type="button"
         key={step.label}
-        onClick={() => onPage(flowPage(step.page))}
+        onClick={() => goToFlow(onPage, step.page)}
       >
         <em className="fst-normal text-success-emphasis">{step.done ? '✓' : ''}</em>
         <div>

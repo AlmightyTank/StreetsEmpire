@@ -123,17 +123,27 @@ public sealed class StoreOptions
         if (Levels.Count == 0)
             Levels =
             [
-                // Rep is a hundredth of a dollar through the counter, so these rungs read as $25,000,
-                // $100,000, $300,000 and $800,000 of trade. The first is inside an evening, the last is
-                // a month of being a regular - and every one of them can be reached faster by somebody
-                // who would rather pay for it than wait for it.
+                // Rep is a hundredth of a dollar through the counter, so these rungs read as $30,000,
+                // $300,000, $1.5M and $5M of trade.
+                //
+                // The gaps widen on purpose, and by a lot. A ladder with even rungs is one you stop
+                // noticing after the first, and the guns hanging off these are not evenly spaced either:
+                // the step from a pistol to a shotgun is pocket money and the step to a rifle is an
+                // empire's worth of trading. The first rung is an evening, which is the whole of what it
+                // needs to be - a new player wanting a shotgun should not be told to come back in a week.
+                // The last is a month of being a regular, and it should be.
+                //
+                // These were tripled and then some when the guns above the pistol got dearer, because the
+                // rise had quietly outrun them: at $5,000 an SMG, twenty of them was $100,000, which was
+                // the whole of the old third rung. A ladder the purchases it gates can climb by
+                // themselves is not gating anything.
                 new StoreRepLevelOptions { Level = 1, Name = "Nobody", Rep = 0, DiscountPercent = 0 },
-                new StoreRepLevelOptions { Level = 2, Name = "Regular", Rep = 250, DiscountPercent = 2 },
-                new StoreRepLevelOptions { Level = 3, Name = "Trusted", Rep = 1_000, DiscountPercent = 4 },
-                new StoreRepLevelOptions { Level = 4, Name = "Connected", Rep = 3_000, DiscountPercent = 6 },
+                new StoreRepLevelOptions { Level = 2, Name = "Regular", Rep = 300, DiscountPercent = 2 },
+                new StoreRepLevelOptions { Level = 3, Name = "Trusted", Rep = 3_000, DiscountPercent = 4 },
+                new StoreRepLevelOptions { Level = 4, Name = "Connected", Rep = 15_000, DiscountPercent = 6 },
                 // Nothing new on the rack here. What it is for is the last two points off every price in
                 // the shop, for a player who already owns the best gun there is.
-                new StoreRepLevelOptions { Level = 5, Name = "Made", Rep = 8_000, DiscountPercent = 8 }
+                new StoreRepLevelOptions { Level = 5, Name = "Made", Rep = 50_000, DiscountPercent = 8 }
             ];
 
         if (Investments.Count == 0)
@@ -142,14 +152,18 @@ public sealed class StoreOptions
                 // Each buys rep at a better rate than trading does, and each shuts the counter for
                 // longer than the last. That pairing is the whole shape of it: money shortens the climb
                 // and the clock stops it from erasing the climb. A player taking the biggest favour they
-                // can reach every time it comes back is spending $250,000 a day for 4,000 rep, which is
-                // a fortnight of ordinary trading bought in one.
+                // can reach every time it comes back is spending $250,000 a day for 7,500 rep, which is
+                // three weeks of ordinary trading bought in one.
+                //
+                // These were raised with the ladder but deliberately by less than it, which is what makes
+                // the wider gaps wider in days and not only in dollars. Scaling both together would have
+                // moved every number on the page and changed nothing anybody could feel.
                 new StoreInvestmentOptions
                 {
                     Key = "tab",
                     Name = "Cover the counter's tab",
                     Cost = 5_000,
-                    Rep = 60,
+                    Rep = 100,
                     CooldownHours = 6,
                     MinLevel = 1,
                     Description = "A night's drinking for the people who work the counter. Cheap, quick, and remembered."
@@ -159,7 +173,7 @@ public sealed class StoreOptions
                     Key = "shipment",
                     Name = "Stake the next shipment",
                     Cost = 50_000,
-                    Rep = 700,
+                    Rep = 1_200,
                     CooldownHours = 12,
                     MinLevel = 2,
                     Description = "Your money fronts the crates. You never see one of them, and everyone hears whose money it was."
@@ -169,7 +183,7 @@ public sealed class StoreOptions
                     Key = "block",
                     Name = "Buy into the block",
                     Cost = 250_000,
-                    Rep = 4_000,
+                    Rep = 7_500,
                     CooldownHours = 24,
                     MinLevel = 3,
                     Description = "What the street around the shop costs to keep quiet. The counter stays open because you paid for it."

@@ -23,17 +23,6 @@ export type StoreItem = {
   lockedReason?: string | null
 }
 
-export type StoreRepLevel = {
-  level: number
-  name: string
-  rep: number
-  discountPercent: number
-  /** What arriving here opens. Empty when it opens nothing but the discount. */
-  unlocks: string
-  reached: boolean
-  current: boolean
-}
-
 export type StoreInvestment = {
   key: string
   name: string
@@ -61,7 +50,6 @@ export type StoreRep = {
   dollarsPerRep: number
   investmentReadyAtUtc?: string | null
   investmentReadySeconds: number
-  levels: StoreRepLevel[]
   investments: StoreInvestment[]
 }
 

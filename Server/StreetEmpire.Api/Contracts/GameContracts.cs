@@ -803,18 +803,7 @@ public sealed record StoreRepResponse(
     /// <summary>When the counter will take another investment, and how long that is.</summary>
     DateTime? InvestmentReadyAtUtc,
     int InvestmentReadySeconds,
-    IReadOnlyList<StoreRepLevelResponse> Levels,
     IReadOnlyList<StoreInvestmentResponse> Investments);
-
-public sealed record StoreRepLevelResponse(
-    int Level,
-    string Name,
-    int Rep,
-    int DiscountPercent,
-    /// <summary>What arriving here opens, in words. Empty when it opens nothing but the discount.</summary>
-    string Unlocks,
-    bool Reached,
-    bool Current);
 
 public sealed record StoreInvestmentResponse(
     string Key,

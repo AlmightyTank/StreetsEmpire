@@ -10,19 +10,30 @@
   That is a vending machine, not a shop. The price is still what a gun costs; standing is now whether
   anybody will sell you one.
 - Five rungs - **Nobody, Regular, Trusted, Connected, Made** - and the guns sit on them: pistols to
-  everybody, shotguns at Regular, SMGs at Trusted, rifles at Connected. Nothing is hidden. A locked row
-  is still a row, priced and described, saying which rung opens it, because a rack that quietly grows
-  extra lines as you climb never tells anybody there was a ladder at all.
+  everybody, shotguns at Regular, SMGs at Trusted, rifles at Connected. Nothing on the shelf is hidden:
+  a locked row is still a row, priced and described, saying which rung opens it, because a rack that
+  quietly grows extra lines as you climb never tells anybody there was a ladder at all. The standing
+  panel itself shows the rung underfoot and the next one and no further - laying out all five was tried
+  first and read as a spoiler, opening the shop by naming every weapon and every threshold in the game
+  to somebody who has not bought a shotgun yet.
+- **The gaps between rungs widen sharply**, at 300, 3,000, 15,000 and 50,000 rep - $30,000, $300,000,
+  $1.5M and $5M of trade. Even rungs are ones you stop noticing after the first, and the guns hanging
+  off these are not evenly spaced either: pistol to shotgun is pocket money and the step to a rifle is
+  an empire's worth of trading. The first rung is still an evening, which is the whole of what it needs
+  to be - a new player wanting a shotgun should not be told to come back next week.
 - **Every dollar over the counter counts.** Rep is earned by trading, at a hundredth of a point a
   dollar, which means the beer and condoms an ordinary week already buys are building it whether or not
   anybody is thinking about rep - auto-buy included, because that is where most players do most of their
   shopping. Deliberately a trickle: trading is the floor under the climb rather than the way up it.
 - **An Investment counter, for money that buys standing and nothing else.** Cover the counter's tab at
-  $5,000, stake the next shipment at $50,000, buy into the block at $250,000. Each is cheaper per point
-  than trading the same money on goods, and each shuts the counter for longer than the last - six hours,
-  twelve, a full day - on one clock across all of them. That pairing is the whole shape of it: cash
-  shortens the climb and the clock stops it from erasing the climb. Nobody buys the ladder in an
-  afternoon, however good the night was.
+  $5,000 for 100 rep, stake the next shipment at $50,000 for 1,200, buy into the block at $250,000 for
+  7,500. Each is cheaper per point than trading the same money on goods, and each shuts the counter for
+  longer than the last - six hours, twelve, a full day - on one clock across all of them. That pairing
+  is the whole shape of it: cash shortens the climb and the clock stops it from erasing the climb.
+  Nobody buys the ladder in an afternoon, however good the night was. These rose with the rungs but
+  deliberately by less than them, which is what makes the wider gaps wider in days and not only in
+  dollars - scaling both together would have moved every number on the page and changed nothing anybody
+  could feel.
 - **The last rung is worth reaching after the last gun.** Standing takes 2/4/6/8% off every price in the
   shop, which is what keeps rep meaning something the day somebody buys their first rifle. It comes off
   what you actually hand over, so a discount earns proportionally less rep as well - the reward does not

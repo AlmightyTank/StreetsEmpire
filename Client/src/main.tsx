@@ -3943,13 +3943,16 @@ function MarketCorePage(ctx: PageContext) {
 }
 
 /**
- * Standing at the counter: where you are on the ladder, what it is worth, and what money buys of it.
+ * Standing at the counter: where you are, what it is worth, and what money buys of it.
  *
  * The panel leads with the rung you are on rather than the points behind it, because the points are
- * only ever a means: nobody is saving up 3,000 rep, they are saving up for rifles. The whole ladder is
- * on the page for the same reason - a player standing at the bottom of it should be able to read what
- * the top of it costs without climbing three rungs to find out, and the guns each rung opens are the
- * only honest answer to why anybody would bother.
+ * only ever a means: nobody is saving up 15,000 rep, they are saving up for rifles.
+ *
+ * It shows the rung underfoot and the next one, and no further. Laying the whole ladder out was the
+ * first thing tried and it read as a spoiler - five cards naming every gun and every price in the game
+ * to somebody who has not bought a shotgun yet, which is a strange way to open a shop. What a player
+ * needs here is what they are and what is next; a locked row on the shelf above still names the rung
+ * that opens it, so nothing anybody is actually reaching for has gone quiet.
  *
  * Investments sit under it rather than in the goods grid above. They are the one thing at this counter
  * that hands over nothing at all, and a row that takes $250,000 and gives back no object belongs
@@ -3980,22 +3983,6 @@ function StoreStandingPanel({ dashboard, busy, act }: { dashboard: Dashboard, bu
         Every dollar over the counter counts, so the beer and condoms you already buy are building this.
         {rep.discountPercent > 0 && ` Standing here takes ${rep.discountPercent}% off every price in the shop.`}
       </p>
-    </div>
-
-    <div className="d-grid gtc-1 gtc-sm-2 gtc-xl-3 gap-2 mt-3">
-      {rep.levels.map(level => <div
-        className={`d-grid gap-1 align-content-start border rounded p-2 ${level.current ? 'border-primary bg-body-tertiary' : level.reached ? 'bg-body-tertiary' : 'bg-body-secondary opacity-75'}`}
-        key={level.level}
-      >
-        <div className="d-flex justify-content-between align-items-baseline gap-2">
-          <strong className="text-body">{level.name}</strong>
-          <span className="eyebrow">{number.format(level.rep)} rep</span>
-        </div>
-        <span className="small text-body-secondary">
-          {level.unlocks ? level.unlocks : 'Nothing new on the shelf'}
-          {level.discountPercent > 0 && ` / ${level.discountPercent}% off`}
-        </span>
-      </div>)}
     </div>
 
     <div className="panel-title mt-3">

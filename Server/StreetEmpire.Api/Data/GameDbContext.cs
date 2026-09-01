@@ -25,8 +25,9 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<MuleRun> MuleRuns => Set<MuleRun>();
     public DbSet<Arrest> Arrests => Set<Arrest>();
     public DbSet<WorkshopCraft> WorkshopCrafts => Set<WorkshopCraft>();
-    public DbSet<Contract> Contracts => Set<Contract>();
-    public DbSet<WantedOrder> WantedOrders => Set<WantedOrder>();
+    public DbSet<TraderJob> TraderJobs => Set<TraderJob>();
+    public DbSet<TraderStock> TraderStocks => Set<TraderStock>();
+    public DbSet<TraderJobLead> TraderJobLeads => Set<TraderJobLead>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
     public DbSet<AlliancePact> AlliancePacts => Set<AlliancePact>();
@@ -409,44 +410,55 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<Contract>(entity =>
+        modelBuilder.Entity<TraderJob>(entity =>
         {
-            // Every read is "what is open in this town", which is exactly this index.
+            // Every read of this table is the same question: what is going in this town, soonest
+            // deadline first. One book where there were two, so one index instead of two identical ones.
             entity.HasIndex(x => new { x.City, x.FilledAtUtc, x.ExpiresAtUtc });
             entity.Property(x => x.City).HasMaxLength(64);
-            entity.Property(x => x.Buyer).HasMaxLength(64);
             entity.Property(x => x.Good).HasMaxLength(16);
-            // A filled contract outlives the empire that filled it, so the board can still say who did.
+            entity.Property(x => x.OnBehalfOf).HasMaxLength(64);
             entity.HasOne(x => x.FilledBy)
                 .WithMany()
                 .HasForeignKey(x => x.FilledById)
                 .OnDelete(DeleteBehavior.SetNull);
-            // A claim outlives its claimant too, and the order simply frees up: SetNull hands a
-            // half-delivered order back to the town rather than leaving it locked to a deleted player.
+            // A claim outlives its claimant and the job simply frees up, rather than staying locked to
+            // somebody who no longer exists. That hands a half-delivered job back to the town rather
+            // than leaving it stuck to a deleted player.
             entity.HasOne(x => x.ClaimedBy)
                 .WithMany()
                 .HasForeignKey(x => x.ClaimedById)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
-        modelBuilder.Entity<WantedOrder>(entity =>
+        modelBuilder.Entity<TraderStock>(entity =>
         {
-            // Shaped like the contract board because it is read exactly the same way: what is open in
-            // this town, oldest deadline first.
-            entity.HasIndex(x => new { x.City, x.FilledAtUtc, x.ExpiresAtUtc });
+            // One row per line per town, and the database says so: two rows for the same shelf would be
+            // two answers to how many are left, and a purchase would take from whichever was read first.
+            entity.HasIndex(x => new { x.City, x.Good }).IsUnique();
             entity.Property(x => x.City).HasMaxLength(64);
             entity.Property(x => x.Good).HasMaxLength(16);
-            entity.HasOne(x => x.FilledBy)
-                .WithMany()
-                .HasForeignKey(x => x.FilledById)
-                .OnDelete(DeleteBehavior.SetNull);
-            // A claim outlives its claimant and the order simply frees up, rather than staying locked
-            // to somebody who no longer exists.
-            entity.HasOne(x => x.ClaimedBy)
-                .WithMany()
-                .HasForeignKey(x => x.ClaimedById)
-                .OnDelete(DeleteBehavior.SetNull);
         });
+
+        modelBuilder.Entity<TraderJobLead>(entity =>
+        {
+            // One row per slot per town per player, and the database says so rather than the service
+            // hoping: a duplicate slot would be a hand that deals the same job twice and a reroll that
+            // swaps one of them.
+            entity.HasIndex(x => new { x.PlayerId, x.City, x.Slot }).IsUnique();
+            entity.Property(x => x.City).HasMaxLength(64);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A hand is a pointer at the town's book, so a job leaving takes its leads with it. Nobody
+            // should be holding a slot pointing at a row that no longer exists.
+            entity.HasOne(x => x.Job)
+                .WithMany(x => x.Leads)
+                .HasForeignKey(x => x.JobId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
 
         modelBuilder.Entity<ChatMessage>(entity =>
         {

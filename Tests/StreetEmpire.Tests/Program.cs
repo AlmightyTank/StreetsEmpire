@@ -184,9 +184,16 @@ var tests = new (string Name, Action Test)[]
     ("a ride sold back takes its standing with it", ARideSoldBackTakesItsStandingWithIt),
     ("standing takes a cut off every price in the shop", StandingTakesACutOffEveryPrice),
     ("an investment buys standing and shuts the counter", AnInvestmentBuysStandingAndShutsTheCounter),
+    ("a hand is three, and one of them is always for the bench", AHandIsThreeAndKeepsARoomForTheBench),
+    ("the book a town keeps is far deeper than the hand", TheBookIsDeeperThanTheHand),
+    ("a town's counter carries what its trader carries", ATownsCounterCarriesWhatItsTraderCarries),
+    ("a counter runs on two clocks, a day and two hours", ACounterRunsOnTwoClocks),
+    ("a new player starts in New York", ANewPlayerStartsInNewYork),
+    ("asking again is free once a cycle and then it is not", AskingAgainIsFreeOnceAndThenItIsNot),
+    ("asking again never costs a rung or a started job", AskingAgainNeverCostsARungOrAStartedJob),
     ("the trader only ever asks for what a bench can make", TheTraderOnlyAsksForWhatABenchCanMake),
     ("an order pays over the shelf and well over the materials", AnOrderPaysOverTheShelfAndWellOverMaterials),
-    ("the wanted board fills once and then at the trader's pace", TheWantedBoardFillsAtTheTradersPace),
+    ("the book fills once and then at the town's pace", TheBookFillsOnceAndThenAtTheTownsPace),
     ("standing lands when an order is finished, not before", StandingLandsWhenAnOrderIsFinished),
     ("every town has a trader, and one standing follows you", EveryTownHasATraderAndOneStandingFollowsYou),
     ("an email is a second name, not a message", AnEmailIsASecondNameNotAMessage),
@@ -3730,14 +3737,25 @@ static void GuidanceOnlyPointsWhereTheClientCanGo()
 
     var client = File.ReadAllText(Path.Combine(root!.FullName, "Client", "src", "main.tsx"));
 
-    // The client's own mapping, read out of it: name -> page, and the tab when it names one.
-    var mapped = new Dictionary<string, (string Page, string? Tab)>(StringComparer.Ordinal);
+    // The client's own mapping, read out of it: name -> page, the tab when it names one, and the area
+    // within the tab when it names that too. All three parts optional after the page, because a
+    // destination is only as exact as it needs to be - a page with no tabs names no tab, and a tab with
+    // one panel on it names no area.
+    var mapped = new Dictionary<string, (string Page, string? Tab, string? Area)>(StringComparer.Ordinal);
     foreach (Match m in Regex.Matches(
         client,
-        @"if \(name === '(?<name>[a-z-]+)'\) return \{ page: '(?<page>[a-z]+)'(?:, tab: '(?<tab>[a-z]+)')? \}"))
-        mapped[m.Groups["name"].Value] = (m.Groups["page"].Value, m.Groups["tab"].Success ? m.Groups["tab"].Value : null);
+        @"if \(name === '(?<name>[a-z-]+)'\) return \{ page: '(?<page>[a-z]+)'(?:, tab: '(?<tab>[a-z]+)')?(?:, area: '(?<area>[a-z-]+)')? \}"))
+        mapped[m.Groups["name"].Value] = (
+            m.Groups["page"].Value,
+            m.Groups["tab"].Success ? m.Groups["tab"].Value : null,
+            m.Groups["area"].Success ? m.Groups["area"].Value : null);
 
-    AssertTrue(mapped.Count > 0, "flowTarget should be readable, or this test is checking nothing");
+    // Counted rather than merely non-empty, because the failure this has already had once was silent:
+    // the mapping grew a third field, every match stopped matching, and the sweep below then found
+    // nothing to disagree with - which reads exactly like a test that passed. A regex reading a shape
+    // somebody else maintains has to say when it has fallen behind it.
+    AssertTrue(mapped.Count >= GuidancePages.All.Length,
+        $"flowTarget parsed to {mapped.Count} destinations, fewer than the server can even name - the regex has probably fallen behind its shape");
 
     // The tab strips, likewise. A page with no strip has no tabs to be wrong about.
     var strips = new Dictionary<string, string[]>(StringComparer.Ordinal);
@@ -3751,6 +3769,14 @@ static void GuidanceOnlyPointsWhereTheClientCanGo()
     }
 
     AssertTrue(strips.Count > 0, "the client should have some tab strips, or this test is checking nothing");
+
+    // Every panel the client has marked as somewhere it can be sent. One vocabulary for the whole app:
+    // the walkthrough used to look its targets up under a marker of its own, which made the tour and
+    // the guidance list two answers to one question with only one of them ever checked.
+    var areas = Regex.Matches(client, @"data-area=""(?<area>[a-z-]+)""")
+        .Select(x => x.Groups["area"].Value)
+        .ToHashSet(StringComparer.Ordinal);
+    AssertTrue(areas.Count > 0, "the client should mark some panels, or this test is checking nothing");
 
     // Every page the client actually draws. A name that is one of these needs no entry in the mapping:
     // "street" is a page called street, and spelling that out would be a line that can only ever agree
@@ -3774,13 +3800,24 @@ static void GuidanceOnlyPointsWhereTheClientCanGo()
             $"'{name}' names a tab on '{target.Page}', which has no tabs");
         AssertTrue(target.Tab is null || strips[target.Page].Contains(target.Tab),
             $"'{name}' opens '{target.Page}' on a tab called '{target.Tab}', which that page does not have");
+
+        // And the panel it scrolls to has to be one somebody marked. This is the quietest of the three
+        // by a distance: a wrong page is visibly the wrong screen and a wrong tab is the wrong half of
+        // one, but an area nothing answers to is a page that simply does not scroll - which is exactly
+        // what it looked like before any of this existed, and so reads as nothing being wrong.
+        AssertTrue(target.Area is null || areas.Contains(target.Area),
+            $"'{name}' scrolls to a panel called '{target.Area}', which nothing on the page is marked as");
     }
 
     // And the destinations the client invents for itself - the walkthrough's steps - obey the same
     // rule, because a tour that lights nothing is worse than no tour.
-    foreach (Match step in Regex.Matches(client, @"page: '(?<page>[a-z]+)',\s*tab: '(?<tab>[a-z]+)',"))
+    foreach (Match step in Regex.Matches(client, @"page: '(?<page>[a-z]+)',\s*(?:tab: '(?<tab>[a-z]+)',\s*)?area: '(?<area>[a-z-]+)',"))
     {
         var page = step.Groups["page"].Value;
+        var area = step.Groups["area"].Value;
+        AssertTrue(areas.Contains(area), $"a walkthrough step lights a panel called '{area}', which nothing is marked as");
+        if (!step.Groups["tab"].Success) continue;
+
         var tab = step.Groups["tab"].Value;
         AssertTrue(strips.ContainsKey(page), $"a walkthrough step names a tab on '{page}', which has no tabs");
         AssertTrue(strips[page].Contains(tab), $"a walkthrough step opens '{page}' on '{tab}', which that page does not have");
@@ -3818,7 +3855,7 @@ static CrewWorld NewCrewWorld()
 /// A world with a trader's board in it. Rolled with the minimum random so every order is the same order
 /// twice: these tests are about the rules the board obeys, not about the spread it draws from.
 /// </summary>
-static WantedWorld NewWantedWorld(GameOptions options, IGameRandom? random = null)
+static JobWorld NewJobWorld(GameOptions options, IGameRandom? random = null)
     => new(options, Snapshot(options), random);
 
 static void ATransferMovesGoodsWithoutInventingAny()
@@ -5585,9 +5622,16 @@ static void GuidancePointsAtTheGame()
     // the street for as long as the ladder had existed, and there is no production on the street at
     // all - so a new player following the game's own instructions arrived somewhere with nothing to do.
     //
-    // The page names have to match the client's own keys, which are duplicated here on purpose: they
-    // cross a wire, and the only way a rename gets caught is if both ends are written down.
-    var pages = new[] { "overview", "street", "crew", "hideout", "territory", "market", "mules", "recon", "alliance" };
+    // The destinations come from the server's own list rather than being typed out again here. They
+    // used to be a hardcoded array with a comment admitting it was a duplicate kept on purpose, which
+    // was the right call while the names existed only as string literals scattered through the service:
+    // writing them down twice was the only way a rename got caught. They are constants now, so the
+    // second copy stopped being a check and became a thing to forget - and it was forgotten the first
+    // time the list grew, failing on a name the server had every right to say.
+    //
+    // What that copy was really guarding is checked properly elsewhere now, by the test that reads the
+    // client's own mapping and fails when the server can name somewhere the client cannot open.
+    var pages = GuidancePages.All;
     var ladder = guidance.Objectives(Rookie(options), []);
     AssertTrue(ladder.Count > 0, "the ladder should have rungs");
 
@@ -5597,11 +5641,16 @@ static void GuidancePointsAtTheGame()
         AssertTrue(!string.IsNullOrWhiteSpace(rung.Why), $"\"{rung.Label}\" should say why it is worth doing");
     }
 
-    // The lab and the shift that uses it belong on one page: the step before this one builds the lab in
-    // the hideout, and sending the player elsewhere to use it is a tab change bought for nothing.
+    // The lab and the shift that uses it belong together: the step before this one builds the lab, and
+    // sending the player somewhere else to use it is a journey bought for nothing.
+    //
+    // This used to insist the rung said "hideout", back when that was the only name for anything in the
+    // building. The bench has its own destination now, and the two still land on the same page as each
+    // other - which is what the rule was always about. Whether either name opens anywhere real is
+    // checked by the test that reads the client's own mapping.
     var production = ladder.FirstOrDefault(x => x.Label.Contains("production"));
     AssertTrue(production is not null, "the ladder should still teach production");
-    AssertEqual("hideout", production!.Page);
+    AssertEqual(GuidancePages.Production, production!.Page);
 
 }
 
@@ -6700,12 +6749,13 @@ static void ChatFailsTowardsTheOpenRoom()
 static void ContractsAreDemandWithAShape()
 {
     var options = Resolve(new GameOptions());
-    var config = options.Contracts;
+    var config = options.Store.Jobs;
+    var product = config.Product;
 
     // A buyer always beats the counter, or there is no reason to hold stock for a deadline.
-    AssertTrue(config.MinPremiumPercent > 0, "an order pays over the counter price");
+    AssertTrue(product.MinPremiumPercent > 0, "a job pays over the counter price");
     // ...but never so far over that nothing else is worth doing.
-    AssertTrue(config.MinPremiumPercent + config.PremiumSpreadPercent + config.PurityPremiumPercent < 100,
+    AssertTrue(product.MinPremiumPercent + product.PremiumSpreadPercent + config.PurityPremiumPercent < 100,
         "and never so far over that the rest of the game stops mattering");
 
     // A purity floor sometimes rather than always: on every order it would make stretching pointless
@@ -6714,14 +6764,16 @@ static void ContractsAreDemandWithAShape()
     // And a town leans towards what it values without ever ruling the other product out.
     AssertTrue(config.FavouredGoodPercent is >= 50 and < 100, "a town has a taste, not a single note");
 
-    var order = new Contract
+    var order = new TraderJob
     {
         City = "Las Vegas",
-        Buyer = "The Sands Room",
+        Kind = TraderJobKind.Product,
+        Reason = TraderJobReason.Favour,
+        OnBehalfOf = "The Sands Room",
         Good = "coke",
         Quantity = 20,
         PricePerUnit = 300,
-        ListPricePerUnit = 225,
+        ReferencePricePerUnit = 225,
         MinimumPurityPercent = 60,
         ExpiresAtUtc = Landing().AddHours(4)
     };
@@ -6732,7 +6784,7 @@ static void ContractsAreDemandWithAShape()
     AssertTrue(order.IsOpen(Landing()), "an order stands until its deadline");
     AssertTrue(!order.IsOpen(Landing().AddHours(5)), "and not past it");
 
-    var service = CreateContracts(options);
+    var service = CreateJobs(options);
     var seller = new Player { City = "Las Vegas", Coke = 50, CokePurity = 0.9, Cash = 0 };
 
     // Every refusal is a real one, against the same stock the rest of the game moves.
@@ -6764,16 +6816,18 @@ static void ContractsAreDemandWithAShape()
 static void AnOrderGoesInAsFastAsTheRoomAllows()
 {
     var options = Resolve(new GameOptions());
-    var service = CreateContracts(options);
+    var service = CreateJobs(options);
 
-    Contract Order() => new()
+    TraderJob Order() => new()
     {
         City = "Las Vegas",
-        Buyer = "The Sands Room",
+        Kind = TraderJobKind.Product,
+        Reason = TraderJobReason.Favour,
+        OnBehalfOf = "The Sands Room",
         Good = "coke",
         Quantity = 20,
         PricePerUnit = 300,
-        ListPricePerUnit = 225,
+        ReferencePricePerUnit = 225,
         ExpiresAtUtc = Landing().AddHours(4)
     };
 
@@ -6822,7 +6876,7 @@ static void AnOrderGoesInAsFastAsTheRoomAllows()
     AssertEqual(40, seller.Coke);
 }
 
-static ContractService CreateContracts(GameOptions options)
+static TraderJobService CreateJobs(GameOptions options)
     => new(null!, Snapshot(options), new MinimumRandom());
 
 static void CityRiskReachesTheDailyLoop()
@@ -8859,14 +8913,381 @@ static void AnInvestmentBuysStandingAndShutsTheCounter()
     AssertRuleError(() => economy.Invest(broke, "nothing-like-this", now), "investing in something the counter does not offer");
 }
 
+// A hand is three, for everybody, and it is dealt one supply job and one product job before it is
+// allowed to deal anything at random.
+//
+// Standing used to decide the count - one at the bottom rung, one more per rung - and that is gone: it
+// is a flat three now, and what standing buys on this board is being able to afford to look again. The
+// reservation is the part worth guarding. A hand rolled freely would deal three product jobs better
+// than one evening in seven, and an evening whose whole question is what to do with a workshop would
+// open on a board with nothing to say to it.
+static void AHandIsThreeAndKeepsARoomForTheBench()
+{
+    var options = Resolve(new GameOptions());
+    using var world = NewJobWorld(options, new WalkingRandom());
+    var now = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+    var config = options.Store.Jobs;
+
+    AssertEqual(3, config.HandSize);
+    AssertEqual(TraderJobKind.Supply, config.SlotKind(0));
+    AssertEqual(TraderJobKind.Product, config.SlotKind(1));
+    AssertTrue(config.SlotKind(2) is null, "the third takes whatever is going");
+
+    var player = world.Trader("Dealt");
+    world.Db.SaveChanges();
+
+    var hand = world.Jobs.HandAsync(player, now, default).GetAwaiter().GetResult();
+    AssertEqual(config.HandSize, hand.Count);
+    AssertEqual(TraderJobKind.Supply, hand[0].Job.Kind);
+    AssertEqual(TraderJobKind.Product, hand[1].Job.Kind);
+    AssertTrue(hand.Select(x => x.Slot).SequenceEqual(new[] { 0, 1, 2 }), "one job a slot, in order");
+    AssertEqual(3, hand.Select(x => x.JobId).Distinct().Count());
+
+    // The same three, on the next look. This is the whole reason a hand is remembered rather than
+    // dealt fresh: a job has to still be there when somebody comes back with what they went to make.
+    var again = world.Jobs.HandAsync(player, now.AddMinutes(20), default).GetAwaiter().GetResult();
+    AssertTrue(again.Select(x => x.JobId).SequenceEqual(hand.Select(x => x.JobId)),
+        "a hand a player walked away from is the hand they come back to");
+
+    // Standing moves nothing here any more.
+    player.StoreRep = options.Store.Ladder()[^1].Rep;
+    var made = world.Jobs.HandAsync(player, now.AddMinutes(21), default).GetAwaiter().GetResult();
+    AssertEqual(config.HandSize, made.Count);
+
+    // A rival finishing one empties that slot and it refills for free - the book moved on, the player
+    // did not ask for anything, and charging for that would mean a job somebody else took cost money.
+    var taken = hand[1].Job;
+    taken.FilledAtUtc = now;
+    world.Db.SaveChanges();
+    var refilled = world.Jobs.HandAsync(player, now.AddMinutes(22), default).GetAwaiter().GetResult();
+    AssertEqual(config.HandSize, refilled.Count);
+    AssertTrue(refilled.All(x => x.JobId != taken.Id), "a finished job does not stay in anybody's hand");
+    AssertEqual(0, player.JobRerollsUsed);
+}
+
+// The book is deep and the hand is not, which is what makes asking again a real question. A book of
+// three would make a reroll a reshuffle of the same three cards.
+static void TheBookIsDeeperThanTheHand()
+{
+    var options = Resolve(new GameOptions());
+    using var world = NewJobWorld(options, new WalkingRandom());
+    var now = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+    var config = options.Store.Jobs;
+
+    AssertTrue(config.BookMin >= 16 && config.BookMax >= config.BookMin, "a town keeps a book, not a shelf");
+    AssertTrue(config.BookMin > config.HandSize * 4, "and it has to be far deeper than a hand to be worth asking twice");
+
+    var book = world.Jobs.BookAsync("Detroit", now, default).GetAwaiter().GetResult();
+    AssertTrue(book.Count >= config.BookMin && book.Count <= config.BookMax,
+        $"a town nobody has visited fills to its book, and this one came to {book.Count}");
+    // Both halves are in there, or the reserved slots have nothing to draw on.
+    AssertTrue(book.Any(x => x.Kind == TraderJobKind.Supply), "the dealer wants things for their own shelf");
+    AssertTrue(book.Any(x => x.Kind == TraderJobKind.Product), "and the town wants product");
+    // Every job is the dealer's, and the reason is what tells them apart. A town job is one they are
+    // doing for somebody named; their own shelf is nobody else's business.
+    AssertTrue(book.Where(x => x.Kind == TraderJobKind.Product).All(x => x.OnBehalfOf is not null),
+        "a town job is being done for somebody");
+    AssertTrue(book.Where(x => x.Kind == TraderJobKind.Product)
+            .All(x => x.Reason is TraderJobReason.Favour or TraderJobReason.Deal),
+        "and it is a favour or a promise, never a gap on their own shelf");
+    AssertTrue(book.Where(x => x.Reason == TraderJobReason.ShelfGap).All(x => x.OnBehalfOf is null),
+        "a gap on their own shelf is nobody else's");
+
+    // A shelf gap can only ever be a line this counter actually carries, and never one of the three
+    // every counter always has - a town that cannot sell condoms is a town nobody can play in.
+    foreach (var gap in book.Where(x => x.Reason == TraderJobReason.ShelfGap))
+    {
+        AssertTrue(StoreTrader.Carries("Detroit", options, gap.Good),
+            $"a gap in {gap.Good}, which this counter does not stock");
+        AssertTrue(!StoreTrader.Always.Contains(gap.Good),
+            $"{gap.Good} is on the floor every counter keeps and can never go dry");
+    }
+
+    // Covering somebody names a real trader in a real town that really stocks the thing.
+    foreach (var cover in book.Where(x => x.Reason == TraderJobReason.CoveringTrader))
+        AssertTrue(cover.OnBehalfOf is not null && cover.OnBehalfOf.Contains(" in "),
+            "covering a counter says whose and where");
+}
+
+// A counter runs on two clocks, and they answer two different questions. What a trader *sells* turns
+// over at midnight, so a range is worth knowing and worth travelling on; how many they *have* comes back
+// every two hours, so a shop somebody cleaned out is an inconvenience rather than a town shut for the
+// evening. One clock for both would be either boring or unusable.
+static void ACounterRunsOnTwoClocks()
+{
+    var options = Resolve(new GameOptions());
+    var shelf = new TraderShelfService(null!, Snapshot(options));
+    var config = options.Store.Shelf;
+
+    // The delivery window is aligned to the clock rather than to whoever last bought something, so
+    // everybody's shop fills at the same minute and it is a thing players can plan around.
+    var noon = new DateTime(2026, 9, 1, 12, 30, 0, DateTimeKind.Utc);
+    AssertEqual(new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc), shelf.WindowStart(noon));
+    AssertEqual(shelf.WindowStart(noon), shelf.WindowStart(noon.AddMinutes(45)));
+    AssertTrue(shelf.WindowStart(noon.AddHours(config.RestockHours)) > shelf.WindowStart(noon),
+        "and it does turn over");
+
+    // The day is the trade's own, not the server's. Just before midnight Central is still yesterday
+    // however far into tomorrow UTC has already gone.
+    var lateCentral = new DateTime(2026, 9, 2, 4, 0, 0, DateTimeKind.Utc);
+    var afterCentral = new DateTime(2026, 9, 2, 8, 0, 0, DateTimeKind.Utc);
+    AssertTrue(TraderShelfService.TradingDay(lateCentral) < TraderShelfService.TradingDay(afterCentral),
+        "midnight Central is what turns the range over, not midnight UTC");
+
+    // A range is the same for everybody looking at the same shop on the same day, and it is not the
+    // same shop every day - a range that never moved is a price list with a name on it.
+    var day = new DateTime(2026, 9, 1, 15, 0, 0, DateTimeKind.Utc);
+    foreach (var good in new[] { "medicine", "poison", WeaponTiers.Shotgun })
+        AssertEqual(shelf.CarriesToday("New York", good, day), shelf.CarriesToday("New York", good, day.AddHours(1)));
+
+    var moved = false;
+    for (var i = 1; i <= 14 && !moved; i++)
+        foreach (var good in new[] { "medicine", "poison", WeaponTiers.Shotgun, WeaponTiers.Smg, WeaponTiers.Rifle, "rides" })
+            if (shelf.CarriesToday("New York", good, day) != shelf.CarriesToday("New York", good, day.AddDays(i)))
+                moved = true;
+    AssertTrue(moved, "a fortnight of the identical shelf is a price list, not a shop");
+
+    // Whatever the day says, the three lines every counter keeps are always there - a crew that cannot
+    // buy condoms, beer or a pistol is a crew that cannot work, and that is a town nobody can play in.
+    foreach (var trader in options.Store.Traders)
+        for (var i = 0; i < 30; i++)
+            foreach (var always in StoreTrader.Always)
+                AssertTrue(shelf.CarriesToday(trader.City, always, day.AddDays(i)),
+                    $"{trader.Name} has to have {always} on day {i}");
+
+    // And nothing is ever carried that the trader does not stock at all: the daily roll narrows a
+    // range, it never invents one.
+    for (var i = 0; i < 30; i++)
+        AssertTrue(!shelf.CarriesToday("Chicago", WeaponTiers.Rifle, day.AddDays(i)),
+            "Auntie Vasska has never sold a rifle and a good day does not change that");
+
+    // Depth is money rather than count, which is what makes a shelf read like a shop: condoms by the
+    // hundred and rifles in ones, with no table anybody has to keep in step with the prices.
+    var condoms = shelf.FullStock("New York", "condoms", options.CondomPrice, day);
+    var rifles = shelf.FullStock("New York", WeaponTiers.Rifle, options.WeaponTier(WeaponTiers.Rifle)!.Price, day);
+    AssertTrue(condoms > rifles * 10, $"{condoms} condoms against {rifles} rifles");
+    AssertTrue(rifles >= config.MinPerLine && condoms <= config.MaxPerLine, "and both inside their bounds");
+    AssertEqual(condoms, shelf.FullStock("New York", "condoms", options.CondomPrice, day.AddMinutes(30)));
+}
+
+// Where somebody lands when they did not pick. It used to be whichever town the alphabet put first,
+// which is not a decision anybody made - and it dropped new players at the narrowest counter in the
+// country on their first evening.
+static void ANewPlayerStartsInNewYork()
+{
+    var options = Resolve(new GameOptions());
+    AssertEqual("New York", options.Territory.StartingCity);
+    AssertEqual("New York", options.Territory.StartingCityOrFirst());
+    AssertTrue(options.Territory.Cities().Contains("New York"), "and it is a town on the map");
+    // Which is the one shop that carries the whole shelf at exactly the list price, so nothing about
+    // the counter is a special case on the evening somebody is learning what a counter is.
+    AssertEqual(100, StoreTrader.Config("New York", options)!.PricePercent);
+    foreach (var line in new[] { "medicine", "poison", WeaponTiers.Shotgun, WeaponTiers.Smg, WeaponTiers.Rifle, "rides" })
+        AssertTrue(StoreTrader.Carries("New York", options, line), $"New York carries {line}");
+
+    // A map without the configured town still opens somewhere real rather than throwing.
+    var narrowed = Resolve(new GameOptions());
+    narrowed.Territory.StartingCity = "Nowhere";
+    AssertTrue(narrowed.Territory.Cities().Contains(narrowed.Territory.StartingCityOrFirst()),
+        "an unknown starting town falls back to a real one");
+}
+
+// Every town sold the same nine lines at the same price, so where you stood decided what your product
+// sold for and nothing at all about what you could buy - half of a place's character the map was not
+// using. A trader is dear or cheap, and carries a lot or almost nothing, and those run opposite ways.
+static void ATownsCounterCarriesWhatItsTraderCarries()
+{
+    var options = Resolve(new GameOptions());
+    var traders = options.Store.Traders;
+    AssertTrue(traders.Count > 0, "somebody runs every counter");
+
+    foreach (var city in options.Territory.Cities())
+        AssertTrue(traders.Any(x => string.Equals(x.City, city, StringComparison.OrdinalIgnoreCase)),
+            $"{city} has nobody behind the counter");
+
+    // The floor. Whatever a stock list says, a crew can always be fed and armed enough to work.
+    foreach (var trader in traders)
+        foreach (var always in StoreTrader.Always)
+            AssertTrue(StoreTrader.Carries(trader.City, options, always),
+                $"{trader.Name} has to carry {always}");
+
+    // Nobody is strictly better than anybody: the narrow shops are the cheap ones.
+    var widest = traders.OrderByDescending(x => x.Stocks.Count).First();
+    var narrowest = traders.OrderBy(x => x.Stocks.Count).First();
+    AssertTrue(widest.Stocks.Count > narrowest.Stocks.Count, "breadth actually varies");
+    AssertTrue(widest.PricePercent > narrowest.PricePercent,
+        $"{widest.Name} carries the most and has to charge for it, against {narrowest.Name}");
+
+    // The top gun exists somewhere, and not everywhere - which is what makes the top of the standing
+    // ladder a thing you travel for rather than a thing that happens where you already are.
+    var rifleTowns = traders.Count(x => StoreTrader.Carries(x.City, options, WeaponTiers.Rifle));
+    AssertTrue(rifleTowns > 0, "somebody sells rifles");
+    AssertTrue(rifleTowns < traders.Count, "and not everybody does");
+
+    // Las Vegas is the dearest counter in the country and carries the whole illegal end of the shelf.
+    var vegas = traders.Single(x => x.City == "Las Vegas");
+    AssertEqual(traders.Max(x => x.PricePercent), vegas.PricePercent);
+    foreach (var contraband in new[] { "poison", WeaponTiers.Shotgun, WeaponTiers.Smg, WeaponTiers.Rifle, "rides" })
+        AssertTrue(StoreTrader.Carries("Las Vegas", options, contraband),
+            $"Half-Deck Mo sells {contraband}");
+
+    // And the price a player is quoted is the town's, not a national one.
+    var economy = CreateEconomy(options);
+    var dear = new Player { City = "Las Vegas", Hideout = new Hideout() };
+    var cheap = new Player { City = "Chicago", Hideout = new Hideout() };
+    var here = economy.GetStore(dear).Single(x => x.Key == "beer").Price;
+    var there = economy.GetStore(cheap).Single(x => x.Key == "beer").Price;
+    AssertTrue(here > there, $"beer is {here} at Half-Deck Mo's and {there} at Auntie Vasska's");
+
+    // A line the counter has never carried is shut, and says so in the trader's name rather than in
+    // the language of standing - it is not a rung problem and telling somebody to go and earn rep
+    // would send them to do something that cannot help.
+    // Standing high enough that the rung is not the thing shutting it, or the refusal would be about
+    // rep and would send somebody to earn something that cannot help.
+    cheap.StoreRep = options.Store.Ladder()[^1].Rep;
+    var rifle = economy.GetStore(cheap).Single(x => x.Key == WeaponTiers.Rifle);
+    AssertTrue(rifle.Locked, "Auntie Vasska has never sold a rifle");
+    AssertTrue(rifle.LockedReason is not null && rifle.LockedReason.Contains("does not carry"),
+        $"and says so plainly: {rifle.LockedReason}");
+    AssertRuleError(() => economy.BuyStoreItem(cheap, WeaponTiers.Rifle, 1), "buying what the shop does not stock");
+
+    // Sold out is a different sentence again, and it is the one with a delivery behind it rather than a
+    // decision. A count of nought is a line they had and have run out of; an absent key is a line that
+    // did not come in today. The page and the refusal both have to tell those apart.
+    var soldOut = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["medicine"] = 0 };
+    var empty = economy.GetStore(cheap, soldOut).Single(x => x.Key == "medicine");
+    AssertTrue(empty.Locked, "a line they have sold out of is shut until the next delivery");
+    AssertTrue(empty.LockedReason is not null && empty.LockedReason.Contains("sold out"), empty.LockedReason ?? "no reason given");
+    AssertRuleError(() => economy.BuyStoreItem(cheap, "medicine", 1, soldOut), "buying a line the counter has sold out of");
+
+    // And the counter never sells more than it has, refused rather than quietly reduced.
+    var thin = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["medicine"] = 3 };
+    var few = economy.GetStore(cheap, thin).Single(x => x.Key == "medicine");
+    AssertEqual(3, few.Available);
+    AssertTrue(!few.Locked, "three left is still three for sale");
+    cheap.Cash = 10_000_000;
+    cheap.Hideout = new Hideout { Tier = 4, StorageLevel = 6 };
+    AssertRuleError(() => economy.BuyStoreItem(cheap, "medicine", 4, thin), "buying more than the counter has");
+    economy.BuyStoreItem(cheap, "medicine", 3, thin);
+    AssertEqual(3, cheap.Medicine);
+}
+
+// Asking the dealer what else is going: free once a cycle, then money and standing together, charged a
+// slot at a time so taking the whole hand is three draws rather than one bargain.
+static void AskingAgainIsFreeOnceAndThenItIsNot()
+{
+    var options = Resolve(new GameOptions());
+    using var world = NewJobWorld(options, new WalkingRandom());
+    var now = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+    var reroll = options.Store.Jobs.Reroll;
+
+    AssertTrue(reroll.Steps.Count > 1, "there is a ladder to climb");
+    AssertTrue(reroll.Step(0).IsFree, "the first one in a cycle is free");
+    for (var i = 1; i < reroll.Steps.Count; i++)
+        AssertTrue(reroll.Step(i).Cash > reroll.Step(i - 1).Cash && reroll.Step(i).Rep >= reroll.Step(i - 1).Rep,
+            "and every one after it costs more than the last");
+
+    var player = world.Trader("Asker");
+    player.Cash = 10_000_000;
+    // Well clear of a rung, so the rep this spends is rep it is allowed to spend.
+    player.StoreRep = options.Store.Ladder()[^1].Rep + 5_000;
+    world.Db.SaveChanges();
+
+    var before = world.Jobs.HandAsync(player, now, default).GetAwaiter().GetResult()
+        .Select(x => x.JobId).ToList();
+
+    // One slot, free, and only that slot moves.
+    var cash = player.Cash;
+    var rep = player.StoreRep;
+    var one = world.Jobs.RerollAsync(player, new[] { 1 }, now, default).GetAwaiter().GetResult();
+    AssertEqual(0L, one.Cash);
+    AssertEqual(0, one.Rep);
+    AssertEqual(cash, player.Cash);
+    AssertEqual(rep, player.StoreRep);
+    AssertEqual(1, player.JobRerollsUsed);
+    var after = one.Hand.Select(x => x.JobId).ToList();
+    AssertEqual(before[0], after[0]);
+    AssertEqual(before[2], after[2]);
+    // The slot keeps its kind, so a reroll cannot turn the bench's slot into another product job.
+    AssertEqual(TraderJobKind.Product, one.Hand.Single(x => x.Slot == 1).Job.Kind);
+
+    // Three at once is three draws, charged as the next three steps rather than as one press.
+    cash = player.Cash;
+    var expectedCash = reroll.Step(1).Cash + reroll.Step(2).Cash + reroll.Step(3).Cash;
+    var expectedRep = reroll.Step(1).Rep + reroll.Step(2).Rep + reroll.Step(3).Rep;
+    var all = world.Jobs.RerollAsync(player, new[] { 0, 1, 2 }, now, default).GetAwaiter().GetResult();
+    AssertEqual(expectedCash, all.Cash);
+    AssertEqual(expectedRep, all.Rep);
+    AssertEqual(cash - expectedCash, player.Cash);
+    AssertEqual(4, player.JobRerollsUsed);
+
+    // The clock turns the cycle over, and the free one comes back with it.
+    var later = now.AddHours(reroll.FreeEveryHours + 1);
+    var fresh = world.Jobs.RerollAsync(player, new[] { 2 }, later, default).GetAwaiter().GetResult();
+    AssertEqual(0L, fresh.Cash);
+    AssertEqual(1, player.JobRerollsUsed);
+
+    // A slot nobody is holding is not a slot.
+    AssertRuleError(() => world.Jobs.RerollAsync(player, new[] { 7 }, later, default).GetAwaiter().GetResult(),
+        "rerolling a slot that is not there");
+    AssertRuleError(() => world.Jobs.RerollAsync(player, Array.Empty<int>(), later, default).GetAwaiter().GetResult(),
+        "rerolling nothing");
+}
+
+// Two things a reroll must never do, both of which would be found out at the worst possible moment.
+static void AskingAgainNeverCostsARungOrAStartedJob()
+{
+    var options = Resolve(new GameOptions());
+    using var world = NewJobWorld(options, new WalkingRandom());
+    var now = new DateTime(2026, 9, 1, 9, 0, 0, DateTimeKind.Utc);
+
+    // Standing is spendable here and it is what the gun counter reads, so the one thing this cannot do
+    // is quietly shut a shelf somebody was already buying from. You spend what you carry above your
+    // rung and not a point more.
+    var rung = options.Store.Ladder().First(x => x.Rep > 0);
+    var player = world.Trader("Perched");
+    player.Cash = 10_000_000;
+    player.StoreRep = rung.Rep;
+    world.Db.SaveChanges();
+    world.Jobs.HandAsync(player, now, default).GetAwaiter().GetResult();
+
+    // The free one is fine - it costs no rep at all.
+    world.Jobs.RerollAsync(player, new[] { 0 }, now, default).GetAwaiter().GetResult();
+    AssertEqual((double)rung.Rep, player.StoreRep);
+    AssertEqual(rung.Level, StoreRep.LevelOf(player, options));
+
+    // The next one is not, and it is refused by name rather than taking the rung.
+    AssertRuleError(() => world.Jobs.RerollAsync(player, new[] { 0 }, now, default).GetAwaiter().GetResult(),
+        "spending rep somebody is standing on");
+    AssertEqual((double)rung.Rep, player.StoreRep);
+    AssertEqual(rung.Level, StoreRep.LevelOf(player, options));
+
+    // And a job with goods already in it cannot be swapped out at any price: the stock is gone, the
+    // premium is not paid until the last unit, and the slot would come back holding something else.
+    var flush = world.Trader("Started");
+    flush.Cash = 10_000_000;
+    flush.StoreRep = options.Store.Ladder()[^1].Rep + 5_000;
+    world.Db.SaveChanges();
+    var hand = world.Jobs.HandAsync(flush, now, default).GetAwaiter().GetResult();
+    var job = hand[0].Job;
+    TradeGoods.Add(flush, job.Good, 1);
+    world.Jobs.Deliver(job, flush, now, 1);
+    AssertTrue(job.DeliveredQuantity > 0 && job.Remaining > 0, "a job part way in");
+
+    AssertRuleError(() => world.Jobs.RerollAsync(flush, new[] { 0 }, now, default).GetAwaiter().GetResult(),
+        "rerolling a job somebody has goods sunk into");
+    // Refusing it costs nothing, including the count - a refused ask is not an ask.
+    AssertEqual(0, flush.JobRerollsUsed);
+}
+
 // The board asks for what a workshop turns out and nothing else, which is the whole design of it rather
 // than a detail. Asking for rifles would be asking for the one gun nobody makes; asking for beer would
 // be asking somebody to buy at ten and hand it back at eight, which is not a job, it is a fine.
 static void TheTraderOnlyAsksForWhatABenchCanMake()
 {
     var options = Resolve(new GameOptions());
-    using var world = NewWantedWorld(options);
-    var askable = world.Wanted.Askable();
+    using var world = NewJobWorld(options);
+    var askable = world.Jobs.SupplyGoods();
 
     AssertTrue(askable.Count > 0, "the trader should want something");
     AssertTrue(!askable.Contains(WeaponTiers.Rifle), "nobody makes a rifle, so nobody is asked for one");
@@ -8904,11 +9325,11 @@ static void AnOrderPaysOverTheShelfAndWellOverMaterials()
     // one good at the cheapest premium, which is the case least likely to break: the tight one is the
     // dearest premium on the good with the narrowest gap between materials and shelf, and a stub sitting
     // at the minimum would never once produce it.
-    using var world = NewWantedWorld(options, new WalkingRandom());
+    using var world = NewJobWorld(options, new WalkingRandom());
     var now = new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc);
-    var config = options.Store.Wanted;
+    var config = options.Store.Jobs;
 
-    var seen = new List<WantedOrder>();
+    var seen = new List<TraderJob>();
     var goods = new HashSet<string>(StringComparer.Ordinal);
     // Every town, so a city whose local prices move cannot break the rule somewhere nobody looks, and
     // enough refills that every good the trader can ask for actually gets asked for somewhere.
@@ -8916,7 +9337,7 @@ static void AnOrderPaysOverTheShelfAndWellOverMaterials()
         for (var refill = 0; refill < 8; refill++)
         {
             var at = now.AddMinutes(refill * (config.PostIntervalMinutes + 1));
-            foreach (var order in world.Wanted.BoardAsync(city, at, default).GetAwaiter().GetResult())
+            foreach (var order in world.Jobs.BookAsync(city, at, default).GetAwaiter().GetResult())
             {
                 if (seen.Any(x => ReferenceEquals(x, order))) continue;
                 seen.Add(order);
@@ -8926,7 +9347,7 @@ static void AnOrderPaysOverTheShelfAndWellOverMaterials()
 
     AssertTrue(seen.Count > 0, "the sweep should have produced a board");
     // The sweep is only worth anything if it actually reached every good on offer.
-    foreach (var askable in world.Wanted.Askable())
+    foreach (var askable in world.Jobs.SupplyGoods())
         AssertTrue(goods.Contains(askable), $"the sweep never once asked for {askable}, so it has not been checked");
 
     {
@@ -8939,63 +9360,77 @@ static void AnOrderPaysOverTheShelfAndWellOverMaterials()
 
             // Buying it at the counter and carrying it back has to leave something behind, or the board
             // is a list only people with a deep enough bench can read.
-            AssertTrue(order.PricePerUnit > order.ShopPricePerUnit,
-                $"{city} pays {order.PricePerUnit} for {order.Good} against a shelf price of {order.ShopPricePerUnit}, so fetching it is a loss");
+            AssertTrue(order.PricePerUnit > order.ReferencePricePerUnit,
+                $"{city} pays {order.PricePerUnit} for {order.Good} against a shelf price of {order.ReferencePricePerUnit}, so fetching it is a loss");
 
             // And making it always beats fetching it. This is the half that holds for everything on the
             // board, cheap goods included, because materials are always under the shelf price.
-            var fetched = order.PricePerUnit - order.ShopPricePerUnit;
+            var fetched = order.PricePerUnit - order.ReferencePricePerUnit;
             var made = order.PricePerUnit - materials;
             AssertTrue(made > fetched,
                 $"{city}: making {order.Good} clears {made} against {fetched} for fetching it");
 
-            // For the guns it has to beat it by a lot, because that is the thing actually being asked
-            // for here - the bench is worth building because it arms you and because it earns, and a
-            // gun is where both of those are true at once. The cheap made goods are not held to it:
-            // the gap between what a jug of moonshine costs and what it sells for is pennies wide, and
-            // a rule that insisted on a multiple of pennies would be arithmetic rather than design.
-            if (WeaponTiers.IsWeapon(order.Good))
+            // For a gun the dealer wants for their own shelf it has to beat it by a lot, because that
+            // is the thing actually being asked for here - a bench is worth building because it arms you
+            // and because it earns, and a gun is where both of those are true at once. The cheap made
+            // goods are not held to it: the gap between what a jug of moonshine costs and what it sells
+            // for is pennies wide, and a rule insisting on a multiple of pennies would be arithmetic
+            // rather than design.
+            //
+            // Nor is a town buyer wanting guns, and that is the merge showing through rather than a
+            // loosened rule. A buyer pays twenty to fifty-five percent over the counter because they
+            // need it by Thursday, and a premium that size is *supposed* to make fetching worth
+            // somebody's evening - that is the whole reason the board stopped being unreadable to
+            // anybody without a workshop. Making it still wins; it just no longer wins by a multiple,
+            // and insisting that it did would be insisting the dealer's small favour and a desperate
+            // buyer's rush job are the same offer.
+            if (WeaponTiers.IsWeapon(order.Good) && order.Kind == TraderJobKind.Supply)
                 AssertTrue(made > fetched * 3,
                     $"{city}: making {order.Good} clears {made} against {fetched} for fetching it, which is not worth a building");
 
-            AssertTrue(order.Rep >= config.MinRep, "even a small order is worth bending for");
-            AssertTrue(order.Rep <= config.MaxRep, "and no single order is most of a rung");
-            AssertTrue(order.Quantity > 0 && order.ExpiresAtUtc > order.PostedAtUtc, "an order is for something, by a time");
+            // The caps belong to the family the job came from: a favour for the dealer is worth more
+            // per dollar than a lead off them, and the two are held to their own numbers.
+            var family = config.Family(order.Kind);
+            AssertTrue(order.Rep >= family.MinRep, "even a small job is worth bending for");
+            AssertTrue(order.Rep <= family.MaxRep, "and no single job is most of a rung");
+            AssertTrue(order.Quantity > 0 && order.ExpiresAtUtc > order.PostedAtUtc, "a job is for something, by a time");
         }
     }
 }
 
-// Generated on read like contracts and ground, and paced for the reason contracts are: a board that
-// refills the instant anybody looks is a tap, and a rep tap is the whole ladder climbed in an afternoon.
-static void TheWantedBoardFillsAtTheTradersPace()
+// Generated on read like ground is, and paced: a book that refills the instant anybody looks is a tap,
+// and with a reroll button pointed at it a tap is the whole ladder climbed in an afternoon.
+static void TheBookFillsOnceAndThenAtTheTownsPace()
 {
     var options = Resolve(new GameOptions());
-    using var world = NewWantedWorld(options);
-    var config = options.Store.Wanted;
+    using var world = NewJobWorld(options);
+    var config = options.Store.Jobs;
     var now = new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc);
 
-    // A town nobody has visited fills on the first look, which is what makes a counter feel like it was
+    // A town nobody has visited fills on the first look, which is what makes a place feel like it was
     // there before the player was.
-    var first = world.Wanted.BoardAsync("Detroit", now, default).GetAwaiter().GetResult();
-    AssertEqual(config.OpenPerCity, first.Count);
+    var first = world.Jobs.BookAsync("Detroit", now, default).GetAwaiter().GetResult();
+    AssertTrue(first.Count >= config.BookMin, $"a first look fills the book, and this one came to {first.Count}");
+    var full = first.Count;
 
     // Clearing one does not summon another. This is the tap, and it stays shut.
     var taken = first[0];
     taken.FilledAtUtc = now;
     world.Db.SaveChanges();
 
-    var straightAfter = world.Wanted.BoardAsync("Detroit", now.AddMinutes(1), default).GetAwaiter().GetResult();
-    AssertEqual(config.OpenPerCity - 1, straightAfter.Count);
+    var straightAfter = world.Jobs.BookAsync("Detroit", now.AddMinutes(1), default).GetAwaiter().GetResult();
+    AssertEqual(full - 1, straightAfter.Count);
 
-    // And one arrives once the trader has had time to think of something, one at a time rather than all
-    // at once, so a stripped board recovers at their pace instead of the player's.
-    var later = world.Wanted
-        .BoardAsync("Detroit", now.AddMinutes(config.PostIntervalMinutes + 1), default)
+    // And one arrives once the town has had time to think of something, one at a time rather than all
+    // at once, so a stripped book recovers at the town's pace instead of the player's.
+    var later = world.Jobs
+        .BookAsync("Detroit", now.AddMinutes(config.PostIntervalMinutes + 1), default)
         .GetAwaiter().GetResult();
-    AssertEqual(config.OpenPerCity, later.Count);
+    AssertEqual(full, later.Count);
 
-    // A different town has its own trader and its own board, untouched by any of that.
-    AssertEqual(config.OpenPerCity, world.Wanted.BoardAsync("Miami", now, default).GetAwaiter().GetResult().Count);
+    // A different town keeps its own book, untouched by any of that.
+    var elsewhere = world.Jobs.BookAsync("Miami", now, default).GetAwaiter().GetResult();
+    AssertTrue(elsewhere.Count >= config.BookMin, "every town has its own");
 }
 
 // Cash per instalment, standing whole at the end. The same shape a contract's premium has, and there for
@@ -9004,17 +9439,22 @@ static void TheWantedBoardFillsAtTheTradersPace()
 static void StandingLandsWhenAnOrderIsFinished()
 {
     var options = Resolve(new GameOptions());
-    using var world = NewWantedWorld(options);
+    using var world = NewJobWorld(options);
     var now = new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc);
 
-    var order = world.Wanted.BoardAsync("Detroit", now, default).GetAwaiter().GetResult()[0];
+    var order = world.Jobs.BookAsync("Detroit", now, default).GetAwaiter().GetResult()[0];
     var maker = world.Trader("Maker");
     TradeGoods.Add(maker, order.Good, order.Quantity);
 
-    // Half of it. Paid for, and worth no standing at all.
+    // Half of it. Paid at the going rate, worth no standing, and not a penny of the premium.
+    //
+    // The dealer's own board used to pay its premium per instalment, which meant a part-filled order was
+    // already in profit and the thing worth finishing for could be farmed a unit at a time. One rule for
+    // both halves now: goods are paid for as they go in and the premium is never split.
     var half = Math.Max(1, order.Quantity / 2);
-    var part = world.Wanted.Deliver(order, maker, now, half);
-    AssertEqual(half * order.PricePerUnit, maker.Cash);
+    var part = world.Jobs.Deliver(order, maker, now, half);
+    AssertEqual(half * order.ReferencePricePerUnit, maker.Cash);
+    AssertEqual(0L, part.Premium);
     AssertEqual(0d, maker.StoreRep);
     AssertEqual(0, part.RepEarned);
     AssertTrue(!part.Completed, "half an order is not a finished one");
@@ -9023,10 +9463,10 @@ static void StandingLandsWhenAnOrderIsFinished()
     // Somebody else cannot walk in and take the half that is left.
     var stranger = world.Trader("Stranger");
     TradeGoods.Add(stranger, order.Good, order.Quantity);
-    AssertRuleError(() => world.Wanted.Deliver(order, stranger, now), "delivering into somebody else's order");
+    AssertRuleError(() => world.Jobs.Deliver(order, stranger, now), "delivering into somebody else's order");
 
     // The rest. The whole of the standing arrives at once.
-    var rest = world.Wanted.Deliver(order, maker, now);
+    var rest = world.Jobs.Deliver(order, maker, now);
     AssertTrue(rest.Completed, "the last unit finishes it");
     AssertEqual(order.Rep, rest.RepEarned);
     AssertEqual(order.Rep, (int)maker.StoreRep);
@@ -9035,18 +9475,18 @@ static void StandingLandsWhenAnOrderIsFinished()
     AssertTrue(rest.Summary.Contains("rep"), "the result says what it earned");
 
     // And it is finished for good, by anybody.
-    AssertRuleError(() => world.Wanted.Deliver(order, maker, now), "delivering into a finished order");
+    AssertRuleError(() => world.Jobs.Deliver(order, maker, now), "delivering into a finished order");
 
     // A trader in another town is not a counter you can reach from here.
-    var elsewhere = world.Wanted.BoardAsync("Miami", now, default).GetAwaiter().GetResult()[0];
+    var elsewhere = world.Jobs.BookAsync("Miami", now, default).GetAwaiter().GetResult()[0];
     var local = world.Trader("Local");
     TradeGoods.Add(local, elsewhere.Good, elsewhere.Quantity);
-    AssertRuleError(() => world.Wanted.Deliver(elsewhere, local, now), "delivering to a trader in another town");
+    AssertRuleError(() => world.Jobs.Deliver(elsewhere, local, now), "delivering to a trader in another town");
 
     // Nor is an order something you can fill out of an empty room.
     var broke = world.Trader("Broke");
-    var open = world.Wanted.BoardAsync("Detroit", now, default).GetAwaiter().GetResult().First(x => x.IsOpen(now));
-    AssertRuleError(() => world.Wanted.Deliver(open, broke, now), "handing over goods nobody has");
+    var open = world.Jobs.BookAsync("Detroit", now, default).GetAwaiter().GetResult().First(x => x.IsOpen(now));
+    AssertRuleError(() => world.Jobs.Deliver(open, broke, now), "handing over goods nobody has");
 }
 
 // A name in every town rather than one dealer in eight places at once, and one standing behind all of
@@ -10265,20 +10705,20 @@ sealed class FixedRandom(double value) : IGameRandom
     public double NextDouble() => value;
 }
 
-/// <summary>A database with a trader's board in it, and people to walk up to it.</summary>
-sealed class WantedWorld : IDisposable
+/// <summary>A database with a town's book of work in it, and people to walk up to it.</summary>
+sealed class JobWorld : IDisposable
 {
     internal GameDbContext Db { get; }
-    internal WantedService Wanted { get; }
+    internal TraderJobService Jobs { get; }
 
-    internal WantedWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot, IGameRandom? random = null)
+    internal JobWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot, IGameRandom? random = null)
     {
         // A store of its own per world, so one test can never read another's board.
         Db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
             .UseInMemoryDatabase($"wanted-{Guid.NewGuid()}")
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
-        Wanted = new WantedService(Db, snapshot, random ?? new MinimumRandom());
+        Jobs = new TraderJobService(Db, snapshot, random ?? new MinimumRandom());
     }
 
     /// <summary>Somebody standing in Detroit with a room big enough to hold what they are carrying.</summary>

@@ -122,10 +122,15 @@ public sealed class StoreOptions
     public List<StoreTraderOptions> Traders { get; set; } = [];
 
     /// <summary>What the trader asks people to bring them, and what it is worth.</summary>
-    public WantedOptions Wanted { get; set; } = new();
+    public TraderJobOptions Jobs { get; set; } = new();
+
+    /// <summary>What is on the counter, and the two clocks that put it there.</summary>
+    public TraderShelfOptions Shelf { get; set; } = new();
 
     public void ApplyDefaultsWhereEmpty()
     {
+        Jobs.Reroll.ApplyDefaultsWhereEmpty();
+
         if (Levels.Count == 0)
             Levels =
             [
@@ -202,14 +207,92 @@ public sealed class StoreOptions
                 // One to a town, fixed rather than rolled, so a player's dealer stays their dealer.
                 // Each works out of somewhere that is plainly the wrong end of that city, because the
                 // whole conceit is that this is the person the legitimate trade does not serve.
-                new StoreTraderOptions { City = "New York", Name = "Rat-Face Ochoa", Pitch = "a lock-up behind a shuttered laundromat", Patter = "You again. Good. The last man who came twice is dead, so." },
-                new StoreTraderOptions { City = "Miami", Name = "Duchess Oyelaran", Pitch = "the back of a boat hire that owns no boats", Patter = "Money first. Questions never. We will be friends." },
-                new StoreTraderOptions { City = "Detroit", Name = "Sallow Pete", Pitch = "a garage under the Fisher with the lights off", Patter = "Everything here fell off something. Do not ask off what." },
-                new StoreTraderOptions { City = "Chicago", Name = "Auntie Vasska", Pitch = "a butcher's cold room on the South Side", Patter = "You want it cheap, you want it now, or you want it clean. Pick two." },
-                new StoreTraderOptions { City = "Los Angeles", Name = "Sunny Delgado", Pitch = "a storage unit off Alameda with the number filed off", Patter = "I sell to everybody. That is not a promise, it is a warning." },
-                new StoreTraderOptions { City = "Las Vegas", Name = "Half-Deck Mo", Pitch = "a laundry chute at a motel that burned down twice", Patter = "House always wins. I am not the house. I am the man out back." },
-                new StoreTraderOptions { City = "Houston", Name = "Bayou Lacroix", Pitch = "a bait shop on the ship channel", Patter = "Ice chest on the left is fish. Do not open the one on the right." },
-                new StoreTraderOptions { City = "Atlanta", Name = "Miss Ondine", Pitch = "a hair shop on Bankhead that never has anybody in the chairs", Patter = "Sit down. Talk quiet. Pay before you stand up." }
+                // Price and breadth against the patter each of them already had, because the line
+                // under their name was doing this job in prose while the shelf sold the same nine things
+                // at the same price in every town in the country.
+                //
+                // The trade runs one way down the list: the cheap shops are the narrow ones. Nobody is
+                // strictly better than anybody, and which town you are standing in is finally a question
+                // about buying as well as selling. Rifles exist in three towns out of eight, so the top
+                // of the standing ladder is a thing you travel for.
+                //
+                // Every one of them carries condoms, beer and pistols whatever this says. See
+                // StoreTrader.Always.
+                new StoreTraderOptions
+                {
+                    City = "Chicago", Name = "Auntie Vasska",
+                    Pitch = "a butcher's cold room on the South Side",
+                    Patter = "You want it cheap, you want it now, or you want it clean. Pick two.",
+                    // She says it herself. The cheapest counter in the game and very nearly the emptiest.
+                    PricePercent = 84,
+                    Stocks = ["medicine"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "Detroit", Name = "Sallow Pete",
+                    Pitch = "a garage under the Fisher with the lights off",
+                    Patter = "Everything here fell off something. Do not ask off what.",
+                    // Wide and cheap because none of it was bought. No rifles: the one gun that does not
+                    // fall off the back of anything.
+                    PricePercent = 90,
+                    Stocks = ["medicine", "poison", "shotguns", "smgs", "rides"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "Atlanta", Name = "Miss Ondine",
+                    Pitch = "a hair shop on Bankhead that never has anybody in the chairs",
+                    Patter = "Sit down. Talk quiet. Pay before you stand up.",
+                    PricePercent = 95,
+                    Stocks = ["medicine", "shotguns"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "Houston", Name = "Bayou Lacroix",
+                    Pitch = "a bait shop on the ship channel",
+                    Patter = "Ice chest on the left is fish. Do not open the one on the right.",
+                    // What comes off a boat: the ugly end of the shelf, and no medicine at all.
+                    PricePercent = 96,
+                    Stocks = ["poison", "shotguns", "rides"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "New York", Name = "Rat-Face Ochoa",
+                    Pitch = "a lock-up behind a shuttered laundromat",
+                    Patter = "You again. Good. The last man who came twice is dead, so.",
+                    // The baseline the rest of the country is read against: the whole shelf, at exactly
+                    // the list price. Somewhere has to be par, and the biggest city is the one that can
+                    // get hold of anything without either wanting a favour for it or charging for the
+                    // trouble. Every other counter is a trade against this one.
+                    PricePercent = 100,
+                    Stocks = ["medicine", "poison", "shotguns", "smgs", "rifles", "rides"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "Miami", Name = "Duchess Oyelaran",
+                    Pitch = "the back of a boat hire that owns no boats",
+                    Patter = "Money first. Questions never. We will be friends.",
+                    PricePercent = 108,
+                    Stocks = ["medicine", "poison", "shotguns", "smgs", "rifles", "rides"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "Los Angeles", Name = "Sunny Delgado",
+                    Pitch = "a storage unit off Alameda with the number filed off",
+                    Patter = "I sell to everybody. That is not a promise, it is a warning.",
+                    PricePercent = 112,
+                    Stocks = ["medicine", "poison", "shotguns", "smgs", "rifles", "rides"],
+                },
+                new StoreTraderOptions
+                {
+                    City = "Las Vegas", Name = "Half-Deck Mo",
+                    Pitch = "a laundry chute at a motel that burned down twice",
+                    Patter = "House always wins. I am not the house. I am the man out back.",
+                    // The dearest counter in the country, and it carries the whole illegal end of the
+                    // shelf. A town built on people who will pay anything at four in the morning, run by
+                    // the man out the back of it - so everything is here and none of it is a bargain.
+                    PricePercent = 130,
+                    Stocks = ["medicine", "poison", "shotguns", "smgs", "rifles", "rides"],
+                }
             ];
     }
 
@@ -276,65 +359,3 @@ public sealed class StoreInvestmentOptions
     public int MinLevel { get; set; } = 1;
 }
 
-/// <summary>
-/// What the trader asks people to bring in, and what bringing it is worth.
-///
-/// Shaped on the contract board on purpose, because it is the same idea pointed the other way and the
-/// pacing problem is identical: a board that refills the moment anybody looks is a tap, and a tap undoes
-/// the clock the whole rep ladder is built on. Fill one and you wait for the next.
-/// </summary>
-public sealed class WantedOptions
-{
-    /// <summary>How many the trader has up at once. Enough to choose between, few enough to read.</summary>
-    public int OpenPerCity { get; set; } = 3;
-
-    /// <summary>
-    /// How long before they think of something else they need. Longer than the contract board's, because
-    /// what this pays is standing, and standing has a clock everywhere else it is earned.
-    /// </summary>
-    public int PostIntervalMinutes { get; set; } = 70;
-
-    public int MinQuantity { get; set; } = 6;
-    public int MaxQuantity { get; set; } = 30;
-
-    /// <summary>How long an order stands before the trader gives up on it.</summary>
-    public int MinHours { get; set; } = 4;
-    public int MaxHours { get; set; } = 14;
-
-    /// <summary>
-    /// What they pay over the shelf price, as a percentage.
-    ///
-    /// Over rather than under, which is the opposite of how a shop buys and the whole point of the
-    /// board. This is a favour being asked, not a wholesale desk: they are short, they need it by
-    /// Thursday, and they will cover somebody's trouble for going and getting it. Priced under the
-    /// shelf, the only people who could fill an order were the ones with a bench deep enough to make the
-    /// thing, and everybody else read a board they could never touch.
-    ///
-    /// So walking to the counter, buying twenty shotguns and carrying them back is worth doing. Barely -
-    /// six to sixteen percent of a shelf price is pocket money, and it is meant to be. What it buys is a
-    /// way in: the standing is the real payment, and now anybody with cash can start earning it while
-    /// the people who make their own take several times the margin for the same order.
-    /// </summary>
-    public int MinPremiumPercent { get; set; } = 6;
-    public int PremiumSpreadPercent { get; set; } = 10;
-
-    /// <summary>
-    /// Standing per dollar the finished order pays.
-    ///
-    /// Lower than it was, because what an order is worth stopped depending on having a workshop. When
-    /// the board could only be filled by making things, its pace was limited by production; now that it
-    /// can be filled out of the shop, its pace is limited by the board alone - three orders a town,
-    /// one more every seventy minutes - and every point of rep on it is reachable with cash.
-    /// </summary>
-    public double RepPerDollar { get; set; } = 0.008;
-
-    /// <summary>The least an order can be worth in standing, so a small one is still worth bending for.</summary>
-    public int MinRep { get; set; } = 60;
-
-    /// <summary>
-    /// The most, so a thirty-SMG order is not worth five of everything else. Rep scaling with the cash
-    /// value of an order is right in the small - a harder job is worth more - and wrong in the tail,
-    /// where the dearest good times the biggest quantity would be most of a rung in one delivery.
-    /// </summary>
-    public int MaxRep { get; set; } = 600;
-}

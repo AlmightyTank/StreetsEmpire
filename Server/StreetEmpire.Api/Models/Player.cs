@@ -146,6 +146,21 @@ public sealed class Player
     public DateTime? StoreInvestmentReadyAtUtc { get; set; }
 
     /// <summary>
+    /// How many jobs this player has asked the dealer to swap out in the current cycle.
+    ///
+    /// The count rather than the cost, because what a reroll charges is a ladder and the ladder is
+    /// configuration: storing the price would freeze last week's tuning into a player who has not
+    /// pressed the button since.
+    /// </summary>
+    public int JobRerollsUsed { get; set; }
+
+    /// <summary>
+    /// When the free one comes back and the count above goes to nothing. Null for somebody who has
+    /// never asked, which is the same thing as a cycle that has already turned over.
+    /// </summary>
+    public DateTime? JobRerollsResetAtUtc { get; set; }
+
+    /// <summary>
     /// Attention earned rather than held. Everything in this game is illegal, so being illegal is not
     /// what distinguishes anything: what differs is how much notice a thing draws. This is the part
     /// that accumulates from working, and it decays on its own, which is why laying low works.

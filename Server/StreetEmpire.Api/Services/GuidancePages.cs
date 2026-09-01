@@ -15,13 +15,31 @@ namespace StreetEmpire.Api.Services;
 /// </summary>
 public static class GuidancePages
 {
-    /// <summary>The crew: who you have, their morale, and hiring more of them.</summary>
+    /// <summary>The crew you have, and how they are doing.</summary>
     public const string Crew = "crew";
 
-    /// <summary>The building and its rooms. Lives under the crew page on the client.</summary>
+    /// <summary>Hiring and letting go.</summary>
+    public const string CrewHiring = "crew-hiring";
+
+    /// <summary>The cells, and what a bond costs.</summary>
+    public const string Arrests = "arrests";
+
+    /// <summary>The rooms of the building, and what upgrading one buys.</summary>
     public const string Hideout = "hideout";
 
-    /// <summary>The counter: buying, selling, and the bank.</summary>
+    /// <summary>Standing the crew down, which is what a house is for when nobody is working.</summary>
+    public const string Recovery = "recovery";
+
+    /// <summary>The bench: making, producing, and selling what came off it.</summary>
+    public const string Production = "production";
+
+    /// <summary>The counter, where stock is bought.</summary>
+    public const string Store = "store";
+
+    /// <summary>The safe and what is in it.</summary>
+    public const string Bank = "bank";
+
+    /// <summary>Buying and selling generally, when nothing more exact is meant.</summary>
     public const string Market = "market";
 
     /// <summary>Working a shift.</summary>
@@ -30,6 +48,13 @@ public static class GuidancePages
     /// <summary>Where somebody with nothing to do should be looking.</summary>
     public const string Overview = "overview";
 
-    /// <summary>Every destination guidance is allowed to name.</summary>
-    public static readonly string[] All = [Crew, Hideout, Market, Street, Overview];
+    /// <summary>
+    /// Every destination guidance is allowed to name.
+    ///
+    /// These got finer once the client could scroll to a panel rather than only open a page. A name
+    /// like "market" was honest while all it could promise was a page; against a panel it is a shrug,
+    /// and the two moves that used it for selling were pointing at a screen with nothing to sell on.
+    /// </summary>
+    public static readonly string[] All =
+        [Crew, CrewHiring, Arrests, Hideout, Recovery, Production, Store, Bank, Market, Street, Overview];
 }

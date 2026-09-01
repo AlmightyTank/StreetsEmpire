@@ -3,6 +3,124 @@
 ## 0.2.7
 
 ### Added
+- **A counter is a shop with stock in it now, and it runs on two clocks.** What a trader *sells* turns
+  over at **midnight Central** - a whole day of the same shop, so "Pete has SMGs this week" is a thing
+  worth knowing and worth travelling on. How many they *have* comes back **every two hours**, so a
+  counter somebody cleaned out is an inconvenience rather than a town shut for the evening. One clock
+  for both would be either boring or unusable.
+- Buying takes stock off the shelf. That is safe to do only because of the second clock: a two-hour
+  delivery means the worst anybody can do to a town is empty it until teatime.
+- **A trader's range is rolled, not fixed.** Their configured list is what they *can* get hold of; each
+  day decides what actually turned up, at three lines in four. A range that never moved was a price list
+  with a name on it - the reason to walk in on a Tuesday was the same as Monday's, which is no reason.
+  Rolled from the town, the line and the date rather than stored, so everybody in a city sees the same
+  shop on the same day and it cannot drift between two page loads.
+- **Depth is money rather than count.** A trader keeps roughly the same value in every line, which is
+  what makes a shelf read like a shop without a table anybody has to keep in step with the prices:
+  condoms by the hundred, rifles in ones. The last dozen of a line says so on the row.
+- **Condoms, beer and a pistol are always there and never run out**, at every counter, on every day.
+  Everything else about a shop is a choice you can travel around; this is the part that would just be a
+  town nobody can play in.
+- A shelf row can now be shut for four reasons and they are four different sentences: **a rung you have
+  not reached, a line this trader has never carried, a line that did not come in today, and one they
+  have sold out of.** Only the first says anything about standing, because only the first is something
+  to go and earn.
+- Finishing a job the dealer posted because **their own shelf was short puts the goods on that shelf** -
+  the line is on sale again before the next delivery would have brought it. The first time in this game
+  that the shop has needed something from the player rather than the other way round.
+
+### Changed
+- **New players start in New York.** They used to start in whichever town the alphabet put first, which
+  is not a decision anybody made - and now that shops differ, it dropped them at the narrowest counter
+  in the country on their first evening. New York is the one shop that carries the whole shelf at
+  exactly the list price, so the town somebody learns the game in is the one where nothing about the
+  counter is a special case yet.
+
+- **Every job on the board is your dealer's now, and each one says why.** Half of them used to be headed
+  with the name of a place - *Crenshaw Corner wants 44 moonshine* - sitting inside a panel headed *Sunny
+  Delgado*, with nothing anywhere saying what the two had to do with each other. The answer was always
+  the same one the game had already written down: a stranger does not hear about work in this town except
+  through the person who knows everybody. So the place is still named, as who your dealer is doing it
+  for, and the row leads with the reason instead.
+- Four reasons, and one of them has teeth. **They are out of it** and people keep asking. **They are
+  doing somebody a favour** - a place on the map you already fight over. **They promised it to somebody**
+  and came up short. Or **another town's counter is dry** and they said they would cover it, which is the
+  one that ties the map together: the Duchess is out of shotguns in Miami and your dealer said he would
+  see to it.
+- **Every town's counter is a different shop.** Nine lines at one price in eight towns meant where you
+  stood decided what your product *sold* for and nothing at all about what you could *buy* - half of a
+  place's character the map was not using. A trader is dear or they are cheap, and they carry a lot or
+  almost nothing, and those run in opposite directions: **the narrow shops are the cheap ones.**
+- Auntie Vasska in Chicago is the cheapest counter in the country at 84% and very nearly the emptiest,
+  which is what she has been saying under her name since the day she was written - *cheap, now, or clean,
+  pick two*. Sallow Pete is wide and cheap because none of it was bought. **Half-Deck Mo in Las Vegas
+  carries the whole illegal end of the shelf and charges 130% for it**: a town built on people who will
+  pay anything at four in the morning, run by the man out the back of it. New York is par - the whole
+  shelf at exactly list price, because somewhere has to be the price everything else is read against.
+- **Rifles exist in four towns out of eight**, so the top of the standing ladder is now something you
+  travel for rather than something that happens where you already are.
+- **Out of stock is what posts a job.** A line a counter carries can go dry, and while it is dry you
+  cannot buy it there - that is the job, and filling it is what puts the line back. The first time the
+  shop has needed anything from the player rather than the other way round. Rolled rather than driven by
+  what anybody buys: a shelf that emptied because somebody bought it out would be a shared resource
+  players could strip to shut a town, and a race on every purchase.
+- **Condoms, beer and a pistol are always on the shelf, everywhere, and never go dry.** Everything else
+  about a trader is a choice you can travel around; this is the part that would just be a town nobody can
+  play in. Pistols are on the floor because arming a thug is upkeep rather than an upgrade.
+- No more than two lines can be dark in a town at once. Six of the nine can go, so left uncapped a run of
+  gaps would regularly leave half a shop closed - which stops being a job to do and starts being a shop
+  that is shut.
+- A row on the shelf can now be shut for three different reasons and they are not interchangeable: **a
+  rung you have not reached, a line this trader has never carried, and a line they are out of.** Only the
+  first is something to go and earn, so only the first says anything about standing.
+
+- **The trader's board and the town's contracts are one board.** They had always been the same thing in
+  the fiction - nobody in this game reads a noticeboard, they hear about work through the person who
+  knows everybody - and two things in the code: two tables, two services, two refill clocks, two
+  premiums, two rep scales, and two panels stacked one above the other inside the same card, both headed
+  with the same dealer's name and both opening with a paragraph explaining the same arrangement. Six open
+  jobs under two headings, asking a player to learn a distinction that never had a use.
+- Now there is a **book and a hand**. A town keeps sixteen to eighteen jobs going at once - the same book
+  for everybody in that city, so a rival finishing one takes it off the board for the rest of the world -
+  and what you are shown is three of them. Every row names who is actually asking: your dealer wanting
+  stock for their own shelf, or a buyer somewhere on the map they are passing on to you.
+- **Three, for everybody.** Standing used to decide how many jobs you heard about, one at the bottom rung
+  and one more per rung after it. That is gone. What standing is worth on this board is being able to
+  afford to look again, which is a thing a player does rather than a number that happens to them.
+- **The hand is remembered**, which is the whole point of dealing one. A board that showed three at
+  random and forgot them would deal a different three every time the page refreshed, and nothing on it
+  would ever be worth going away and making something for. A slot only empties when its job is finished
+  or runs out of time, and refilling that is free and automatic - a job somebody else got to first should
+  not cost you money.
+- **One slot is always kept for the bench.** The first is the dealer's own work, the second a town
+  buyer's, the third whatever comes up. Left to chance, better than one evening in seven would deal three
+  product jobs to somebody whose whole question that evening is what to do with a workshop.
+- **You can ask what else is going.** One job, two, or the whole hand at once. The first ask in every six
+  hours is on the house, and after that it costs money and standing together - $5,000 and 25 rep, then
+  $15,000 and 75, then $45,000 and 225 - **charged per slot rather than per press**, so taking all three
+  is three draws and pays for three. Money alone would make it a rich player's button; standing alone
+  would tax the one number the whole shop is built around. Cheap once, silly by the fourth, which is the
+  shape a "look again" button should have.
+- **It can never cost you a rung.** Standing is spendable here and nowhere else, and standing is what the
+  gun counter reads - so the one thing this must not do is quietly shut a shelf somebody was already
+  buying from. You can spend what you carry above your current rung and not a point more, and an ask that
+  would drop you is refused by name: *that costs 25 rep and you are only 0 clear of Nobody.* Being told
+  beats finding out at the counter.
+- **A job you have already put goods into cannot be swapped away**, at any price. The stock is gone, the
+  premium is not paid until the last unit, and the slot would come back holding something else entirely.
+- Rep per job went **up about forty percent**, because two boards refilling on two clocks put more work
+  through a town than one book feeding a hand of three does, and the rate a player earns standing at
+  should not quietly have halved because two panels became one.
+- **One rule for instalments now**, and it is the contract board's. The dealer's own orders used to pay
+  their premium on every delivery, which meant a part-filled order was already in profit and the thing
+  worth finishing for could be farmed a unit at a time. Deliveries pay the going rate as they happen and
+  the premium is never split, so stopping half way leaves you exactly where selling those goods flat
+  would have - the only thing an abandoned job costs is the finish.
+- The old boards are **cleared rather than converted**. Both held short-lived generated work with a
+  deadline on it, so what goes is one evening of a board that refills itself - against a column-by-column
+  migration of two shapes into a third that would have to be right first time. Part-delivered jobs go
+  with them, which is the one real cost.
+
 - **The shop is somebody now.** Everything else in this game is a person - a pimp has a name and a
   loyalty, a contract's buyer is a place on the map you already fight over, a rival is an empire with a
   house - and the one counter every player opens every single day was furniture with a sign on it. Each
@@ -46,10 +164,21 @@
   Stacked on one page they read as one shop, which flattered none of them - the player market looked
   like more shelves, and a page of listings sat on top of the trader, the standing and the wanted board
   on what was already the longest page in the game.
-- **The city's own "Wanted in ..." board is off the shop page.** Two boards both headed Wanted, sat one
-  above the other, asking for different goods on different terms and paying in different currencies, is
-  a page that has to be read twice before either of them makes sense. The trader's is the one that keeps
-  the counter, and it is the one that stayed.
+- **The city's jobs come through the trader now.** They had been an unrelated board headed "Wanted in
+  Detroit", sat above a card headed with somebody's name, and nothing anywhere said the two had a person
+  in common. They are the same relationship seen from both ends: the wanted board is the trader wanting
+  something from you, and a job is the trader knowing somebody who does. Both sit in their card now,
+  under *Word from {name}*.
+- **Finishing one builds standing with them**, at well under what their own orders pay - bringing them
+  stock is a favour, and finishing a job they put you onto is doing yourself a favour with their
+  contact. It lands with the premium, on the last unit, so the two things worth finishing for arrive
+  together.
+- **And how many jobs you hear about is what standing buys.** These were never on a noticeboard:
+  somebody in town wants sixty of coke by Thursday, and the way a stranger hears about that is through
+  the person who knows everybody. A Nobody gets told about one; each rung is told about one more, up to
+  everything the town has going. Nothing is taken off anybody - the jobs still belong to the town, and a
+  rival clearing the board costs everyone the same work - and a job you have already put goods into is
+  always shown, whatever your standing says.
 - Cash arrives per instalment and **the standing arrives whole at the end**, the same shape a contract's
   premium has and for the same reason: goods handed over are paid for, so stopping half way leaves nobody
   out of pocket, and the thing actually worth finishing for cannot be farmed a unit at a time. A row says
@@ -278,6 +407,23 @@
   happened.
 
 ### Changed
+- **Anything that tells you where to go now takes you there, down to the panel.** A next move, a rung of
+  the opening ladder, an update's action link and every step of the walkthrough used to name a page, and
+  a page is not a place: Business is four screens tall and the crew page longer, so "bank your cash"
+  opened the right screen with the bank somewhere below the fold and nothing pointing at it. All three
+  parts of the address travel now - page, tab and panel - and the panel is scrolled to and ringed for a
+  couple of seconds when you land on it.
+- Which meant naming what each move is actually about, and two of them turned out to have been wrong for
+  longer than the panels they pointed at have existed. **Sell product** and **sell down, or lie low**
+  both opened Business, and nothing has been sold on Business since the bench took selling over - so the
+  one move the game makes when your store is full sent people to a screen with no way to sell anything
+  on it. Bail, hiring, a night off, medicine and the bank each land on their own panel now rather than
+  on whichever page happens to contain them.
+- The walkthrough and the guidance list stopped being two vocabularies for one question. Tour steps were
+  looked up under a marker only the tour used, so the two could disagree and only one was ever checked.
+  There is one set of marked panels now, and a rule test that fails when anything - a move, a rung, a
+  tour step - points at a panel nobody has marked.
+
 - **A shift stopped reporting the things that did not happen.** "Found 0 condoms, 0 beer, 2 weed, and 0
   coke" is one fact and three noises, and it was not a one-off: every list in the summary was gated on
   its total being positive and then printed all of its parts, so a single find named the three goods

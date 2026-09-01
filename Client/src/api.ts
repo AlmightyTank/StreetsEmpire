@@ -21,6 +21,8 @@ export type StoreItem = {
   minRepLevelName?: string | null
   locked: boolean
   lockedReason?: string | null
+  /** How many the counter has left, or null where nothing is counting. */
+  available?: number | null
 }
 
 /** Who runs the counter in this town, and what they say to you specifically. */
@@ -32,14 +34,26 @@ export type Trader = {
   greeting: string
 }
 
-export type WantedOrder = {
+/** One job on the dealer's board, whether it is theirs or a buyer's they are passing on. */
+export type TraderJob = {
   id: number
+  /** Which of the three slots it is sitting in. What a reroll names.  */
+  slot: number
+  kind: 'Supply' | 'Product'
+  /** Who is asking. Always the town's dealer - every job on the board is theirs. */
+  buyer: string
+  /** Why they are asking, in their own terms. "Covering Duchess Oyelaran in Miami". */
+  reason: string
   good: string
   goodLabel: string
   quantity: number
   pricePerUnit: number
-  shopPricePerUnit: number
+  /** What the same good goes for ordinarily, so the premium is legible. */
+  referencePricePerUnit: number
   payout: number
+  /** What finishing pays on top of the going rate. Never split across instalments. */
+  completionBonus: number
+  minimumPurityPercent?: number | null
   /** Standing for finishing it. Nothing until the last unit goes in. */
   rep: number
   minutesRemaining: number
@@ -49,14 +63,31 @@ export type WantedOrder = {
   canDeliverNow: number
   canForge: boolean
   workshopLevelNeeded?: number | null
+  /** True once you have goods in it, which also pins it in the hand. */
   yours: boolean
   blockedReason?: string | null
 }
 
-export type WantedBoard = {
+/** What asking the dealer to look again would cost right now. */
+export type TraderJobReroll = {
+  nextCash: number
+  nextRep: number
+  allCash: number
+  allRep: number
+  usedThisCycle: number
+  freeAgainAtUtc?: string | null
+  freeAgainSeconds: number
+  /** Rep above your rung: what can be spent here without losing it. */
+  spendableRep: number
+}
+
+export type TraderJobBoard = {
   city: string
   trader: Trader
-  orders: WantedOrder[]
+  jobs: TraderJob[]
+  /** How many are going in town altogether, so the page can say how deep the book is. */
+  openInTown: number
+  reroll: TraderJobReroll
 }
 
 export type StoreInvestment = {
@@ -122,30 +153,6 @@ export type CrewReport = {
   hqPartyHoeMoraleGain: number
   hqPartyThugMoraleGain: number
 }
-
-export type Contract = {
-  id: number
-  buyer: string
-  good: string
-  quantity: number
-  pricePerUnit: number
-  listPricePerUnit: number
-  payout: number
-  premiumOverFlat: number
-  minimumPurityPercent?: number | null
-  minutesRemaining: number
-  held: number
-  /** How much is already in, how much is still wanted, and what finishing pays on top. */
-  delivered: number
-  remaining: number
-  completionBonus: number
-  /** How much of the remainder you could hand over right now. */
-  canDeliverNow: number
-  /** True once you have started this one, so nobody else can. */
-  yours: boolean
-  blockedReason?: string | null
-}
-export type ContractBoard = { city: string, contracts: Contract[] }
 
 export type ChatChannelKey = 'Global' | 'City' | 'Alliance'
 
@@ -1743,7 +1750,6 @@ export const api = {
   arrests: () => request<ArrestBoard>('/api/game/arrests'),
   bailArrest: (id: number) => request<ActionResult>(`/api/game/arrests/${id}/bail`, { method: 'POST' }),
   abandonArrest: (id: number) => request<ActionResult>(`/api/game/arrests/${id}/abandon`, { method: 'POST' }),
-  contracts: () => request<ContractBoard>('/api/game/contracts'),
   chat: (channel: ChatChannelKey) =>
     request<ChatBoard>(`/api/game/chat?channel=${encodeURIComponent(channel)}`),
   say: (channel: ChatChannelKey, body: string) =>
@@ -1762,12 +1768,6 @@ export const api = {
     request<{ blocked: boolean }>('/api/game/chat/block', { method: 'POST', body: JSON.stringify({ playerId }) }),
   unblock: (playerId: string) =>
     request<{ blocked: boolean }>('/api/game/chat/unblock', { method: 'POST', body: JSON.stringify({ playerId }) }),
-  /** Hands over part of an order, or as much as will go when no amount is given. */
-  fillContract: (id: number, quantity?: number) =>
-    request<ActionResult>(`/api/game/contracts/${id}/fill`, {
-      method: 'POST',
-      body: JSON.stringify({ quantity: quantity ?? null }),
-    }),
   muleQuote: (city: string, good: string, hoes: number, cash: number) =>
     request<MuleQuote>('/api/game/mules/quote', { method: 'POST', body: JSON.stringify({ city, good, hoes, cash }) }),
   launchMule: (city: string, good: string, hoes: number, cash: number, pimpId: number) =>
@@ -1826,10 +1826,16 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ key }),
   }),
-  wanted: () => request<WantedBoard>('/api/game/store/wanted'),
-  fillWanted: (id: number, quantity?: number) => request<ActionResult>(`/api/game/store/wanted/${id}/fill`, {
+  jobs: () => request<TraderJobBoard>('/api/game/store/jobs'),
+  /** Hands over part of a job, or as much as will go when no amount is given. */
+  fillJob: (id: number, quantity?: number) => request<ActionResult>(`/api/game/store/jobs/${id}/fill`, {
     method: 'POST',
     body: JSON.stringify({ quantity: quantity ?? null }),
+  }),
+  /** Asks the dealer what else is going, for one slot, two, or the lot. */
+  rerollJobs: (slots: number[]) => request<ActionResult>('/api/game/store/jobs/reroll', {
+    method: 'POST',
+    body: JSON.stringify({ slots }),
   }),
   recoverMorale: (strategy: 'rest' | 'party') => request<ActionResult>('/api/game/hideout/recover', {
     method: 'POST',

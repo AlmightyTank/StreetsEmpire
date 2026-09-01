@@ -90,7 +90,7 @@ internal static class AuthEndpoints
             var account = new PlayerAccount { Username = username, IsAdmin = isFirstAccount };
             account.SetEmail(email);
             account.PasswordHash = passwordHasher.HashPassword(account, request.Password);
-            var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? cities.FirstOrDefault() ?? "New York", opts, pimps);
+            var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
 
             db.Accounts.Add(account);
             db.Players.Add(player);
@@ -371,7 +371,7 @@ internal static class AuthEndpoints
                 DiscordLinkedAtUtc = nowUtc,
             };
             account.SetEmail(email);
-            var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? cities.FirstOrDefault() ?? "New York", opts, pimps);
+            var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
             DiscordLinkRewards.GrantOnce(account, player, nowUtc);
 
             db.Accounts.Add(account);

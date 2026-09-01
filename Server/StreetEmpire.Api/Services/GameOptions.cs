@@ -223,11 +223,17 @@ public sealed class GameOptions
         // which meant one good night on the street put the best gun in the game in the hands of somebody
         // who had never been in the shop before. Now the price is what a gun costs and the standing is
         // whether anybody will sell you one.
+        // Materials are deliberately well under the shelf now - about two fifths of it, in line with what
+        // the other made goods have always cost against the thing they stand in for. Making a gun used to
+        // save you thirty percent, which is a discount rather than a trade, and it left the bench as
+        // something you built because you could not be sold the good ones rather than because it earned.
+        // The trader's board is what that change is for: an order filled out of the shop pays a little,
+        // and the same order filled off your own bench pays several times over.
         Weapons =
         [
-            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 2, MinRepLevel = 1 },
-            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 2_000, Firepower = 1.4, ForgeCost = 1_400, MinWorkshopLevel = 2, MinRepLevel = 2 },
-            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 5_000, Firepower = 1.9, ForgeCost = 3_500, MinWorkshopLevel = 4, MinRepLevel = 3 },
+            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 100, MinWorkshopLevel = 2, MinRepLevel = 1 },
+            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 2_000, Firepower = 1.4, ForgeCost = 800, MinWorkshopLevel = 2, MinRepLevel = 2 },
+            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 5_000, Firepower = 1.9, ForgeCost = 2_000, MinWorkshopLevel = 4, MinRepLevel = 3 },
             // No forge cost and no workshop level: a rifle is the one gun nobody makes in a back room,
             // which is what stops the workshop from eventually replacing the shop entirely - and what
             // makes the top rung of standing the only door to it. It is priced as the thing at the end

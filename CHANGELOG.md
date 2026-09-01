@@ -24,10 +24,25 @@
   detail. The bench was the way *around* the rep gate - a deep building instead of a reputation - and now
   it is also the way to earn one. It gives the forge a customer who is not another player, and it gives
   the three made goods nobody had a reason to make in bulk somewhere to go.
-- The trader pays under what they sell for, because that is what a shop is: between what a thing costs in
-  materials and what it costs on the shelf. Buying a shotgun for $2,000 to hand it straight back at
-  $1,670 is a loss anybody can see; forging one for $1,400 and selling it at $1,670 is a trade. Rifles
-  are never asked for, since nobody makes them, and nor is anything bought flat.
+- **The trader pays over the shelf price, not under it**, which is the opposite of how a shop buys and
+  the whole reason the board works for everybody. This is a favour being asked rather than a wholesale
+  desk: they are short, they need it by Thursday, and they will cover your trouble for going and getting
+  it. Priced under the shelf, the only people who could fill an order were the ones whose bench was
+  already deep enough to make the thing, and a new player's view of the shop's own board was a wall.
+  So walking to the counter, buying the twenty shotguns and carrying them back pays - six to sixteen
+  percent, which is pocket money, and it is meant to be. What it buys is a way in.
+- **And making them pays several times over**, which is the argument for owning a workshop rather than a
+  rule stopping anybody else from playing. Materials came down hard to make that true: a shotgun is $800
+  to forge against $2,000 on the shelf, where it used to be $1,400. Fetching a shotgun for the trader
+  clears about $120 a unit; forging one clears about $1,320. Rifles are never asked for, since nobody
+  makes them, and nor is anything bought flat.
+- The loop that would normally worry somebody - buy at the shop, sell to the shop, repeat - is shut by
+  the board rather than by the price. Three orders a town, a fixed quantity each, one more every seventy
+  minutes: what anybody can take out of it is capped no matter where the goods came from.
+- **The city's own "Wanted in ..." board is off the shop page.** Two boards both headed Wanted, sat one
+  above the other, asking for different goods on different terms and paying in different currencies, is
+  a page that has to be read twice before either of them makes sense. The trader's is the one that keeps
+  the counter, and it is the one that stayed.
 - Cash arrives per instalment and **the standing arrives whole at the end**, the same shape a contract's
   premium has and for the same reason: goods handed over are paid for, so stopping half way leaves nobody
   out of pocket, and the thing actually worth finishing for cannot be farmed a unit at a time. A row says
@@ -90,6 +105,11 @@
   cheaply and arming a small one well are different purchases. What the rise sharpens is the second
   half of that: a point of firepower is $250 on a pistol and $7,200 on a rifle, so trading up is still
   never the efficient way to spend money and still the only thing left to buy once the house is full.
+- **Forging got much cheaper against those prices** - $100 a pistol, $800 a shotgun, $2,000 an SMG,
+  against $170, $1,400 and $3,500. Making a gun used to save you about thirty percent, which is a
+  discount rather than a trade, and it left the workshop as a room you built because you could not be
+  sold the good ones rather than because it earned. It now costs about two fifths of the shelf price,
+  in line with what every other made good has always cost against the thing it stands in for.
 - **Nobody already playing loses a gun they could buy yesterday.** The upgrade reads each existing
   player's standing off the rack they already own, so a month of buying rifles is not answered by a
   release that quietly stops you replacing them. A season still takes it, with everything else an empire

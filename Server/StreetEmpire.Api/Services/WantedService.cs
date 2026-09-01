@@ -159,24 +159,33 @@ public sealed class WantedService(GameDbContext db, IOptionsSnapshot<GameOptions
     }
 
     /// <summary>
-    /// One order, priced off what it would cost to make rather than off what the shop charges.
+    /// One order, priced over the shelf rather than under it.
     ///
-    /// Materials are the floor and the shelf price is the ceiling, and the trader pays a share of the
-    /// way between. That single choice is what keeps the board honest in both directions: it can never
-    /// be filled profitably by buying the same goods off the shelf and turning round, and it always pays
-    /// somebody who made them. A good with no materials behind it never reaches here, because Askable
-    /// will not offer one.
+    /// Which is the opposite of how a shop buys, and deliberate. The board used to pay somewhere between
+    /// materials and the shelf price, so the only people who could fill an order at a profit were the
+    /// ones whose bench was already deep enough to make the thing - everybody else read a list they
+    /// could never touch, and a new player's view of the shop's own board was a wall.
+    ///
+    /// A premium fixes that without giving anything away. Walking to the counter, buying the twenty
+    /// shotguns and carrying them back pays: barely, on purpose, because the point of doing it that way
+    /// is the standing rather than the money. Making them instead pays several times over, and that gap
+    /// is now the whole argument for owning a workshop rather than a rule stopping anybody else from
+    /// playing.
+    ///
+    /// The loop that would normally worry somebody - buy at the shop, sell to the shop, repeat - is shut
+    /// by the board rather than by the price. Three orders a town, a fixed quantity each, one more every
+    /// seventy minutes: what a player can extract is capped no matter where the goods came from.
     /// </summary>
     private WantedOrder Compose(string city, IReadOnlyList<string> askable, DateTime nowUtc)
     {
         var config = _options.Store.Wanted;
         var good = askable[random.NextInclusive(0, askable.Count - 1)];
         var shelf = Math.Max(1, TradeGoods.ReferencePrice(_options, good, city));
-        var materials = Math.Clamp(MaterialsFor(good), 0, shelf - 1);
-        var share = Math.Clamp(config.PayShareOfMarginPercent, 0, 99) / 100.0;
-        // Strictly under the shelf and strictly over materials, whatever the tuning says, so neither
-        // "buy it and sell it straight back" nor "make it at a loss" can ever be the shape of an order.
-        var pay = Math.Clamp((long)Math.Round(materials + (shelf - materials) * share), materials + 1, shelf - 1);
+        var premium = 1 + Math.Max(0, config.MinPremiumPercent) / 100.0
+                        + random.NextInclusive(0, Math.Max(0, config.PremiumSpreadPercent)) / 100.0;
+        // Strictly over the shelf whatever the tuning says, so an order can never be one a player loses
+        // money finishing after they have already handed the goods over.
+        var pay = Math.Max(shelf + 1, (long)Math.Round(shelf * premium));
 
         var quantity = random.NextInclusive(Math.Max(1, config.MinQuantity), Math.Max(1, config.MaxQuantity));
         var payout = pay * quantity;
@@ -188,7 +197,10 @@ public sealed class WantedService(GameDbContext db, IOptionsSnapshot<GameOptions
             Quantity = quantity,
             PricePerUnit = pay,
             ShopPricePerUnit = shelf,
-            Rep = Math.Max(config.MinRep, (int)Math.Round(payout * Math.Max(0, config.RepPerDollar))),
+            Rep = Math.Clamp(
+                (int)Math.Round(payout * Math.Max(0, config.RepPerDollar)),
+                config.MinRep,
+                Math.Max(config.MinRep, config.MaxRep)),
             PostedAtUtc = nowUtc,
             ExpiresAtUtc = nowUtc.AddHours(random.NextInclusive(
                 Math.Max(1, config.MinHours),

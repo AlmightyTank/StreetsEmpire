@@ -302,22 +302,39 @@ public sealed class WantedOptions
     public int MaxHours { get; set; } = 14;
 
     /// <summary>
-    /// What they pay, as a share of the gap between what a thing costs to make and what the shop sells
-    /// it for. Under the shelf price always - they are a shop, and a trader who paid retail would be
-    /// somebody a player buys from and sells to in the same breath for free money.
+    /// What they pay over the shelf price, as a percentage.
     ///
-    /// At 45% of the way up from materials, a forged shotgun costs $1,400 and fetches $1,670. That is a
-    /// real margin on a real evening's work, and it is nothing at all beside what the standing is worth -
-    /// which is the correct order for those two things to matter in.
+    /// Over rather than under, which is the opposite of how a shop buys and the whole point of the
+    /// board. This is a favour being asked, not a wholesale desk: they are short, they need it by
+    /// Thursday, and they will cover somebody's trouble for going and getting it. Priced under the
+    /// shelf, the only people who could fill an order were the ones with a bench deep enough to make the
+    /// thing, and everybody else read a board they could never touch.
+    ///
+    /// So walking to the counter, buying twenty shotguns and carrying them back is worth doing. Barely -
+    /// six to sixteen percent of a shelf price is pocket money, and it is meant to be. What it buys is a
+    /// way in: the standing is the real payment, and now anybody with cash can start earning it while
+    /// the people who make their own take several times the margin for the same order.
     /// </summary>
-    public int PayShareOfMarginPercent { get; set; } = 45;
+    public int MinPremiumPercent { get; set; } = 6;
+    public int PremiumSpreadPercent { get; set; } = 10;
 
     /// <summary>
-    /// Standing per dollar the finished order pays. Three times what trading at the counter earns,
-    /// because this costs a bench, materials, turns and a trip rather than only money.
+    /// Standing per dollar the finished order pays.
+    ///
+    /// Lower than it was, because what an order is worth stopped depending on having a workshop. When
+    /// the board could only be filled by making things, its pace was limited by production; now that it
+    /// can be filled out of the shop, its pace is limited by the board alone - three orders a town,
+    /// one more every seventy minutes - and every point of rep on it is reachable with cash.
     /// </summary>
-    public double RepPerDollar { get; set; } = 0.03;
+    public double RepPerDollar { get; set; } = 0.008;
 
     /// <summary>The least an order can be worth in standing, so a small one is still worth bending for.</summary>
-    public int MinRep { get; set; } = 40;
+    public int MinRep { get; set; } = 60;
+
+    /// <summary>
+    /// The most, so a thirty-SMG order is not worth five of everything else. Rep scaling with the cash
+    /// value of an order is right in the small - a harder job is worth more - and wrong in the tail,
+    /// where the dearest good times the biggest quantity would be most of a rung in one delivery.
+    /// </summary>
+    public int MaxRep { get; set; } = 600;
 }

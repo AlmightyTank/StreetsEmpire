@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, WantedBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, WantedBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3958,7 +3958,6 @@ function MarketPage(ctx: PageContext) {
 function MarketCorePage(ctx: PageContext) {
   const { dashboard, busy, bankAmount, storeQty, setBankAmount, setStoreQty, act } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
-    <ContractsPanel dashboard={dashboard} busy={busy} act={act} />
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
       <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-5 gap-2 mt-3">
@@ -9893,89 +9892,6 @@ function CrewCard({ name, count, desc, tone, cap, trend }: { name: string, count
   </div>
 }
 
-/**
- * The people in town who want things.
- *
- * The game had one buyer before this - the city itself, fixed price, any amount, any hour - which is
- * a price list rather than a market. An order has a shape: an amount, a deadline, sometimes a
- * condition, which is what makes producing a decision rather than a routine.
- */
-function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
-  const [board, setBoard] = useState<ContractBoard | null>(null)
-  const [error, setError] = useState('')
-
-  const load = async () => {
-    try { setBoard(await api.contracts()); setError('') }
-    catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [dashboard.city, dashboard.weed, dashboard.coke, dashboard.weapons, dashboard.moonshine])
-
-  if (!board || board.contracts.length === 0) return null
-
-  const fill = async (id: number, quantity?: number) => {
-    await act(() => api.fillContract(id, quantity))
-    await load()
-  }
-
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Wanted in {board.city}</h2><span>Buyers with a deadline</span></div>
-    <p>
-      These pay over the counter price, but they want a set amount by a set time, and some of them care
-      what it is cut with. Selling flat is always there; this is what makes it worth choosing what to make.
-    </p>
-    <div className="d-grid gap-2 mt-3">
-      {board.contracts.map(c => {
-        const hours = Math.floor(c.minutesRemaining / 60)
-        const left = hours >= 1 ? `${hours}h left` : `${c.minutesRemaining}m left`
-        const started = c.delivered > 0
-        const finishes = c.canDeliverNow >= c.remaining && c.canDeliverNow > 0
-        return <div className={`room-row ${c.blockedReason ? '' : 'border-start-thick border-start-success'}`} key={c.id}>
-          <div className="room-copy">
-            <strong>{c.buyer}{c.yours && <span className="badge text-bg-primary">Yours</span>}</strong>
-            <span>
-              Wants {number.format(c.quantity)} {c.good}
-              {c.minimumPurityPercent ? `, at least ${c.minimumPurityPercent}% pure` : ''}
-              {' '}at {money.format(c.pricePerUnit)} each, against {money.format(c.listPricePerUnit)} over the counter.
-            </span>
-            <small>
-              {/* What a delivery pays now, and what is still waiting on the last of it - the premium
-                  never splits, so it is worth naming separately from the running rate. */}
-              {started
-                ? `${number.format(c.delivered)} in, ${number.format(c.remaining)} to go - ${money.format(c.completionBonus)} lands when it is finished`
-                : `${money.format(c.payout)} the lot, ${money.format(c.completionBonus)} more than selling it flat`}
-              {' - '}{left}
-              {c.blockedReason ? ` - ${c.blockedReason}` : ''}
-            </small>
-            {started && <div
-              className="progress contract-progress mt-1"
-              role="progressbar"
-              aria-label="Order filled"
-              aria-valuenow={Math.round((c.delivered / c.quantity) * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div className="progress-bar" style={{ width: `${Math.round((c.delivered / c.quantity) * 100)}%` }} />
-            </div>}
-          </div>
-          <em>{number.format(c.held)} held</em>
-          <div className="d-flex flex-wrap align-items-end gap-1 mt-1">
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={busy || c.blockedReason !== null || c.canDeliverNow <= 0}
-              onClick={() => void fill(c.id)}
-            >
-              {/* One button that says what it will actually do, rather than an amount box the player
-                  has to work out for themselves. Handing over everything that fits is the move in
-                  almost every case, because the room is the constraint the order is fighting. */}
-              {finishes ? 'Finish it' : `Run ${number.format(c.canDeliverNow)}`}
-            </button>
-          </div>
-        </div>
-      })}
-    </div>
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-  </section>
-}
 
 function InventoryCard({ name, count, note }: { name: string, count: number, note: string }) {
   return <div className="inventory-card d-grid gap-1 align-content-center border rounded bg-body-secondary p-3">

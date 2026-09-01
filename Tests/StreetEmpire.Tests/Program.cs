@@ -185,7 +185,7 @@ var tests = new (string Name, Action Test)[]
     ("standing takes a cut off every price in the shop", StandingTakesACutOffEveryPrice),
     ("an investment buys standing and shuts the counter", AnInvestmentBuysStandingAndShutsTheCounter),
     ("the trader only ever asks for what a bench can make", TheTraderOnlyAsksForWhatABenchCanMake),
-    ("an order pays under the shelf and over the materials", AnOrderPaysUnderTheShelfAndOverTheMaterials),
+    ("an order pays over the shelf and well over the materials", AnOrderPaysOverTheShelfAndWellOverMaterials),
     ("the wanted board fills once and then at the trader's pace", TheWantedBoardFillsAtTheTradersPace),
     ("standing lands when an order is finished, not before", StandingLandsWhenAnOrderIsFinished),
     ("every town has a trader, and one standing follows you", EveryTownHasATraderAndOneStandingFollowsYou),
@@ -3818,8 +3818,8 @@ static CrewWorld NewCrewWorld()
 /// A world with a trader's board in it. Rolled with the minimum random so every order is the same order
 /// twice: these tests are about the rules the board obeys, not about the spread it draws from.
 /// </summary>
-static WantedWorld NewWantedWorld(GameOptions options)
-    => new(options, Snapshot(options));
+static WantedWorld NewWantedWorld(GameOptions options, IGameRandom? random = null)
+    => new(options, Snapshot(options), random);
 
 static void ATransferMovesGoodsWithoutInventingAny()
 {
@@ -5114,14 +5114,15 @@ static void WorkshopMakesWeaponsUnderStorePrice()
         AssertTrue(tier.ForgeCost < tier.Price,
             $"{tier.Key} cost {tier.ForgeCost} to make against a store price of {tier.Price}");
 
-    // And a floor under the margin, which is the half of this that has no other guard. The counter's
-    // prices move - they were raised once standing started gating them - and materials that stayed
-    // where they were would quietly turn the bench from an alternative into the obvious answer, with
-    // nothing failing to say so. A bench that undercuts the shop by a third is a trade; one that
-    // undercuts it by nine tenths is the shop being closed.
+    // And a floor under the margin, loose rather than tight. It used to insist materials were at least
+    // half the shelf price, on the grounds that a bench which undercut the shop too far would close it.
+    // That was written when making a gun was only ever a way of arming yourself, and the trader's board
+    // has since given the bench a customer: the whole point of it is that an order filled off your own
+    // workshop pays several times what the same order filled out of the shop does. What still has to
+    // hold is that materials cost something at all, because a good that is free to make is a printer.
     foreach (var tier in options.Weapons.Where(x => x.CanForge))
-        AssertTrue(tier.ForgeCost * 2 >= tier.Price,
-            $"{tier.Key} costs {tier.ForgeCost} to make against a store price of {tier.Price}, which is not a trade");
+        AssertTrue(tier.ForgeCost * 5 >= tier.Price,
+            $"{tier.Key} costs {tier.ForgeCost} to make against a store price of {tier.Price}, which is close enough to free to be a printer");
 
     // And the rifle is the one gun nobody makes in a back room, which is what stops the workshop
     // from eventually replacing the shop.
@@ -8892,32 +8893,74 @@ static void TheTraderOnlyAsksForWhatABenchCanMake()
     }
 }
 
-// The pricing invariant, and it is the one thing here that has to hold in both directions at once: an
-// order that paid the shelf price or more would be free money for anybody with cash and no bench, and
-// one that paid under materials would be a job nobody who made the goods should take.
-static void AnOrderPaysUnderTheShelfAndOverTheMaterials()
+// The pricing invariant. An order has to pay over the shelf price, so that fetching it from the counter
+// is worth doing at all - barely, which is the point - and it has to pay far more than materials, so
+// that making it is worth several times as much. Both halves in one place because they are one decision:
+// the gap between them is the entire argument for owning a workshop.
+static void AnOrderPaysOverTheShelfAndWellOverMaterials()
 {
     var options = Resolve(new GameOptions());
-    using var world = NewWantedWorld(options);
+    // Walked rather than pinned to an end of the range. A board rolled entirely at its floor asks for
+    // one good at the cheapest premium, which is the case least likely to break: the tight one is the
+    // dearest premium on the good with the narrowest gap between materials and shelf, and a stub sitting
+    // at the minimum would never once produce it.
+    using var world = NewWantedWorld(options, new WalkingRandom());
     var now = new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc);
+    var config = options.Store.Wanted;
 
-    // Every town, so a city whose local prices move cannot quietly break the rule somewhere nobody looks.
+    var seen = new List<WantedOrder>();
+    var goods = new HashSet<string>(StringComparer.Ordinal);
+    // Every town, so a city whose local prices move cannot break the rule somewhere nobody looks, and
+    // enough refills that every good the trader can ask for actually gets asked for somewhere.
     foreach (var city in options.Territory.Cities())
-    {
-        var board = world.Wanted.BoardAsync(city, now, default).GetAwaiter().GetResult();
-        AssertTrue(board.Count > 0, $"{city} should have a board");
-
-        foreach (var order in board)
+        for (var refill = 0; refill < 8; refill++)
         {
+            var at = now.AddMinutes(refill * (config.PostIntervalMinutes + 1));
+            foreach (var order in world.Wanted.BoardAsync(city, at, default).GetAwaiter().GetResult())
+            {
+                if (seen.Any(x => ReferenceEquals(x, order))) continue;
+                seen.Add(order);
+                goods.Add(order.Good);
+            }
+        }
+
+    AssertTrue(seen.Count > 0, "the sweep should have produced a board");
+    // The sweep is only worth anything if it actually reached every good on offer.
+    foreach (var askable in world.Wanted.Askable())
+        AssertTrue(goods.Contains(askable), $"the sweep never once asked for {askable}, so it has not been checked");
+
+    {
+        foreach (var order in seen)
+        {
+            var city = order.City;
             var materials = options.WeaponTier(order.Good)?.ForgeCost
                 ?? options.Makeables.FirstOrDefault(x => x.Key == order.Good)?.MaterialCost
                 ?? 0;
-            AssertTrue(order.PricePerUnit < order.ShopPricePerUnit,
-                $"{city} pays {order.PricePerUnit} for {order.Good} against a shelf price of {order.ShopPricePerUnit}, so buying it back is free money");
-            AssertTrue(order.PricePerUnit > materials,
-                $"{city} pays {order.PricePerUnit} for {order.Good}, which costs {materials} to make");
-            AssertTrue(order.Rep >= options.Store.Wanted.MinRep, "even a small order is worth bending for");
-            AssertTrue(order.Quantity > 0 && order.ExpiresAtUtc > now, "an order is for something, by a time");
+
+            // Buying it at the counter and carrying it back has to leave something behind, or the board
+            // is a list only people with a deep enough bench can read.
+            AssertTrue(order.PricePerUnit > order.ShopPricePerUnit,
+                $"{city} pays {order.PricePerUnit} for {order.Good} against a shelf price of {order.ShopPricePerUnit}, so fetching it is a loss");
+
+            // And making it always beats fetching it. This is the half that holds for everything on the
+            // board, cheap goods included, because materials are always under the shelf price.
+            var fetched = order.PricePerUnit - order.ShopPricePerUnit;
+            var made = order.PricePerUnit - materials;
+            AssertTrue(made > fetched,
+                $"{city}: making {order.Good} clears {made} against {fetched} for fetching it");
+
+            // For the guns it has to beat it by a lot, because that is the thing actually being asked
+            // for here - the bench is worth building because it arms you and because it earns, and a
+            // gun is where both of those are true at once. The cheap made goods are not held to it:
+            // the gap between what a jug of moonshine costs and what it sells for is pennies wide, and
+            // a rule that insisted on a multiple of pennies would be arithmetic rather than design.
+            if (WeaponTiers.IsWeapon(order.Good))
+                AssertTrue(made > fetched * 3,
+                    $"{city}: making {order.Good} clears {made} against {fetched} for fetching it, which is not worth a building");
+
+            AssertTrue(order.Rep >= config.MinRep, "even a small order is worth bending for");
+            AssertTrue(order.Rep <= config.MaxRep, "and no single order is most of a rung");
+            AssertTrue(order.Quantity > 0 && order.ExpiresAtUtc > order.PostedAtUtc, "an order is for something, by a time");
         }
     }
 }
@@ -10228,14 +10271,14 @@ sealed class WantedWorld : IDisposable
     internal GameDbContext Db { get; }
     internal WantedService Wanted { get; }
 
-    internal WantedWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot)
+    internal WantedWorld(GameOptions options, IOptionsSnapshot<GameOptions> snapshot, IGameRandom? random = null)
     {
         // A store of its own per world, so one test can never read another's board.
         Db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
             .UseInMemoryDatabase($"wanted-{Guid.NewGuid()}")
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
-        Wanted = new WantedService(Db, snapshot, new MinimumRandom());
+        Wanted = new WantedService(Db, snapshot, random ?? new MinimumRandom());
     }
 
     /// <summary>Somebody standing in Detroit with a room big enough to hold what they are carrying.</summary>
@@ -10255,6 +10298,24 @@ sealed class WantedWorld : IDisposable
     }
 
     public void Dispose() => Db.Dispose();
+}
+
+/// <summary>
+/// Every roll a different one, walking the range rather than sitting at an end of it.
+///
+/// The minimum stub is right for tests that want the same answer twice, and wrong for the ones about a
+/// rule holding across a spread: a board rolled entirely at its floor only ever asks for one good at the
+/// cheapest premium, which is the case least likely to break. This walks, so a sweep sees every good,
+/// every quantity and both ends of the premium.
+/// </summary>
+sealed class WalkingRandom : IGameRandom
+{
+    private int _calls;
+
+    public int NextInclusive(int min, int max)
+        => max <= min ? min : min + _calls++ % (max - min + 1);
+
+    public double NextDouble() => (_calls++ % 10) / 10.0;
 }
 
 sealed class MinimumRandom : IGameRandom

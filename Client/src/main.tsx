@@ -267,7 +267,7 @@ const tourSteps: { page: AppPage, tab?: string, target: string, title: string, b
   },
   {
     page: 'market',
-    tab: 'trade',
+    tab: 'flea',
     target: 'market-trade',
     title: 'Buying and selling',
     body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
@@ -3929,14 +3929,18 @@ function SectionTabs<T extends string>({ label, tabs, active, onActive }: {
   </nav>
 }
 
-const MARKET_TABS = ['trade', 'routes'] as const
+const MARKET_TABS = ['trade', 'flea', 'routes'] as const
 
 /**
- * Buying and selling, and the crew sent out to do it somewhere else.
+ * Buying and selling, in three places that are not the same place.
  *
- * The hideout and the craft queue were here and are on Crew now. Both cost money, which was the whole
- * of what they had in common with a shop - a room decides how big a crew you can feed and how much of a
- * shift you can supply, and the bench arms the thugs. See CrewPage.
+ * Shop is the town's trader: one person, fixed prices, always open, and the standing you have with them.
+ * Flea is everybody else, at whatever they feel like asking. Runs is sending crew to buy somewhere the
+ * price is better. They were one page and read as one counter, which flattered none of them - the flea
+ * market looked like more shelves, and it buried the trader under a page of listings.
+ *
+ * The hideout and the craft queue were here too and are on Crew now. Both cost money, which was the
+ * whole of what they had in common with a shop. See CrewPage.
  */
 function MarketPage(ctx: PageContext) {
   const [tab, setTab] = useRouteTab('market', MARKET_TABS, 'trade')
@@ -3947,11 +3951,28 @@ function MarketPage(ctx: PageContext) {
       onActive={setTab}
       tabs={[
         { key: 'trade', label: 'Shop' },
+        { key: 'flea', label: 'Flea' },
         { key: 'routes', label: 'Runs' },
       ]}
     />
     {tab === 'trade' && <MarketCorePage {...ctx} />}
+    {tab === 'flea' && <FleaPage {...ctx} />}
     {tab === 'routes' && <MulePage {...ctx} />}
+  </div>
+}
+
+/**
+ * The flea market: what other players are selling, and putting your own stock up beside it.
+ *
+ * Its own tab because it is a different counter to the shop's. The Shop tab is one trader with fixed
+ * prices who is always there; this is everybody else, at whatever they feel like asking, and whether
+ * there is anything worth having on it depends entirely on who has been listing lately. Sat under the
+ * shop it read as more of the shop, which is the one thing it is not - and it pushed the trader, the
+ * standing and the wanted board down a page that was already the longest in the game.
+ */
+function FleaPage(ctx: PageContext) {
+  return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
+    <TradingPanel {...ctx} />
   </div>
 }
 
@@ -3985,8 +4006,6 @@ function MarketCorePage(ctx: PageContext) {
         />
       </div>
     </section>
-
-    <TradingPanel {...ctx} />
 
     <TraderWantedPanel dashboard={dashboard} busy={busy} act={act} />
     <StoreStandingPanel dashboard={dashboard} busy={busy} act={act} />

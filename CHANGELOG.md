@@ -39,6 +39,13 @@
 - The loop that would normally worry somebody - buy at the shop, sell to the shop, repeat - is shut by
   the board rather than by the price. Three orders a town, a fixed quantity each, one more every seventy
   minutes: what anybody can take out of it is capped no matter where the goods came from.
+- **The player market has a tab of its own, called Flea.** Business is three counters that are not the
+  same counter: *Shop* is the town's trader, one person at fixed prices who is always there, with the
+  standing you have built with them; *Flea* is everybody else, at whatever they feel like asking, worth
+  opening only when somebody has been listing lately; *Runs* is sending crew to buy where it is cheaper.
+  Stacked on one page they read as one shop, which flattered none of them - the player market looked
+  like more shelves, and a page of listings sat on top of the trader, the standing and the wanted board
+  on what was already the longest page in the game.
 - **The city's own "Wanted in ..." board is off the shop page.** Two boards both headed Wanted, sat one
   above the other, asking for different goods on different terms and paying in different currencies, is
   a page that has to be read twice before either of them makes sense. The trader's is the one that keeps

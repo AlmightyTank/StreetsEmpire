@@ -3,6 +3,37 @@
 ## 0.2.7
 
 ### Added
+- **The shop is somebody now.** Everything else in this game is a person - a pimp has a name and a
+  loyalty, a contract's buyer is a place on the map you already fight over, a rival is an empire with a
+  house - and the one counter every player opens every single day was furniture with a sign on it. Each
+  town has its own trader out of its own slum: Rat-Face Ochoa behind a shuttered laundromat in New York,
+  Duchess Oyelaran at the back of a boat hire that owns no boats in Miami, Sallow Pete under the Fisher
+  with the lights off. Fixed to the town rather than rolled, so your dealer is your dealer for as long as
+  you play there.
+- They greet you by your standing, and the line changes when the rung does - which is the cheapest way
+  there is to tell somebody their rep moved. At Nobody they keep one hand under the counter. At the top
+  they do not look up: *"Whatever you need. It is already yours."* One trader per town and one standing
+  behind all of them, because the trade is small and word travels.
+- **A Wanted board at the counter, and it is how rep is really earned.** Rep could be bought and it could
+  be trickled out of ordinary restocking, and neither of those is *playing* - one is a wallet, the other
+  is a side effect. The trader wants twelve shotguns by Thursday, and finishing the order is worth real
+  standing. Posted per town, three at a time, one more every seventy minutes or so, exactly the way the
+  city's own contract board works: a board that refilled the moment anybody looked would be a rep tap and
+  the ladder would be climbed in an afternoon.
+- **They only ever ask for what a workshop turns out**, and that is the whole design of it rather than a
+  detail. The bench was the way *around* the rep gate - a deep building instead of a reputation - and now
+  it is also the way to earn one. It gives the forge a customer who is not another player, and it gives
+  the three made goods nobody had a reason to make in bulk somewhere to go.
+- The trader pays under what they sell for, because that is what a shop is: between what a thing costs in
+  materials and what it costs on the shelf. Buying a shotgun for $2,000 to hand it straight back at
+  $1,670 is a loss anybody can see; forging one for $1,400 and selling it at $1,670 is a trade. Rifles
+  are never asked for, since nobody makes them, and nor is anything bought flat.
+- Cash arrives per instalment and **the standing arrives whole at the end**, the same shape a contract's
+  premium has and for the same reason: goods handed over are paid for, so stopping half way leaves nobody
+  out of pocket, and the thing actually worth finishing for cannot be farmed a unit at a time. A row says
+  outright whether your bench can make what is being asked for, and which workshop level it needs when it
+  cannot yet.
+
 - **The store keeps a reputation now, and the gun rack is behind it.** Money was the only thing the
   counter ever asked for, which made the rack a price list rather than a ladder: a player who came into
   $5,500 on their first evening walked out holding the best weapon in the game, and a player who had

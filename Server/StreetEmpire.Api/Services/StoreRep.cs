@@ -118,6 +118,12 @@ public sealed class StoreOptions
     /// <summary>Money for standing and nothing else. Empty for the same reason.</summary>
     public List<StoreInvestmentOptions> Investments { get; set; } = [];
 
+    /// <summary>Who runs the counter in each town. Empty for the same reason.</summary>
+    public List<StoreTraderOptions> Traders { get; set; } = [];
+
+    /// <summary>What the trader asks people to bring them, and what it is worth.</summary>
+    public WantedOptions Wanted { get; set; } = new();
+
     public void ApplyDefaultsWhereEmpty()
     {
         if (Levels.Count == 0)
@@ -189,6 +195,22 @@ public sealed class StoreOptions
                     Description = "What the street around the shop costs to keep quiet. The counter stays open because you paid for it."
                 }
             ];
+
+        if (Traders.Count == 0)
+            Traders =
+            [
+                // One to a town, fixed rather than rolled, so a player's dealer stays their dealer.
+                // Each works out of somewhere that is plainly the wrong end of that city, because the
+                // whole conceit is that this is the person the legitimate trade does not serve.
+                new StoreTraderOptions { City = "New York", Name = "Rat-Face Ochoa", Pitch = "a lock-up behind a shuttered laundromat", Patter = "You again. Good. The last man who came twice is dead, so." },
+                new StoreTraderOptions { City = "Miami", Name = "Duchess Oyelaran", Pitch = "the back of a boat hire that owns no boats", Patter = "Money first. Questions never. We will be friends." },
+                new StoreTraderOptions { City = "Detroit", Name = "Sallow Pete", Pitch = "a garage under the Fisher with the lights off", Patter = "Everything here fell off something. Do not ask off what." },
+                new StoreTraderOptions { City = "Chicago", Name = "Auntie Vasska", Pitch = "a butcher's cold room on the South Side", Patter = "You want it cheap, you want it now, or you want it clean. Pick two." },
+                new StoreTraderOptions { City = "Los Angeles", Name = "Sunny Delgado", Pitch = "a storage unit off Alameda with the number filed off", Patter = "I sell to everybody. That is not a promise, it is a warning." },
+                new StoreTraderOptions { City = "Las Vegas", Name = "Half-Deck Mo", Pitch = "a laundry chute at a motel that burned down twice", Patter = "House always wins. I am not the house. I am the man out back." },
+                new StoreTraderOptions { City = "Houston", Name = "Bayou Lacroix", Pitch = "a bait shop on the ship channel", Patter = "Ice chest on the left is fish. Do not open the one on the right." },
+                new StoreTraderOptions { City = "Atlanta", Name = "Miss Ondine", Pitch = "a hair shop on Bankhead that never has anybody in the chairs", Patter = "Sit down. Talk quiet. Pay before you stand up." }
+            ];
     }
 
     /// <summary>The ladder in order, lowest first, whatever order configuration listed it in.</summary>
@@ -252,4 +274,50 @@ public sealed class StoreInvestmentOptions
 
     /// <summary>The rung you have to already stand on to be offered it.</summary>
     public int MinLevel { get; set; } = 1;
+}
+
+/// <summary>
+/// What the trader asks people to bring in, and what bringing it is worth.
+///
+/// Shaped on the contract board on purpose, because it is the same idea pointed the other way and the
+/// pacing problem is identical: a board that refills the moment anybody looks is a tap, and a tap undoes
+/// the clock the whole rep ladder is built on. Fill one and you wait for the next.
+/// </summary>
+public sealed class WantedOptions
+{
+    /// <summary>How many the trader has up at once. Enough to choose between, few enough to read.</summary>
+    public int OpenPerCity { get; set; } = 3;
+
+    /// <summary>
+    /// How long before they think of something else they need. Longer than the contract board's, because
+    /// what this pays is standing, and standing has a clock everywhere else it is earned.
+    /// </summary>
+    public int PostIntervalMinutes { get; set; } = 70;
+
+    public int MinQuantity { get; set; } = 6;
+    public int MaxQuantity { get; set; } = 30;
+
+    /// <summary>How long an order stands before the trader gives up on it.</summary>
+    public int MinHours { get; set; } = 4;
+    public int MaxHours { get; set; } = 14;
+
+    /// <summary>
+    /// What they pay, as a share of the gap between what a thing costs to make and what the shop sells
+    /// it for. Under the shelf price always - they are a shop, and a trader who paid retail would be
+    /// somebody a player buys from and sells to in the same breath for free money.
+    ///
+    /// At 45% of the way up from materials, a forged shotgun costs $1,400 and fetches $1,670. That is a
+    /// real margin on a real evening's work, and it is nothing at all beside what the standing is worth -
+    /// which is the correct order for those two things to matter in.
+    /// </summary>
+    public int PayShareOfMarginPercent { get; set; } = 45;
+
+    /// <summary>
+    /// Standing per dollar the finished order pays. Three times what trading at the counter earns,
+    /// because this costs a bench, materials, turns and a trip rather than only money.
+    /// </summary>
+    public double RepPerDollar { get; set; } = 0.03;
+
+    /// <summary>The least an order can be worth in standing, so a small one is still worth bending for.</summary>
+    public int MinRep { get; set; } = 40;
 }

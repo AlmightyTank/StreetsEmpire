@@ -69,6 +69,7 @@ builder.Services.AddScoped<MuleService>();
 builder.Services.AddScoped<ArrestService>();
 builder.Services.AddScoped<GuidanceService>();
 builder.Services.AddScoped<ContractService>();
+builder.Services.AddScoped<WantedService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 // Singleton for the same reason the standings gate is: it exists to stop every request in a busy
@@ -560,6 +561,7 @@ app.MapMarketEndpoints();
 app.MapMuleEndpoints();
 app.MapArrestEndpoints();
 app.MapContractEndpoints();
+app.MapWantedEndpoints();
 app.MapChatEndpoints();
 app.MapAdminPlayerEndpoints();
 app.MapAdminOpsEndpoints();

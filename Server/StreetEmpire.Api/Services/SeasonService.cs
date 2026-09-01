@@ -258,6 +258,9 @@ public sealed class SeasonService(
         db.MuleRuns.RemoveRange(await db.MuleRuns.ToListAsync(ct));
         db.WorkshopCrafts.RemoveRange(await db.WorkshopCrafts.ToListAsync(ct));
         db.Contracts.RemoveRange(await db.Contracts.ToListAsync(ct));
+        // The trader's board goes with the city's, for the same reason and one more: standing is reset
+        // with the empire, so an order left standing would be paying last season's rep into this one.
+        db.WantedOrders.RemoveRange(await db.WantedOrders.ToListAsync(ct));
         db.Arrests.RemoveRange(await db.Arrests.ToListAsync(ct));
         db.HideoutIntel.RemoveRange(await db.HideoutIntel.ToListAsync(ct));
         db.StandingSnapshots.RemoveRange(await db.StandingSnapshots.ToListAsync(ct));

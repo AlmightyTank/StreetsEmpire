@@ -23,6 +23,42 @@ export type StoreItem = {
   lockedReason?: string | null
 }
 
+/** Who runs the counter in this town, and what they say to you specifically. */
+export type Trader = {
+  name: string
+  city: string
+  pitch: string
+  patter: string
+  greeting: string
+}
+
+export type WantedOrder = {
+  id: number
+  good: string
+  goodLabel: string
+  quantity: number
+  pricePerUnit: number
+  shopPricePerUnit: number
+  payout: number
+  /** Standing for finishing it. Nothing until the last unit goes in. */
+  rep: number
+  minutesRemaining: number
+  held: number
+  delivered: number
+  remaining: number
+  canDeliverNow: number
+  canForge: boolean
+  workshopLevelNeeded?: number | null
+  yours: boolean
+  blockedReason?: string | null
+}
+
+export type WantedBoard = {
+  city: string
+  trader: Trader
+  orders: WantedOrder[]
+}
+
 export type StoreInvestment = {
   key: string
   name: string
@@ -38,6 +74,7 @@ export type StoreInvestment = {
 
 /** Where you stand with the counter, what it is worth, and what money would buy of it now. */
 export type StoreRep = {
+  trader: Trader
   rep: number
   level: number
   levelName: string
@@ -1788,6 +1825,11 @@ export const api = {
   investInStore: (key: string) => request<ActionResult>('/api/game/store/invest', {
     method: 'POST',
     body: JSON.stringify({ key }),
+  }),
+  wanted: () => request<WantedBoard>('/api/game/store/wanted'),
+  fillWanted: (id: number, quantity?: number) => request<ActionResult>(`/api/game/store/wanted/${id}/fill`, {
+    method: 'POST',
+    body: JSON.stringify({ quantity: quantity ?? null }),
   }),
   recoverMorale: (strategy: 'rest' | 'party') => request<ActionResult>('/api/game/hideout/recover', {
     method: 'POST',

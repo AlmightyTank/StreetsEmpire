@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, WantedBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3989,11 +3989,14 @@ function MarketCorePage(ctx: PageContext) {
 
     <TradingPanel {...ctx} />
 
+    <TraderWantedPanel dashboard={dashboard} busy={busy} act={act} />
     <StoreStandingPanel dashboard={dashboard} busy={busy} act={act} />
 
     <section className="card p-3 gcol-full">
+      {/* The counter is somebody's, and says so. "Street Store" was a sign on a building nobody
+          worked in - which is a strange thing for the one room every player opens every day. */}
       <div className="panel-title">
-        <h2>Street Store</h2>
+        <h2>{dashboard.storeRep.trader.name}'s Counter</h2>
         <span>Cash on hand only{dashboard.storeRep.discountPercent > 0 ? `, ${dashboard.storeRep.discountPercent}% off as ${dashboard.storeRep.levelName}` : ''}</span>
       </div>
       <div className="d-grid gtc-1 gtc-xl-3 gap-2 mt-3">
@@ -4065,12 +4068,116 @@ function MarketCorePage(ctx: PageContext) {
  * that hands over nothing at all, and a row that takes $250,000 and gives back no object belongs
  * nowhere near the row that sells beer.
  */
+/**
+ * What the trader is short of this week, and what bringing it in is worth.
+ *
+ * Sits above the standing panel rather than below it because it is the answer to the question that
+ * panel raises. Standing could be bought and it could be trickled out of restocking, and neither of
+ * those is playing: one is a wallet and the other is a side effect. This is the one you do.
+ *
+ * Loaded on its own like the contract board is, and for the same reason - the list tops itself up when
+ * somebody reads it, so hanging it off the dashboard would post orders in every town in the game for a
+ * player who never goes near a shop.
+ */
+function TraderWantedPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const [board, setBoard] = useState<WantedBoard | null>(null)
+
+  const load = async () => {
+    try { setBoard(await api.wanted()) }
+    catch { setBoard(null) }
+  }
+  // Re-read on the things that change what a row can do: the town you are in, and the stock you hold.
+  useEffect(() => { void load() }, [dashboard.city, dashboard.weapons, dashboard.moonshine, dashboard.cut, dashboard.medicine, dashboard.poison])
+
+  const trader = board?.trader ?? dashboard.storeRep.trader
+  const fill = async (id: number) => {
+    await act(() => api.fillWanted(id))
+    await load()
+  }
+
+  return <section className="card p-3 gcol-full">
+    <div className="panel-title">
+      <h2>{trader.name}</h2>
+      <span>{trader.pitch}</span>
+    </div>
+    {/* Their line, then the line meant for you. The second one changes when your standing does, which
+        is the cheapest way there is to tell somebody a rung moved. */}
+    <p className="m-0 mt-2 text-body-secondary fst-italic">&ldquo;{trader.patter}&rdquo;</p>
+    <p className="m-0 mt-2 text-body">{dashboard.storeRep.trader.greeting}</p>
+
+    {board !== null && board.orders.length > 0 && <>
+      <p className="m-0 mt-3 text-body-secondary">
+        They only ever ask for what a workshop turns out, and they pay under what they sell it for -
+        buying it off the shelf to hand straight back is a loss, and making it is a trade. The cash comes
+        as you deliver; the rep lands when the order is finished.
+      </p>
+      <div className="d-grid gap-2 mt-3">
+        {board.orders.map(order => {
+          const hours = Math.floor(order.minutesRemaining / 60)
+          const left = hours >= 1 ? `${hours}h left` : `${order.minutesRemaining}m left`
+          const started = order.delivered > 0
+          const finishes = order.canDeliverNow >= order.remaining && order.canDeliverNow > 0
+          return <div className={`room-row ${order.blockedReason ? '' : 'border-start-thick border-start-success'}`} key={order.id}>
+            <div className="room-copy">
+              <strong>
+                {number.format(order.quantity)} {order.goodLabel.toLowerCase()}
+                {order.yours && <span className="badge text-bg-primary">Yours</span>}
+                <span className="badge text-bg-secondary">+{number.format(order.rep)} rep</span>
+              </strong>
+              <span>
+                {money.format(order.pricePerUnit)} each, against {money.format(order.shopPricePerUnit)} on the shelf.
+                {/* The bench is the point of the board, so a row says outright whether yours can make
+                    this - an order for SMGs is a different proposition at workshop 4 than at none. */}
+                {order.workshopLevelNeeded
+                  ? ` Your workshop cannot make these yet - that needs level ${order.workshopLevelNeeded}.`
+                  : order.canForge ? ' Your workshop makes these.' : ''}
+              </span>
+              <small>
+                {started
+                  ? `${number.format(order.delivered)} in, ${number.format(order.remaining)} to go - ${number.format(order.rep)} rep lands when it is finished`
+                  : `${money.format(order.payout)} the lot, and ${number.format(order.rep)} rep for finishing`}
+                {' - '}{left}
+                {order.blockedReason ? ` - ${order.blockedReason}` : ''}
+              </small>
+              {started && <div
+                className="progress contract-progress mt-1"
+                role="progressbar"
+                aria-label="Order filled"
+                aria-valuenow={Math.round((order.delivered / order.quantity) * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div className="progress-bar" style={{ width: `${Math.round((order.delivered / order.quantity) * 100)}%` }} />
+              </div>}
+            </div>
+            <em>{number.format(order.held)} held</em>
+            <div className="d-flex flex-wrap align-items-end gap-1 mt-1">
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={busy || !!order.blockedReason || order.canDeliverNow <= 0}
+                onClick={() => void fill(order.id)}
+              >
+                {order.canDeliverNow <= 0
+                  ? 'Nothing to hand over'
+                  : finishes ? `Finish it (${number.format(order.canDeliverNow)})` : `Hand over ${number.format(order.canDeliverNow)}`}
+              </button>
+            </div>
+          </div>
+        })}
+      </div>
+    </>}
+    {board !== null && board.orders.length === 0 && <p className="m-0 mt-3 text-body-tertiary">
+      Nothing wanted right now. They ask for something new every hour or so.
+    </p>}
+  </section>
+}
+
 function StoreStandingPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
   const rep = dashboard.storeRep
   const waiting = rep.investmentReadySeconds > 0 && rep.investmentReadyAtUtc
   return <section className="card p-3 gcol-full">
     <div className="panel-title">
-      <h2>Standing</h2>
+      <h2>Standing with {rep.trader.name}</h2>
       <span>{number.format(rep.rep)} rep, {money.format(rep.dollarsPerRep)} of trade a point</span>
     </div>
 

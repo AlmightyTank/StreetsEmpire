@@ -787,6 +787,8 @@ public sealed record StoreItemResponse(
 /// money would buy of it right now.
 /// </summary>
 public sealed record StoreRepResponse(
+    /// <summary>Whose counter this is. The shop stopped being furniture the day it got a name.</summary>
+    TraderResponse Trader,
     int Rep,
     int Level,
     string LevelName,
@@ -818,6 +820,47 @@ public sealed record StoreInvestmentResponse(
     string? LockedReason);
 
 public sealed record StoreInvestRequest(string? Key);
+
+/// <summary>Who runs the counter in this town, and what they say to this player.</summary>
+public sealed record TraderResponse(
+    string Name,
+    string City,
+    /// <summary>Where they trade from, in a phrase.</summary>
+    string Pitch,
+    /// <summary>One line in their own voice.</summary>
+    string Patter,
+    /// <summary>What they say to you specifically, which is what standing feels like before it unlocks anything.</summary>
+    string Greeting);
+
+public sealed record WantedOrderResponse(
+    long Id,
+    string Good,
+    string GoodLabel,
+    int Quantity,
+    long PricePerUnit,
+    /// <summary>What the shop charges for the same thing, so the trader's cut is legible.</summary>
+    long ShopPricePerUnit,
+    long Payout,
+    /// <summary>Standing for finishing it. Nothing until the last unit goes in.</summary>
+    int Rep,
+    int MinutesRemaining,
+    int Held,
+    int Delivered,
+    int Remaining,
+    /// <summary>How much of the remainder this player could hand over right now.</summary>
+    int CanDeliverNow,
+    /// <summary>Whether the bench could make this, and the room it needs when it cannot yet.</summary>
+    bool CanForge,
+    int? WorkshopLevelNeeded,
+    bool Yours,
+    string? BlockedReason);
+
+public sealed record WantedBoardResponse(
+    string City,
+    TraderResponse Trader,
+    IReadOnlyList<WantedOrderResponse> Orders);
+
+public sealed record DeliverWantedRequest(int? Quantity);
 
 public sealed record ActivityResponse(
     long Id,

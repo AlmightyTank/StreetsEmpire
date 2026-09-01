@@ -26,6 +26,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Arrest> Arrests => Set<Arrest>();
     public DbSet<WorkshopCraft> WorkshopCrafts => Set<WorkshopCraft>();
     public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<WantedOrder> WantedOrders => Set<WantedOrder>();
     public DbSet<Alliance> Alliances => Set<Alliance>();
     public DbSet<AllianceRequest> AllianceRequests => Set<AllianceRequest>();
     public DbSet<AlliancePact> AlliancePacts => Set<AlliancePact>();
@@ -422,6 +423,25 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .OnDelete(DeleteBehavior.SetNull);
             // A claim outlives its claimant too, and the order simply frees up: SetNull hands a
             // half-delivered order back to the town rather than leaving it locked to a deleted player.
+            entity.HasOne(x => x.ClaimedBy)
+                .WithMany()
+                .HasForeignKey(x => x.ClaimedById)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<WantedOrder>(entity =>
+        {
+            // Shaped like the contract board because it is read exactly the same way: what is open in
+            // this town, oldest deadline first.
+            entity.HasIndex(x => new { x.City, x.FilledAtUtc, x.ExpiresAtUtc });
+            entity.Property(x => x.City).HasMaxLength(64);
+            entity.Property(x => x.Good).HasMaxLength(16);
+            entity.HasOne(x => x.FilledBy)
+                .WithMany()
+                .HasForeignKey(x => x.FilledById)
+                .OnDelete(DeleteBehavior.SetNull);
+            // A claim outlives its claimant and the order simply frees up, rather than staying locked
+            // to somebody who no longer exists.
             entity.HasOne(x => x.ClaimedBy)
                 .WithMany()
                 .HasForeignKey(x => x.ClaimedById)

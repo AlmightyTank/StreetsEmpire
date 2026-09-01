@@ -271,8 +271,15 @@ internal static class ResponseMappers
         var span = Math.Max(1, (next?.Rep ?? (int)rep) - floor);
         var ready = StoreRep.InvestmentReadyAt(player, nowUtc);
         var level = here?.Level ?? 1;
+        var trader = StoreTrader.For(player.City, options);
 
         return new StoreRepResponse(
+            new TraderResponse(
+                trader.Name,
+                player.City,
+                trader.Pitch,
+                trader.Patter,
+                StoreTrader.Greeting(player, options)),
             (int)Math.Floor(rep),
             level,
             here?.Name ?? "Nobody",

@@ -19,6 +19,7 @@ public sealed class Alliance
     public long Id { get; set; }
 
     public string Name { get; set; } = string.Empty;
+    public DateTime? NameChangedAtUtc { get; set; }
 
     /// <summary>What the founder wants said on the recruitment board.</summary>
     public string? Motto { get; set; }

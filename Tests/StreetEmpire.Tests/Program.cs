@@ -167,6 +167,7 @@ var tests = new (string Name, Action Test)[]
     ("the pool amplifies a crew rather than replacing one", PoolAmplifiesRatherThanReplaces),
     ("rank decides what a member may do, and to whom", RanksGatePowersAndPeople),
     ("a boss draws the lines every other rank runs under", BossDrawsTheLines),
+    ("a crew name change has its own clock", ACrewNameChangeHasItsOwnClock),
     ("the door is one setting with three states", TheDoorIsOneSettingWithThreeStates),
     ("medicine is the answer to an infestation", MedicineAnswersAnInfestation),
     ("poison is what an infestation costs to throw", PoisonIsWhatAnInfestationCosts),
@@ -224,6 +225,7 @@ var tests = new (string Name, Action Test)[]
     ("the last way back in cannot be removed, by either route", TheLastWayBackInCannotBeRemoved),
     ("a lost race is an answer, not a stack trace", ALostRaceIsAnAnswerNotAStackTrace),
     ("one box on the form is one name underneath", OneBoxOnTheFormIsOneNameUnderneath),
+    ("a player name change has its own clock", APlayerNameChangeHasItsOwnClock),
     ("money is dollars wherever the server happens to be", MoneyIsDollarsWhereverTheServerIs),
     ("a pact opens the door a crew-only setting closes", APactOpensTheDoorACrewOnlySettingCloses),
     ("a war has a clock, a score and a pot", AWarHasAClockAScoreAndAPot),
@@ -3799,6 +3801,20 @@ static void OneBoxOnTheFormIsOneNameUnderneath()
     var (apart, asked) = AccountSetup.PlayerNameFor("kim", "  Kimberly  ");
     AssertEqual("Kimberly", apart);
     AssertTrue(!asked, "a player name that was asked for is not the username");
+}
+
+static void APlayerNameChangeHasItsOwnClock()
+{
+    var changed = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc);
+    var ready = AccountEndpoints.NextNameChangeAt(changed, TimeSpan.FromHours(24));
+
+    AssertEqual(changed.AddHours(24), ready);
+    AssertEqual(3600, AccountEndpoints.SecondsUntil(ready, changed.AddHours(23)));
+    AssertEqual(0, AccountEndpoints.SecondsUntil(ready, changed.AddHours(25)));
+    AssertEqual(null, AccountEndpoints.NextNameChangeAt(null, TimeSpan.FromHours(24)));
+
+    var player = new Player { Name = "First", NameChangedAtUtc = changed };
+    AssertEqual(changed, player.NameChangedAtUtc);
 }
 
 static void OneInboxCanOnlyBeAimedAtSoManyTimes()
@@ -10926,6 +10942,45 @@ static void BossDrawsTheLines()
     AssertEqual(4, AllianceRanks.All.Select(AllianceRanks.Label).Distinct().Count());
     AssertTrue(AllianceRanks.All.Length < options.Alliances.MaxMembers,
         "fewer rungs than members, or the ladder is longer than the crew standing on it");
+}
+
+static void ACrewNameChangeHasItsOwnClock()
+{
+    var options = Resolve(new GameOptions());
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var service = new AllianceService(db, Snapshot(options), CreateEconomy(options));
+    var bossId = Guid.NewGuid();
+    var crew = new Alliance { Id = 1, Name = "The Table", FounderId = bossId, DuesPercent = 5 };
+    var boss = new Player
+    {
+        Id = bossId,
+        AccountId = bossId,
+        Account = new PlayerAccount { Id = bossId, Username = "boss", PasswordHash = "hashed" },
+        Name = "Boss",
+        City = "Chicago",
+        Alliance = crew,
+        AllianceId = crew.Id,
+        AllianceRank = AllianceRank.Boss
+    };
+
+    crew.Members.Add(boss);
+    db.Alliances.Add(crew);
+    db.Players.Add(boss);
+    db.SaveChanges();
+
+    var renamed = service.UpdateAsync(boss, null, null, null, null, "New Table", default).GetAwaiter().GetResult();
+    AssertEqual("New Table", renamed.Name);
+    AssertTrue(renamed.NameChangedAtUtc is not null, "renaming a crew should start the clock");
+    AssertRuleError(
+        () => service.UpdateAsync(boss, null, null, null, null, "Another Table", default).GetAwaiter().GetResult(),
+        "renaming a crew before its clock is ready");
+
+    crew.NameChangedAtUtc = DateTime.UtcNow.AddHours(-25);
+    db.SaveChanges();
+    service.UpdateAsync(boss, null, null, null, null, "Late Table", default).GetAwaiter().GetResult();
+    AssertEqual("Late Table", crew.Name);
 }
 
 /// <summary>A member of a crew at a given rank, for the rules that are about standing rather than money.</summary>

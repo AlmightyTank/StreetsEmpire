@@ -1354,12 +1354,15 @@ function App() {
   const [tickSeconds, setTickSeconds] = useState(0)
   const [catchUp, setCatchUp] = useState<CatchUp | null>(null)
   const [dismissedUpdateStamp, setDismissedUpdateStamp] = useState<string | null>(null)
+  const refreshInFlight = useRef(false)
 
   /**
    * Full reload after an action. `pollMissions` instead re-reads only what a running mission changes,
    * which keeps the 5-second poll from re-fetching the leaderboard, world news and target list.
    */
   const refresh = async () => {
+    if (refreshInFlight.current) return
+    refreshInFlight.current = true
     try {
       const [d, l, news, targetList, combatHistory, missions] = await Promise.all([api.dashboard(), api.leaderboard(), api.worldNews(), api.targets(targetQuery), api.combatLogs(), api.combatMissions()])
       // The town's own ladder, fetched alongside the global one so switching between them is instant.
@@ -1387,6 +1390,8 @@ function App() {
         setSelectedTarget(null)
         setActivePage('overview')
       } else setError((e as Error).message)
+    } finally {
+      refreshInFlight.current = false
     }
   }
 
@@ -1407,6 +1412,20 @@ function App() {
   }
 
   useEffect(() => { void refresh() }, [])
+  useEffect(() => {
+    if (!dashboard) return
+    const refreshVisible = () => {
+      if (document.visibilityState !== 'hidden') void refresh()
+    }
+    const offRoute = onRouteChange(refreshVisible)
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      offRoute()
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
+  }, [dashboard?.playerId, targetQuery])
   useEffect(() => {
     /*
       The far end of the Discord round trip.
@@ -1962,6 +1981,7 @@ function App() {
     weaponCoverage,
     managementCapacity,
     setActivePage,
+    refresh,
     openTour: () => setTourStep(0),
     setTargetQuery,
     setStreetTurns,
@@ -2134,6 +2154,7 @@ type PageContext = {
   weaponCoverage: number
   managementCapacity: number
   setActivePage: GoTo
+  refresh: () => Promise<void>
   setTargetQuery: (query: string) => void
   setStreetTurns: (turns: number) => void
   setAutoBuySupplies: (enabled: boolean) => void
@@ -8654,11 +8675,40 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
   busy: boolean
   onSave: (fn: () => Promise<ActionResult>) => void
 }) {
+  const [crewName, setCrewName] = useState(crew.name)
   const [dues, setDues] = useState(crew.duesPercent)
   const [door, setDoor] = useState<AllianceDoorKey>(crew.door)
+  useEffect(() => {
+    setCrewName(crew.name)
+    setDues(crew.duesPercent)
+    setDoor(crew.door)
+  }, [crew.id, crew.name, crew.duesPercent, crew.door])
+  const nameTicker = useSecondsTicker(!!crew.nameChangeReadyAtUtc)
+  const nameCooldownSeconds = secondsUntil(crew.nameChangeReadyAtUtc, nameTicker)
 
   return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
     <strong className="d-block mb-1 text-primary small">Who may do what</strong>
+    <div className="d-grid gtc-1 gtc-md-3 gap-2">
+      <label className="field">Crew name
+        <input className="form-control" maxLength={32} value={crewName} onChange={event => setCrewName(event.target.value)} />
+        <small className="form-text">
+          {nameCooldownSeconds > 0
+            ? `You can change it again in ${timeUntil(crew.nameChangeReadyAtUtc!)}.`
+            : 'Shown on the crew board, rosters, wars, and season tables.'}
+        </small>
+      </label>
+      <Button
+        className="btn btn-secondary btn-sm align-self-end"
+        blocked={firstReason(
+          busy && BUSY,
+          crewName.trim().length < 3 && 'A crew name needs at least three characters.',
+          crewName.trim().length > 32 && 'A crew name must be 32 characters or less.',
+          crewName.trim() === crew.name && 'That is already the crew name.',
+          nameCooldownSeconds > 0 && `You can change the crew name again in ${timeUntil(crew.nameChangeReadyAtUtc!)}.`,
+        )}
+        onClick={() => onSave(() => api.updateAlliance({ name: crewName.trim() }))}
+      >Rename</Button>
+    </div>
     <div className="alliance-powers d-grid gap-2">
       {board.powers.map(power => <label className="d-grid gap-1 small" key={power.power}>
         <span>{power.label}</span>
@@ -9606,9 +9656,14 @@ function AccountPage(ctx: PageContext) {
   /** Every control on the tab does the same three things, so they say so once. */
   const run = async (fn: () => Promise<Account | void>, said: string, form?: HTMLFormElement) => {
     setBusy(true); setError(''); setNotice('')
+    const previousPlayerName = account?.playerName
     try {
       const updated = await fn()
-      if (updated) { setAccount(updated); setEmail(updated.email ?? '') }
+      if (updated) {
+        setAccount(updated)
+        setEmail(updated.email ?? '')
+        if (previousPlayerName && updated.playerName !== previousPlayerName) await ctx.refresh()
+      }
       setNotice(said)
       // Passwords typed into a form have no business surviving the submit that used them.
       form?.querySelectorAll('input[type=password]').forEach(input => { (input as HTMLInputElement).value = '' })
@@ -9697,6 +9752,7 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
   // Two names, and they are not the same thing, which is worth saying plainly on the page where both
   // appear: one is how you sign in and nobody else sees it, the other is what the whole city calls you.
   const open = waysIn(account)
+  const [playerName, setPlayerName] = useState(account.playerName)
   const [tagline, setTagline] = useState(account.profileTagline ?? '')
   const [pronouns, setPronouns] = useState(account.profilePronouns ?? '')
   const [location, setLocation] = useState(account.profileLocation ?? '')
@@ -9708,14 +9764,23 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
   const [held, setHeld] = useState<PlayerTitle[]>([])
   useEffect(() => { void (async () => { try { setHeld(await api.myTitles()) } catch { /* the picker just stays empty */ } })() }, [])
   useEffect(() => {
+    setPlayerName(account.playerName)
     setTagline(account.profileTagline ?? '')
     setPronouns(account.profilePronouns ?? '')
     setLocation(account.profileLocation ?? '')
     setAccent(account.profileAccent)
     setBanner(account.profileBanner)
     setFeatured(account.featuredTitle ?? '')
-  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent,
+  }, [account.playerName, account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent,
       account.profileBanner, account.featuredTitle])
+
+  const nameTicker = useSecondsTicker(!!account.playerNameChangeReadyAtUtc)
+  const nameCooldownSeconds = secondsUntil(account.playerNameChangeReadyAtUtc, nameTicker)
+
+  const savePlayerName = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void run(() => api.setPlayerName(playerName.trim()), 'Player name changed.')
+  }
 
   const saveProfile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -9756,9 +9821,38 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
       <p className="mb-0">
         Your <strong className="text-primary">player name</strong> is what the city sees - the ladder, the
         news, the wanted list. Your <strong className="text-primary">username</strong> is only ever how you
-        sign in, and nobody else is shown it. Neither of them changes.
+        sign in, and nobody else is shown it.
       </p>
       <div className="d-grid gtc-1 gtc-lg-2 gap-3 mt-3">
+        <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={savePlayerName}>
+          <label className="field">
+            Player name
+            <input
+              className="form-control"
+              maxLength={32}
+              value={playerName}
+              onChange={event => setPlayerName(event.target.value)}
+            />
+            <small className="form-text">
+              {nameCooldownSeconds > 0
+                ? `You can change it again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`
+                : 'Shown on the ladder, news, profiles, chat, and crew rosters.'}
+            </small>
+          </label>
+          <Button
+            className="btn btn-primary"
+            blocked={firstReason(
+              busy && BUSY,
+              playerName.trim().length < 3 && 'Player name must be at least three characters.',
+              playerName.trim().length > 32 && 'Player name must be 32 characters or less.',
+              playerName.trim() === account.playerName && 'That is already your player name.',
+              nameCooldownSeconds > 0 && `You can change your player name again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`,
+            )}
+          >
+            {busy ? 'Working...' : 'Change Name'}
+          </Button>
+        </form>
+
         <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={saveProfile}>
           <label className="field">
             Tagline

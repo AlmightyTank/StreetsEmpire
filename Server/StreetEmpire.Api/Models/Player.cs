@@ -7,6 +7,7 @@ public sealed class Player
     public PlayerAccount Account { get; set; } = null!;
 
     public string Name { get; set; } = string.Empty;
+    public DateTime? NameChangedAtUtc { get; set; }
     public string City { get; set; } = "New York";
 
     // Money

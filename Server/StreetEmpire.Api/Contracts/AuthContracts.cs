@@ -58,6 +58,8 @@ public sealed record AccountInvitesResponse(IReadOnlyList<AccountInviteKeyRespon
 public sealed record AccountResponse(
     string Username,
     string PlayerName,
+    DateTime? PlayerNameChangeReadyAtUtc,
+    int PlayerNameChangeReadySeconds,
     string? Email,
     bool EmailVerified,
     DateTime? EmailVerifiedAtUtc,
@@ -168,6 +170,7 @@ public sealed record RecoveryCodesResponse(IReadOnlyList<string> Codes);
 public sealed record UseRecoveryCodeRequest(string? Identifier, string? Code, string? NewPassword);
 
 public sealed record ChangeAvatarRequest(string? Source);
+public sealed record ChangePlayerNameRequest(string? Name);
 /// <param name="FeaturedTitle">A title key, or an empty string to lead with whatever the board hands you.</param>
 public sealed record ChangeProfileRequest(
     string? Tagline, string? Pronouns, string? Location, string? Accent, string? Banner = null,

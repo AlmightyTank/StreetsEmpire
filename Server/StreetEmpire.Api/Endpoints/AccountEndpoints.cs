@@ -22,6 +22,7 @@ namespace StreetEmpire.Api.Endpoints;
 internal static class AccountEndpoints
 {
     private const long MaxCustomAvatarBytes = 1_000_000;
+    private static readonly TimeSpan PlayerNameChangeCooldown = TimeSpan.FromHours(24);
     private const int MaxTaglineLength = 140;
     private const int MaxPronounsLength = 64;
     private const int MaxLocationLength = 64;
@@ -393,6 +394,44 @@ internal static class AccountEndpoints
             return Results.Ok(await DescribeAsync(current, discord, verification, ct));
         });
 
+        account.MapPut("/player-name", async (
+            ChangePlayerNameRequest request,
+            HttpContext http,
+            GameDbContext db,
+            DiscordAuthService discord,
+            EmailVerificationService verification,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current?.Player is null) return Results.Unauthorized();
+
+            var name = NormalizeName(request.Name);
+            if (name.Length is < 3 or > 32)
+                return Results.BadRequest(new { error = "Player name must be 3-32 characters." });
+            if (string.Equals(name, current.Player.Name, StringComparison.Ordinal))
+                return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+
+            var now = DateTime.UtcNow;
+            if (NextNameChangeAt(current.Player.NameChangedAtUtc, PlayerNameChangeCooldown) is { } readyAt && readyAt > now)
+                return Results.BadRequest(new { error = $"You can change your player name again in {FormatWait(readyAt - now)}." });
+
+            if (await db.Players.AnyAsync(x => x.Id != current.Player.Id && x.Name.ToLower() == name.ToLower(), ct))
+                return Results.Conflict(new { error = AccountSetup.NameTaken });
+
+            current.Player.Name = name;
+            current.Player.NameChangedAtUtc = now;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex, oneName: true) is { } taken)
+            {
+                return Results.Conflict(new { error = taken });
+            }
+
+            return Results.Ok(await DescribeAsync(current, discord, verification, ct));
+        }).RequireRateLimiting("sign-in");
+
         account.MapPut("/profile", async (
             ChangeProfileRequest request,
             HttpContext http,
@@ -707,6 +746,25 @@ internal static class AccountEndpoints
         return string.Join(' ', parts);
     }
 
+    private static string NormalizeName(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    internal static DateTime? NextNameChangeAt(DateTime? changedAtUtc, TimeSpan cooldown)
+        => changedAtUtc is { } changedAt ? changedAt.Add(cooldown) : null;
+
+    internal static int SecondsUntil(DateTime? readyAtUtc, DateTime nowUtc)
+        => readyAtUtc is { } readyAt && readyAt > nowUtc
+            ? Math.Max(0, (int)Math.Ceiling((readyAt - nowUtc).TotalSeconds))
+            : 0;
+
+    private static string FormatWait(TimeSpan wait)
+    {
+        var totalMinutes = Math.Max(1, (int)Math.Ceiling(wait.TotalMinutes));
+        if (totalMinutes >= 60)
+            return $"{totalMinutes / 60}h {totalMinutes % 60:00}m";
+        return $"{totalMinutes}m";
+    }
+
     private static ProfileAccent? ParseAccent(string? value)
         => value?.Trim().ToLowerInvariant() switch
         {
@@ -780,10 +838,14 @@ internal static class AccountEndpoints
         var customAvatarUrl = account.Player is not null && account.CustomAvatarUpdatedAtUtc is { } updated
             ? $"/api/game/players/{account.Player.Id}/avatar?v={new DateTimeOffset(updated).ToUnixTimeMilliseconds()}"
             : null;
+        var now = DateTime.UtcNow;
+        var playerNameChangeReadyAt = NextNameChangeAt(account.Player?.NameChangedAtUtc, PlayerNameChangeCooldown);
 
         return new AccountResponse(
             account.Username,
             account.Player?.Name ?? account.Username,
+            playerNameChangeReadyAt,
+            SecondsUntil(playerNameChangeReadyAt, now),
             account.Email,
             account.EmailVerified,
             account.EmailVerifiedAtUtc,

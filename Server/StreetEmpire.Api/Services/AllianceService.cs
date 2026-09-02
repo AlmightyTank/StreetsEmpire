@@ -22,6 +22,7 @@ public sealed class AllianceService(
     TerritoryService? territories = null,
     DiscordDirectMessages? discordDms = null)
 {
+    private static readonly TimeSpan NameChangeCooldown = TimeSpan.FromHours(24);
     private readonly GameOptions _options = options.Value;
 
     /// <summary>
@@ -774,11 +775,30 @@ public sealed class AllianceService(
     /// how much of this crew do I run personally - and a boss changing their mind about that should not
     /// have to make it five times in five places.
     /// </summary>
-    public async Task<Alliance> UpdateAsync(Player founder, int? duesPercent, string? door, string? motto, IReadOnlyDictionary<string, string>? powers, CancellationToken cancellationToken)
+    public async Task<Alliance> UpdateAsync(Player founder, int? duesPercent, string? door, string? motto, IReadOnlyDictionary<string, string>? powers, string? name, CancellationToken cancellationToken)
     {
         var alliance = await LoadForAsync(founder, cancellationToken);
         if (founder.AllianceRank != AllianceRank.Boss)
             throw new GameRuleException("Only the boss decides that.");
+
+        if (name is not null)
+        {
+            var trimmed = NormalizeName(name);
+            if (trimmed.Length is < 3 or > 32)
+                throw new GameRuleException("A crew name runs from 3 to 32 characters.");
+
+            if (!string.Equals(trimmed, alliance.Name, StringComparison.Ordinal))
+            {
+                var now = DateTime.UtcNow;
+                if (NextNameChangeAt(alliance.NameChangedAtUtc) is { } readyAt && readyAt > now)
+                    throw new GameRuleException($"You can change the crew name again in {FormatWait(readyAt - now)}.");
+                if (await db.Alliances.AnyAsync(x => x.Id != alliance.Id && x.Name.ToLower() == trimmed.ToLower(), cancellationToken))
+                    throw new GameRuleException("Crew name is already taken.");
+
+                alliance.Name = trimmed;
+                alliance.NameChangedAtUtc = now;
+            }
+        }
 
         if (duesPercent is { } dues)
         {
@@ -794,11 +814,30 @@ public sealed class AllianceService(
             alliance.Motto = string.IsNullOrWhiteSpace(motto) ? null : motto.Trim()[..Math.Min(motto.Trim().Length, 140)];
 
         if (powers is not null)
-            foreach (var (name, rank) in powers)
-                if (Enum.TryParse<AlliancePower>(name, ignoreCase: true, out var power))
+            foreach (var (powerName, rank) in powers)
+                if (Enum.TryParse<AlliancePower>(powerName, ignoreCase: true, out var power))
                     alliance.SetMinRankFor(power, AllianceRanks.Parse(rank));
 
         return alliance;
+    }
+
+    private static string NormalizeName(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static DateTime? NextNameChangeAt(DateTime? changedAtUtc)
+        => changedAtUtc is { } changedAt ? changedAt.Add(NameChangeCooldown) : null;
+
+    private static int SecondsUntil(DateTime? readyAtUtc, DateTime nowUtc)
+        => readyAtUtc is { } readyAt && readyAt > nowUtc
+            ? Math.Max(0, (int)Math.Ceiling((readyAt - nowUtc).TotalSeconds))
+            : 0;
+
+    private static string FormatWait(TimeSpan wait)
+    {
+        var totalMinutes = Math.Max(1, (int)Math.Ceiling(wait.TotalMinutes));
+        if (totalMinutes >= 60)
+            return $"{totalMinutes / 60}h {totalMinutes % 60:00}m";
+        return $"{totalMinutes}m";
     }
 
     /// <summary>Whether this member may do a thing here. The one question every gated action asks.</summary>
@@ -846,11 +885,13 @@ public sealed class AllianceService(
             .Where(x => x.Status == AllianceWarStatuses.Active)
             .ToListAsync(cancellationToken);
 
+        var now = DateTime.UtcNow;
         return crews
             .Select(x =>
             {
                 var tally = totals.GetValueOrDefault(x.Id);
                 var cityControl = controlled.GetValueOrDefault(x.Id) ?? [];
+                var nameChangeReadyAt = NextNameChangeAt(x.NameChangedAtUtc);
                 var cityControlResponses = cityControl
                     .Select(city => new AllianceCityControlResponse(city.City, city.Territories, city.BonusThugs))
                     .ToList();
@@ -875,7 +916,9 @@ public sealed class AllianceService(
                     records.GetValueOrDefault(x.Id).Lost,
                     fighting.FirstOrDefault(war => war.DeclaringAllianceId == x.Id || war.TargetAllianceId == x.Id) is { } live
                         ? (live.DeclaringAllianceId == x.Id ? live.TargetAlliance.Name : live.DeclaringAlliance.Name)
-                        : null);
+                        : null,
+                    NameChangeReadyAtUtc: nameChangeReadyAt,
+                    NameChangeReadySeconds: SecondsUntil(nameChangeReadyAt, now));
             })
             .OrderByDescending(x => x.NetWorth)
             .ThenBy(x => x.Name, StringComparer.Ordinal)

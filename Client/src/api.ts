@@ -525,6 +525,8 @@ export type StreetDistrict = {
 export type AllianceSummary = {
   id: number
   name: string
+  nameChangeReadyAtUtc?: string | null
+  nameChangeReadySeconds: number
   motto?: string | null
   members: number
   maxMembers: number
@@ -1495,6 +1497,8 @@ export type EmailVerificationState = {
 export type Account = {
   username: string
   playerName: string
+  playerNameChangeReadyAtUtc: string | null
+  playerNameChangeReadySeconds: number
   email: string | null
   /** Unverified, the address cannot be signed in with. That is what the tick is for. */
   emailVerified: boolean
@@ -1617,6 +1621,11 @@ export const api = {
     request<Account>('/api/account/avatar', {
       method: 'PUT',
       body: JSON.stringify({ source }),
+    }),
+  setPlayerName: (name: string) =>
+    request<Account>('/api/account/player-name', {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
     }),
   setProfile: (
     tagline: string,
@@ -1763,7 +1772,7 @@ export const api = {
   leaveAlliance: () => request<ActionResult>('/api/game/alliances/leave', { method: 'POST' }),
   expelMember: (memberId: string) =>
     request<ActionResult>('/api/game/alliances/expel', { method: 'POST', body: JSON.stringify({ memberId }) }),
-  updateAlliance: (settings: { duesPercent?: number, door?: AllianceDoorKey, motto?: string, powers?: Record<string, string> }) =>
+  updateAlliance: (settings: { name?: string, duesPercent?: number, door?: AllianceDoorKey, motto?: string, powers?: Record<string, string> }) =>
     request<ActionResult>('/api/game/alliances', { method: 'PUT', body: JSON.stringify(settings) }),
   setAllianceRank: (memberId: string, rank: string) =>
     request<ActionResult>('/api/game/alliances/rank', { method: 'POST', body: JSON.stringify({ memberId, rank }) }),

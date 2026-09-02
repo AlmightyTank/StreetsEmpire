@@ -83,7 +83,8 @@ public sealed record UpdateAllianceRequest(
     int? DuesPercent,
     string? Door,
     string? Motto,
-    IReadOnlyDictionary<string, string>? Powers = null);
+    IReadOnlyDictionary<string, string>? Powers = null,
+    string? Name = null);
 
 public sealed record SetAllianceRankRequest(Guid MemberId, string? Rank);
 public sealed record HandOverAllianceRequest(Guid MemberId);
@@ -245,7 +246,9 @@ public sealed record AllianceSummaryResponse(
     int WarsLost = 0,
     /// <summary>Who they are fighting right now, or null. Nobody may declare on a crew already in one.</summary>
     string? AtWarWith = null,
-    int Rank = 0);
+    int Rank = 0,
+    DateTime? NameChangeReadyAtUtc = null,
+    int NameChangeReadySeconds = 0);
 
 public sealed record AllianceCityControlResponse(string City, int Territories, int BonusThugs);
 

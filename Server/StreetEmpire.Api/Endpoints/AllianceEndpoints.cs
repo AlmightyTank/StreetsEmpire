@@ -4,6 +4,7 @@ using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Data;
 using StreetEmpire.Api.Models;
 using StreetEmpire.Api.Services;
+using StreetEmpire.Api.Support;
 using static StreetEmpire.Api.Support.ActionLogging;
 
 namespace StreetEmpire.Api.Endpoints;
@@ -736,13 +737,21 @@ internal static class AllianceEndpoints
 
             try
             {
-                var alliance = await alliances.UpdateAsync(player, request.DuesPercent, request.Door, request.Motto, request.Powers, ct);
-                await db.SaveChangesAsync(ct);
+                var alliance = await alliances.UpdateAsync(player, request.DuesPercent, request.Door, request.Motto, request.Powers, request.Name, ct);
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                }
+                catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex) is { } taken)
+                {
+                    return Results.Conflict(new { error = taken });
+                }
                 return Results.Ok(new ActionResultResponse(
                     $"{alliance.Name} takes {alliance.DuesPercent}% and is {AllianceDoors.Label(alliance.Door).ToLowerInvariant()}.",
                     player.Turns,
                     new Dictionary<string, object?>
                     {
+                        ["name"] = alliance.Name,
                         ["duesPercent"] = alliance.DuesPercent,
                         ["door"] = alliance.Door.ToString()
                     }));

@@ -55,6 +55,8 @@ internal static class DatabaseErrors
             return "That Discord account is already on an empire. Sign in with it instead.";
         if (constraint.Contains("Players_Name", StringComparison.OrdinalIgnoreCase))
             return oneName ? AccountSetup.NameTaken : "Player name is already taken.";
+        if (constraint.Contains("Alliances_Name", StringComparison.OrdinalIgnoreCase))
+            return "Crew name is already taken.";
 
         return "Somebody just took one of those names. Try again.";
     }

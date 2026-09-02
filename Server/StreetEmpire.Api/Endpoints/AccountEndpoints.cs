@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Data;
+using StreetEmpire.Api.Mapping;
 using StreetEmpire.Api.Models;
 using StreetEmpire.Api.Services;
 using StreetEmpire.Api.Support;
@@ -245,6 +246,27 @@ internal static class AccountEndpoints
             var current = await LoadAsync(http, db, ct);
             if (current is null) return Results.Unauthorized();
             return Results.Ok(new { remaining = await recovery.RemainingAsync(current.Id, ct) });
+        });
+
+        account.MapGet("/invites", async (
+            HttpContext http,
+            GameDbContext db,
+            CancellationToken ct) =>
+        {
+            var current = await LoadAsync(http, db, ct);
+            if (current is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            var keys = await db.BetaKeys.AsNoTracking()
+                .Include(x => x.RedeemedByAccount)
+                    .ThenInclude(x => x!.Player)
+                .Where(x => x.IssuedToAccountId == current.Id)
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
+                .ToListAsync(ct);
+
+            return Results.Ok(new AccountInvitesResponse(
+                keys.Select(x => BetaKeyMappers.ToAccountInviteResponse(x, now)).ToList()));
         });
 
         // What this player holds today, which is what the featured-title picker may offer. Its own

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
@@ -31,8 +31,10 @@ var tests = new (string Name, Action Test)[]
     ("building is free on the board and invisible to a raid", BuildingMovesNeitherRankNorTheOddsOfAFight),
     ("ranking breaks net worth ties by oldest player", RankingBreaksTiesByOldestPlayer),
     ("ranks-above predicate agrees with in-memory ranking", RanksAbovePredicateAgreesWithInMemoryRanking),
+    ("rank pages read the same worth the database sorted by", RankPagesReadTheWorthTheDatabaseSortedBy),
     ("turn refresh catches up without exceeding cap", TurnRefreshCatchesUp),
     ("turn refresh passively recovers morale", TurnRefreshPassivelyRecoversMorale),
+    ("hourly upkeep feeds every crew type", HourlyUpkeepFeedsEveryCrewType),
     ("street action returns deterministic tuned breakdown", StreetActionBreakdownIsDeterministic),
     ("production uses configured tables", ProductionUsesConfiguredTables),
     ("invalid product is a rule error", InvalidProductIsRuleError),
@@ -227,6 +229,12 @@ var tests = new (string Name, Action Test)[]
     ("a war has a clock, a score and a pot", AWarHasAClockAScoreAndAPot),
     ("a war nobody fought pays nobody", AWarNobodyFoughtPaysNobody),
     ("a season takes the empire and leaves the person", ASeasonTakesTheEmpireAndLeavesThePerson),
+    ("the season is won by the take and not by the empire", TheSeasonIsWonByTheTakeAndNotByTheEmpire),
+    ("the season clock outlives the process", TheSeasonClockOutlivesTheProcess),
+    ("season one starts on the date it is given", SeasonOneStartsOnTheDateItIsGiven),
+    ("the season date survives the config binder", TheSeasonDateSurvivesTheConfigBinder),
+    ("the shipped season runs the window it was announced for", TheShippedSeasonRunsTheWindowItWasAnnouncedFor),
+    ("turning seasons on does not roll a stale clock", TurningSeasonsOnDoesNotRollAStaleClock),
     ("a head start is one season deep and never compounds", AHeadStartNeverCompounds),
     ("the shelf remembers who won and where everybody else came", TheShelfRemembersEveryFinish),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
@@ -244,6 +252,8 @@ var tests = new (string Name, Action Test)[]
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
     ("custom titles are created and earned by rules", CustomTitlesAreCreatedAndEarnedByRules),
     ("a recovery code is read the way it looks on paper", ARecoveryCodeIsReadTheWayItLooks),
+    ("a beta key is read the way Discord hands it around", ABetaKeyIsReadTheWayDiscordHandsItAround),
+    ("a beta key gates signup and is spent with the account", ABetaKeyGatesSignupAndIsSpentWithTheAccount),
     ("intelligence goes cold, and your own house never does", IntelligenceGoesColdAndYourOwnHouseNever),
     ("one inbox can only be aimed at so many times", OneInboxCanOnlyBeAimedAtSoManyTimes),
     ("the client never asks the server for a good that does not exist", TheClientNeverAsksForAGoodThatDoesNotExist),
@@ -557,6 +567,58 @@ static void RanksAbovePredicateAgreesWithInMemoryRanking()
     }
 }
 
+static void RankPagesReadTheWorthTheDatabaseSortedBy()
+{
+    var options = Resolve(new GameOptions());
+    var economy = CreateEconomy(options);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"rank-page-{Guid.NewGuid()}")
+        .Options);
+
+    var built = new Player
+    {
+        Name = "Built Up",
+        Account = new PlayerAccount { Username = "built-up" },
+        Cash = 30_000,
+        CreatedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
+        Hideout = new Hideout { Tier = 4, StorageLevel = 6, SafeLevel = 5, WorkshopLevel = 4 }
+    };
+    var builtWorth = EconomyService.NetWorthOf(built, options);
+    var cashOnly = new Player
+    {
+        Name = "Cash Only",
+        Account = new PlayerAccount { Username = "cash-only" },
+        Cash = builtWorth - 1,
+        CreatedAtUtc = built.CreatedAtUtc.AddMinutes(1),
+        Hideout = new Hideout()
+    };
+
+    db.Players.AddRange(built, cashOnly);
+    db.SaveChanges();
+    db.ChangeTracker.Clear();
+
+    // This is the shape an endpoint can have after ordering with NetWorthExpression but materialising
+    // without the Hideout navigation: the database knows the building value, the object does not.
+    var page = new List<Player>
+    {
+        new() { Id = built.Id, Name = built.Name, Cash = built.Cash, CreatedAtUtc = built.CreatedAtUtc },
+        new() { Id = cashOnly.Id, Name = cashOnly.Name, Cash = cashOnly.Cash, CreatedAtUtc = cashOnly.CreatedAtUtc },
+    };
+
+    var ranked = PlayerRanking.RankPageAsync(page, db, economy, CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+
+    AssertEqual(built.Id, ranked[0].Player.Id);
+    AssertEqual(1, ranked[0].Rank);
+    AssertEqual(2, ranked[1].Rank);
+    AssertEqual(builtWorth, ranked[0].NetWorth);
+    AssertTrue(ranked[0].NetWorth > ranked[1].NetWorth,
+        "the page should show and rank by the worth the database used to sort it");
+    AssertTrue(ranked[0].NetWorth > economy.CalculateNetWorth(page[0]),
+        "a missing navigation on the page row should not erase building value from the rank");
+}
+
 static void TurnRefreshCatchesUp()
 {
     var service = CreateTurns(new GameOptions
@@ -604,6 +666,56 @@ static void TurnRefreshPassivelyRecoversMorale()
     AssertEqual(20, player.Turns);
     AssertEqual(41.5, player.HoeHappiness);
     AssertEqual(51.5, player.ThugHappiness);
+}
+
+static void HourlyUpkeepFeedsEveryCrewType()
+{
+    var service = CreateTurns(new GameOptions
+    {
+        TurnTickMinutes = 10,
+        Morale = new MoraleOptions
+        {
+            TurnsPerCondom = 6,
+            TurnsPerBeer = 3,
+            HoursPerDrugUpkeep = 2,
+            PassiveUpkeepMoralePenaltyPerHour = 5,
+            PassiveUpkeepLoyaltyPenaltyPerHour = 4
+        }
+    });
+    var player = new Player
+    {
+        Pimps = 2,
+        Hoes = 6,
+        Thugs = 3,
+        Condoms = 12,
+        Beer = 1,
+        Moonshine = 9,
+        Weed = 4,
+        Coke = 5,
+        HoeHappiness = 70,
+        ThugHappiness = 80
+    };
+    player.Crew.AddRange([
+        new Pimp { Id = 1, PlayerId = player.Id, Player = player, Name = "Ace", Loyalty = 90 },
+        new Pimp { Id = 2, PlayerId = player.Id, Player = player, Name = "Bishop", Loyalty = 90 }
+    ]);
+
+    var upkeep = service.ChargeHourlyUpkeep(player, 2);
+
+    AssertEqual(12, upkeep.CondomsNeeded);
+    AssertEqual(20, upkeep.BeerNeeded);
+    AssertEqual(11, upkeep.DrugsNeeded);
+    AssertEqual(0, player.Condoms);
+    AssertEqual(0, player.Beer);
+    AssertEqual(0, player.Moonshine);
+    AssertEqual(0, player.Weed);
+    AssertEqual(0, player.Coke);
+    AssertEqual(0, upkeep.CondomShortage);
+    AssertEqual(10, upkeep.BeerShortage);
+    AssertEqual(2, upkeep.DrugShortage);
+    AssertTrue(player.HoeHappiness < 70, "drug shortages should reach hoes too");
+    AssertTrue(player.ThugHappiness < 80, "beer and drug shortages should reach thugs");
+    AssertTrue(player.Crew.All(x => x.Loyalty < 90), "pimps need upkeep, so shortages should hit loyalty");
 }
 
 static void StreetActionBreakdownIsDeterministic()
@@ -2881,6 +2993,70 @@ static void ARecoveryCodeIsReadTheWayItLooks()
         "a recovery code should never be recoverable from what is stored");
 }
 
+static void ABetaKeyIsReadTheWayDiscordHandsItAround()
+{
+    AssertEqual("SE4K7XQ9MTBH", BetaKeys.Normalise("se-4k7xq-9mtbh"));
+    AssertEqual("SE4K7XQ9MTBH", BetaKeys.Normalise("  se4k7xq 9mtbh  "));
+    AssertEqual("SE-4K7XQ-9MTBH", BetaKeys.Display("se4k7xq9mtbh"));
+    AssertEqual("", BetaKeys.Normalise("---"));
+
+    using var world = NewCrewWorld();
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+    world.Db.BetaKeys.AddRange(
+        new BetaKey { Code = "SEGOODKEY55", MaxUses = 1, CreatedAtUtc = now },
+        new BetaKey { Code = "SEUSEDKEY55", MaxUses = 1, Uses = 1, CreatedAtUtc = now },
+        new BetaKey { Code = "SEOLDKEY555", MaxUses = 1, ExpiresAtUtc = now.AddMinutes(-1), CreatedAtUtc = now.AddDays(-2) },
+        new BetaKey { Code = "SEREVOKED55", MaxUses = 1, RevokedAtUtc = now.AddMinutes(-1), CreatedAtUtc = now.AddDays(-2) });
+    world.Db.SaveChanges();
+
+    var service = new BetaKeys(world.Db);
+    AssertTrue(service.CheckAsync("SE-GOODK-EY55", now, default).GetAwaiter().GetResult().Accepted,
+        "a live key should validate");
+    AssertEqual("That beta key has already been used.",
+        service.CheckAsync("SE-USEDK-EY55", now, default).GetAwaiter().GetResult().Error);
+    AssertEqual("That beta key has expired.",
+        service.CheckAsync("SE-OLDKE-Y555", now, default).GetAwaiter().GetResult().Error);
+    AssertEqual("That beta key has been revoked.",
+        service.CheckAsync("SE-REVOK-ED55", now, default).GetAwaiter().GetResult().Error);
+    AssertEqual("That beta key does not exist.",
+        service.CheckAsync("SE-NOTRE-AL55", now, default).GetAwaiter().GetResult().Error);
+}
+
+static void ABetaKeyGatesSignupAndIsSpentWithTheAccount()
+{
+    using var world = NewCrewWorld();
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+    var service = new BetaKeys(world.Db);
+    var options = Resolve(new GameOptions { Beta = new BetaOptions { RequireKey = true } });
+
+    var first = new PlayerAccount { Username = "first" };
+    AssertTrue(service.RedeemForAccountAsync(null, first, isFirstAccount: true, options, now, default)
+            .GetAwaiter().GetResult().Accepted,
+        "the first account should bootstrap the world without an invite");
+
+    var key = new BetaKey { Code = "SEJOINKEY55", MaxUses = 1, CreatedAtUtc = now };
+    world.Db.BetaKeys.Add(key);
+    world.Db.SaveChanges();
+
+    var invited = new PlayerAccount { Username = "invited" };
+    var missing = service.RedeemForAccountAsync(null, invited, isFirstAccount: false, options, now, default)
+        .GetAwaiter().GetResult();
+    AssertEqual("Beta key is required.", missing.Error);
+
+    var redeemed = service.RedeemForAccountAsync("se-joink-ey55", invited, isFirstAccount: false, options, now, default)
+        .GetAwaiter().GetResult();
+    AssertTrue(redeemed.Accepted, "a valid key should let the account be created");
+
+    world.Db.Accounts.Add(invited);
+    world.Db.SaveChanges();
+
+    var stored = world.Db.BetaKeys.Single(x => x.Code == "SEJOINKEY55");
+    AssertEqual(1, stored.Uses);
+    AssertEqual(invited.Id, stored.RedeemedByAccountId);
+    AssertEqual(now, stored.RedeemedAtUtc);
+    AssertEqual(1, stored.Version);
+}
+
 static void AChosenTitleLeadsAndSurvivesLosingIt()
 {
     // Titles are worked out fresh from the day's fighting, so a chosen one comes and goes. The setting
@@ -4494,6 +4670,7 @@ static void ASeasonTakesTheEmpireAndLeavesThePerson()
     var season = seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
     AssertEqual(1, season.Number);
     AssertEqual(now.AddDays(options.Seasons.LengthDays), season.EndsAtUtc);
+    RecordRaid(world, rich, poor, now.AddHours(1), cash: 42_000, weed: 11, coke: 7);
 
     var roll = seasons.RollAsync(now.AddDays(options.Seasons.LengthDays), default).GetAwaiter().GetResult();
 
@@ -4537,6 +4714,10 @@ static void ASeasonTakesTheEmpireAndLeavesThePerson()
     AssertEqual(1, honours[0].Rank);
     AssertEqual(SeasonHonours.Champion, honours[0].Honour);
     AssertTrue(honours[0].NetWorth > 0, "a season records what the empire was worth at the end of it");
+    AssertEqual(42_000 + 11 * options.WeedNetWorth + 7 * options.CokeNetWorth, honours[0].RaidScore);
+    AssertEqual(42_000L, honours[0].RaidCashTaken);
+    AssertEqual(11, honours[0].RaidWeedTaken);
+    AssertEqual(7, honours[0].RaidCokeTaken);
     var alsoRan = seasons.HonoursForAsync(poor.Id, default).GetAwaiter().GetResult();
     AssertEqual(1, alsoRan.Count);
     AssertEqual(2, alsoRan[0].Rank);
@@ -4546,6 +4727,297 @@ static void ASeasonTakesTheEmpireAndLeavesThePerson()
     AssertEqual(SeasonStatuses.Running, roll.Opened.Status);
     AssertEqual(SeasonStatuses.Ended, roll.Ended.Status);
     AssertEqual(2, seasons.CurrentAsync(now.AddDays(31), default).GetAwaiter().GetResult().Number);
+}
+
+/// <summary>
+/// The season clock belongs to the world, not to the process running it.
+///
+/// A restart is the ordinary case - deploys, crashes, a machine moving - and a clock that started over
+/// on any of them would mean the ninety days never actually elapse. Nothing here is held in memory, so
+/// the test is that a second service reading the same database sees the same two dates, and that a
+/// season already open is never re-opened by a service that has just come up.
+/// </summary>
+static void TheSeasonClockOutlivesTheProcess()
+{
+    using var world = NewCrewWorld();
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    var opened = CreateSeasons(world).CurrentAsync(now, default).GetAwaiter().GetResult();
+    AssertEqual(1, opened.Number);
+    AssertEqual(now.AddDays(90), opened.EndsAtUtc);
+
+    // A fresh service off the same database, which is what a restart is: new SeasonService, new
+    // SeasonSchedule, same rows. Asked a fortnight later, it must not start the season again.
+    var afterRestart = CreateSeasons(world).CurrentAsync(now.AddDays(14), default).GetAwaiter().GetResult();
+    AssertEqual(opened.Id, afterRestart.Id);
+    AssertEqual(now, afterRestart.StartedAtUtc);
+    AssertEqual(now.AddDays(90), afterRestart.EndsAtUtc);
+    AssertEqual(1, world.Db.Seasons.Count());
+}
+
+/// <summary>
+/// Turning seasons on must not, by itself, end one.
+///
+/// The dangerous shape is specific and entirely reachable: a world opened season one on the old
+/// thirty-day clock, ran past that date with seasons switched off - which is exactly what "off" is for
+/// - and then the operator sets a ninety-day window and flips the switch. The row still holds the old
+/// end date. Deciding the roll off that row would delete every empire in the world on the very next
+/// request, against a deadline the configuration had already replaced, and there is no undo.
+/// </summary>
+static void TurningSeasonsOnDoesNotRollAStaleClock()
+{
+    using var world = NewCrewWorld();
+    var opened = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    // A season one left over from the thirty-day clock, months past its stored end date.
+    world.Db.Seasons.Add(new Season
+    {
+        Number = 1,
+        Name = "Season 1",
+        Status = SeasonStatuses.Running,
+        StartedAtUtc = opened,
+        EndsAtUtc = opened.AddDays(30)
+    });
+    var survivor = world.Member("Survivor", cash: 5_000_000);
+    world.Db.SaveChanges();
+
+    // The operator sets the announced window and turns the clock on, on a day inside it.
+    world.Options.Seasons.Enabled = true;
+    world.Options.Seasons.StartsAtUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+    world.Options.Seasons.LengthDays = 90;
+
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+    var roll = CreateSeasons(world).RollIfDueAsync(now, default).GetAwaiter().GetResult();
+
+    AssertTrue(roll is null, "a stale end date is not a season that has ended");
+    AssertEqual(5_000_000L, survivor.Cash);
+    AssertEqual(1, world.Db.Seasons.Count());
+
+    var season = world.Db.Seasons.Single();
+    AssertEqual(SeasonStatuses.Running, season.Status);
+    AssertEqual(new DateTime(2026, 11, 30, 0, 0, 0, DateTimeKind.Utc), season.EndsAtUtc);
+
+    // And the clock still rolls when it genuinely runs out, or the guard would be a way of never
+    // ending a season at all.
+    var due = CreateSeasons(world).RollIfDueAsync(
+        new DateTime(2026, 11, 30, 0, 0, 1, DateTimeKind.Utc), default).GetAwaiter().GetResult();
+    AssertTrue(due is not null, "the season still ends on the date the configuration names");
+    AssertEqual(1, due!.Ended.Number);
+    AssertEqual(2, due.Opened.Number);
+}
+
+/// <summary>
+/// The window the world was told about, read out of the file the world actually runs on.
+///
+/// Season 1 runs 2026-09-01 to 2026-11-30 UTC. That is a promise to everybody playing rather than a
+/// tuning value, and the two settings that make it true sit three lines apart in a large config file
+/// where somebody will one day be editing something else. This asserts the dates through the same code
+/// that computes them at runtime, so an edit that moves the season has to move this test with it and
+/// say so out loud.
+///
+/// Nothing here is relative to the clock. A test that asserted the end was still in the future would
+/// start failing the day season one legitimately ends, which is the one day nobody needs a red build.
+/// </summary>
+static void TheShippedSeasonRunsTheWindowItWasAnnouncedFor()
+{
+    var root = new DirectoryInfo(AppContext.BaseDirectory);
+    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
+        root = root.Parent;
+    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+
+    var shipped = new ConfigurationBuilder()
+        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .Build();
+
+    var seasons = new SeasonOptions();
+    shipped.GetSection("Game:Seasons").Bind(seasons);
+
+    AssertTrue(seasons.Enabled, "the shipped world runs seasons - the clock is meant to roll it");
+    AssertEqual(90, seasons.LengthDays);
+    AssertTrue(seasons.StartsAtUtc is not null,
+        "an enabled season with no start date begins whenever the first request lands, which is not a date anybody can be told");
+
+    // Through the service rather than by repeating the arithmetic here, because the thing worth pinning
+    // is what the game will actually do with these two values on a machine in any time zone.
+    using var world = NewCrewWorld();
+    world.Options.Seasons = seasons;
+    var season = CreateSeasons(world).CurrentAsync(
+        new DateTime(2026, 9, 1, 6, 30, 0, DateTimeKind.Utc), default).GetAwaiter().GetResult();
+
+    AssertEqual(new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), season.StartedAtUtc);
+    AssertEqual(new DateTime(2026, 11, 30, 0, 0, 0, DateTimeKind.Utc), season.EndsAtUtc);
+    AssertEqual(SeasonStatuses.Running, season.Status);
+}
+
+/// <summary>
+/// The season date read the way it is actually written: out of a config file, through the binder, on
+/// a machine that is not sitting in UTC.
+///
+/// This is the step where a date silently moves. A trailing Z goes through DateTime.Parse, which reads
+/// it by converting into the machine's own zone and labelling the result Local - so a setting called
+/// StartsAtUtc arrives holding a local time, and anything that just relabels it as UTC is wrong by the
+/// server's offset. Only a server already in UTC would ever pass that.
+/// </summary>
+static void TheSeasonDateSurvivesTheConfigBinder()
+{
+    var json = """
+    { "Game": { "Seasons": { "StartsAtUtc": "2026-09-15T18:00:00Z" } } }
+    """;
+
+    var config = new ConfigurationBuilder()
+        .AddJsonStream(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)))
+        .Build();
+
+    var bound = new GameOptions();
+    config.GetSection("Game").Bind(bound);
+    AssertTrue(bound.Seasons.StartsAtUtc is not null, "the binder reads a date out of the file at all");
+
+    using var world = NewCrewWorld();
+    world.Options.Seasons.StartsAtUtc = bound.Seasons.StartsAtUtc;
+
+    var season = CreateSeasons(world).CurrentAsync(
+        new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), default).GetAwaiter().GetResult();
+
+    // The instant named in the file, whatever zone the machine reading it is in.
+    AssertEqual(DateTimeKind.Utc, season.StartedAtUtc.Kind);
+    AssertEqual(new DateTime(2026, 9, 15, 18, 0, 0, DateTimeKind.Utc), season.StartedAtUtc);
+    AssertEqual(new DateTime(2026, 12, 14, 18, 0, 0, DateTimeKind.Utc), season.EndsAtUtc);
+
+    // A date written without a zone is taken at the setting's word rather than as the server's morning.
+    using var bare = NewCrewWorld();
+    bare.Options.Seasons.StartsAtUtc = new DateTime(2026, 9, 15, 18, 0, 0, DateTimeKind.Unspecified);
+    var taken = CreateSeasons(bare).CurrentAsync(
+        new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), default).GetAwaiter().GetResult();
+    AssertEqual(new DateTime(2026, 9, 15, 18, 0, 0, DateTimeKind.Utc), taken.StartedAtUtc);
+}
+
+/// <summary>
+/// A season one whose dates were chosen rather than caught. Unset, the clock starts on whichever
+/// request happened to ask first - a health check during a deploy is enough - and the end date is
+/// then whatever the database says rather than anything that could have been announced.
+/// </summary>
+static void SeasonOneStartsOnTheDateItIsGiven()
+{
+    using var world = NewCrewWorld();
+    var launch = new DateTime(2026, 9, 15, 18, 0, 0, DateTimeKind.Utc);
+    world.Options.Seasons.StartsAtUtc = launch;
+
+    // The first request lands whenever it lands. The season still starts on the date it was given.
+    var stray = new DateTime(2026, 9, 12, 3, 47, 11, DateTimeKind.Utc);
+    var season = CreateSeasons(world).CurrentAsync(stray, default).GetAwaiter().GetResult();
+    AssertEqual(launch, season.StartedAtUtc);
+    AssertEqual(launch.AddDays(90), season.EndsAtUtc);
+
+    // And a world that opened season one before the date was decided is pulled onto it rather than
+    // left running to a date nobody chose. This is every world that was already up.
+    using var older = NewCrewWorld();
+    var caught = new DateTime(2026, 8, 20, 9, 0, 0, DateTimeKind.Utc);
+    var drifted = CreateSeasons(older).CurrentAsync(caught, default).GetAwaiter().GetResult();
+    AssertEqual(caught, drifted.StartedAtUtc);
+
+    older.Options.Seasons.StartsAtUtc = launch;
+    var aligned = CreateSeasons(older).CurrentAsync(caught.AddDays(1), default).GetAwaiter().GetResult();
+    AssertEqual(drifted.Id, aligned.Id);
+    AssertEqual(launch, aligned.StartedAtUtc);
+    AssertEqual(launch.AddDays(90), aligned.EndsAtUtc);
+
+    // A finished season is a record and never moves, whatever the configuration says afterwards.
+    aligned.Status = SeasonStatuses.Ended;
+    aligned.EndedAtUtc = launch.AddDays(90);
+    older.Db.SaveChanges();
+    older.Options.Seasons.StartsAtUtc = launch.AddDays(30);
+
+    var next = CreateSeasons(older).CurrentAsync(launch.AddDays(91), default).GetAwaiter().GetResult();
+    AssertEqual(2, next.Number);
+    AssertEqual(launch.AddDays(91), next.StartedAtUtc);
+    AssertEqual(launch, older.Db.Seasons.Single(x => x.Number == 1).StartedAtUtc);
+}
+
+/// <summary>
+/// What season one actually is, checked on the board people read rather than only on the table nobody
+/// sees until it is over: ninety days, and the winner is whoever took the most off other players.
+///
+/// The distinction worth a test of its own is that the take is not the empire. A player can end the
+/// season the richest thing in the world and finish behind somebody who owns nothing and robbed
+/// everybody, because what is being scored is what came out of other people's houses.
+/// </summary>
+static void TheSeasonIsWonByTheTakeAndNotByTheEmpire()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    // Ninety days, written as a number rather than read back off whatever the season was opened with:
+    // the length is the promise the whole race is planned against.
+    AssertEqual(90, options.Seasons.LengthDays);
+
+    // A season one already open on the old thirty-day clock is pulled onto the ninety-day one rather
+    // than left to end two months early, which is the state every world running before this is in. It
+    // is the end date that moves; the day it started is history and stays where it is.
+    world.Db.Seasons.Add(new Season
+    {
+        Number = 1,
+        Name = "Season 1",
+        Status = SeasonStatuses.Running,
+        StartedAtUtc = now,
+        EndsAtUtc = now.AddDays(30)
+    });
+    world.Db.SaveChanges();
+
+    var season = seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    AssertEqual(1, season.Number);
+    AssertEqual(now, season.StartedAtUtc);
+    AssertEqual(now.AddDays(90), season.EndsAtUtc);
+
+    var tycoon = world.Member("Tycoon", cash: 40_000_000);
+    var robber = world.Member("Robber", cash: 100);
+    var quiet = world.Member("Quiet", cash: 250_000);
+
+    RecordRaid(world, robber, tycoon, now.AddDays(2), cash: 30_000, weed: 4, coke: 1);
+    RecordRaid(world, robber, quiet, now.AddDays(9), cash: 12_000, weed: 0, coke: 3);
+
+    // Three fights that took nothing off anybody and must therefore be worth nothing: a raid that
+    // lost, a strike that is not a raid, and a raid from before this season began.
+    RecordRaid(world, tycoon, robber, now.AddDays(3), cash: 500_000, weed: 90, coke: 90, outcome: "Defeat");
+    RecordRaid(world, tycoon, robber, now.AddDays(4), cash: 400_000, weed: 0, coke: 0, method: AttackMethods.DriveBy);
+    RecordRaid(world, tycoon, quiet, now.AddDays(-5), cash: 900_000, weed: 0, coke: 0);
+
+    var expected = 42_000 + 4 * options.WeedNetWorth + 4 * options.CokeNetWorth;
+
+    // The live board, which is the whole point of a race: it says who is winning while there is still
+    // time to do something about it, and it carries only the people who have actually taken something.
+    // An empire that has never raided is not on it, whatever it happens to be worth.
+    var board = seasons.CurrentTableForAsync(season, 50, default).GetAwaiter().GetResult();
+    AssertEqual(1, board.Count);
+    AssertEqual(1, board[0].Rank);
+    AssertEqual("Robber", board[0].PlayerName);
+    AssertEqual(expected, board[0].RaidScore);
+    AssertEqual(42_000L, board[0].RaidCashTaken);
+    AssertEqual(4, board[0].RaidWeedTaken);
+    AssertEqual(4, board[0].RaidCokeTaken);
+
+    // The take is counted up to the roll rather than up to the date on the clock. A season rolls on
+    // the first request that notices the time is up, which on a quiet night is hours after the date -
+    // and a raid landed in that gap was landed in this season and has to score in it.
+    RecordRaid(world, quiet, tycoon, season.EndsAtUtc.AddHours(3), cash: 1_000_000, weed: 0, coke: 0);
+
+    var roll = seasons.RollAsync(season.EndsAtUtc.AddHours(4), default).GetAwaiter().GetResult();
+    AssertEqual(3, roll.Players);
+
+    var table = seasons.TableForAsync(roll.Ended.Id, 10, default).GetAwaiter().GetResult();
+    AssertEqual("Quiet", table[0].PlayerName);
+    AssertEqual(1_000_000L, table[0].RaidCashTaken);
+    AssertEqual(SeasonHonours.Champion, table[0].Honour);
+    AssertEqual("Robber", table[1].PlayerName);
+    AssertEqual(expected, table[1].RaidScore);
+
+    // And the empire that was worth forty million comes last, because it never took anything. The
+    // table is written for everybody, so the finish nobody wants is on the record too.
+    AssertEqual("Tycoon", table[2].PlayerName);
+    AssertEqual(0L, table[2].RaidScore);
+    AssertTrue(table[2].NetWorth > table[0].NetWorth,
+        "the richest empire in the world still finishes bottom of a race about what it took");
 }
 
 /// <summary>
@@ -4609,12 +5081,14 @@ static void TheShelfRemembersEveryFinish()
 
     // The season being played has no count written down yet, so it is counted live.
     AssertEqual(12, seasons.PlayersNowAsync(default).GetAwaiter().GetResult());
+    RecordRaid(world, first, last, now.AddHours(1), cash: 90_000, weed: 5, coke: 2);
 
     var one = seasons.RollAsync(now, default).GetAwaiter().GetResult().Ended;
 
     // A second season, taken by somebody else, so the shelf carries two different names.
-    last.Cash = 20_000_000;
+    first.Cash = 20_000_000;
     world.Db.SaveChanges();
+    RecordRaid(world, last, first, now.AddDays(world.Options.Seasons.LengthDays).AddHours(-1), cash: 125_000, weed: 0, coke: 10);
     var two = seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default)
         .GetAwaiter().GetResult().Ended;
 
@@ -4629,6 +5103,9 @@ static void TheShelfRemembersEveryFinish()
     AssertEqual(2, champions.Count);
     AssertEqual("First", champions[one.Id].PlayerName);
     AssertEqual("Last", champions[two.Id].PlayerName);
+    AssertTrue(champions[two.Id].NetWorth < champions[one.Id].NetWorth,
+        "the raid season is won by the take, not by the richest empire in the room");
+    AssertEqual(125_000 + 10 * world.Options.CokeNetWorth, champions[two.Id].RaidScore);
 
     // And where somebody who won nothing came, which is the row a capped table leaves out.
     var alsoRan = seasons.FinishForAsync(one.Id, last.Id, default).GetAwaiter().GetResult();
@@ -4653,6 +5130,35 @@ static SeasonService CreateSeasons(CrewWorld world)
         CreateEconomy(world.Options),
         CreatePimps(world.Options),
         new SeasonSchedule());
+
+static void RecordRaid(
+    CrewWorld world,
+    Player attacker,
+    Player defender,
+    DateTime at,
+    long cash,
+    int weed,
+    int coke,
+    string method = AttackMethods.Raid,
+    string outcome = "Victory")
+{
+    world.Db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = attacker.Id,
+        Attacker = attacker,
+        DefenderId = defender.Id,
+        Defender = defender,
+        Method = method,
+        Outcome = outcome,
+        CashStolen = cash,
+        WeedStolen = weed,
+        CokeStolen = coke,
+        CreatedAtUtc = at,
+        ResolvedAtUtc = at,
+        ResolvesAtUtc = at
+    });
+    world.Db.SaveChanges();
+}
 
 static void MakePact(CrewWorld world, Player asker, long targetId, Player answerer)
 {
@@ -6292,6 +6798,7 @@ static void OptionPathsDiscoverAndWriteScalars()
     AssertTrue(byPath.ContainsKey("Combat.AttackTurnCost"), "one level down is editable");
     AssertTrue(byPath.ContainsKey("StreetAction.Finds.Coke.Chance"), "deeply nested scalars are editable");
     AssertTrue(byPath.ContainsKey("Morale.TurnsPerCondom"), "morale tuning is editable");
+    AssertTrue(byPath.ContainsKey("Beta.RequireKey"), "the beta gate can be flipped at runtime");
 
     // List-shaped config is deliberately out of scope.
     AssertTrue(!paths.Any(x => x.Path.StartsWith("Hideout.Storage", StringComparison.OrdinalIgnoreCase)),
@@ -7159,7 +7666,7 @@ static void MuleRunsArePricedAndFrozen()
     var hideouts = CreateHideouts(options);
 
     // Los Angeles is six turns out on the shipped map; Detroit is two.
-    var player = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20 };
+    var player = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Condoms = 10, Beer = 10 };
     player.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
 
     // Without the room there are no runs at all: the intelligence centre is the gate, not a discount.
@@ -7181,6 +7688,9 @@ static void MuleRunsArePricedAndFrozen()
     AssertEqual(34, quote.TripMinutes);
     AssertEqual(quote.CashSent + quote.Fare + quote.Upkeep, quote.TotalCost);
     AssertTrue(quote.Upkeep > 0, "keeping crew away costs something");
+    AssertEqual(4, quote.SupplyTurns);
+    AssertEqual(1, quote.CondomsNeeded);
+    AssertEqual(2, quote.BeerNeeded);
     AssertEqual(mules.BustChancePercent(player, "Detroit", 3), quote.BustChancePercent);
 
     // They buy at the destination's price, not at ours, which is the entire reason to go.
@@ -7208,6 +7718,8 @@ static void MuleRunsArePricedAndFrozen()
     AssertEqual(200_000L - quote.TotalCost, player.Cash);
     AssertEqual(99, player.Turns);
     AssertEqual(17, player.Hoes);
+    AssertEqual(9, player.Condoms);
+    AssertEqual(8, player.Beer);
 
     // Both legs are booked at launch, so the run is a flight rather than a teleport.
     AssertEqual(launchedAt.AddMinutes(12), run.ArrivesAtUtc);
@@ -7235,6 +7747,19 @@ static void MuleRunsArePricedAndFrozen()
     AssertTrue(briefed < blind, $"an intelligence centre lowers the risk ({briefed} vs {blind})");
     AssertTrue(briefed > 0, "a briefing is not a guarantee");
     AssertTrue(mules.BustChancePercent(player, "New York", 6) > briefed, "more bodies are easier to notice");
+
+    var dry = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };
+    AssertRuleError(
+        () => mules.Launch(dry, Pimp(dry, "Vic", 100), "Detroit", "weed", 3, 30_000, 0, launchedAt),
+        "needs");
+
+    var stockedWithContraband = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Condoms = 10, Moonshine = 10 };
+    stockedWithContraband.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
+    var moonshineQuote = mules.Quote(stockedWithContraband, "Detroit", "weed", 3, 30_000);
+    AssertEqual(0, moonshineQuote.BeerUsed);
+    AssertEqual(moonshineQuote.BeerNeeded, moonshineQuote.MoonshineUsed);
+    mules.Launch(stockedWithContraband, Pimp(stockedWithContraband, "Vic", 100), "Detroit", "weed", 3, 30_000, 0, launchedAt);
+    AssertEqual(10 - moonshineQuote.MoonshineUsed, stockedWithContraband.Moonshine);
 
     // Sending crew you do not have, or money you cannot cover, is refused rather than run on credit.
     var thin = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 1, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };

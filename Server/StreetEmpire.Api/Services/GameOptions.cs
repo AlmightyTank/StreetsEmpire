@@ -1,4 +1,4 @@
-using StreetEmpire.Api.Models;
+﻿using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
@@ -265,6 +265,23 @@ public sealed class GameOptions
     public ArrestOptions Arrests { get; set; } = new();
     public SeasonOptions Seasons { get; set; } = new();
     public StoreOptions Store { get; set; } = new();
+    public BetaOptions Beta { get; set; } = new();
+}
+
+public sealed class BetaOptions
+{
+    /// <summary>
+    /// When on, every new non-first-player account must spend a beta key on either sign-up door.
+    /// Left off by default so local development and the current test harness can still create players
+    /// without first minting invites.
+    /// </summary>
+    public bool RequireKey { get; set; }
+
+    /// <summary>How many keys a migration/backfill or future grant gives a player by default.</summary>
+    public int KeysPerPlayer { get; set; } = 1;
+
+    /// <summary>Zero means no automatic expiry.</summary>
+    public int KeyExpiryDays { get; set; }
 }
 
 /// <summary>
@@ -733,15 +750,25 @@ public sealed class SeasonOptions
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// How long a run lasts.
-    ///
-    /// Sized against the longest climb the game contains rather than picked round. Working one piece
-    /// of ground the whole way up is priced in months of income, and a season shorter than that would
-    /// make the deepest thing in the game the one thing nobody ever finishes. Thirty days is one full
-    /// pass at a Penthouse and a maxed corner for somebody playing seriously, and a first tier and a
-    /// lab for somebody playing on a Sunday.
+    /// How long a run lasts. Season 1 is a raid race, so ninety days gives people time to build a crew,
+    /// pick fights, answer retaliation, and still have the winner decided by what they took.
     /// </summary>
-    public int LengthDays { get; set; } = 30;
+    public int LengthDays { get; set; } = 90;
+
+    /// <summary>
+    /// When season one starts, as an absolute UTC instant. Unset means it starts whenever the first
+    /// request to ask about it happens to land, which is how a world ends up counting ninety days from
+    /// a deploy-time health check.
+    ///
+    /// Set it and the dates become something that can be announced: the start is fixed, the end is the
+    /// start plus <see cref="LengthDays"/>, and both survive a restart because neither was ever a
+    /// property of the process. Only season one reads it - every season after it starts when the one
+    /// before it ended, which is a date the world watched happen.
+    ///
+    /// A date in the future is allowed and means what it says: the season exists, its clock has not
+    /// started, and raids landed before it score nothing.
+    /// </summary>
+    public DateTime? StartsAtUtc { get; set; }
 
     /// <summary>
     /// Opening cash earned by last season's finish, and only last season's - it never stacks and never
@@ -2226,6 +2253,13 @@ public sealed class MoraleOptions
     public double DesertionThreshold { get; set; } = 25;
     public double MaxDesertionChance { get; set; } = 0.20;
     public double PassiveRecoveryPerTick { get; set; } = 0.35;
+    /// <summary>
+    /// General crew upkeep: weed first, then coke. Set to zero to turn the drug part off without
+    /// touching condoms and beer.
+    /// </summary>
+    public double HoursPerDrugUpkeep { get; set; } = 24;
+    public double PassiveUpkeepMoralePenaltyPerHour { get; set; } = 3;
+    public double PassiveUpkeepLoyaltyPenaltyPerHour { get; set; } = 2;
     public int HqRestTurnCost { get; set; } = 4;
     public long HqRestCashPerCrew { get; set; } = 75;
     public double HqRestMoraleGain { get; set; } = 8;

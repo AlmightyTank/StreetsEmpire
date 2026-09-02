@@ -77,6 +77,12 @@ internal static class MuleEndpoints
                     quote.UnitsAffordable * home,
                     spend,
                     profit,
+                    quote.SupplyTurns,
+                    quote.CondomsNeeded,
+                    quote.CondomsUsed,
+                    quote.BeerNeeded,
+                    quote.BeerUsed,
+                    quote.MoonshineUsed,
                     quote.BustChancePercent,
                     quote.DefectChancePercent));
             }
@@ -115,6 +121,7 @@ internal static class MuleEndpoints
             var before = Snapshot(player);
             try
             {
+                var quote = mules.Quote(player, request.City, request.Good, request.Hoes, request.Cash);
                 var run = mules.Launch(player, pimp, request.City, request.Good, request.Hoes, request.Cash, out_, now);
                 db.MuleRuns.Add(run);
                 AddLog(db, player, before, "MULE_SENT", run.TurnsSpent, run.Summary, now);
@@ -132,6 +139,10 @@ internal static class MuleEndpoints
                         ["cashSent"] = run.CashSent,
                         ["fare"] = run.TravelCost,
                         ["upkeep"] = run.UpkeepCost,
+                        ["supplyTurns"] = quote.SupplyTurns,
+                        ["condomsUsed"] = quote.CondomsUsed,
+                        ["beerUsed"] = quote.BeerUsed,
+                        ["moonshineUsed"] = quote.MoonshineUsed,
                         ["turnsSpent"] = run.TurnsSpent,
                         ["bustChancePercent"] = run.BustChancePercent,
                         ["defectChancePercent"] = run.DefectChancePercent,

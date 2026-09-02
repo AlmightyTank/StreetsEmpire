@@ -105,10 +105,13 @@ internal static class CombatEndpoints
                 .SingleOrDefaultAsync(x => x.Id == playerId, ct);
             if (subject is null) return Results.NotFound(new { error = "Player not found." });
 
-            var subjectNetWorth = economy.CalculateNetWorth(subject);
+            var subjectStanding = await db.Players.AsNoTracking()
+                .Where(x => x.Id == playerId)
+                .Select(economy.StandingRowExpression())
+                .SingleAsync(ct);
             var subjectRank = await db.Players.AsNoTracking()
-                .CountAsync(economy.RanksAbove(subjectNetWorth, subject.CreatedAtUtc), ct) + 1;
-            var target = new RankedPlayer(subject, subjectNetWorth, economy.CalculatePlunder(subject), subjectRank);
+                .CountAsync(economy.RanksAbove(subjectStanding.NetWorth, subjectStanding.CreatedAtUtc), ct) + 1;
+            var target = new RankedPlayer(subject, subjectStanding.NetWorth, economy.CalculatePlunder(subject), subjectRank);
 
             // Not fetched at all when it is not going to be shown. Filtering after the query would
             // read the same rows out of the database and then decide not to use them, which is the

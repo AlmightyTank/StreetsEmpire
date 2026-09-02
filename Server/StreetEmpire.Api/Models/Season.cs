@@ -64,6 +64,15 @@ public sealed class SeasonResult
     public int Rank { get; set; }
     public long NetWorth { get; set; }
 
+    /// <summary>
+    /// The Season 1 score: cash taken in raids, plus the configured value of weed and coke taken in
+    /// those raids. Stored with the result because combat logs are wiped when the world rolls.
+    /// </summary>
+    public long RaidScore { get; set; }
+    public long RaidCashTaken { get; set; }
+    public int RaidWeedTaken { get; set; }
+    public int RaidCokeTaken { get; set; }
+
     /// <summary>What they came away with, or null for a finish that was not one of the three.</summary>
     public string? Honour { get; set; }
 }

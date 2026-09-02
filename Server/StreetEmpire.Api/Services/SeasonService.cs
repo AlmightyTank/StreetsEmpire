@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Data;
 using StreetEmpire.Api.Models;
@@ -43,7 +43,11 @@ public sealed class SeasonService(
             .OrderByDescending(x => x.Number)
             .FirstOrDefaultAsync(ct);
         if (running is not null)
+        {
+            if (AlignOpeningSeasonLength(running))
+                await db.SaveChangesAsync(ct);
             return running;
+        }
 
         var last = await db.Seasons.OrderByDescending(x => x.Number).FirstOrDefaultAsync(ct);
         var opened = Open((last?.Number ?? 0) + 1, nowUtc);
@@ -64,11 +68,17 @@ public sealed class SeasonService(
         if (!schedule.TryClaim(nowUtc))
             return null;
 
-        var current = await db.Seasons
-            .Where(x => x.Status == SeasonStatuses.Running && x.EndsAtUtc <= nowUtc)
-            .OrderBy(x => x.Number)
-            .FirstOrDefaultAsync(ct);
-        return current is null ? null : await RollAsync(nowUtc, ct);
+        // Read through CurrentAsync rather than straight off the table, so the decision is made against
+        // the dates the configuration actually names. Season one's end is derived, and the row can be
+        // holding an older answer - a world opened on the thirty-day clock has an end date two months
+        // behind the ninety-day one replacing it. Deciding off the row would roll the world on the
+        // first request after the deploy that turned seasons on, deleting every empire in it against a
+        // deadline the configuration had already moved and nobody was playing to.
+        var current = await CurrentAsync(nowUtc, ct);
+        if (current.EndsAtUtc > nowUtc)
+            return null;
+
+        return await RollAsync(nowUtc, ct);
     }
 
     /// <summary>
@@ -83,18 +93,17 @@ public sealed class SeasonService(
     {
         var season = await CurrentAsync(nowUtc, ct);
 
-        // Ranked by the same net worth expression the leaderboard uses, in the database, so a season's
-        // final table can never disagree with the board people watched all month.
-        var standing = await db.Players
-            .Include(x => x.Alliance)
-            .OrderByDescending(economy.NetWorthExpression)
-            .ThenBy(x => x.CreatedAtUtc)
-            .ToListAsync(ct);
+        // Season 1 is a raid race: the table is ordered by what an empire took off other players, not
+        // by what it managed to keep. Net worth is still stored beside the finish for context, but the
+        // honour is earned by the take.
+        var standing = await RaidStandingsForAsync(season, take: 0, ct);
+        var players = standing.Select(x => x.Player).ToList();
 
         var results = new List<SeasonResult>();
         for (var index = 0; index < standing.Count; index++)
         {
-            var player = standing[index];
+            var row = standing[index];
+            var player = row.Player;
             var rank = index + 1;
             results.Add(new SeasonResult
             {
@@ -106,7 +115,11 @@ public sealed class SeasonService(
                 City = player.City,
                 CrewName = player.Alliance?.Name,
                 Rank = rank,
-                NetWorth = economy.CalculateNetWorth(player),
+                NetWorth = row.NetWorth,
+                RaidScore = row.RaidScore,
+                RaidCashTaken = row.RaidCashTaken,
+                RaidWeedTaken = row.RaidWeedTaken,
+                RaidCokeTaken = row.RaidCokeTaken,
                 Honour = SeasonHonours.For(rank)
             });
         }
@@ -116,7 +129,7 @@ public sealed class SeasonService(
         season.EndedAtUtc = nowUtc;
         season.Players = standing.Count;
 
-        await WipeTheWorldAsync(nowUtc, standing, ct);
+        await WipeTheWorldAsync(nowUtc, players, ct);
 
         // Applied off the results just written rather than off anything stored on the player, which is
         // what keeps a head start to one season. Winning twice running is worth two trophies and one
@@ -124,7 +137,7 @@ public sealed class SeasonService(
         var headStarts = results.ToDictionary(x => x.PlayerId, x => _options.Seasons.HeadStartFor(x.Honour));
         var next = Open(season.Number + 1, nowUtc);
 
-        foreach (var player in standing)
+        foreach (var player in players)
         {
             StartingState.Apply(player, _options, nowUtc, headStarts.GetValueOrDefault(player.Id));
             if (player.Hideout is not null)
@@ -160,6 +173,22 @@ public sealed class SeasonService(
             .Where(x => x.PlayerId == playerId)
             .OrderByDescending(x => x.Season.Number)
             .ToListAsync(ct);
+
+    /// <summary>Live standings for the season being played, ranked by raid take.</summary>
+    public async Task<IReadOnlyList<SeasonStanding>> CurrentTableForAsync(Season season, int take, CancellationToken ct = default)
+        => (await RaidStandingsForAsync(season, take, ct))
+            .Select((x, index) => new SeasonStanding(
+                index + 1,
+                x.Player.Name,
+                x.Player.City,
+                x.Player.Alliance?.Name,
+                x.NetWorth,
+                x.RaidScore,
+                x.RaidCashTaken,
+                x.RaidWeedTaken,
+                x.RaidCokeTaken,
+                SeasonHonours.For(index + 1)))
+            .ToList();
 
     /// <summary>How a season finished, top first. Read from the record rather than recomputed.</summary>
     public async Task<IReadOnlyList<SeasonResult>> TableForAsync(long seasonId, int take, CancellationToken ct = default)
@@ -218,18 +247,141 @@ public sealed class SeasonService(
 
     private Season Open(int number, DateTime nowUtc)
     {
+        var startedAt = number == 1 ? OpeningStart(nowUtc) : nowUtc;
         var season = new Season
         {
             Number = number,
             Name = string.Format(_options.Seasons.NameFormat, number),
             Status = SeasonStatuses.Running,
-            StartedAtUtc = nowUtc,
-            EndsAtUtc = nowUtc.AddDays(Math.Max(1, _options.Seasons.LengthDays))
+            StartedAtUtc = startedAt,
+            EndsAtUtc = startedAt.AddDays(Math.Max(1, _options.Seasons.LengthDays))
         };
         db.Seasons.Add(season);
         schedule.NoteNextDue(season.EndsAtUtc);
         return season;
     }
+
+    /// <summary>
+    /// When season one began, as a date somebody chose rather than a moment that happened to somebody.
+    ///
+    /// Unset means "whenever the first request landed", which is fine for a world nobody is watching
+    /// and no good for one being launched: the ninety days would start on a deploy-time health check
+    /// or a bot's first tick, and the answer to "when does this end" would be a row in the database
+    /// nobody could have predicted. Season two onwards needs none of this - a season starts when the
+    /// one before it ended, and that is a date the world watched happen.
+    /// </summary>
+    private DateTime OpeningStart(DateTime nowUtc)
+    {
+        if (_options.Seasons.StartsAtUtc is not { } configured)
+            return nowUtc;
+
+        // Every kind handled rather than the one the binder is assumed to hand over. A date in a config
+        // file goes through DateTime.Parse, which reads a trailing Z by converting to the machine's own
+        // zone and labelling the result Local - so a server in Chicago would otherwise open the season
+        // five hours out, and only a server sitting in UTC would ever prove it right. Unspecified is
+        // taken at its word, because the setting says UTC in its name.
+        return configured.Kind switch
+        {
+            DateTimeKind.Utc => configured,
+            DateTimeKind.Local => configured.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(configured, DateTimeKind.Utc)
+        };
+    }
+
+    /// <summary>
+    /// Pulls season one onto the dates the configuration names, for a world that opened it before they
+    /// were set - which is every world running before the ninety-day race was decided on.
+    ///
+    /// Only ever season one, and only while it is still running. A finished season is a record, and a
+    /// record that rewrote itself when somebody edited a config file would not be one.
+    /// </summary>
+    private bool AlignOpeningSeasonLength(Season season)
+    {
+        if (season.Number != 1 || season.Status != SeasonStatuses.Running)
+            return false;
+
+        var expectedStart = OpeningStart(season.StartedAtUtc);
+        var expectedEnd = expectedStart.AddDays(Math.Max(1, _options.Seasons.LengthDays));
+        if (season.StartedAtUtc == expectedStart && season.EndsAtUtc == expectedEnd)
+        {
+            schedule.NoteNextDue(season.EndsAtUtc);
+            return false;
+        }
+
+        season.StartedAtUtc = expectedStart;
+        season.EndsAtUtc = expectedEnd;
+        schedule.NoteNextDue(season.EndsAtUtc);
+        return true;
+    }
+
+    private async Task<List<SeasonContestant>> RaidStandingsForAsync(Season season, int take, CancellationToken ct)
+    {
+        // No upper bound on purpose. Every log in the table belongs to the season being played, because
+        // the last roll wiped the ones before it - and a season that stopped counting on its end date
+        // would throw away every raid landed between that date and the request that actually notices
+        // the clock has run out, which on a quiet night is a night's play scored at nothing.
+        var raidTakes = await db.CombatLogs.AsNoTracking()
+            .Where(x => x.CreatedAtUtc >= season.StartedAtUtc
+                        && x.Method == AttackMethods.Raid
+                        && x.Outcome == "Victory")
+            .GroupBy(x => x.AttackerId)
+            .Select(g => new
+            {
+                PlayerId = g.Key,
+                Cash = g.Sum(x => x.CashStolen),
+                Weed = g.Sum(x => x.WeedStolen),
+                Coke = g.Sum(x => x.CokeStolen)
+            })
+            .ToDictionaryAsync(x => x.PlayerId, ct);
+
+        // The roll asks for everybody, because a season's record is written for everybody who was in it.
+        // A page asks for a board, and a board of raid takes has nobody on it who has not raided - so
+        // reading every empire in the world to print fifty rows would be loading the whole table to
+        // throw all but the raiders away. Untracked with it: the board is a read, and the roll is the
+        // only caller that goes on to change any of the players it asks for.
+        var whole = take <= 0;
+        var scorers = raidTakes.Keys.ToList();
+        var contestants = whole
+            ? await db.Players.Include(x => x.Alliance).ToListAsync(ct)
+            : await db.Players.AsNoTracking()
+                .Include(x => x.Alliance)
+                .Where(x => scorers.Contains(x.Id))
+                .ToListAsync(ct);
+
+        var ranked = contestants
+            .Select(player =>
+            {
+                raidTakes.TryGetValue(player.Id, out var loot);
+                var cash = loot?.Cash ?? 0;
+                var weed = loot?.Weed ?? 0;
+                var coke = loot?.Coke ?? 0;
+                return new SeasonContestant(
+                    player,
+                    economy.CalculateNetWorth(player),
+                    RaidScore(cash, weed, coke),
+                    cash,
+                    weed,
+                    coke);
+            })
+            .OrderByDescending(x => x.RaidScore)
+            .ThenBy(x => x.Player.CreatedAtUtc)
+            .ToList();
+
+        return whole ? ranked : ranked.Take(take).ToList();
+    }
+
+    private long RaidScore(long cash, int weed, int coke)
+        => Math.Max(0, cash)
+           + Math.Max(0, (long)weed) * Math.Max(0, _options.WeedNetWorth)
+           + Math.Max(0, (long)coke) * Math.Max(0, _options.CokeNetWorth);
+
+    private sealed record SeasonContestant(
+        Player Player,
+        long NetWorth,
+        long RaidScore,
+        long RaidCashTaken,
+        int RaidWeedTaken,
+        int RaidCokeTaken);
 
     /// <summary>
     /// Everything that was an empire rather than a person.
@@ -307,6 +459,18 @@ public sealed class SeasonService(
 
 /// <summary>What one roll did: the season that ended, the one that opened, and how many were in it.</summary>
 public sealed record SeasonRoll(Season Ended, Season Opened, int Players);
+
+public sealed record SeasonStanding(
+    int Rank,
+    string PlayerName,
+    string City,
+    string? CrewName,
+    long NetWorth,
+    long RaidScore,
+    long RaidCashTaken,
+    int RaidWeedTaken,
+    int RaidCokeTaken,
+    string? Honour);
 
 /// <summary>
 /// Holds the gate shut between rolls, so a burst of requests arriving in the same second cannot each

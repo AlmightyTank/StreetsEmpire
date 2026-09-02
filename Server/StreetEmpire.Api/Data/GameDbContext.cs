@@ -9,6 +9,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<PlayerSession> Sessions => Set<PlayerSession>();
     public DbSet<RecoveryCode> RecoveryCodes => Set<RecoveryCode>();
+    public DbSet<BetaKey> BetaKeys => Set<BetaKey>();
     public DbSet<HideoutIntel> HideoutIntel => Set<HideoutIntel>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<GameActionLog> ActionLogs => Set<GameActionLog>();
@@ -151,6 +152,25 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             // what the page counts.
             entity.HasIndex(x => new { x.AccountId, x.UsedAtUtc });
             entity.Property(x => x.CodeHash).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<BetaKey>(entity =>
+        {
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.HasIndex(x => x.IssuedToAccountId);
+            entity.HasIndex(x => x.RedeemedByAccountId);
+            entity.Property(x => x.Code).HasMaxLength(32);
+            entity.Property(x => x.Label).HasMaxLength(120);
+            entity.Property(x => x.Version).IsConcurrencyToken();
+
+            entity.HasOne(x => x.IssuedToAccount)
+                .WithMany()
+                .HasForeignKey(x => x.IssuedToAccountId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.RedeemedByAccount)
+                .WithMany()
+                .HasForeignKey(x => x.RedeemedByAccountId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<EmailVerification>(entity =>

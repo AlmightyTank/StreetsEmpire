@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
 using StreetEmpire.Api.Models;
+using StreetEmpire.Api.Support;
 
 namespace StreetEmpire.Api.Services;
 
@@ -132,6 +133,18 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             Expression.Property(player, nameof(Player.CreatedAtUtc)));
 
         return Expression.Lambda<Func<Player, PlayerStanding>>(standing, player);
+    }
+
+    internal Expression<Func<Player, PlayerStandingRow>> StandingRowExpression()
+    {
+        var player = NetWorthExpression.Parameters[0];
+        var standing = Expression.New(
+            typeof(PlayerStandingRow).GetConstructor([typeof(Guid), typeof(long), typeof(DateTime)])!,
+            Expression.Property(player, nameof(Player.Id)),
+            NetWorthExpression.Body,
+            Expression.Property(player, nameof(Player.CreatedAtUtc)));
+
+        return Expression.Lambda<Func<Player, PlayerStandingRow>>(standing, player);
     }
 
     /// <summary>
@@ -311,6 +324,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var uncoveredThugs = Math.Max(0, player.Thugs - player.Weapons);
         var condomsNeeded = RequiredUpkeep(player.Hoes, _options.MaxActionTurns, morale.TurnsPerCondom);
         var beerNeeded = RequiredUpkeep(player.Thugs, _options.MaxActionTurns, morale.TurnsPerBeer);
+        var hourlyTurns = Math.Max(1, (int)Math.Ceiling(60.0 / Math.Max(1, _options.TurnTickMinutes)));
+        var hourlyCondoms = RequiredUpkeep(player.Hoes, hourlyTurns, morale.TurnsPerCondom);
+        var hourlyBeer = RequiredUpkeep(player.Pimps + player.Thugs, hourlyTurns, morale.TurnsPerBeer);
+        var hourlyDrugs = RequiredHourlyUpkeep(player.Pimps + player.Hoes + player.Thugs, 1, morale.HoursPerDrugUpkeep);
         var condomCost = (long)condomsNeeded * _options.CondomPrice;
         var beerCost = (long)beerNeeded * _options.BeerPrice;
         var totalCrew = TotalCrew(player);
@@ -340,6 +357,9 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             uncoveredThugs,
             condomsNeeded,
             beerNeeded,
+            hourlyCondoms,
+            hourlyBeer,
+            hourlyDrugs,
             hoesStorageCanSupply,
             thugsStorageCanSupply,
             storageLevelToSupplyCrew,
@@ -1834,6 +1854,12 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         if (turnsPerSupply <= 0) return 0;
         return Math.Max(0, (int)Math.Ceiling(crewCount * turns / turnsPerSupply));
+    }
+
+    private static int RequiredHourlyUpkeep(int crewCount, int hours, double hoursPerSupply)
+    {
+        if (crewCount <= 0 || hours <= 0 || hoursPerSupply <= 0) return 0;
+        return Math.Max(0, (int)Math.Ceiling(crewCount * hours / hoursPerSupply));
     }
 
     private static double ClampHappiness(double value) => Math.Clamp(value, 0, 100);

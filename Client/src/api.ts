@@ -128,6 +128,9 @@ export type CrewReport = {
   uncoveredThugs: number
   condomsNeededForMaxStreetAction: number
   beerNeededForMaxStreetAction: number
+  condomsNeededPerHour: number
+  beerNeededPerHour: number
+  drugsNeededPerHour: number
   hoesStorageCanSupply: number
   thugsStorageCanSupply: number
   storageLevelToSupplyCrew?: number | null
@@ -591,6 +594,7 @@ export type Season = {
   championHeadStart: number
   topThreeHeadStart: number
   topTenHeadStart: number
+  currentStandings: SeasonStanding[]
   honours: SeasonHonour[]
   lastSeason: SeasonStanding[]
   lastSeasonName?: string | null
@@ -601,6 +605,10 @@ export type SeasonHonour = {
   name: string
   rank: number
   netWorth: number
+  raidScore: number
+  raidCashTaken: number
+  raidWeedTaken: number
+  raidCokeTaken: number
   honour?: string | null
   endedAtUtc?: string | null
 }
@@ -611,6 +619,10 @@ export type SeasonStanding = {
   city: string
   crewName?: string | null
   netWorth: number
+  raidScore: number
+  raidCashTaken: number
+  raidWeedTaken: number
+  raidCokeTaken: number
   honour?: string | null
 }
 
@@ -633,9 +645,17 @@ export type SeasonArchiveEntry = {
   championCity?: string | null
   championCrewName?: string | null
   championNetWorth: number
+  championRaidScore: number
+  championRaidCashTaken: number
+  championRaidWeedTaken: number
+  championRaidCokeTaken: number
   yourRank?: number | null
   yourHonour?: string | null
   yourNetWorth?: number | null
+  yourRaidScore?: number | null
+  yourRaidCashTaken?: number | null
+  yourRaidWeedTaken?: number | null
+  yourRaidCokeTaken?: number | null
 }
 
 /** How one season finished - or as much of it as a page can hold. */
@@ -1050,6 +1070,26 @@ export type WorldNews = {
   feed: WorldNewsEntry[]
 }
 
+export type PublicLeader = {
+  rank: number
+  playerName: string
+  city: string
+  netWorth: number
+  crew: number
+}
+
+export type PublicStats = {
+  generatedAtUtc: string
+  players: number
+  cities: number
+  alliances: number
+  territoriesHeld: number
+  activeMissions: number
+  totalNetWorth: number
+  leaders: PublicLeader[]
+  headlines: WorldHeadline[]
+}
+
 export type CombatLog = {
   id: number
   attackerId: string
@@ -1368,6 +1408,12 @@ export type MuleQuote = {
   projectedGross: number
   projectedSpend: number
   projectedProfit: number
+  supplyTurns: number
+  condomsNeeded: number
+  condomsUsed: number
+  beerNeeded: number
+  beerUsed: number
+  moonshineUsed: number
   bustChancePercent: number
   defectChancePercent: number
 }
@@ -1410,7 +1456,27 @@ export type MuleBoard = {
 }
 
 /** Which ways in this server can actually offer. Asked before the login box draws its buttons. */
-export type AuthProviders = { discord: boolean }
+export type AuthProviders = { discord: boolean, betaKeyRequired: boolean }
+export type BetaKeyCheck = { required: boolean, valid: boolean, error?: string | null }
+
+export type AccountInviteKey = {
+  id: string
+  code: string
+  displayCode: string
+  label?: string | null
+  maxUses: number
+  uses: number
+  usesLeft: number
+  status: 'Available' | 'Used' | 'Expired' | 'Revoked'
+  redeemedByPlayerId?: string | null
+  redeemedByPlayerName?: string | null
+  redeemedAtUtc?: string | null
+  expiresAtUtc?: string | null
+  revokedAtUtc?: string | null
+  createdAtUtc: string
+}
+
+export type AccountInvites = { keys: AccountInviteKey[] }
 
 /**
  * The code in flight, described without being given away. Enough to run a clock and count down the
@@ -1501,11 +1567,13 @@ export const discordStartUrl = () =>
 export const api = {
   cities: () => request<string[]>('/api/auth/cities'),
   providers: () => request<AuthProviders>('/api/auth/providers'),
+  betaKey: (code: string) => request<BetaKeyCheck>(`/api/auth/beta/check?code=${encodeURIComponent(code)}`),
+  publicStats: () => request<PublicStats>('/api/public/stats'),
   /** One name: the server uses it for the sign-in name and the name on the leaderboard alike. */
-  register: (username: string, password: string, city: string, email?: string) =>
+  register: (username: string, password: string, city: string, email?: string, betaKey?: string) =>
     request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, city, email: email || null }),
+      body: JSON.stringify({ username, password, city, email: email || null, betaKey: betaKey || null }),
     }),
   /** `identifier` is a username or an email address; the server decides which by the @. */
   login: (identifier: string, password: string) =>
@@ -1625,6 +1693,7 @@ export const api = {
   /** Ends every session on this account except the one asking. */
   /** What this player holds right now, which is what the featured-title picker may offer. */
   myTitles: () => request<PlayerTitle[]>('/api/account/titles'),
+  invites: () => request<AccountInvites>('/api/account/invites'),
   /** Returns the codes in the clear, for the only time they ever will be. */
   issueRecoveryCodes: (currentPassword: string) =>
     request<{ codes: string[] }>('/api/account/recovery-codes', {
@@ -1652,10 +1721,10 @@ export const api = {
   discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
   discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),
   /** `email` is optional and the only way a Discord-made account gets a second way back in. */
-  completeDiscordSignUp: (username: string, city: string, email?: string) =>
+  completeDiscordSignUp: (username: string, city: string, email?: string, betaKey?: string) =>
     request('/api/auth/discord/complete', {
       method: 'POST',
-      body: JSON.stringify({ username, city, email: email || null }),
+      body: JSON.stringify({ username, city, email: email || null, betaKey: betaKey || null }),
     }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   updates: () => request<GameUpdates>('/api/game/updates'),
@@ -1904,6 +1973,40 @@ export type AdminAuditEntry = {
   createdAtUtc: string
 }
 
+export type AdminBetaKey = {
+  id: string
+  code: string
+  displayCode: string
+  label?: string | null
+  maxUses: number
+  uses: number
+  usesLeft: number
+  status: 'Available' | 'Used' | 'Expired' | 'Revoked'
+  issuedToAccountId?: string | null
+  issuedToPlayerId?: string | null
+  issuedToPlayerName?: string | null
+  issuedToUsername?: string | null
+  redeemedByAccountId?: string | null
+  redeemedByPlayerId?: string | null
+  redeemedByPlayerName?: string | null
+  redeemedByUsername?: string | null
+  redeemedAtUtc?: string | null
+  expiresAtUtc?: string | null
+  revokedAtUtc?: string | null
+  createdAtUtc: string
+}
+
+export type AdminBetaKeys = { total: number, keys: AdminBetaKey[] }
+
+export type AdminMintBetaKeys = {
+  count: number
+  label?: string | null
+  maxUses?: number | null
+  expiresAtUtc?: string | null
+  issuedToAccountId?: string | null
+  reason?: string | null
+}
+
 export type AdminPlayerDetail = {
   summary: AdminPlayerSummary
   condoms: number
@@ -1962,6 +2065,15 @@ export const adminApi = {
       body: JSON.stringify({ isAdmin, reason }),
     }),
   audit: () => request<AdminAuditEntry[]>('/api/admin/audit'),
+  betaKeys: (query = '') =>
+    request<AdminBetaKeys>(`/api/admin/keys${query ? `?query=${encodeURIComponent(query)}` : ''}`),
+  mintBetaKeys: (body: AdminMintBetaKeys) =>
+    request<AdminBetaKeys>('/api/admin/keys', { method: 'POST', body: JSON.stringify(body) }),
+  revokeBetaKey: (id: string, reason?: string) =>
+    request<AdminBetaKey>(`/api/admin/keys/${encodeURIComponent(id)}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 }
 
 export type AdminWealthBand = { label: string, players: number, totalNetWorth: number }

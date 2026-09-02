@@ -70,8 +70,21 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         // pass that applied it.
         var writtenOff = await SettleArrestsAsync(player, nowUtc, db, ct);
 
+        var upkeepHours = ClaimUpkeepHours(player, nowUtc);
+        var beforeUpkeep = Snapshot(player);
+        var prepaidPimps = upkeepHours <= 0
+            ? 0
+            : await territoryDb.MuleRuns
+                .Where(x => x.PlayerId == player.Id && x.SettledAtUtc == null && x.PimpId != null)
+                .Select(x => x.PimpId)
+                .Distinct()
+                .CountAsync(ct);
+        var upkeep = turns.ChargeHourlyUpkeep(player, upkeepHours, prepaidPimps);
+        if (db is not null && upkeep.Any)
+            AddLog(db, player, beforeUpkeep, "UPKEEP", 0, upkeep.Describe(), nowUtc);
+
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff || groundWorked || warsSettled, built, labs);
+        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff || upkeepHours > 0 || upkeep.Any || groundWorked || warsSettled, built, labs);
     }
 
     /// <summary>
@@ -211,6 +224,21 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         var hours = (int)Math.Min(int.MaxValue, Math.Floor((nowUtc - player.LastHeatRollUtc).TotalHours));
         if (hours <= 0) return 0;
         player.LastHeatRollUtc = player.LastHeatRollUtc.AddHours(hours);
+        return hours;
+    }
+
+    /// <summary>Takes whole hours owed to crew upkeep and keeps partial hours for next time.</summary>
+    private static int ClaimUpkeepHours(Player player, DateTime nowUtc)
+    {
+        if (player.LastUpkeepUtc > nowUtc)
+        {
+            player.LastUpkeepUtc = nowUtc;
+            return 0;
+        }
+
+        var hours = (int)Math.Min(int.MaxValue, Math.Floor((nowUtc - player.LastUpkeepUtc).TotalHours));
+        if (hours <= 0) return 0;
+        player.LastUpkeepUtc = player.LastUpkeepUtc.AddHours(hours);
         return hours;
     }
 

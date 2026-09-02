@@ -684,8 +684,13 @@ static void HourlyUpkeepFeedsEveryCrewType()
         TurnTickMinutes = 10,
         Morale = new MoraleOptions
         {
+            // Deliberately nothing like the standing rates below: a shift and an idle hour are
+            // separate charges now, and reading the working rate here is the bug that separation
+            // exists to prevent.
             TurnsPerCondom = 6,
             TurnsPerBeer = 3,
+            HoursPerCondomUpkeep = 6,
+            HoursPerBeerUpkeep = 3,
             HoursPerDrugUpkeep = 2,
             PassiveUpkeepMoralePenaltyPerHour = 5,
             PassiveUpkeepLoyaltyPenaltyPerHour = 4
@@ -723,6 +728,32 @@ static void HourlyUpkeepFeedsEveryCrewType()
     AssertEqual(0, upkeep.BeerShortage);
     AssertEqual(2, upkeep.DrugShortage);
     AssertTrue(player.HoeHappiness < 70, "drug shortages should reach hoes too");
+
+    // Standing still is half the price of working, and the two rates are separate knobs so that stays
+    // true. An hour used to be charged as a turn of street work, which priced a crew asleep exactly
+    // like a crew on the corner - and made every idle night a reason not to log off.
+    var shipped = Resolve(new GameOptions()).Morale;
+    AssertEqual(shipped.TurnsPerCondom * 2, shipped.HoursPerCondomUpkeep);
+    AssertEqual(shipped.TurnsPerBeer * 2, shipped.HoursPerBeerUpkeep);
+
+    // And the working rate cannot reach the standing charge at all: halve the shift burn here and the
+    // hourly bill must not move.
+    var unchanged = CreateTurns(new GameOptions
+    {
+        TurnTickMinutes = 10,
+        Morale = new MoraleOptions
+        {
+            TurnsPerCondom = 12,
+            TurnsPerBeer = 6,
+            HoursPerCondomUpkeep = 6,
+            HoursPerBeerUpkeep = 3,
+            HoursPerDrugUpkeep = 2
+        }
+    });
+    var twin = new Player { Pimps = 2, Hoes = 6, Thugs = 3, Condoms = 12, Beer = 1, Moonshine = 9, Weed = 4, Coke = 5 };
+    var same = unchanged.ChargeHourlyUpkeep(twin, 2);
+    AssertEqual(2, same.CondomsNeeded);
+    AssertEqual(4, same.BeerNeeded);
     AssertTrue(player.ThugHappiness < 80, "beer and drug shortages should reach thugs");
     AssertTrue(player.Crew.All(x => x.Loyalty < 90), "pimps need upkeep, so shortages should hit loyalty");
 }
@@ -927,6 +958,8 @@ static void CrewReportShowsUpkeepAndCrewHeat()
         {
             TurnsPerCondom = 12,
             TurnsPerBeer = 10,
+            HoursPerCondomUpkeep = 12,
+            HoursPerBeerUpkeep = 10,
             HoursPerDrugUpkeep = 24
         },
         Hideout = new HideoutOptions

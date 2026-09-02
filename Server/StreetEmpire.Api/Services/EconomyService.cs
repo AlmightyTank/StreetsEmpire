@@ -324,8 +324,8 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var uncoveredThugs = Math.Max(0, player.Thugs - player.Weapons);
         var condomsNeeded = RequiredUpkeep(player.Hoes, _options.MaxActionTurns, morale.TurnsPerCondom);
         var beerNeeded = RequiredUpkeep(player.Thugs, _options.MaxActionTurns, morale.TurnsPerBeer);
-        var hourlyCondoms = RequiredHourlyUpkeep(player.Hoes, 1, morale.TurnsPerCondom);
-        var hourlyBeer = RequiredHourlyUpkeep(player.Pimps + player.Thugs, 1, morale.TurnsPerBeer);
+        var hourlyCondoms = RequiredHourlyUpkeep(player.Hoes, 1, morale.HoursPerCondomUpkeep);
+        var hourlyBeer = RequiredHourlyUpkeep(player.Pimps + player.Thugs, 1, morale.HoursPerBeerUpkeep);
         var hourlyDrugs = RequiredHourlyUpkeep(player.Pimps + player.Hoes + player.Thugs, 1, morale.HoursPerDrugUpkeep);
         var townHeat = _options.CityMarkets.HeatMultiplier(player.City);
         var pimpHeat = player.Pimps * _options.Hideout.PimpHeat * townHeat;

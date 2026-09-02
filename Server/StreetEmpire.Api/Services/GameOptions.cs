@@ -2333,10 +2333,27 @@ public sealed class MoraleOptions
     public double MaxDesertionChance { get; set; } = 0.20;
     public double PassiveRecoveryPerTick { get; set; } = 0.35;
     /// <summary>
+    /// What sitting still costs, per head, in hours per unit.
+    ///
+    /// Passive upkeep used to charge an hour as though it were a turn of street work - it read
+    /// <see cref="TurnsPerCondom"/> and <see cref="TurnsPerBeer"/> straight off - which meant an hour
+    /// asleep and an hour on the corner cost a crew exactly the same. That is the wrong shape: the
+    /// shift is the thing being paid for, and the standing charge is what it costs to keep people
+    /// around between shifts. Its own rates, at half the working burn, so a night away is a bill a
+    /// player can come back to rather than a reason not to log off.
+    ///
+    /// Separate knobs rather than a multiplier on the working rate, because the two numbers stopped
+    /// being the same question the moment one of them was halved - and a storage room sized against
+    /// the working rate must not move when the standing charge is tuned.
+    /// </summary>
+    public double HoursPerCondomUpkeep { get; set; } = 24;
+    public double HoursPerBeerUpkeep { get; set; } = 20;
+
+    /// <summary>
     /// General crew upkeep: weed first, then coke. Set to zero to turn the drug part off without
     /// touching condoms and beer.
     /// </summary>
-    public double HoursPerDrugUpkeep { get; set; } = 24;
+    public double HoursPerDrugUpkeep { get; set; } = 48;
     public double PassiveUpkeepMoralePenaltyPerHour { get; set; } = 3;
     public double PassiveUpkeepLoyaltyPenaltyPerHour { get; set; } = 2;
     public int HqRestTurnCost { get; set; } = 4;

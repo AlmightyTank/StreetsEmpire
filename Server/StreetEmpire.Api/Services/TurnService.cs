@@ -22,10 +22,13 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
         var thugs = Math.Max(0, player.Thugs);
         var beerCrew = activePimps + thugs;
         var totalCrew = activePimps + hoes + thugs;
+        // Kept for the receipt, which reports the hours this charge covered. It stopped being a count
+        // of turns when the standing charge got rates of its own: an hour is no longer a turn's worth
+        // of upkeep, it is an hour's.
         var upkeepTurns = hours;
 
-        var condomsNeeded = RequiredUpkeep(hoes, upkeepTurns, morale.TurnsPerCondom);
-        var beerNeeded = RequiredUpkeep(beerCrew, upkeepTurns, morale.TurnsPerBeer);
+        var condomsNeeded = RequiredHourlyUpkeep(hoes, hours, morale.HoursPerCondomUpkeep);
+        var beerNeeded = RequiredHourlyUpkeep(beerCrew, hours, morale.HoursPerBeerUpkeep);
         var drugsNeeded = RequiredHourlyUpkeep(totalCrew, hours, morale.HoursPerDrugUpkeep);
 
         var condomsUsed = Take(player.Condoms, condomsNeeded);
@@ -130,12 +133,6 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
 
     private static bool DoubleEquals(double left, double right)
         => Math.Abs(left - right) < 0.001;
-
-    private static int RequiredUpkeep(int crewCount, int turns, double turnsPerSupply)
-    {
-        if (crewCount <= 0 || turnsPerSupply <= 0) return 0;
-        return Math.Max(0, (int)Math.Ceiling(crewCount * turns / turnsPerSupply));
-    }
 
     private static int RequiredHourlyUpkeep(int crewCount, int hours, double hoursPerSupply)
     {

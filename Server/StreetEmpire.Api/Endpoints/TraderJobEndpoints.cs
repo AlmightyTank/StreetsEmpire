@@ -198,7 +198,7 @@ internal static class TraderJobEndpoints
         var held = TradeGoods.Held(player, job.Good);
         var canDeliver = Math.Min(held, job.Remaining);
         var tier = options.WeaponTier(job.Good);
-        var workshop = player.Hideout?.WorkshopLevel ?? 0;
+        var workshop = player.Hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0;
         var makeable = options.Makeables.FirstOrDefault(x => x.Key == job.Good);
         var levelNeeded = tier?.CanForge == true ? tier.MinWorkshopLevel
             : makeable?.CanMake == true ? makeable.MinWorkshopLevel

@@ -16,3 +16,4 @@
 *.suo
 /.pnpm-store
 /.tmp-build/
+docker-compose.override.yml

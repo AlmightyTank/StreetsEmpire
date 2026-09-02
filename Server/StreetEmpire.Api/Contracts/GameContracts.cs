@@ -1052,6 +1052,9 @@ public sealed record PlayerProfileResponse(
 
 public sealed record HideoutUpgradeRequest(string? Room);
 
+/// <summary>Which wrecked room to put a crew into. The same shape as an upgrade, and deliberately so.</summary>
+public sealed record HideoutRepairRequest(string? Room);
+
 public sealed record PimpResponse(
     long Id,
     string Name,
@@ -1311,7 +1314,38 @@ public sealed record HideoutResponse(
     int CraftMinutesPerWork,
     WorkshopCraftResponse? WorkshopCraft,
     IReadOnlyList<ProductionStationResponse> Production,
-    IReadOnlyList<HideoutStationResponse> Stations);
+    IReadOnlyList<HideoutStationResponse> Stations,
+    /// <summary>
+    /// Every room that is not working, and what it would take to change that. Empty for a house
+    /// nobody has been through, which is most of them - the page shows nothing at all rather than a
+    /// panel headed "Damage: none", because a heading that is usually empty is a heading that stops
+    /// being read.
+    /// </summary>
+    IReadOnlyList<HideoutDamageResponse> Damage,
+    /// <summary>The room the crew are in right now, or null when they are not in one.</summary>
+    HideoutRepairResponse? Repair);
+
+/// <summary>
+/// A room that has been put out of action, and the bill for putting it back.
+///
+/// Carries what it stops as well as what it costs, because a level and a price say nothing about why
+/// the mules will not leave. The whole point of breaking a room is the thing it was doing.
+/// </summary>
+public sealed record HideoutDamageResponse(
+    string Room,
+    string Name,
+    string Stops,
+    int Level,
+    long RepairCost,
+    int RepairMinutes,
+    DateTime WreckedAtUtc);
+
+/// <summary>A repair in progress. One at a time, so this is one room rather than a list.</summary>
+public sealed record HideoutRepairResponse(
+    string Room,
+    string Name,
+    DateTime CompletesAtUtc,
+    int SecondsRemaining);
 
 /// <summary>One street product recipe, priced and timed like the workshop craft rows.</summary>
 public sealed record ProductionStationResponse(

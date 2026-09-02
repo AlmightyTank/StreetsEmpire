@@ -909,6 +909,36 @@ internal static class GameEndpoints
             }
         }).RequireAuthorization();
 
+        app.MapPost("/api/game/hideout/repair", async (
+            HideoutRepairRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            HideoutService hideouts,
+            PlayerClock clock,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            // The clock first, like every other paid action. It is what lands a repair that finished
+            // while nobody was looking, so a player who comes back to a mended room and asks for the
+            // next one is told the crew are free rather than that they are still inside.
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var result = hideouts.Repair(player, request.Room, now);
+                AddLog(db, player, before, "HIDEOUT", 0, result.Summary);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
 
         // ----- Live operations -----
 

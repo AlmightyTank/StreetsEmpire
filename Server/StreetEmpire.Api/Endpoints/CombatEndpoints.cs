@@ -391,7 +391,8 @@ internal static class CombatEndpoints
                 groundLost,
                 groundTaken,
                 defended.Select(x => x.Name).Distinct().ToList(),
-                defended.Sum(x => x.DefenderThugsLost)));
+                defended.Sum(x => x.DefenderThugsLost),
+                (player.Hideout?.WreckedRooms() ?? []).Select(HideoutRooms.Name).ToList()));
 
             player.CatchUpSeenAtUtc = now;
             await db.SaveChangesAsync(ct);

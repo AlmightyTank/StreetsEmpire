@@ -97,6 +97,13 @@ internal static class StartingState
         hideout.WorkshopLevel = 0;
         hideout.LookoutLevel = 0;
         hideout.IntelligenceLevel = 0;
+        // Nothing carries damage across a roll. A season that opened with somebody's coke lab still
+        // wrecked would be charging them a repair bill for a lab that no longer exists, in an empire
+        // that is not the one it was broken in.
+        foreach (var room in HideoutRooms.Breakable)
+            hideout.SetWrecked(room, null);
+        hideout.RepairingRoom = null;
+        hideout.RepairCompletesAtUtc = null;
         hideout.LabsCollectedAtUtc = null;
         hideout.CreatedAtUtc = nowUtc;
     }

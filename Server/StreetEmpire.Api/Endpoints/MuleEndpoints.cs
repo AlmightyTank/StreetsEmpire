@@ -200,7 +200,10 @@ internal static class MuleEndpoints
         return new MuleBoardResponse(
             hideouts.ConcurrentRunCap(player.Hideout),
             runs.Count(x => x.SettledAtUtc == null),
-            player.Hideout?.IntelligenceLevel ?? 0,
+            // Working rather than built, so the page and the launch agree. Reporting the level a
+            // wrecked centre used to be would print "level 3, 0 runs out of 0" and leave a player
+            // reading a page that says the room is fine and a button that says it is not.
+            player.Hideout?.WorkingLevel(HideoutRooms.Intelligence) ?? 0,
             player.Hoes,
             options.Mules.MaxHoesPerRun,
             options.Mules.HoeCarryCapacity,

@@ -66,6 +66,15 @@ public static class DefenceAlerts
             ? held ? "Nothing was taken." : "No losses recorded."
             : $"Lost {string.Join(", ", losses)}.";
 
+        // Its own sentence rather than another item on the list, because it is the only loss on this
+        // row that is still costing the reader tomorrow. Everything above it is a number that a shift
+        // or a hiring puts back; this one has a bill and a clock, and it is worth saying so plainly.
+        if (Wrecked(log.DefenderRoomWrecked) is { Count: > 0 } rooms)
+            detail = $"{detail} They wrecked your {string.Join(" and ", rooms.Select(HideoutRooms.Name))}. "
+                     + (rooms.Count == 1
+                         ? "It does nothing until you pay to have it put back."
+                         : "They do nothing until you pay to have them put back.");
+
         return new DefenceAlertResponse(
             log.Id,
             attacker,
@@ -85,6 +94,15 @@ public static class DefenceAlerts
             unread,
             log.CreatedAtUtc);
     }
+
+    /// <summary>
+    /// The rooms a stored receipt names. Empty for the null every attack that broke nothing carries,
+    /// which is nearly all of them - only a raid that took a house can break anything.
+    /// </summary>
+    public static IReadOnlyList<string> Wrecked(string? rooms)
+        => string.IsNullOrWhiteSpace(rooms)
+            ? []
+            : rooms.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     /// <summary>How many of these the player has not seen yet.</summary>
     public static int UnreadCount(IEnumerable<AlertResponse> alerts)
@@ -113,6 +131,11 @@ public static class DefenceAlerts
             "LAB" => new AlertResponse($"log-{logId}", "labs", "Your labs kept working", summary, "good", unread, createdAtUtc),
             "HIDEOUT" when summary.EndsWith(" is finished.", StringComparison.Ordinal)
                 => new AlertResponse($"log-{logId}", "hideout", "Building finished", summary, "good", unread, createdAtUtc),
+            // A repair landing while the player was away, which is the ordinary case: they paid for it
+            // and left. The same reasoning as a finished build - starting one is an action, and the
+            // hour it comes back in is something that happened to them.
+            "HIDEOUT" when summary.EndsWith(" is working again.", StringComparison.Ordinal)
+                => new AlertResponse($"log-{logId}", "hideout", "A room is back", summary, "good", unread, createdAtUtc),
             "BUST" => new AlertResponse($"log-{logId}", "bust", "Raided", summary, "bad", unread, createdAtUtc),
             // A run lands whether or not anyone is watching, so how it went has to come find them.
             "MULE" when summary.Contains("never came back", StringComparison.Ordinal)
@@ -150,6 +173,10 @@ public static class DefenceAlerts
     public static Expression<Func<GameActionLog, bool>> IsNotificationRow { get; } =
         log => log.Action == "LAB"
                || (log.Action == "HIDEOUT" && log.Summary.EndsWith(" is finished."))
+               // A repair landing on the clock, which is the ordinary case: it is paid for and then
+               // waited out, usually somewhere else. Its own ending rather than a share of the build's,
+               // because starting either one is an action and only the landing is news.
+               || (log.Action == "HIDEOUT" && log.Summary.EndsWith(" is working again."))
                // GROUND is ground news happening to you; TERRITORY is ground you acted on yourself and
                // belongs in activity. A separate action rather than matching how the sentence ends,
                // which broke the moment a second kind of ground notice existed.

@@ -29,6 +29,14 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         if (db is not null && built)
             AddLog(db, player, Snapshot(player), "HIDEOUT", 0, $"The {hideouts.TierName(player.Hideout!.Tier)} is finished.", nowUtc);
 
+        // Before the labs and before the bust, because both of those read what is standing. A repair
+        // that landed an hour ago has to be standing for the hour it is about to be paid for, and the
+        // lookout it put back has to be watching before the raid it is meant to stop is rolled.
+        var repaired = hideouts.CompleteRepair(player.Hideout, nowUtc);
+        if (db is not null && repaired is not null)
+            AddLog(db, player, Snapshot(player), "HIDEOUT", 0,
+                $"The {HideoutRooms.Name(repaired)} is working again.", nowUtc);
+
         // Snapshotted again on purpose: sharing one snapshot with the build above would stamp the lab's
         // haul onto the build's log row as well, and both rows would claim the same weed.
         var beforeLabs = Snapshot(player);
@@ -44,7 +52,7 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         // here rather than on an action so it costs a player who stockpiles it whether or not they are
         // at the screen, which is the whole point of it being illegal to hold.
         var beforeBust = Snapshot(player);
-        var bust = hideouts.RollBust(player, ClaimHeatHours(player, nowUtc), random);
+        var bust = hideouts.RollBust(player, ClaimHeatHours(player, nowUtc), random, nowUtc);
         if (db is not null && bust.Happened)
             AddLog(db, player, beforeBust, "BUST", 0, bust.Describe(), nowUtc);
 
@@ -84,7 +92,7 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
             AddLog(db, player, beforeUpkeep, "UPKEEP", 0, upkeep.Describe(), nowUtc);
 
         var turnsMoved = turns.Refresh(player, nowUtc, MoraleRecoveryPercentFor(moraleBonus));
-        return new PlayerTick(turnsMoved || built || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff || upkeepHours > 0 || upkeep.Any || groundWorked || warsSettled, built, labs);
+        return new PlayerTick(turnsMoved || built || repaired is not null || labs.ClockMoved || bust.Happened || landed || runsHome || craftsDone || writtenOff || upkeepHours > 0 || upkeep.Any || groundWorked || warsSettled, built, labs);
     }
 
     /// <summary>

@@ -54,6 +54,20 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 GuidancePages.Arrests, held.TotalBail);
         }
 
+        // Then the rooms somebody kicked in, which sit at the top of the bleeding for the same reason
+        // the bail does: it is not an opportunity, it is a thing that is off and staying off. A player
+        // whose labs have been dark for a day is losing every hour of it, and the panel that exists to
+        // say what to do next has nothing more useful to say than "your coke lab is not running".
+        foreach (var room in player.Hideout?.WreckedRooms() ?? [])
+        {
+            if (player.Hideout!.RepairingRoom == room)
+                continue;
+            var bill = hideouts.RepairCost(player.Hideout, room);
+            Add(8, $"Repair the {HideoutRooms.Name(room)}",
+                $"It was wrecked in a raid, so {HideoutRooms.Stops(room)}. It stays that way until it is paid for.",
+                GuidancePages.Hideout, bill);
+        }
+
         // Bleeding next. These are not opportunities, they are things quietly taking money off the
         // table every shift the player works.
         var unarmed = Math.Max(0, player.Thugs - player.Weapons);
@@ -88,6 +102,8 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 GuidancePages.Recovery, _options.Morale.HqRestCashPerCrew * (player.Pimps + player.Hoes + player.Thugs));
         }
 
+        // Read off the built level, not the working one: somebody whose lookout has been wrecked owns a
+        // lookout, and the move for them is the repair above rather than a purchase they cannot make.
         if (heat > _options.Hideout.HeatBustFloor
             && (player.Hideout?.LookoutLevel ?? 0) == 0
             && hideouts.NextUpgrade(player.Hideout, "lookout") is { Locked: false } watch

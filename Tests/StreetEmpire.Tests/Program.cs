@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
@@ -74,6 +74,10 @@ var tests = new (string Name, Action Test)[]
     ("workshop makes weapons under the store price", WorkshopMakesWeaponsUnderStorePrice),
     ("moonshine drinks like beer and cut stretches coke", ContrabandGoodsDoTheirJob),
     ("heat comes from what you hold and what you do", HeatDrivesTheBust),
+    ("a raid at heat takes the rooms apart, and a broken room does nothing", ARaidBreaksRooms),
+    ("a wrecked room is paid for, waited out, and comes back", AWreckedRoomComesBack),
+    ("broken labs still lose the hours they were down for", BrokenLabsLoseTheHours),
+    ("a defender is told which room went", ADefenderIsToldWhichRoomWent),
     ("stepping on coke turns cut into more of it", CuttingStretchesWhatYouAlreadyHold),
     ("purity makes stretching a trade rather than a printer", PurityStopsTheCokePrinter),
     ("guidance names the move and the ladder reads the world", GuidancePointsAtTheGame),
@@ -5921,8 +5925,8 @@ static void TheFirstTierHasNoDeadZone()
     // takes the exposed player and misses the one with somebody on the corner.
     var unguardedChance = (400 * risky.Hideout.CokeHeatPerUnit - risky.Hideout.HeatBustFloor) * risky.Hideout.BustChancePerHeat;
     var roll = unguardedChance * 0.9;
-    AssertTrue(service.RollBust(exposed, 1, new FixedRandom(roll)).Happened, "an unwatched stash is taken");
-    AssertTrue(!service.RollBust(guarded, 1, new FixedRandom(roll)).Happened, "a watched one is not");
+    AssertTrue(service.RollBust(exposed, 1, new FixedRandom(roll), DateTime.UtcNow).Happened, "an unwatched stash is taken");
+    AssertTrue(!service.RollBust(guarded, 1, new FixedRandom(roll), DateTime.UtcNow).Happened, "a watched one is not");
 }
 
 static void EarlyGameTurnsTaper()
@@ -6355,7 +6359,7 @@ static void HeatDrivesTheBust()
 
     // Under the floor nobody is looking, however long they sit there.
     var quiet = new Player { City = ordinary, Weed = 20, Cash = 10_000 };
-    AssertTrue(!hideouts.RollBust(quiet, 24, new AlwaysRandom()).Happened, "a small stash draws nobody");
+    AssertTrue(!hideouts.RollBust(quiet, 24, new AlwaysRandom(), DateTime.UtcNow).Happened, "a small stash draws nobody");
     AssertEqual(20, quiet.Weed);
 
     // Over it, a raid takes a share of every pile and fines them for the lot. This stash alone sits
@@ -6363,7 +6367,7 @@ static void HeatDrivesTheBust()
     var loaded = new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Heat = 20, Cash = 10_000 };
     AssertTrue(hideouts.HeatFor(new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8 }) < config.HeatBustFloor,
         "a working stash on its own stays under the floor");
-    var bust = hideouts.RollBust(loaded, 1, new AlwaysRandom());
+    var bust = hideouts.RollBust(loaded, 1, new AlwaysRandom(), DateTime.UtcNow);
     AssertEqual(20, bust.Coke);
     AssertEqual(10, bust.Weed);
     AssertEqual(5, bust.Moonshine);
@@ -6374,12 +6378,12 @@ static void HeatDrivesTheBust()
 
     // The fine never reaches past cash on hand.
     var broke = new Player { City = ordinary, Coke = 100, Cash = 500 };
-    AssertEqual(500L, hideouts.RollBust(broke, 1, new AlwaysRandom()).Fine);
+    AssertEqual(500L, hideouts.RollBust(broke, 1, new AlwaysRandom(), DateTime.UtcNow).Fine);
     AssertEqual(0L, broke.Cash);
 
     // A raid clears the attention it was drawn by, or one bust guarantees the next.
     var raided = new Player { City = ordinary, Coke = 100, Heat = 90, Cash = 10_000 };
-    hideouts.RollBust(raided, 1, new AlwaysRandom());
+    hideouts.RollBust(raided, 1, new AlwaysRandom(), DateTime.UtcNow);
     AssertEqual(0.0, raided.Heat);
 
     // Earned heat cools on its own, which is what makes laying low work.
@@ -6387,8 +6391,215 @@ static void HeatDrivesTheBust()
     var decaying = Resolve(new GameOptions());
     decaying.Hideout.HeatDecayPerHour = 3;
     decaying.Hideout.BustChancePerHeat = 0;
-    CreateHideouts(decaying).RollBust(cooling, 5, new AlwaysRandom());
+    CreateHideouts(decaying).RollBust(cooling, 5, new AlwaysRandom(), DateTime.UtcNow);
     AssertEqual(15.0, cooling.Heat);
+}
+
+/// <summary>
+/// The half of a raid that is still there tomorrow.
+///
+/// Everything the law used to take grew back: stock off a lab, cash off a shift. What this checks is
+/// the part that does not - which rooms go at which band, that a room that is down genuinely does
+/// nothing, and that none of it quietly un-buys the levels somebody paid for.
+/// </summary>
+static void ARaidBreaksRooms()
+{
+    var options = Resolve(new GameOptions());
+    // Held goods are the other half of heat, and every house below holds nothing, so the numbers here
+    // are the earned heat and only that. Decay off, or a one-hour roll would move the band under us.
+    options.Hideout.HeatDecayPerHour = 0;
+    var hideouts = CreateHideouts(options);
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    // A house with one of everything standing. New each time: these tests break it on purpose.
+    static Hideout Standing() => new()
+    {
+        Tier = 4,
+        StorageLevel = 6,
+        SafeLevel = 5,
+        WeedLabLevel = 3,
+        CokeLabLevel = 3,
+        WorkshopLevel = 3,
+        LookoutLevel = 3,
+        IntelligenceLevel = 3
+    };
+
+    var intact = Standing();
+    AssertTrue(hideouts.PassivePerHour(intact, "weed") > 0, "an intact lab grows something");
+    AssertTrue(hideouts.ConcurrentRunCap(intact) > 0, "an intact centre runs mules");
+    AssertTrue(hideouts.BustRiskReduction(intact) > 0, "an intact lookout is worth something");
+    AssertTrue(hideouts.WorkshopFor(intact) is not null, "an intact bench makes things");
+
+    // Noticed is a bill, not a demolition: they take the stock and go.
+    var noticed = new Player { City = "New York", Heat = options.Hideout.HeatBustFloor * 1.5, Cash = 10_000, Hideout = Standing() };
+    hideouts.RollBust(noticed, 1, new AlwaysRandom(), now);
+    AssertEqual(0, noticed.Hideout!.WreckedRooms().Count);
+
+    // Watched costs a room. AlwaysRandom takes the first standing one, which is the weed lab.
+    var watched = new Player { City = "New York", Heat = options.Hideout.HeatBustFloor * 3, Cash = 10_000, Hideout = Standing() };
+    var oneRoom = hideouts.RollBust(watched, 1, new AlwaysRandom(), now);
+    AssertEqual(1, oneRoom.WreckedRooms.Count);
+    AssertEqual("weedlab", oneRoom.WreckedRooms[0]);
+    // Nothing was held, so nothing was carried out - and it is still a raid worth telling somebody
+    // about, which is the whole reason a bust that seizes no units now counts as having happened.
+    AssertEqual(0, oneRoom.Units);
+    AssertTrue(oneRoom.Happened, "a raid that broke a room happened");
+    AssertTrue(oneRoom.Describe().Contains("weed lab"), $"and the notice names it: {oneRoom.Describe()}");
+    AssertEqual(0, hideouts.PassivePerHour(watched.Hideout!, "weed"));
+    AssertTrue(hideouts.PassivePerHour(watched.Hideout!, "coke") > 0, "the room next door still works");
+
+    // Hunted costs two, and takes more of the stash while it is there.
+    var hunted = new Player { City = "New York", Heat = options.Hideout.HeatBustFloor * 5, Cash = 10_000, Hideout = Standing() };
+    var twoRooms = hideouts.RollBust(hunted, 1, new AlwaysRandom(), now);
+    AssertEqual(2, twoRooms.WreckedRooms.Count);
+    AssertEqual("Hunted", twoRooms.Band);
+    AssertTrue(options.Hideout.SeizedPercentWhenHunted > options.Hideout.SeizedPercent,
+        "and they come better prepared for a house they have been watching");
+
+    // Every room, one at a time, against the thing it was doing.
+    var noLab = Standing();
+    noLab.SetWrecked(HideoutRooms.CokeLab, now);
+    AssertEqual(0, hideouts.PassivePerHour(noLab, "coke"));
+    AssertEqual(0, hideouts.ProductionYieldBonusPercent(noLab, "coke"));
+
+    var noBench = Standing();
+    noBench.SetWrecked(HideoutRooms.Workshop, now);
+    AssertTrue(hideouts.WorkshopFor(noBench) is null, "a wrecked bench makes nothing");
+    // And it drags the labs down with it, because a lab above the first rung leans on the bench.
+    AssertEqual(hideouts.PassivePerHour(new Hideout { WeedLabLevel = 1 }, "weed"), hideouts.PassivePerHour(noBench, "weed"));
+
+    var noEyes = Standing();
+    noEyes.SetWrecked(HideoutRooms.Lookout, now);
+    AssertEqual(0.0, hideouts.BustRiskReduction(noEyes));
+
+    var noIntel = Standing();
+    noIntel.SetWrecked(HideoutRooms.Intelligence, now);
+    AssertEqual(0, hideouts.ConcurrentRunCap(noIntel));
+    AssertEqual(0.0, hideouts.RouteRiskReduction(noIntel));
+    AssertEqual(0, options.Hideout.LevelOfIntelligence(noIntel));
+
+    // None of it un-buys anything. The levels are still on the deeds and the board still counts them,
+    // or a raid would be a way of knocking somebody down the leaderboard by breaking their windows.
+    AssertEqual(HideoutValue.Of(Standing(), options), HideoutValue.Of(noIntel, options));
+    AssertEqual(3, noIntel.BuiltLevel(HideoutRooms.Intelligence));
+
+    // Never more than there is to break, and never the same room twice - which is what stops a second
+    // raid from silently resetting a repair that is halfway through.
+    var thin = new Hideout { Tier = 1, LookoutLevel = 1 };
+    AssertEqual(1, hideouts.Wreck(thin, 4, new AlwaysRandom(), now).Count);
+    AssertEqual(0, hideouts.Wreck(thin, 4, new AlwaysRandom(), now).Count);
+    // The store and the safe are capacity rather than function, and nothing can touch them.
+    AssertTrue(!HideoutRooms.Breakable.Contains(HideoutRooms.Storage), "the store cannot be broken");
+    AssertTrue(!HideoutRooms.Breakable.Contains(HideoutRooms.Safe), "and neither can the safe");
+}
+
+/// <summary>
+/// The repair: what it costs, what it does not cost, and that there is only one crew.
+/// </summary>
+static void AWreckedRoomComesBack()
+{
+    var options = Resolve(new GameOptions());
+    var hideouts = CreateHideouts(options);
+    var now = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    var house = new Hideout { Tier = 4, StorageLevel = 6, CokeLabLevel = 3, IntelligenceLevel = 2, LookoutLevel = 1 };
+    house.SetWrecked(HideoutRooms.CokeLab, now);
+    house.SetWrecked(HideoutRooms.Intelligence, now);
+    // Nothing in the safe and everything in the bank, which is where the money for a large purchase
+    // actually is - and where a repair has to be able to reach, since the safe is one of the things a
+    // player can be left short of.
+    var player = new Player { Cash = 0, BankCash = 50_000_000, Turns = 100, Hideout = house };
+
+    AssertRuleError(() => hideouts.Repair(player, "lookout", now), "repairing a room that is not broken");
+    AssertRuleError(() => hideouts.Repair(player, "storage", now), "repairing a room that cannot break");
+    // And nobody builds on top of a wreck, or being raided would be a discount on the next level.
+    AssertRuleError(() => hideouts.Upgrade(player, "cokelab", now), "upgrading a wrecked room");
+
+    var cost = hideouts.RepairCost(house, HideoutRooms.CokeLab);
+    AssertEqual(
+        (long)Math.Round(HideoutValue.OfRoom(options.Hideout, "cokelab", 3) * options.Hideout.RepairCostPercent),
+        cost);
+    // The bill tracks the room rather than being a flat fee: a level 3 lab is a serious loss and a
+    // first-rung lookout is pocket money, which is also the difference in what they earn standing.
+    AssertTrue(cost > hideouts.RepairCost(house, HideoutRooms.Lookout),
+        "the bigger room costs more to put back");
+
+    var funds = player.Cash + player.BankCash;
+    var turns = player.Turns;
+    hideouts.Repair(player, "cokelab", now);
+    AssertEqual(funds - cost, player.Cash + player.BankCash);
+    // No turns. A raid is done to a player rather than chosen by them, and charging the scarcest
+    // thing in the game to undo somebody else's decision is where a setback stops being one.
+    AssertEqual(turns, player.Turns);
+    AssertTrue(house.IsWrecked(HideoutRooms.CokeLab), "and it is still dark while the crew are in it");
+    AssertEqual(0, hideouts.PassivePerHour(house, "coke"));
+
+    // One crew, which is the whole reason the damage is worth having: the order is a decision.
+    AssertRuleError(() => hideouts.Repair(player, "intelligence", now.AddMinutes(1)), "starting a second repair");
+
+    var minutes = hideouts.RepairMinutes(house, HideoutRooms.CokeLab);
+    AssertTrue(minutes >= options.Hideout.MinRepairMinutes, "and it is never instant");
+    AssertTrue(hideouts.CompleteRepair(house, now.AddMinutes(minutes - 1)) is null, "it is not done early");
+    AssertEqual("cokelab", hideouts.CompleteRepair(house, now.AddMinutes(minutes)));
+    AssertTrue(!house.IsWrecked(HideoutRooms.CokeLab), "and then it works again");
+    AssertTrue(hideouts.PassivePerHour(house, "coke") > 0, "at the level it was always at");
+    AssertEqual(3, house.BuiltLevel(HideoutRooms.CokeLab));
+
+    // The crew are free now, so the room that has been waiting can have them.
+    hideouts.Repair(player, "intelligence", now.AddMinutes(minutes));
+    AssertEqual("intelligence", house.RepairingRoom);
+}
+
+/// <summary>
+/// A lab that was down for five hours is out five hours, not holding them in credit.
+///
+/// The trap this is here for: gating the lab clock on what is working would bank every hour of an
+/// outage and pay the whole lot out the moment the repair landed, which is a raid that costs its
+/// victim nothing at all.
+/// </summary>
+static void BrokenLabsLoseTheHours()
+{
+    var options = Resolve(new GameOptions());
+    var hideouts = CreateHideouts(options);
+    var start = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    var house = new Hideout { Tier = 4, StorageLevel = 6, WeedLabLevel = 3, LabsCollectedAtUtc = start };
+    house.SetWrecked(HideoutRooms.WeedLab, start);
+    var player = new Player { Hideout = house };
+
+    hideouts.AccrueLabs(player, start.AddHours(5));
+    AssertEqual(0, player.Weed);
+    AssertEqual(start.AddHours(5), house.LabsCollectedAtUtc);
+
+    house.SetWrecked(HideoutRooms.WeedLab, null);
+    hideouts.AccrueLabs(player, start.AddHours(6));
+    AssertEqual(hideouts.PassivePerHour(house, "weed"), player.Weed);
+}
+
+/// <summary>
+/// The loser has to be told, and told in words. Every other loss on a combat row is a number that a
+/// shift or a hiring puts back; this one has a bill and a clock behind it.
+/// </summary>
+static void ADefenderIsToldWhichRoomWent()
+{
+    var quiet = DefenceAlerts.Describe(
+        new CombatLog { Outcome = "Victory", CashStolen = 500, Method = AttackMethods.Raid },
+        null);
+    AssertTrue(!quiet.Detail.Contains("wrecked"), $"a raid that broke nothing says nothing: {quiet.Detail}");
+
+    var wrecked = DefenceAlerts.Describe(
+        new CombatLog
+        {
+            Outcome = "Victory",
+            CashStolen = 500,
+            Method = AttackMethods.Raid,
+            DefenderRoomWrecked = "cokelab,lookout"
+        },
+        null);
+    AssertTrue(wrecked.Detail.Contains("coke lab") && wrecked.Detail.Contains("lookout"),
+        $"and one that did names them: {wrecked.Detail}");
+    AssertEqual(2, DefenceAlerts.Wrecked("cokelab,lookout").Count);
+    AssertEqual(0, DefenceAlerts.Wrecked(null).Count);
 }
 
 static void TerritoryEffectsAddUp()
@@ -8142,6 +8353,15 @@ static void DefenceAlertsCountUnread()
     // both places or neither.
     AssertTrue(DefenceAlerts.IsNotification("LAB", "anything"), "lab output is a notification");
     AssertTrue(DefenceAlerts.IsNotification("HIDEOUT", "The Warehouse is finished."), "a finished build is");
+    // A repair lands on the clock exactly as a build does, and this pairing is where it was nearly
+    // lost: the classifier above knew the sentence and the query-side filter did not, so the alert
+    // was built and then never selected. Both halves, both directions, for both endings.
+    AssertTrue(DefenceAlerts.IsNotification("HIDEOUT", "The coke lab is working again."), "and so is a finished repair");
+    AssertEqual("hideout", DefenceAlerts.ToAlert(9, "HIDEOUT", "The coke lab is working again.", seen, seen)!.Kind);
+    AssertTrue(!DefenceAlerts.IsNotification("HIDEOUT", "Put a crew on the coke lab for $171,500."),
+        "but paying for one is an action, like starting a build");
+    AssertTrue(DefenceAlerts.ToAlert(9, "HIDEOUT", "Put a crew on the coke lab for $171,500.", seen, seen) is null,
+        "and it never reaches the bell");
     AssertTrue(!DefenceAlerts.IsNotification("HIDEOUT", "Upgraded the safe to level 3."), "a room upgrade is not");
     AssertTrue(!DefenceAlerts.IsNotification("STREET", "Worked the streets."), "street work is not");
     AssertTrue(DefenceAlerts.IsNotification("GROUND", "Brass Knox took Hunts Point from you."), "losing ground is");

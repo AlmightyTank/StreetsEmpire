@@ -18,7 +18,7 @@ public sealed class BotSimulationService(
     PimpRoster pimps,
     MarketService market,
     MuleService mules,
-    ContractService contracts,
+    TraderJobService jobs,
     StreetStrikeService strikes,
     ArrestService arrests,
     IOptions<BotAutomationOptions> botOptions)
@@ -340,16 +340,20 @@ public sealed class BotSimulationService(
     /// both use a lane, and a bot that always robbed houses would never take any.
     /// </summary>
     /// <summary>
-    /// Takes an order off the town's board when the stock is already in the room.
+    /// Takes a job off the town's book when the stock is already in the room.
     ///
-    /// No dice roll and no personality dial: a contract pays over the counter for goods a rival is
+    /// No dice roll and no personality dial: a job pays over the going rate for goods a rival is
     /// holding anyway, so every one of them should take it, and a rival that did not would simply be
     /// selling at a worse price. What decides whether they get there first is whose hours fall when,
-    /// which is the competition the board is supposed to create.
+    /// which is the competition the book is supposed to create.
+    ///
+    /// Rivals read the whole book rather than a hand of three. The hand is a thing the interface does
+    /// for a person looking at a page - it exists so a board is readable and so a reroll has something
+    /// to reroll - and dealing one to a bot would be simulating a screen nobody is looking at.
     /// </summary>
     private async Task<int> TryFillContractAsync(Player bot, DateTime nowUtc, CancellationToken ct)
     {
-        var open = await db.Contracts
+        var open = await db.TraderJobs
             .Where(x => x.City == bot.City && x.FilledAtUtc == null && x.ExpiresAtUtc > nowUtc)
             .ToListAsync(ct);
         if (open.Count == 0) return 0;
@@ -358,20 +362,20 @@ public sealed class BotSimulationService(
         // Best premium first, and only ones they can actually satisfy. Filtered here rather than by
         // catching the refusals, so a rival is not walking through exceptions to find its own stock.
         var fillable = open
-            // A rival works an order in instalments the same way a player does, so it goes after ones
-            // it can start rather than only ones it could finish in a single movement. It still will
-            // not touch an order somebody else has begun.
+            // A rival works a job in instalments the same way a player does, so it goes after ones it
+            // can start rather than only ones it could finish in a single movement. It still will not
+            // touch a job somebody else has begun.
             .Where(x => x.CanBeWorkedBy(bot.Id))
             .Where(x => TradeGoods.Held(bot, x.Good) > 0)
             .Where(x => x.MinimumPurityPercent is not { } floor || purity >= floor)
             .OrderByDescending(x => x.Payout - x.FlatValue)
             .ToList();
 
-        foreach (var contract in fillable)
+        foreach (var job in fillable)
         {
-            var filled = TryAction(bot, "CONTRACT", 0, nowUtc, () =>
+            var filled = TryAction(bot, "JOB", 0, nowUtc, () =>
             {
-                var fill = contracts.Deliver(contract, bot, nowUtc);
+                var fill = jobs.Deliver(job, bot, nowUtc);
                 return new ActionResultResponse(fill.Summary, bot.Turns, new Dictionary<string, object?>());
             });
             if (filled > 0) return filled;

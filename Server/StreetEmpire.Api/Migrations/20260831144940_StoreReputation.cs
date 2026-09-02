@@ -37,9 +37,9 @@ namespace StreetEmpire.Api.Migrations
             // ladder later must not silently rewrite what a past release did.
             migrationBuilder.Sql("""
                 UPDATE "Players" SET "StoreRep" = CASE
-                    WHEN "Rifles" > 0 THEN 3000
-                    WHEN "Smgs" > 0 THEN 1000
-                    WHEN "Shotguns" > 0 THEN 250
+                    WHEN "Rifles" > 0 THEN 15000
+                    WHEN "Smgs" > 0 THEN 3000
+                    WHEN "Shotguns" > 0 THEN 300
                     ELSE 0
                 END;
                 """);

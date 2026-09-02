@@ -223,11 +223,17 @@ public sealed class GameOptions
         // which meant one good night on the street put the best gun in the game in the hands of somebody
         // who had never been in the shop before. Now the price is what a gun costs and the standing is
         // whether anybody will sell you one.
+        // Materials are deliberately well under the shelf now - about two fifths of it, in line with what
+        // the other made goods have always cost against the thing they stand in for. Making a gun used to
+        // save you thirty percent, which is a discount rather than a trade, and it left the bench as
+        // something you built because you could not be sold the good ones rather than because it earned.
+        // The trader's board is what that change is for: an order filled out of the shop pays a little,
+        // and the same order filled off your own bench pays several times over.
         Weapons =
         [
-            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 170, MinWorkshopLevel = 2, MinRepLevel = 1 },
-            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 2_000, Firepower = 1.4, ForgeCost = 1_400, MinWorkshopLevel = 2, MinRepLevel = 2 },
-            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 5_000, Firepower = 1.9, ForgeCost = 3_500, MinWorkshopLevel = 4, MinRepLevel = 3 },
+            new WeaponTierOptions { Key = WeaponTiers.Pistol, Price = 250, Firepower = 1.0, ForgeCost = 100, MinWorkshopLevel = 2, MinRepLevel = 1 },
+            new WeaponTierOptions { Key = WeaponTiers.Shotgun, Price = 2_000, Firepower = 1.4, ForgeCost = 800, MinWorkshopLevel = 2, MinRepLevel = 2 },
+            new WeaponTierOptions { Key = WeaponTiers.Smg, Price = 5_000, Firepower = 1.9, ForgeCost = 2_000, MinWorkshopLevel = 4, MinRepLevel = 3 },
             // No forge cost and no workshop level: a rifle is the one gun nobody makes in a back room,
             // which is what stops the workshop from eventually replacing the shop entirely - and what
             // makes the top rung of standing the only door to it. It is priced as the thing at the end
@@ -255,7 +261,6 @@ public sealed class GameOptions
     public MarketOptions Market { get; set; } = new();
     public CityMarketOptions CityMarkets { get; set; } = new();
     public MuleOptions Mules { get; set; } = new();
-    public ContractOptions Contracts { get; set; } = new();
     public BankOptions Bank { get; set; } = new();
     public ArrestOptions Arrests { get; set; } = new();
     public SeasonOptions Seasons { get; set; } = new();
@@ -1254,6 +1259,25 @@ public sealed class TerritoryOptions
     public IReadOnlyList<string> Cities()
         => Map.Select(x => x.City).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList();
 
+    /// <summary>
+    /// Where somebody starts when they did not pick.
+    ///
+    /// It used to be whichever town the alphabet put first, which is not a decision anybody made - and
+    /// it landed new players in Atlanta, at a narrow counter, on their first evening. New York is the
+    /// one shop in the country that carries the whole shelf at exactly the list price, so the town a
+    /// player learns the game in is the one where nothing about the shop is a special case yet.
+    /// </summary>
+    public string StartingCity { get; set; } = "New York";
+
+    /// <summary>The starting town if the map has it, and the first town on the map if it does not.</summary>
+    public string StartingCityOrFirst()
+    {
+        var cities = Cities();
+        return cities.FirstOrDefault(x => string.Equals(x, StartingCity, StringComparison.OrdinalIgnoreCase))
+               ?? cities.FirstOrDefault()
+               ?? "New York";
+    }
+
     /// <summary>Thugs needed to hold anything at all. Below this the ground is given up.</summary>
     public int MinimumGarrison { get; set; } = 5;
 
@@ -1678,59 +1702,6 @@ public sealed class WeaponTierOptions
 /// fewer turns, but it takes real time, it locks up crew who earn nothing while they are gone, and it
 /// is paid for in cash before anybody leaves. Neither is strictly better, which is the whole point.
 /// </summary>
-/// <summary>
-/// Buyers with a shape. The game had one buyer before this - the city itself, fixed price, any
-/// amount, any hour - which is a price list rather than a market.
-/// </summary>
-public sealed class ContractOptions
-{
-    /// <summary>How many stand open in a town at once. Enough to choose between, few enough to read.</summary>
-    public int OpenPerCity { get; set; } = 3;
-
-    /// <summary>
-    /// How often a town posts another order once its board has been thinned.
-    ///
-    /// This is what makes the board a limited supply rather than a tap. Refilled on demand, a player
-    /// could fill an order, look again for a fresh one and repeat until their stock ran out, which
-    /// would make the counter price never worth taking and quietly raise the value of every sale in
-    /// the game. It is also what gives rivals taking orders a consequence: a stripped board stays
-    /// thin, and whoever got there first actually took something.
-    /// </summary>
-    public int PostIntervalMinutes { get; set; } = 45;
-
-    public int MinQuantity { get; set; } = 15;
-    public int MaxQuantity { get; set; } = 60;
-
-    /// <summary>
-    /// What a buyer pays over the town's own price, as a percentage. It has to clear the effort of
-    /// holding stock for a deadline, and stay under what a good mule route makes, or contracts become
-    /// the only thing worth doing.
-    /// </summary>
-    public int MinPremiumPercent { get; set; } = 20;
-    public int PremiumSpreadPercent { get; set; } = 35;
-
-    /// <summary>
-    /// How often a coke buyer cares about strength, what they insist on, and what they pay extra for
-    /// it. Sometimes rather than always: a floor on every order would make stretching pointless rather
-    /// than a trade.
-    /// </summary>
-    public double PurityConditionChance { get; set; } = 0.4;
-    public int MinimumPurityFloorPercent { get; set; } = 60;
-    public int PurityPremiumPercent { get; set; } = 25;
-
-    /// <summary>
-    /// What gets asked for. Weapons and moonshine are the standing minority, and between weed and coke
-    /// a town leans towards whatever it values most without ever ruling the other out: asking only for
-    /// the dearer one made every town a one-note board.
-    /// </summary>
-    public int WeaponsPercent { get; set; } = 20;
-    public int MoonshinePercent { get; set; } = 10;
-    public int FavouredGoodPercent { get; set; } = 70;
-
-    /// <summary>How long an order stands. Long enough to go and make the goods, short enough to matter.</summary>
-    public int MinLifetimeHours { get; set; } = 4;
-    public int MaxLifetimeHours { get; set; } = 14;
-}
 
 /// <summary>
 /// What it costs to go and move money.

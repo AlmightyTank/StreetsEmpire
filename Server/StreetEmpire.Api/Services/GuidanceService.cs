@@ -51,7 +51,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
             Add(5, $"Bail out {held.Heads:N0} of your crew",
                 $"The law is holding them and will let them go in about {hours} hour(s). "
                 + "Leaving them costs the morale of everybody still out, and a pimp with little to lose talks.",
-                "crew", held.TotalBail);
+                GuidancePages.Arrests, held.TotalBail);
         }
 
         // Bleeding next. These are not opportunities, they are things quietly taking money off the
@@ -62,7 +62,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
             var cost = (long)unarmed * _options.WeaponPrice;
             Add(10, $"Arm {unarmed:N0} thug{(unarmed == 1 ? string.Empty : "s")}",
                 "Thugs without weapons drag morale down every shift, and a low-morale crew earns less and starts walking out.",
-                "market", cost);
+                GuidancePages.Store, cost);
         }
 
         var unmanaged = report.UnmanagedHoes;
@@ -70,14 +70,14 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         {
             Add(11, "Hire a pimp",
                 $"{unmanaged:N0} hoe{(unmanaged == 1 ? " is" : "s are")} beyond what your pimps can manage, which costs morale every shift until it is fixed.",
-                "crew", _options.Crew.HirePimpCost);
+                GuidancePages.CrewHiring, _options.Crew.HirePimpCost);
         }
 
         if (player.Condoms < report.CondomsNeededForMaxStreetAction || player.Beer < report.BeerNeededForMaxStreetAction)
         {
             Add(12, "Restock supplies",
                 $"A full shift needs {report.CondomsNeededForMaxStreetAction:N0} condoms and {report.BeerNeededForMaxStreetAction:N0} beer. Working short of them costs morale.",
-                "market", report.SupplyCostForMaxStreetAction);
+                GuidancePages.Store, report.SupplyCostForMaxStreetAction);
         }
 
         var morale = Math.Min(player.HoeHappiness, player.ThugHappiness);
@@ -85,7 +85,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         {
             Add(13, "Give the crew a night off",
                 $"Morale is down to {morale:N0}. Below {_options.Morale.DesertionThreshold:N0} they start leaving.",
-                "crew", _options.Morale.HqRestCashPerCrew * (player.Pimps + player.Hoes + player.Thugs));
+                GuidancePages.Recovery, _options.Morale.HqRestCashPerCrew * (player.Pimps + player.Hoes + player.Thugs));
         }
 
         if (heat > _options.Hideout.HeatBustFloor
@@ -95,14 +95,14 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         {
             Add(15, "Post a lookout",
                 "Eyes on the street cut the odds of a raid landing. The only answer to heat that is not selling everything and waiting.",
-                "hideout", watch.Cost);
+                GuidancePages.Hideout, watch.Cost);
         }
 
         if (heat > _options.Hideout.HeatBustFloor)
         {
             Add(14, "Sell down, or lie low",
                 $"You are drawing enough notice to be raided. Heat falls {_options.Hideout.HeatDecayPerHour:N0} an hour on its own, and selling stock takes it off faster.",
-                "market");
+                GuidancePages.Production);
         }
 
         // Then what is going to waste: a full room earns nothing, and turns evaporate at the cap.
@@ -110,7 +110,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         {
             Add(20, "Sell product",
                 "Your store is full, so anything else you make or bring home is dumped on arrival.",
-                "market");
+                GuidancePages.Production);
         }
 
 
@@ -122,7 +122,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         {
             Add(30, "Build the weed lab",
                 "It lifts what every production turn yields and makes weed on its own while you are away. The cheapest thing that earns without you.",
-                "hideout", lab.Cost);
+                GuidancePages.Hideout, lab.Cost);
         }
 
         if (player.Cash > capacity.MaxCash * 3 / 4 && player.Cash > 0)
@@ -130,7 +130,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
             Add(31, "Bank your cash",
                 "Cash on hand is what a raid takes. Money in the bank cannot be stolen. The trip costs "
                 + "turns, so go with a full safe rather than after every shift.",
-                "market");
+                GuidancePages.Bank);
         }
 
         // Nobody discovers medicine on their own. It is the only stock in the game bought purely against
@@ -155,7 +155,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
             if (crates > 0)
                 Add(32, $"Buy {crates:N0} crate{(crates == 1 ? string.Empty : "s")} of medicine",
                     $"A rival can infest your house, and each crate treats {perCrate:N0} hoes. Whatever the medicine cannot reach is simply gone.",
-                    "market", (long)crates * _options.MedicinePrice);
+                    GuidancePages.Store, (long)crates * _options.MedicinePrice);
         }
 
         if (player.Turns >= _options.MaxActionTurns)
@@ -168,12 +168,12 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 : string.Empty;
             Add(21, "Work the streets",
                 $"{player.Turns:N0} turns ready. This is where the money comes from early on.{full}",
-                "street");
+                GuidancePages.Street);
         }
 
         var next = NextAffordableRoom(player, funds);
         if (next is not null)
-            Add(33, $"Upgrade the {next.Value.Label}", next.Value.Why, "hideout", next.Value.Cost);
+            Add(33, $"Upgrade the {next.Value.Label}", next.Value.Why, GuidancePages.Hideout, next.Value.Cost);
 
         if (player.Turns <= 0)
         {
@@ -183,7 +183,7 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
                 : string.Empty;
             Add(90, "Wait for turns",
                 $"You earn {rate:N0} every {_options.TurnTickMinutes:N0} minutes whether you are here or not, and labs and ground keep working.{boosted}",
-                "overview");
+                GuidancePages.Overview);
         }
 
         return moves.OrderBy(x => x.Rank).Select(x => x.Move).Take(4).ToList();
@@ -204,28 +204,28 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
         return
         [
             Step("Work the streets", "Spend turns for cash, and pick up crew while you are out.",
-                "street", actionsTaken.Contains("STREET")),
+                GuidancePages.Street, actionsTaken.Contains("STREET")),
             Step("Bank what you make", "Cash on hand is stolen in a raid. Cash in the bank is not, and the "
                 + "trip there costs turns - so it is worth making with a full safe rather than a few notes.",
-                "market", actionsTaken.Contains("BANK")),
+                GuidancePages.Bank, actionsTaken.Contains("BANK")),
             Step("Build the weed lab", "The cheapest thing you can own that earns while you are away.",
-                "hideout", (hideout?.WeedLabLevel ?? 0) > 0),
+                GuidancePages.Hideout, (hideout?.WeedLabLevel ?? 0) > 0),
             // The hideout, where the lab the step before it just built actually is. This said "street"
             // for as long as the ladder has existed, and the street has no production on it at all - so
             // a new player following the game's own instructions arrived at a page with nothing to do.
             // Pointing it at the hideout also means the lab and the shift that uses it are one page.
             Step("Run a production shift", "Turns and materials into product, at better odds than the street.",
-                "hideout", actionsTaken.Contains("PRODUCTION")),
+                GuidancePages.Production, actionsTaken.Contains("PRODUCTION")),
             Step("Sell what you made", "Product is only worth something once somebody buys it.",
-                "market", actionsTaken.Contains("SALE")),
+                GuidancePages.Production, actionsTaken.Contains("SALE")),
             Step("Arm every thug", "An unarmed thug is a morale leak and a lost fight.",
-                "market", player.Thugs > 0 && player.Weapons >= player.Thugs),
+                GuidancePages.Store, player.Thugs > 0 && player.Weapons >= player.Thugs),
             Step("Hire a second pimp", "Each one manages ten hoes. Past that the whole crew sours.",
-                "crew", player.Pimps >= 2),
+                GuidancePages.CrewHiring, player.Pimps >= 2),
             Step("Deepen the store", "A full room throws away everything you make after it.",
-                "hideout", (hideout?.StorageLevel ?? 1) > 1),
+                GuidancePages.Hideout, (hideout?.StorageLevel ?? 1) > 1),
             Step($"Move up to the {tierTwo?.Name ?? "Warehouse"}", "Stills, mix houses and mule runs all live behind it.",
-                "hideout", (hideout?.Tier ?? 1) >= 2)
+                GuidancePages.Hideout, (hideout?.Tier ?? 1) >= 2)
         ];
 
         static ObjectiveResponse Step(string label, string why, string page, bool done)

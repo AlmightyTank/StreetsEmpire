@@ -57,6 +57,10 @@ internal static class StartingState
         // season with the rifle counter already unlocked - which is the one thing a season is for.
         player.StoreRep = 0;
         player.StoreInvestmentReadyAtUtc = null;
+        // The hand itself goes with the book, which the roll empties. This is only the clock that
+        // decides what looking again costs, and it has to open at free like everybody else's.
+        player.JobRerollsUsed = 0;
+        player.JobRerollsResetAtUtc = null;
 
         player.Heat = 0;
         player.LastHeatRollUtc = nowUtc;

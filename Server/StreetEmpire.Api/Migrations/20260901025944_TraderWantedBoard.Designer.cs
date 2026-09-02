@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901025944_TraderWantedBoard")]
+    partial class TraderWantedBoard
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -851,6 +854,70 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("CombatMissionEvents");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.Contract", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Buyer")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("ClaimedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DeliveredQuantity")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FilledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("FilledById")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Good")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<long>("ListPricePerUnit")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("MinimumPurityPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("PostedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("PricePerUnit")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClaimedById");
+
+                    b.HasIndex("FilledById");
+
+                    b.HasIndex("City", "FilledAtUtc", "ExpiresAtUtc");
+
+                    b.ToTable("Contracts");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.Conversation", b =>
                 {
                     b.Property<long>("Id")
@@ -1677,12 +1744,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<int>("Hoes")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime?>("JobRerollsResetAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("JobRerollsUsed")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("LastAttackAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2244,7 +2305,7 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("Territories");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.TraderJob", b =>
+            modelBuilder.Entity("StreetEmpire.Api.Models.WantedOrder", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -2277,16 +2338,6 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
-                    b.Property<int>("Kind")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("MinimumPurityPercent")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("OnBehalfOf")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<DateTime>("PostedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2296,14 +2347,11 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Reason")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("ReferencePricePerUnit")
-                        .HasColumnType("bigint");
-
                     b.Property<int>("Rep")
                         .HasColumnType("integer");
+
+                    b.Property<long>("ShopPricePerUnit")
+                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 
@@ -2313,74 +2361,7 @@ namespace StreetEmpire.Api.Migrations
 
                     b.HasIndex("City", "FilledAtUtc", "ExpiresAtUtc");
 
-                    b.ToTable("TraderJobs");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.TraderJobLead", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("City")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("DealtAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("JobId")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("PlayerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Slot")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JobId");
-
-                    b.HasIndex("PlayerId", "City", "Slot")
-                        .IsUnique();
-
-                    b.ToTable("TraderJobLeads");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.TraderStock", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("City")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("Good")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<int>("Remaining")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("WindowStartUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("City", "Good")
-                        .IsUnique();
-
-                    b.ToTable("TraderStocks");
+                    b.ToTable("WantedOrders");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.WorkshopCraft", b =>
@@ -2686,6 +2667,23 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("CombatMission");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.Contract", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.Player", "ClaimedBy")
+                        .WithMany()
+                        .HasForeignKey("ClaimedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StreetEmpire.Api.Models.Player", "FilledBy")
+                        .WithMany()
+                        .HasForeignKey("FilledById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ClaimedBy");
+
+                    b.Navigation("FilledBy");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.Conversation", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.Player", "CreatedBy")
@@ -2912,7 +2910,7 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Holder");
                 });
 
-            modelBuilder.Entity("StreetEmpire.Api.Models.TraderJob", b =>
+            modelBuilder.Entity("StreetEmpire.Api.Models.WantedOrder", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.Player", "ClaimedBy")
                         .WithMany()
@@ -2927,25 +2925,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("ClaimedBy");
 
                     b.Navigation("FilledBy");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.TraderJobLead", b =>
-                {
-                    b.HasOne("StreetEmpire.Api.Models.TraderJob", "Job")
-                        .WithMany("Leads")
-                        .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
-                        .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
-
-                    b.Navigation("Player");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.WorkshopCraft", b =>
@@ -2998,11 +2977,6 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("EmailVerifications");
 
                     b.Navigation("Player");
-                });
-
-            modelBuilder.Entity("StreetEmpire.Api.Models.TraderJob", b =>
-                {
-                    b.Navigation("Leads");
                 });
 #pragma warning restore 612, 618
         }

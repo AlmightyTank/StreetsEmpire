@@ -62,6 +62,7 @@ internal static class GameEndpoints
             AllianceService allianceRules,
             StandingsRecorder standings,
             SeasonService seasons,
+            TraderShelfService shelves,
             CancellationToken ct) =>
         {
             // Before the player is loaded, not after. The world may be due to start over, and a
@@ -232,7 +233,7 @@ internal static class GameEndpoints
                 ToCombatCrewResponse(combatCrew),
                 ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
                 unreadAlerts,
-                economy.GetStore(player),
+                economy.GetStore(player, await shelves.RemainingAsync(player.City, economy.GetStore(player), now, ct)),
                 ToStoreRep(player, opts, now),
                 strikes.MethodsFor(player),
                 ToDistricts(opts),
@@ -598,10 +599,16 @@ internal static class GameEndpoints
         app.MapGet("/api/game/store", async (
             CurrentPlayerService current,
             EconomyService economy,
+            TraderShelfService shelves,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
-            return player is null ? Results.Unauthorized() : Results.Ok(economy.GetStore(player));
+            if (player is null) return Results.Unauthorized();
+            // The shelf is read once and priced twice: the first call is the list of lines this shop
+            // could have, which is what the stock lookup needs to know what to count.
+            var now = DateTime.UtcNow;
+            var stock = await shelves.RemainingAsync(player.City, economy.GetStore(player), now, ct);
+            return Results.Ok(economy.GetStore(player, stock));
         }).RequireAuthorization();
 
 
@@ -637,15 +644,22 @@ internal static class GameEndpoints
             CurrentPlayerService current,
             GameDbContext db,
             EconomyService economy,
+            TraderShelfService shelves,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
+            var now = DateTime.UtcNow;
+            var stock = await shelves.RemainingAsync(player.City, economy.GetStore(player), now, ct);
             var before = Snapshot(player);
             try
             {
-                var result = economy.BuyStoreItem(player, request.ItemKey, request.Quantity);
+                var result = economy.BuyStoreItem(player, request.ItemKey, request.Quantity, stock);
+                // Off the counter after the purchase is allowed, never before: a refused buy must not
+                // quietly cost the town its stock.
+                if (result.Breakdown?.TryGetValue("good", out var bought) == true && bought is string good)
+                    await shelves.TakeAsync(player.City, good, request.Quantity, now, ct);
                 AddLog(db, player, before, "STORE", 0, result.Summary);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);

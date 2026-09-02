@@ -3,9 +3,9 @@ import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
-import { routePage, routeTab, writeRoute } from './route'
+import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, ContractBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -67,8 +67,8 @@ const primaryPages: AppPage[] = ['overview', 'street', 'crew', 'market']
 const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
   overview: { label: 'Overview', short: 'OV', kicker: 'Command centre' },
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
-  crew: { label: 'Crew', short: 'CR', kicker: 'Morale and hiring' },
-  market: { label: 'Business', short: 'BZ', kicker: 'Shop, rooms, craft, runs' },
+  crew: { label: 'Crew', short: 'CR', kicker: 'Morale, rooms and craft' },
+  market: { label: 'Business', short: 'BZ', kicker: 'Shop, market and runs' },
   recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
   seasons: { label: 'Seasons', short: 'SN', kicker: 'The clock and the record' },
   updates: { label: 'Updates', short: 'UP', kicker: 'Patch notes and events' },
@@ -80,11 +80,66 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
 const updateCategories: GameAnnouncement['category'][] = ['Info', 'Patch', 'Balance', 'Event', 'Maintenance']
 const updateSeverities: GameAnnouncement['severity'][] = ['Info', 'Warning', 'Event', 'Maintenance']
 
-function flowPage(page: string): AppPage {
-  if (page === 'hideout' || page === 'mules') return 'market'
-  if (page === 'territory') return 'recon'
-  if (page === 'patch-notes' || page === 'news') return 'updates'
-  return page in pageMeta ? page as AppPage : 'overview'
+/**
+ * Somewhere to send a player: a page, the tab on it, and the panel on that.
+ *
+ * All three, because all three are the address. A page was never enough, a tab is not either: the
+ * Business page is four screens tall and the crew page longer, so "we took you to the right tab" can
+ * still mean the thing you were sent for is off the bottom of the screen with nothing pointing at it.
+ */
+type GoTo = (page: AppPage, tab?: string, area?: string) => void
+
+/**
+ * Turns a name written elsewhere into somewhere to go.
+ *
+ * The server names a thing rather than a screen. Guidance says "hideout" when it wants a room upgraded
+ * and "bank" when it wants cash put away, and an announcement's action link is a path somebody typed
+ * into an admin form. None of those know which page a section lives on, or should have to: this is the
+ * single place that does, and the only thing that has to move when a section does.
+ *
+ * Which is what makes it worth reading as a list. Every row is a promise that a name means a place, and
+ * two of them have already been quietly broken by things moving underneath: "sell product" pointed at
+ * Business for as long as the panel has existed, and selling has not been on Business since the bench
+ * took it over - so the one move the game makes when your store is full sent people to a page with no
+ * way to sell anything on it.
+ */
+function flowTarget(name: string): { page: AppPage, tab?: string, area?: string } {
+  // The crew, and the three things you do to it.
+  if (name === 'crew') return { page: 'crew', tab: 'roster', area: 'crew' }
+  if (name === 'crew-hiring') return { page: 'crew', tab: 'roster', area: 'crew-hiring' }
+  if (name === 'arrests') return { page: 'crew', tab: 'roster', area: 'arrests' }
+
+  // The building. Rooms are what "hideout" has always meant; recovery is a room's other use.
+  if (name === 'hideout') return { page: 'crew', tab: 'hideout', area: 'rooms' }
+  if (name === 'recovery') return { page: 'crew', tab: 'hideout', area: 'recovery' }
+
+  // The bench, which makes, produces and sells. Three verbs on one panel, so one destination.
+  if (name === 'production') return { page: 'crew', tab: 'production', area: 'craft-queue' }
+
+  // The counter and the money.
+  if (name === 'store') return { page: 'market', tab: 'trade', area: 'store' }
+  if (name === 'standing') return { page: 'market', tab: 'trade', area: 'standing' }
+  if (name === 'bank') return { page: 'market', tab: 'trade', area: 'bank' }
+  if (name === 'market') return { page: 'market', tab: 'trade' }
+  if (name === 'flea') return { page: 'market', tab: 'flea' }
+  if (name === 'mules') return { page: 'market', tab: 'routes' }
+
+  if (name === 'street') return { page: 'street', area: 'street-action' }
+  if (name === 'supplies') return { page: 'street', area: 'supplies' }
+  if (name === 'territory') return { page: 'recon', tab: 'ground' }
+  if (name === 'patch-notes' || name === 'news') return { page: 'updates' }
+  return { page: name in pageMeta ? name as AppPage : 'overview' }
+}
+
+/** The same answer for the places that only need the page, like the callout deciding it is on it. */
+function flowPage(name: string): AppPage {
+  return flowTarget(name).page
+}
+
+/** Sends somebody at a name. The one call every "take me there" button should be making. */
+function goToFlow(onPage: GoTo, name: string): void {
+  const { page, tab, area } = flowTarget(name)
+  onPage(page, tab, area)
 }
 
 /**
@@ -199,10 +254,13 @@ const discordOutcomes: Partial<Record<DiscordOutcome, { text: string, bad?: bool
   unavailable: { text: 'Discord sign-in is not set up on this server.', bad: true },
 }
 
-const tourSteps: { page: AppPage, target: string, title: string, body: string }[] = [
+// A step is a page, a tab and a panel, which is the same address everything else navigates by. It was
+// a page and a target, and the target was looked up under a marker only the tour used - so the tour and
+// the guidance list were two vocabularies for one question, and only one of them was ever checked.
+const tourSteps: { page: AppPage, tab?: string, area: string, title: string, body: string }[] = [
   {
     page: 'overview',
-    target: 'status',
+    area: 'status',
     title: 'Your numbers',
     body: 'Cash, turns, crew and heat. Turns are the real currency - almost everything worth doing spends '
       + 'them, and they come back slowly on their own. Heat is how much attention you have drawn; let it '
@@ -210,22 +268,23 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
   },
   {
     page: 'overview',
-    target: 'ladder',
+    area: 'ladder',
     title: 'What to do next',
     body: 'The opening ladder, in order. Each rung says why it is worth doing, and clicking one takes you '
       + 'to the page where it happens. If you ever lose the thread, come back here.',
   },
   {
     page: 'street',
-    target: 'street-action',
+    area: 'street-action',
     title: 'Working the streets',
     body: 'Where turns become money. Your hoes earn, your thugs guard them, and you pick up new crew while '
       + 'you are out. It costs supplies - condoms and beer - so a shift you cannot supply pays less and '
       + 'sours the crew.',
   },
   {
-    page: 'market',
-    target: 'rooms',
+    page: 'crew',
+    tab: 'hideout',
+    area: 'rooms',
     title: 'The hideout is the engine',
     body: 'Every room does one job: the store decides how big a crew you can feed, the labs make product '
       + 'while you are away, the safe keeps cash out of a raider\'s hands. Nothing you buy here is lost - '
@@ -233,15 +292,17 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
   },
   {
     page: 'market',
-    target: 'market-trade',
+    tab: 'flea',
+    area: 'flea',
     title: 'Buying and selling',
     body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
-      + 'cash, build rooms, run mules, and handle production: money on hand is stolen in a raid and money in the bank is not. '
+      + 'cash and send crew on runs: money on hand is stolen in a raid and money in the bank is not. '
       + 'The trip costs turns, so it is a move you make with a full safe rather than after every shift.',
   },
   {
     page: 'recon',
-    target: 'targets',
+    tab: 'targets',
+    area: 'targets',
     title: 'Other people',
     body: 'You can look up any player and take what they have, and they can do the same to you. You are only '
       + 'matched against people worth robbing and able to fight back, so nobody can farm a newcomer - and '
@@ -252,7 +313,7 @@ const tourSteps: { page: AppPage, target: string, title: string, body: string }[
 function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
   active: boolean
   stepIndex: number
-  onPage: (page: AppPage) => void
+  onPage: GoTo
   onStep: (index: number) => void
   onClose: () => void
 }) {
@@ -277,7 +338,7 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
   // Drive the page first: a target on another tab does not exist to be measured yet.
   useEffect(() => {
     if (!active || !step) return
-    onPage(step.page)
+    onPage(step.page, step.tab)
   }, [active, stepIndex])
 
   // Measure after the page has had a frame to render, and keep measuring while things move.
@@ -286,7 +347,7 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
 
     let frame = 0
     const measure = () => {
-      const node = document.querySelector(`[data-tour="${step.target}"]`)
+      const node = document.querySelector(`[data-area="${step.area}"]`)
       if (!node) { setRect(null); return }
       node.scrollIntoView({ block: 'center', behavior: 'smooth' })
       setRect(node.getBoundingClientRect())
@@ -962,7 +1023,77 @@ function App() {
     named would be the one being left rather than the one being opened. Writing on the way in puts
     the two in the only order that reads correctly.
   */
-  const setActivePage = (page: AppPage) => { setPage(page); writeRoute(page) }
+  /*
+    The tab is optional and, when it is given, is what the address is written with. Naming one is how
+    anything that knows where it is sending somebody gets them the whole way there: a room rather than
+    the page the room is on, the shop rather than Business. Left out, the page opens on whatever tab it
+    would have anyway, which is what a plain nav click wants.
+  */
+  /*
+    The area is the third part of the address and the only one that is not in it.
+
+    A tab is where a panel lives and survives a reload, so it belongs in the bar. Which panel somebody
+    was pointed at is a thing that happened once, on the way in - keeping it would mean every reload for
+    the rest of the session dragging the screen back down to a room they upgraded an hour ago. So it is
+    carried as a request rather than a location, and answered once.
+
+    The counter is what makes it a request rather than a value. Sending somebody to the panel they are
+    already looking at has to scroll again - "take me there" pressed twice is somebody saying they
+    cannot see it - and a plain string would be the same string, which React would rightly ignore.
+  */
+  const [scrollRequest, setScrollRequest] = useState<{ area: string, id: number } | null>(null)
+  const scrollRequests = useRef(0)
+  const setActivePage: GoTo = (page, tab, area) => {
+    setPage(page)
+    writeRoute(page, tab)
+    if (area) setScrollRequest({ area, id: ++scrollRequests.current })
+  }
+
+  /*
+    Answered after the page has had a frame to draw it, because a panel on a tab that has not rendered
+    yet is not in the document to be found. Two frames then a settle, which is what the walkthrough
+    learned to do for exactly the same reason - a page swap and then whatever the swap sets off.
+
+    Missing is not an error. Guidance is written against the state of the world and the world moves: a
+    panel can be absent because the thing it is for has been done, and the page it was on is still the
+    right page to have been taken to.
+  */
+  useEffect(() => {
+    if (!scrollRequest) return
+
+    let frame = 0
+    let settle = 0
+    let clear = 0
+    // Held so the cleanup can take the mark off. Two requests inside the two seconds is the ordinary
+    // case rather than a strange one - somebody following the guidance list down it - and without this
+    // the first panel keeps its ring for the rest of the session, pointing at nothing.
+    let marked: HTMLElement | null = null
+
+    const find = () => {
+      const node = document.querySelector<HTMLElement>(`[data-area="${scrollRequest.area}"]`)
+      if (!node) return false
+      // Read off the root rather than out of React state: the preference layer already resolves the
+      // saved choice against the system one and stamps the answer there, and a second reading of the
+      // same question is a second answer waiting to disagree.
+      const reduced = document.documentElement.getAttribute('data-motion') === 'reduced'
+      node.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
+      // A mark on the panel itself, because scrolling alone only says "somewhere around here". It
+      // comes off on a timer rather than on a click: anything that waits to be dismissed is one more
+      // thing to dismiss.
+      marked = node
+      node.classList.add('area-found')
+      clear = window.setTimeout(() => node.classList.remove('area-found'), 2_000)
+      return true
+    }
+
+    frame = requestAnimationFrame(() => requestAnimationFrame(() => { if (!find()) settle = window.setTimeout(find, 380) }))
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(settle)
+      window.clearTimeout(clear)
+      marked?.classList.remove('area-found')
+    }
+  }, [scrollRequest])
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   // Fetched rather than hardcoded: the towns come from the territory map, so a city with no ground
   // could never be offered as somewhere to set up.
@@ -1768,7 +1899,7 @@ type PageContext = {
   totalCrew: number
   weaponCoverage: number
   managementCapacity: number
-  setActivePage: (page: AppPage) => void
+  setActivePage: GoTo
   setTargetQuery: (query: string) => void
   setStreetTurns: (turns: number) => void
   setAutoBuySupplies: (enabled: boolean) => void
@@ -2500,20 +2631,33 @@ function ContextualUpdateCallout({ update, onPage }: { update: GameAnnouncement,
   </div>
 }
 
-function UpdateAction({ update, onPage }: { update: GameAnnouncement, onPage: (page: AppPage) => void }) {
+function UpdateAction({ update, onPage }: { update: GameAnnouncement, onPage: GoTo }) {
   if (!update.actionLabel || !update.actionUrl) return null
-  const page = updateActionPage(update.actionUrl)
-  if (page)
-    return <button className="btn btn-secondary btn-sm" type="button" onClick={() => onPage(page)}>{update.actionLabel}</button>
+  const name = updateActionName(update.actionUrl)
+  if (name)
+    return <button className="btn btn-secondary btn-sm" type="button" onClick={() => goToFlow(onPage, name)}>{update.actionLabel}</button>
   return <a className="btn btn-secondary btn-sm" href={update.actionUrl}>{update.actionLabel}</a>
 }
 
-function updateActionPage(url: string): AppPage | null {
+/**
+ * The section an announcement's action link names, or null when it points somewhere off this app.
+ *
+ * The name rather than the page, because the caller wants the tab as well and a page cannot be turned
+ * back into one. The check is still here so a link to somewhere that does not exist stays an anchor:
+ * flowTarget answers every string, and falling back to the Overview would turn a typo into a button
+ * that silently goes to the wrong place.
+ */
+function updateActionName(url: string): string | null {
   if (!url.startsWith('/')) return null
   const name = url.slice(1).split(/[/?#]/)[0] || 'overview'
-  if (name === 'hideout' || name === 'mules' || name === 'territory' || name === 'patch-notes' || name === 'news' || name in pageMeta)
-    return flowPage(name)
-  return null
+  return name === 'hideout' || name === 'mules' || name === 'territory' || name === 'patch-notes' || name === 'news' || name in pageMeta
+    ? name
+    : null
+}
+
+function updateActionPage(url: string): AppPage | null {
+  const name = updateActionName(url)
+  return name === null ? null : flowPage(name)
 }
 
 function clampText(value: string, max: number) {
@@ -2556,7 +2700,7 @@ function StreetPage(ctx: PageContext) {
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
   const restock = restockEstimate(dashboard, streetTurns)
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
-    <section className="card p-3 gcol-full" data-tour="street-action">
+    <section className="card p-3 gcol-full" data-area="street-action">
       <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
       <p>Your hoes earn, and their cut comes off the top before anything reaches your pocket. A shift also turns up new crew and whatever is lying about.</p>
       {pendingOutgoingAttack && <div className="d-flex justify-content-between align-items-center gap-3 border border-primary rounded bg-body-tertiary px-3 py-2 mt-3">
@@ -2572,7 +2716,7 @@ function StreetPage(ctx: PageContext) {
         storeQty={storeQty}
         setStoreQty={setStoreQty}
         act={act}
-        onMarket={() => setActivePage('market')}
+        onMarket={() => setActivePage('market', 'trade')}
       />
       <div className="control-row">
         <label className="field">Turns<input className="form-control" type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
@@ -2603,7 +2747,38 @@ function StreetPage(ctx: PageContext) {
   </div>
 }
 
+const CREW_TABS = ['roster', 'hideout', 'production'] as const
+
+/**
+ * Everything the crew is made of, in three tabs.
+ *
+ * The hideout and the craft queue used to live under Business, which is where they had been put on the
+ * grounds that both cost money. Almost nothing else about them belonged there. What a room does is set
+ * how many hoes can be fed, how many thugs there is a bed for and how much of a shift can be supplied -
+ * every one of those a number this page already prints, one tab away from the room that decides it -
+ * and the craft queue is the bench arming those thugs. Business is where things are bought and sold;
+ * this is where they are kept, housed and made.
+ */
 function CrewPage(ctx: PageContext) {
+  const [tab, setTab] = useRouteTab('crew', CREW_TABS, 'roster')
+  return <div className="d-grid gap-3">
+    <SectionTabs
+      label="Crew sections"
+      active={tab}
+      onActive={setTab}
+      tabs={[
+        { key: 'roster', label: 'Crew' },
+        { key: 'hideout', label: 'Hideout' },
+        { key: 'production', label: 'Craft Queue' },
+      ]}
+    />
+    {tab === 'roster' && <CrewCorePage {...ctx} />}
+    {tab === 'hideout' && <HideoutPage {...ctx} />}
+    {tab === 'production' && <ProductionPage {...ctx} />}
+  </div>
+}
+
+function CrewCorePage(ctx: PageContext) {
   const { dashboard, busy, crewQty, totalCrew, weaponCoverage, managementCapacity, setCrewQty, act } = ctx
   const combatCrew = dashboard.combatCrew
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start">
@@ -2611,7 +2786,7 @@ function CrewPage(ctx: PageContext) {
         does, so it goes above the crew it is holding rather than under them. */}
     <ArrestPanel dashboard={dashboard} busy={busy} act={act} />
     <ShrinePanel busy={busy} act={act} />
-    <section className="card p-3 gcol-full">
+    <section className="card p-3 gcol-full" data-area="crew">
       <div className="panel-title"><h2>Your Crew</h2><span>{number.format(totalCrew)} total</span></div>
       <StorageSupplyNotice dashboard={dashboard} />
       <div className="d-grid gtc-1 gtc-md-3 gap-2">
@@ -2628,7 +2803,7 @@ function CrewPage(ctx: PageContext) {
       </div>
     </section>
 
-    <section className="card p-3 gcol-full">
+    <section className="card p-3 gcol-full" data-area="crew-hiring">
       <div className="panel-title"><h2>Crew Management</h2><span>Hire + fire</span></div>
       <div className="d-grid">
         <CrewManageRow
@@ -2695,7 +2870,7 @@ function HideoutPage(ctx: PageContext) {
   const hideout = dashboard.hideout
   const workshop = hideout.stations?.find(station => station.key === 'workshop')
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
-    <section className="card p-3 gcol-full">
+    <section className="card p-3 gcol-full" data-area="capacity">
       <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier}</span></div>
       <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
       <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-3">
@@ -2718,7 +2893,7 @@ function HideoutPage(ctx: PageContext) {
 
     <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
 
-    <section className="card p-3 gcol-full" data-tour="rooms">
+    <section className="card p-3 gcol-full" data-area="rooms">
       <div className="panel-title"><h2>Rooms</h2><span>Paid from the bank first</span></div>
       <div className="d-grid gap-2 mt-3">
         <RoomRow
@@ -2849,7 +3024,7 @@ function MulePage(ctx: PageContext) {
   }, [city, good, hoes, cash])
 
   if (!board) return <div className="d-grid gtc-1 gap-3 align-items-start"><section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Mules</h2><span>Loading</span></div>
+    <div className="panel-title" data-area="mules"><h2>Mules</h2><span>Loading</span></div>
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
   </section></div>
 
@@ -3130,7 +3305,7 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
   ].sort((a, b) => a.requiredWorkshopLevel - b.requiredWorkshopLevel || a.name.localeCompare(b.name))
 
   return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Craft Queue</h2><span>Workbench crafts</span></div>
+    <div className="panel-title" data-area="craft-queue"><h2>Craft Queue</h2><span>Workbench crafts</span></div>
     <p>
       Weed, coke, guns and back-room goods all run through the same queue. Turns and cash
       are paid up front, and the finished batch lands in storage when the timer clears.
@@ -3700,7 +3875,7 @@ function TradingPanel(ctx: PageContext) {
   </section>
 
   return <>
-    <section className="card p-3 gcol-full" data-tour="market-trade">
+    <section className="card p-3 gcol-full" data-area="flea">
       <div className="panel-title">
         <h2>Player Market</h2>
         <span>{board.houseCutPercent}% to the house / {board.yourOpenListings} of {board.maxListingsPerPlayer} listings</span>
@@ -3799,6 +3974,24 @@ function useRouteTab<T extends string>(page: AppPage, allowed: readonly T[], fal
   // too. A player who cannot see how the address bar got there can still reload onto it.
   useEffect(() => { writeRoute(page, tab) }, [page, tab])
 
+  /*
+    And read back, for the tab somebody else asked for.
+
+    Arriving from another page needs none of this: the strip unmounts with the page it was on and the
+    new one reads the address as it mounts. This is the other half - a link that names a tab on the page
+    already open, where nothing remounts and the initial read has long since happened. Without it,
+    "upgrade the storage room" on the Crew page would move nothing, because the destination is the tab
+    next door.
+
+    Guarded on the page and the list, so one strip cannot be moved by an address meant for another, and
+    a tab this page has no branch for is ignored rather than opening a blank. The allowed list is a
+    module constant at every call site, so it is deliberately not a dependency: adding it would rebuild
+    the subscription on a value that never changes.
+  */
+  useEffect(() => onRouteChange((written, asked) => {
+    if (written === page && (allowed as readonly string[]).includes(asked)) setTab(asked as T)
+  }), [page])
+
   return [tab, setTab]
 }
 
@@ -3825,8 +4018,19 @@ function SectionTabs<T extends string>({ label, tabs, active, onActive }: {
   </nav>
 }
 
-const MARKET_TABS = ['trade', 'hideout', 'production', 'routes'] as const
+const MARKET_TABS = ['trade', 'flea', 'routes'] as const
 
+/**
+ * Buying and selling, in three places that are not the same place.
+ *
+ * Shop is the town's trader: one person, fixed prices, always open, and the standing you have with them.
+ * Flea is everybody else, at whatever they feel like asking. Runs is sending crew to buy somewhere the
+ * price is better. They were one page and read as one counter, which flattered none of them - the flea
+ * market looked like more shelves, and it buried the trader under a page of listings.
+ *
+ * The hideout and the craft queue were here too and are on Crew now. Both cost money, which was the
+ * whole of what they had in common with a shop. See CrewPage.
+ */
 function MarketPage(ctx: PageContext) {
   const [tab, setTab] = useRouteTab('market', MARKET_TABS, 'trade')
   return <div className="d-grid gap-3">
@@ -3836,22 +4040,34 @@ function MarketPage(ctx: PageContext) {
       onActive={setTab}
       tabs={[
         { key: 'trade', label: 'Shop' },
-        { key: 'hideout', label: 'Hideout' },
-        { key: 'production', label: 'Craft Queue' },
+        { key: 'flea', label: 'Flea' },
         { key: 'routes', label: 'Runs' },
       ]}
     />
     {tab === 'trade' && <MarketCorePage {...ctx} />}
-    {tab === 'hideout' && <HideoutPage {...ctx} />}
-    {tab === 'production' && <ProductionPage {...ctx} />}
+    {tab === 'flea' && <FleaPage {...ctx} />}
     {tab === 'routes' && <MulePage {...ctx} />}
+  </div>
+}
+
+/**
+ * The flea market: what other players are selling, and putting your own stock up beside it.
+ *
+ * Its own tab because it is a different counter to the shop's. The Shop tab is one trader with fixed
+ * prices who is always there; this is everybody else, at whatever they feel like asking, and whether
+ * there is anything worth having on it depends entirely on who has been listing lately. Sat under the
+ * shop it read as more of the shop, which is the one thing it is not - and it pushed the trader, the
+ * standing and the wanted board down a page that was already the longest in the game.
+ */
+function FleaPage(ctx: PageContext) {
+  return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
+    <TradingPanel {...ctx} />
   </div>
 }
 
 function MarketCorePage(ctx: PageContext) {
   const { dashboard, busy, bankAmount, storeQty, setBankAmount, setStoreQty, act } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
-    <ContractsPanel dashboard={dashboard} busy={busy} act={act} />
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
       <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-5 gap-2 mt-3">
@@ -3880,13 +4096,14 @@ function MarketCorePage(ctx: PageContext) {
       </div>
     </section>
 
-    <TradingPanel {...ctx} />
-
+    <TraderBoardPanel dashboard={dashboard} busy={busy} act={act} />
     <StoreStandingPanel dashboard={dashboard} busy={busy} act={act} />
 
-    <section className="card p-3 gcol-full">
+    <section className="card p-3 gcol-full" data-area="store">
+      {/* The counter is somebody's, and says so. "Street Store" was a sign on a building nobody
+          worked in - which is a strange thing for the one room every player opens every day. */}
       <div className="panel-title">
-        <h2>Street Store</h2>
+        <h2>{dashboard.storeRep.trader.name}'s Counter</h2>
         <span>Cash on hand only{dashboard.storeRep.discountPercent > 0 ? `, ${dashboard.storeRep.discountPercent}% off as ${dashboard.storeRep.levelName}` : ''}</span>
       </div>
       <div className="d-grid gtc-1 gtc-xl-3 gap-2 mt-3">
@@ -3902,11 +4119,20 @@ function MarketCorePage(ctx: PageContext) {
               <div className="d-flex flex-wrap align-items-center gap-2">
                 <strong className="text-body fs-5">{item.name}</strong>
                 <span className="eyebrow border rounded-pill text-info-emphasis px-2 py-1">{item.category}</span>
+                {/* What is left, where it is worth knowing. A thin shelf is a thing to act on and a
+                    full one is noise, so only the last of a line says so. */}
+                {typeof item.available === 'number' && item.available > 0 && item.available <= 12 &&
+                  <span className="eyebrow border rounded-pill text-warning-emphasis border-warning px-2 py-1">
+                    {number.format(item.available)} left
+                  </span>}
                 {item.minRepLevel > 1 && <span className={`eyebrow border rounded-pill px-2 py-1 ${item.locked ? 'text-warning-emphasis border-warning' : 'text-success-emphasis border-success'}`}>
                   {item.minRepLevelName}
                 </span>}
               </div>
               <p className="m-0 text-body-secondary">{item.description}</p>
+              {/* Three different reasons a row can be shut and they are not interchangeable: a rung you
+                  have not reached, a line this trader has never carried, and a line they are out of.
+                  Only the first is something to go and earn. */}
               {item.locked && <p className="m-0 small text-warning-emphasis">{item.lockedReason}</p>}
             </div>
             <div className="d-grid gtc-2 gap-2 align-items-end border rounded bg-body-tertiary p-2">
@@ -3916,7 +4142,9 @@ function MarketCorePage(ctx: PageContext) {
                 {/* The sticker, struck through, only where standing has actually moved it. */}
                 {item.listPrice > item.price && <s className="text-body-tertiary small">{money.format(item.listPrice)}</s>}
               </div>
-              <label className="field small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={10000} value={qty} disabled={item.locked} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
+              {/* Capped at what is actually on the counter, so the number in the box is always a
+                  number the shop can fill. The refusal behind it is real either way. */}
+              <label className="field small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={item.available ?? 10000} value={qty} disabled={item.locked} onChange={e => setStoreQty(v => ({ ...v, [item.key]: Number(e.target.value) }))} /></label>
               <div className="d-grid gap-1">
                 <span className="eyebrow">Total</span>
                 <strong className="text-primary fs-6">{money.format(qty * item.price)}</strong>
@@ -3943,24 +4171,220 @@ function MarketCorePage(ctx: PageContext) {
 }
 
 /**
- * Standing at the counter: where you are on the ladder, what it is worth, and what money buys of it.
+ * Standing at the counter: where you are, what it is worth, and what money buys of it.
  *
  * The panel leads with the rung you are on rather than the points behind it, because the points are
- * only ever a means: nobody is saving up 3,000 rep, they are saving up for rifles. The whole ladder is
- * on the page for the same reason - a player standing at the bottom of it should be able to read what
- * the top of it costs without climbing three rungs to find out, and the guns each rung opens are the
- * only honest answer to why anybody would bother.
+ * only ever a means: nobody is saving up 15,000 rep, they are saving up for rifles.
+ *
+ * It shows the rung underfoot and the next one, and no further. Laying the whole ladder out was the
+ * first thing tried and it read as a spoiler - five cards naming every gun and every price in the game
+ * to somebody who has not bought a shotgun yet, which is a strange way to open a shop. What a player
+ * needs here is what they are and what is next; a locked row on the shelf above still names the rung
+ * that opens it, so nothing anybody is actually reaching for has gone quiet.
  *
  * Investments sit under it rather than in the goods grid above. They are the one thing at this counter
  * that hands over nothing at all, and a row that takes $250,000 and gives back no object belongs
  * nowhere near the row that sells beer.
  */
+/**
+ * The dealer's board: the three jobs you are being told about, and what asking for others costs.
+ *
+ * One panel where there were two. The trader's own wanted board and the town's contracts were separate
+ * lists with separate headings, separate paragraphs and separate refill clocks, stacked one above the
+ * other inside the same card and both headed with the same person's name - up to six open jobs at once,
+ * asking a player to learn a distinction the fiction never made. Every job comes through the dealer;
+ * some are theirs, some are somebody else's. The row says which.
+ *
+ * The book behind it is deep - sixteen to eighteen going in a town - and what you get is a hand of
+ * three out of it, kept, so a job is still there when you come back with what you went away to make.
+ * The first slot is always the dealer's own and the second always a buyer's, so an evening whose whole
+ * question is what to do with a workshop never opens on a board with nothing to say to it.
+ *
+ * Loaded on its own rather than off the dashboard, because reading the board is what tops the book up:
+ * hanging it off the dashboard would post jobs in every town in the game for a player who never goes
+ * near a shop.
+ */
+function TraderBoardPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
+  const [board, setBoard] = useState<TraderJobBoard | null>(null)
+  // Which slots are ticked for the next ask. Held here rather than derived, because choosing is the
+  // whole interaction: the cost is per slot, so one, two and three are three different decisions.
+  const [asking, setAsking] = useState<number[]>([])
+
+  const load = async () => {
+    try { setBoard(await api.jobs()) }
+    catch { setBoard(null) }
+  }
+  // Re-read on the things that change what a row can do: the town you are in, and the stock you hold.
+  useEffect(() => { void load() }, [
+    dashboard.city, dashboard.weapons, dashboard.weed, dashboard.coke,
+    dashboard.moonshine, dashboard.cut, dashboard.medicine, dashboard.poison,
+  ])
+
+  const trader = board?.trader ?? dashboard.storeRep.trader
+  const fill = async (id: number) => {
+    await act(() => api.fillJob(id))
+    await load()
+  }
+  const reroll = async () => {
+    if (asking.length === 0) return
+    await act(() => api.rerollJobs(asking))
+    setAsking([])
+    await load()
+  }
+
+  const jobs = board?.jobs ?? []
+  const rr = board?.reroll
+  // What the ticked slots actually come to. The steps escalate, so this is the sum of the next N rather
+  // than N times the next one - and quoting the wrong number here would be quoting a price nobody pays.
+  const cost = (() => {
+    if (!rr || asking.length === 0) return { cash: 0, rep: 0 }
+    if (asking.length >= jobs.length) return { cash: rr.allCash, rep: rr.allRep }
+    if (asking.length === 1) return { cash: rr.nextCash, rep: rr.nextRep }
+    // Two of three: the page cannot see the middle step, so it says the part it knows and lets the
+    // server be the authority. Understating would be worse than saying "from".
+    return { cash: rr.nextCash, rep: rr.nextRep, from: true as const }
+  })()
+  // A job with goods already in it is pinned: the stock is gone and the premium is not paid until the
+  // last unit, so swapping it out would take an unfinished job off somebody who has paid into it.
+  const pinned = jobs.filter(job => job.yours).map(job => job.slot)
+  const overRep = rr ? cost.rep > rr.spendableRep : false
+  const short = dashboard.cash < cost.cash
+
+  return <section className="card p-3 gcol-full" data-area="jobs">
+    <div className="panel-title">
+      <h2>{trader.name}</h2>
+      <span>{trader.pitch}</span>
+    </div>
+    {/* Their line, then the line meant for you. The second one changes when your standing does, which
+        is the cheapest way there is to tell somebody a rung moved. */}
+    <p className="m-0 mt-2 text-body-secondary fst-italic">&ldquo;{trader.patter}&rdquo;</p>
+    <p className="m-0 mt-2 text-body">{dashboard.storeRep.trader.greeting}</p>
+
+    <p className="m-0 mt-3 text-body-secondary">
+      Three jobs at a time, out of the {board ? number.format(board.openInTown) : 'many'} going in
+      {' '}{board?.city ?? dashboard.city}. Every one of them is theirs - a gap on their own shelf, a
+      favour for somebody, a promise they came up short on, or another town's counter they said they
+      would cover. They all pay over the going rate, and the premium lands whole when the last of it
+      goes in, so stopping half way costs you nothing but the finish.
+    </p>
+
+    {jobs.length === 0 && board !== null && <p className="m-0 mt-3 text-body-tertiary">
+      Nothing going in {board.city} right now. The town posts more every few minutes.
+    </p>}
+
+    <div className="d-grid gap-2 mt-3">
+      {jobs.map(job => {
+        const hours = Math.floor(job.minutesRemaining / 60)
+        const left = hours >= 1 ? `${hours}h left` : `${job.minutesRemaining}m left`
+        const started = job.delivered > 0
+        const finishes = job.canDeliverNow >= job.remaining && job.canDeliverNow > 0
+        const ticked = asking.includes(job.slot)
+        return <div className={`room-row ${job.blockedReason ? '' : 'border-start-thick border-start-success'}`} key={job.id}>
+          <div className="room-copy">
+            <strong>
+              {number.format(job.quantity)} {job.goodLabel.toLowerCase()}
+              {/* Why, rather than who. Every job is the dealer's; what differs is what they want it
+                  for, and that is the sentence that was missing when half the rows were headed with
+                  the name of a place the player had never dealt with. */}
+              <span className="badge text-bg-secondary">{job.reason}</span>
+              <span className="badge text-bg-secondary">+{number.format(job.rep)} rep</span>
+              {started && <span className="badge text-bg-warning">Started</span>}
+            </strong>
+            <span>
+              {money.format(job.pricePerUnit)} each, against {money.format(job.referencePricePerUnit)}
+              {job.kind === 'Supply' ? ' on their shelf.' : ' over the counter.'}
+              {job.minimumPurityPercent ? ` At least ${job.minimumPurityPercent}% pure.` : ''}
+              {/* The bench is half the point of the board, so a row says outright whether yours can
+                  make this - an order for SMGs is a different proposition at workshop 4 than at none. */}
+              {job.workshopLevelNeeded
+                ? ` Your workshop cannot make these yet - that needs level ${job.workshopLevelNeeded}.`
+                : job.canForge ? ' Your workshop makes these.' : ''}
+            </span>
+            <small>
+              {started
+                ? `${number.format(job.delivered)} in, ${number.format(job.remaining)} to go - ${money.format(job.completionBonus)} and ${number.format(job.rep)} rep land when it is finished`
+                : `${money.format(job.payout)} the lot, ${money.format(job.completionBonus)} more than selling it flat`}
+              {' - '}{left}
+              {job.blockedReason ? ` - ${job.blockedReason}` : ''}
+            </small>
+            {started && <div
+              className="progress contract-progress mt-1"
+              role="progressbar"
+              aria-label="Job filled"
+              aria-valuenow={Math.round((job.delivered / job.quantity) * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div className="progress-bar" style={{ width: `${Math.round((job.delivered / job.quantity) * 100)}%` }} />
+            </div>}
+          </div>
+          <em>{number.format(job.held)} held</em>
+          <div className="d-grid gap-1">
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={busy || !!job.blockedReason || job.canDeliverNow <= 0}
+              onClick={() => void fill(job.id)}
+            >
+              {job.canDeliverNow <= 0 ? 'Nothing to hand over'
+                : finishes ? 'Finish it' : `Run ${number.format(job.canDeliverNow)}`}
+            </button>
+            {/* The tick that decides what the ask below covers. Absent on a job with goods in it,
+                because that one cannot be swapped at any price and a disabled box invites the question. */}
+            {!job.yours && <label className="eyebrow d-flex align-items-center gap-1 justify-self-end">
+              <input
+                className="form-check-input m-0"
+                type="checkbox"
+                checked={ticked}
+                disabled={busy}
+                onChange={() => setAsking(slots => ticked ? slots.filter(x => x !== job.slot) : [...slots, job.slot])}
+              />
+              Ask again
+            </label>}
+          </div>
+        </div>
+      })}
+    </div>
+
+    {rr && jobs.length > 0 && <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 border-top mt-3 pt-3">
+      <div className="d-grid gap-1">
+        <strong className="text-body">Ask what else is going</strong>
+        <span className="text-body-secondary small">
+          {rr.usedThisCycle === 0
+            ? 'The first one is on them.'
+            : rr.freeAgainAtUtc
+              ? `${number.format(rr.usedThisCycle)} asked this cycle. The free one is back in ${timeUntil(rr.freeAgainAtUtc)}.`
+              : 'The first one is on them.'}
+          {pinned.length > 0 && ' A job you have goods in stays where it is.'}
+        </span>
+      </div>
+      <div className="d-flex flex-wrap align-items-center gap-2">
+        <span className="tnum text-body-secondary small">
+          {asking.length === 0
+            ? `Next one costs ${cost.cash > 0 || rr.nextRep > 0 ? `${money.format(rr.nextCash)} and ${number.format(rr.nextRep)} rep` : 'nothing'}`
+            : `${'from' in cost ? 'From ' : ''}${money.format(cost.cash)} and ${number.format(cost.rep)} rep`}
+        </span>
+        <button
+          className="btn btn-secondary btn-sm"
+          type="button"
+          disabled={busy || asking.length === 0 || short || overRep}
+          onClick={() => void reroll()}
+        >
+          {overRep ? 'That would cost you the rung'
+            : short ? 'Not enough cash'
+            : asking.length === 0 ? 'Pick one'
+            : `Ask about ${asking.length === 1 ? 'it' : number.format(asking.length)}`}
+        </button>
+      </div>
+    </div>}
+  </section>
+}
+
 function StoreStandingPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
   const rep = dashboard.storeRep
   const waiting = rep.investmentReadySeconds > 0 && rep.investmentReadyAtUtc
-  return <section className="card p-3 gcol-full">
+  return <section className="card p-3 gcol-full" data-area="standing">
     <div className="panel-title">
-      <h2>Standing</h2>
+      <h2>Standing with {rep.trader.name}</h2>
       <span>{number.format(rep.rep)} rep, {money.format(rep.dollarsPerRep)} of trade a point</span>
     </div>
 
@@ -3980,22 +4404,6 @@ function StoreStandingPanel({ dashboard, busy, act }: { dashboard: Dashboard, bu
         Every dollar over the counter counts, so the beer and condoms you already buy are building this.
         {rep.discountPercent > 0 && ` Standing here takes ${rep.discountPercent}% off every price in the shop.`}
       </p>
-    </div>
-
-    <div className="d-grid gtc-1 gtc-sm-2 gtc-xl-3 gap-2 mt-3">
-      {rep.levels.map(level => <div
-        className={`d-grid gap-1 align-content-start border rounded p-2 ${level.current ? 'border-primary bg-body-tertiary' : level.reached ? 'bg-body-tertiary' : 'bg-body-secondary opacity-75'}`}
-        key={level.level}
-      >
-        <div className="d-flex justify-content-between align-items-baseline gap-2">
-          <strong className="text-body">{level.name}</strong>
-          <span className="eyebrow">{number.format(level.rep)} rep</span>
-        </div>
-        <span className="small text-body-secondary">
-          {level.unlocks ? level.unlocks : 'Nothing new on the shelf'}
-          {level.discountPercent > 0 && ` / ${level.discountPercent}% off`}
-        </span>
-      </div>)}
     </div>
 
     <div className="panel-title mt-3">
@@ -5805,7 +6213,7 @@ function alertClass(alert: Alert) {
 }
 
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
-  return <section className="status-strip tnum d-grid gap-2 mb-3" data-tour="status">
+  return <section className="status-strip tnum d-grid gap-2 mb-3" data-area="status">
     <Stat label="Cash" value={money.format(dashboard.cash)} />
     <Stat label="Bank" value={money.format(dashboard.bankCash)} />
     <Stat label="Net Worth" value={money.format(dashboard.netWorth)} />
@@ -5891,7 +6299,7 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
     ].filter(key => !catalog.has(key)).join(', '))
   if (supplies.length === 0) return null
 
-  return <div className="tnum d-grid gap-2 my-3 border rounded bg-body-secondary p-3">
+  return <div className="tnum d-grid gap-2 my-3 border rounded bg-body-secondary p-3" data-area="supplies">
     <div className="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-3">
       <div className="d-grid gap-1">
         <strong className="text-body">Supplies</strong>
@@ -5941,18 +6349,18 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
  * first session having clicked one button five times, with the best purchase available to them
  * sitting unmentioned in a room they had no reason to open.
  */
-function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (page: AppPage) => void }) {
+function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: GoTo }) {
   const moves = dashboard.guidance?.moves ?? []
   if (moves.length === 0) return null
 
   return <section className="card p-3">
-    <div className="panel-title"><h2>Next Moves</h2><span>Worth doing now</span></div>
+    <div className="panel-title" data-area="next-moves"><h2>Next Moves</h2><span>Worth doing now</span></div>
     <div className="d-grid gap-2">
       {moves.map(move => <button
         className={`w-100 d-grid gap-1 text-start border rounded p-3 ${move.urgent ? 'border-warning bg-body-tertiary' : 'bg-body-secondary'}`}
         type="button"
         key={move.label}
-        onClick={() => onPage(flowPage(move.page))}
+        onClick={() => goToFlow(onPage, move.page)}
       >
         {/* Advice carries a price, so the cost sits with the label rather than buried in the reason. */}
         <strong className={move.urgent ? 'text-primary' : 'text-body'}>
@@ -5972,7 +6380,7 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: (p
  */
 function OpeningLadderPanel({ dashboard, onPage, onTour }: {
   dashboard: Dashboard
-  onPage: (page: AppPage) => void
+  onPage: GoTo
   onTour: () => void
 }) {
   const guidance = dashboard.guidance
@@ -5980,7 +6388,7 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
   // The next unfinished rung, plus what has been done, so progress is visible without listing it all.
   const next = guidance.objectives.find(o => !o.done)
 
-  return <section className="card p-3" data-tour="ladder">
+  return <section className="card p-3" data-area="ladder">
     <div className="panel-title">
       <h2>Getting Started</h2>
       <div className="d-flex align-items-center gap-2">
@@ -5995,7 +6403,7 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
         className={`ladder-row d-grid gap-2 align-items-start text-start border rounded-2 p-2 ${step.done ? 'done' : step === next ? 'next bg-body-secondary text-body' : 'border-0 bg-transparent'}`}
         type="button"
         key={step.label}
-        onClick={() => onPage(flowPage(step.page))}
+        onClick={() => goToFlow(onPage, step.page)}
       >
         <em className="fst-normal text-success-emphasis">{step.done ? '✓' : ''}</em>
         <div>
@@ -6011,7 +6419,7 @@ function PimpRosterPanel({ dashboard }: { dashboard: Dashboard }) {
   const crew = dashboard.crew
   const fallen = dashboard.fallenCrew
   return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Your Pimps</h2><span>{crew.length}/{dashboard.hideout.maxPimps} on the payroll</span></div>
+    <div className="panel-title" data-area="pimps"><h2>Your Pimps</h2><span>{crew.length}/{dashboard.hideout.maxPimps} on the payroll</span></div>
     <p>Pimps are the only crew you know by name. One of them commands each attack, and loyalty slides when the operation is miserable or a mission goes badly.</p>
     <div className="d-grid gap-2 mt-3">
       {crew.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No pimps left. Hire one before you can run the streets or attack.</p>}
@@ -6176,7 +6584,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
   const canRest = !busy && restReason === null
   const canParty = !busy && partyReason === null
 
-  return <section className="card p-3 gcol-full">
+  return <section className="card p-3 gcol-full" data-area="recovery">
     <div className="panel-title"><h2>Recovery</h2><span>{dashboard.hideout.tierName} morale</span></div>
     <div className="d-grid gtc-1 gtc-md-split-90 gap-3 align-items-stretch">
       <div className="d-grid align-content-center gap-2 border rounded-2 bg-body-secondary p-3">
@@ -6580,7 +6988,7 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
     && (method.key !== 'poach' || (poachCoke > 0 && poachCoke <= dashboard.coke))
   return <div className="card p-3 gcol-full">
-    <div className="panel-title" data-tour="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
+    <div className="panel-title" data-area="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
     <form className="d-grid gtc-1 gtc-md-1-auto-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
       <label className="field">Search<input className="form-control" value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
       <button className="btn btn-secondary btn-sm" disabled={busy}>Search</button>
@@ -6842,7 +7250,7 @@ function ArrestPanel({ dashboard, busy, act }: {
 
   if (open.length === 0) return null
 
-  return <section className="card p-3 gcol-full border-warning">
+  return <section className="card p-3 gcol-full border-warning" data-area="arrests">
     <div className="panel-title">
       <h2>In County</h2>
       <span>{number.format(open.reduce((n, x) => n + x.heads, 0))} held</span>
@@ -7122,36 +7530,52 @@ function AlliancePage(ctx: PageContext) {
             {crew.atWarWith && <small className="text-danger-emphasis">At war with {crew.atWarWith}</small>}
           </div>
           <b>{money.format(crew.netWorth)}</b>
-          {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
-              does not want is how a player learns a rule by being refused. */}
-          {!yours && crew.members >= crew.maxMembers && <em>Full</em>}
-          {!yours && crew.members < crew.maxMembers && crew.door === 'Open' && <button
-            className="btn btn-secondary btn-sm"
-            disabled={busy}
-            onClick={() => run(() => api.joinAlliance(crew.id))}
-          >Join</button>}
-          {!yours && crew.members < crew.maxMembers && crew.door === 'Application' && <button
-            className="btn btn-secondary btn-sm"
-            disabled={busy}
-            onClick={() => run(() => api.applyToAlliance(crew.id))}
-          >Ask</button>}
-          {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
-          {yours && !crew.yours && !hasPactWith(board, crew.id) && <button
-            className="btn btn-secondary btn-sm"
-            disabled={busy}
-            onClick={() => run(() => api.requestAlliancePact(crew.id))}
-          >Ally</button>}
-          {/* Offered only where it could actually be pressed: your rank has to allow spending the
-              treasury, neither crew can already be in a war, and you cannot declare on people you
-              hold a truce with. Every one of those is refused by the server too - this is so nobody
-              learns the rules by being told no. */}
-          {yours && !crew.yours && board.warTerms.youCanDeclare && !hasPactWith(board, crew.id)
-            && !board.war && !crew.atWarWith && <button
-              className="btn btn-outline-danger btn-sm"
-              disabled={busy || board.treasury < board.warTerms.stake}
-              title={`${money.format(board.warTerms.stake)} out of the treasury, ${board.warTerms.durationHours} hours, winner takes the stake and ${board.warTerms.tributePercent}% of the losing treasury.`}
-              onClick={() => run(() => api.declareWar(crew.id))}
-            >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</button>}
+          {/*
+            Every control in one cell, however many there turn out to be.
+
+            They used to be siblings of the row itself, each taking a grid column of its own, and the
+            row declares four. Three are spoken for by the rank, the name and the money, which left
+            exactly one for the buttons - fine while there was only ever one, and there is only ever
+            one for a crew you are not in. From inside a crew there are two: ally with them, or
+            declare on them. The second had nowhere to go, so it fell into an implicit row and landed
+            in the rank column, and "War costs $250,000" was rendered a character at a time down a
+            42-pixel strip.
+
+            A cell that holds them means the row's column count stops depending on how many buttons a
+            particular crew happens to earn.
+          */}
+          <div className="alliance-row-actions d-flex flex-wrap align-items-center gap-2">
+            {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
+                does not want is how a player learns a rule by being refused. */}
+            {!yours && crew.members >= crew.maxMembers && <em>Full</em>}
+            {!yours && crew.members < crew.maxMembers && crew.door === 'Open' && <button
+              className="btn btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() => run(() => api.joinAlliance(crew.id))}
+            >Join</button>}
+            {!yours && crew.members < crew.maxMembers && crew.door === 'Application' && <button
+              className="btn btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() => run(() => api.applyToAlliance(crew.id))}
+            >Ask</button>}
+            {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
+            {yours && !crew.yours && !hasPactWith(board, crew.id) && <button
+              className="btn btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() => run(() => api.requestAlliancePact(crew.id))}
+            >Ally</button>}
+            {/* Offered only where it could actually be pressed: your rank has to allow spending the
+                treasury, neither crew can already be in a war, and you cannot declare on people you
+                hold a truce with. Every one of those is refused by the server too - this is so nobody
+                learns the rules by being told no. */}
+            {yours && !crew.yours && board.warTerms.youCanDeclare && !hasPactWith(board, crew.id)
+              && !board.war && !crew.atWarWith && <button
+                className="btn btn-outline-danger btn-sm text-nowrap"
+                disabled={busy || board.treasury < board.warTerms.stake}
+                title={`${money.format(board.warTerms.stake)} out of the treasury, ${board.warTerms.durationHours} hours, winner takes the stake and ${board.warTerms.tributePercent}% of the losing treasury.`}
+                onClick={() => run(() => api.declareWar(crew.id))}
+              >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</button>}
+          </div>
         </div>)}
       </div>
     </section>
@@ -7655,7 +8079,7 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className,
   const charged = dashboard.bankTripTurnCost > 0
 
   return <section className={`card p-3 ${wide ? 'gcol-full' : ''} ${className ?? ''}`}>
-    <div className="panel-title"><h2>Bank</h2><span>{!charged ? 'Cash handling' : free ? 'Still at the counter' : `${dashboard.bankTripTurnCost} turns a trip`}</span></div>
+    <div className="panel-title" data-area="bank"><h2>Bank</h2><span>{!charged ? 'Cash handling' : free ? 'Still at the counter' : `${dashboard.bankTripTurnCost} turns a trip`}</span></div>
     <div className={wide ? 'd-grid gtc-1 gtc-lg-2 gap-3 align-items-center' : ''}>
       <div className={wide ? 'mb-0' : ''}>
         <p className="mb-1">Banked cash still counts toward net worth. Combat can steal cash on hand, but bank cash stays protected.</p>
@@ -9692,89 +10116,6 @@ function CrewCard({ name, count, desc, tone, cap, trend }: { name: string, count
   </div>
 }
 
-/**
- * The people in town who want things.
- *
- * The game had one buyer before this - the city itself, fixed price, any amount, any hour - which is
- * a price list rather than a market. An order has a shape: an amount, a deadline, sometimes a
- * condition, which is what makes producing a decision rather than a routine.
- */
-function ContractsPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: boolean, act: PageContext['act'] }) {
-  const [board, setBoard] = useState<ContractBoard | null>(null)
-  const [error, setError] = useState('')
-
-  const load = async () => {
-    try { setBoard(await api.contracts()); setError('') }
-    catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [dashboard.city, dashboard.weed, dashboard.coke, dashboard.weapons, dashboard.moonshine])
-
-  if (!board || board.contracts.length === 0) return null
-
-  const fill = async (id: number, quantity?: number) => {
-    await act(() => api.fillContract(id, quantity))
-    await load()
-  }
-
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Wanted in {board.city}</h2><span>Buyers with a deadline</span></div>
-    <p>
-      These pay over the counter price, but they want a set amount by a set time, and some of them care
-      what it is cut with. Selling flat is always there; this is what makes it worth choosing what to make.
-    </p>
-    <div className="d-grid gap-2 mt-3">
-      {board.contracts.map(c => {
-        const hours = Math.floor(c.minutesRemaining / 60)
-        const left = hours >= 1 ? `${hours}h left` : `${c.minutesRemaining}m left`
-        const started = c.delivered > 0
-        const finishes = c.canDeliverNow >= c.remaining && c.canDeliverNow > 0
-        return <div className={`room-row ${c.blockedReason ? '' : 'border-start-thick border-start-success'}`} key={c.id}>
-          <div className="room-copy">
-            <strong>{c.buyer}{c.yours && <span className="badge text-bg-primary">Yours</span>}</strong>
-            <span>
-              Wants {number.format(c.quantity)} {c.good}
-              {c.minimumPurityPercent ? `, at least ${c.minimumPurityPercent}% pure` : ''}
-              {' '}at {money.format(c.pricePerUnit)} each, against {money.format(c.listPricePerUnit)} over the counter.
-            </span>
-            <small>
-              {/* What a delivery pays now, and what is still waiting on the last of it - the premium
-                  never splits, so it is worth naming separately from the running rate. */}
-              {started
-                ? `${number.format(c.delivered)} in, ${number.format(c.remaining)} to go - ${money.format(c.completionBonus)} lands when it is finished`
-                : `${money.format(c.payout)} the lot, ${money.format(c.completionBonus)} more than selling it flat`}
-              {' - '}{left}
-              {c.blockedReason ? ` - ${c.blockedReason}` : ''}
-            </small>
-            {started && <div
-              className="progress contract-progress mt-1"
-              role="progressbar"
-              aria-label="Order filled"
-              aria-valuenow={Math.round((c.delivered / c.quantity) * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div className="progress-bar" style={{ width: `${Math.round((c.delivered / c.quantity) * 100)}%` }} />
-            </div>}
-          </div>
-          <em>{number.format(c.held)} held</em>
-          <div className="d-flex flex-wrap align-items-end gap-1 mt-1">
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={busy || c.blockedReason !== null || c.canDeliverNow <= 0}
-              onClick={() => void fill(c.id)}
-            >
-              {/* One button that says what it will actually do, rather than an amount box the player
-                  has to work out for themselves. Handing over everything that fits is the move in
-                  almost every case, because the room is the constraint the order is fighting. */}
-              {finishes ? 'Finish it' : `Run ${number.format(c.canDeliverNow)}`}
-            </button>
-          </div>
-        </div>
-      })}
-    </div>
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-  </section>
-}
 
 function InventoryCard({ name, count, note }: { name: string, count: number, note: string }) {
   return <div className="inventory-card d-grid gap-1 align-content-center border rounded bg-body-secondary p-3">

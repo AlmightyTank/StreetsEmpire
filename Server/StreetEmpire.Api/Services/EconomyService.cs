@@ -178,13 +178,47 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// Passed null - which is only the places describing the shop rather than shopping in it - the list
     /// is the sticker price with nothing locked.
     /// </summary>
-    public IReadOnlyList<StoreItemResponse> GetStore(Player? player = null)
+    /// <param name="stock">
+    /// What is actually on this town's counter: line to how many are left. A key that is absent is a
+    /// line the trader did not get hold of today; a key at zero is one they have sold out of. Two
+    /// different sentences, and only one of them is anybody's fault. Null skips both checks, for the
+    /// places describing the shop rather than shopping in it. See TraderShelfService.
+    /// </param>
+    public IReadOnlyList<StoreItemResponse> GetStore(Player? player = null, IReadOnlyDictionary<string, int>? stock = null)
     {
         var level = player is null ? int.MaxValue : StoreRep.LevelOf(player, _options);
+        var city = player?.City;
         StoreItemResponse Row(string key, string name, string category, int listPrice, string description)
-            => new(key, name, category, Paid(listPrice), description, listPrice, 1, null, false, null);
+        {
+            var (locked, why) = Availability(key, name);
+            return new(key, name, category, Paid(listPrice), description, Shelf(listPrice), 1, null, locked, why, Left(key));
+        }
 
-        int Paid(int listPrice) => player is null ? listPrice : StoreRep.Price(player, listPrice, _options);
+        // The list price, then what this town charges for it, then what standing takes off that. In that
+        // order: the trader's price is the sticker in their shop, and a discount is a discount off what
+        // is actually on the ticket rather than off a national price nobody is being offered.
+        int Shelf(int listPrice) => player is null ? listPrice : StoreTrader.Price(city, _options, listPrice);
+        // How many are left, where anybody is counting. Null rather than nought where nothing is:
+        // "we have none" and "nobody asked" are different answers and the page draws them apart.
+        int? Left(string key) => stock is not null && stock.TryGetValue(key, out var n) ? n : null;
+        int Paid(int listPrice) => player is null ? listPrice : StoreRep.Price(player, Shelf(listPrice), _options);
+
+        // Two ways a line can be shut that have nothing to do with standing, and they say different
+        // things: one is a shop that has never carried it, the other is a shop that is having a bad
+        // week. Only the second is a job anybody can do something about.
+        (bool Locked, string? Why) Availability(string key, string name)
+        {
+            if (player is null) return (false, null);
+            var who = StoreTrader.For(city, _options).Name;
+            if (!StoreTrader.Carries(city, _options, key))
+                return (true, $"{who} does not carry {name.ToLowerInvariant()}.");
+            if (stock is null) return (false, null);
+            if (!stock.ContainsKey(key))
+                return (true, $"{who} did not get {name.ToLowerInvariant()} in today.");
+            if (stock[key] <= 0)
+                return (true, $"{who} has sold out of {name.ToLowerInvariant()}. More on the next delivery.");
+            return (false, null);
+        }
 
         var store = new List<StoreItemResponse>
         {
@@ -201,19 +235,26 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         foreach (var tier in _options.Weapons.OrderBy(x => x.Price))
         {
             var required = Math.Max(1, tier.MinRepLevel);
+            var label = WeaponTiers.Label(tier.Key);
+            var (shut, why) = Availability(tier.Key, label);
+            // Standing first when both apply, because it is the one the player can do something about
+            // tonight without getting on a plane.
+            var locked = level < required || shut;
+            var reason = level < required ? StoreRep.Refusal(_options, tier.Key, required) : why;
             store.Add(new StoreItemResponse(
                 tier.Key,
-                WeaponTiers.Label(tier.Key),
+                label,
                 "Security",
                 Paid(tier.Price),
                 tier.Firepower <= 1
                     ? "Covers one thug. The cheapest way to keep a big crew content."
                     : $"Covers one thug like any gun, and fights {tier.Firepower:0.#}x as hard as a pistol.",
-                tier.Price,
+                Shelf(tier.Price),
                 required,
                 required > 1 ? _options.Store.LevelName(required) : null,
-                level < required,
-                level < required ? StoreRep.Refusal(_options, tier.Key, required) : null));
+                locked,
+                reason,
+                Left(tier.Key)));
         }
 
         store.Add(Row("rides", "Low-Rider", "Chop Shop", _options.RidePrice, $"Needed for a drive-by, and worth jacking. The shop buys them back at ${_options.RideSalePrice:N0}."));
@@ -1151,15 +1192,20 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             _ => throw new GameRuleException("Weed or coke.")
         };
 
-    public ActionResultResponse BuyStoreItem(Player player, string? itemKey, int quantity)
+    public ActionResultResponse BuyStoreItem(Player player, string? itemKey, int quantity, IReadOnlyDictionary<string, int>? stock = null)
     {
         TravelGate.EnsureLanded(player);
         if (quantity is < 1 or > 10_000)
             throw new GameRuleException("Move between 1 and 10,000 at a time.");
 
-        var item = GetStore(player).SingleOrDefault(x => string.Equals(x.Key, itemKey?.Trim(), StringComparison.OrdinalIgnoreCase));
+        var item = GetStore(player, stock).SingleOrDefault(x => string.Equals(x.Key, itemKey?.Trim(), StringComparison.OrdinalIgnoreCase));
         if (item is null)
             throw new GameRuleException("Unknown store item.");
+
+        // Whatever the shelf said it said for a reason, and the reason is already written. A row the
+        // page drew as shut is a row the counter refuses in the same words.
+        if (item.Locked && item.LockedReason is { } shut)
+            throw new GameRuleException(shut);
 
         // Standing is checked before the money is, so somebody who cannot be sold a rifle is told that
         // rather than told what a rifle costs.
@@ -1168,6 +1214,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var total = (long)item.Price * quantity;
         if (player.Cash < total)
             throw new GameRuleException($"That comes to {total:C0} and you are carrying {player.Cash:C0}.");
+
+        // The counter only has so many. Refused rather than clamped, like every other limit here: a
+        // player who asked for twenty and silently got six has been charged for a decision they did not
+        // make.
+        if (stock is not null && stock.TryGetValue(item.Key, out var onHand) && quantity > onHand)
+            throw new GameRuleException(
+                $"{StoreTrader.For(player.City, _options).Name} has {onHand:N0} {item.Name.ToLowerInvariant()} left.");
 
         // Purchases are refused rather than clamped: losing goods you paid for is worse than a refusal.
         var capacity = hideout.CapacityFor(player.Hideout);
@@ -1225,6 +1278,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["unitPrice"] = item.Price,
                 ["listPrice"] = item.ListPrice,
                 ["total"] = total,
+                ["good"] = item.Key,
                 ["repEarned"] = (int)Math.Floor(player.StoreRep) - (int)Math.Floor(repBefore),
                 ["rep"] = (int)Math.Floor(player.StoreRep)
             });
@@ -1611,9 +1665,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         // Bought at the same counter, so it is charged at the same standing and it earns the same rep.
         // Auto-buy is where most players do most of their shopping; leaving it out would have made the
         // convenience button quietly cost them the discount and the credit both.
-        var condoms = BuyUpTo(player, condomsNeeded - player.Condoms, capacity.MaxCondoms - player.Condoms, StoreRep.Price(player, _options.CondomPrice, _options));
+        // At this town's prices, like anything else bought here. Condoms and beer are on the floor every
+        // counter carries and never go dry, so a shift can always be supplied wherever somebody is.
+        var condoms = BuyUpTo(player, condomsNeeded - player.Condoms, capacity.MaxCondoms - player.Condoms,
+            StoreRep.Price(player, StoreTrader.Price(player.City, _options, _options.CondomPrice), _options));
         player.Condoms += condoms.Quantity;
-        var beer = BuyUpTo(player, beerNeeded - player.Beer, capacity.MaxBeer - player.Beer, StoreRep.Price(player, _options.BeerPrice, _options));
+        var beer = BuyUpTo(player, beerNeeded - player.Beer, capacity.MaxBeer - player.Beer,
+            StoreRep.Price(player, StoreTrader.Price(player.City, _options, _options.BeerPrice), _options));
         player.Beer += beer.Quantity;
 
         StoreRep.Credit(player, condoms.Cost + beer.Cost, _options);

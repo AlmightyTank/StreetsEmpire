@@ -396,6 +396,11 @@ input:focus-visible, textarea:focus-visible {
 .alliance-member { grid-template-columns: minmax(0, 1fr) auto auto; }
 .alliance-row    { grid-template-columns: 42px minmax(0, 1fr) auto auto; }
 .alliance-ask    { grid-template-columns: minmax(0, 1fr) auto auto; }
+
+// The board row's fourth column, and the reason it can stay a fixed four: the
+// buttons are a cell rather than a column each, so a crew that earns two of
+// them does not push one into an implicit row and down the 42px rank column.
+.alliance-row-actions { justify-self: end; }
 .alliance-member > b,
 .alliance-member-actions {
   justify-self: end;
@@ -416,8 +421,12 @@ input:focus-visible, textarea:focus-visible {
   .alliance-member > b,
   .alliance-member-actions,
   .alliance-transfer-controls { justify-self: stretch; justify-content: start; }
+  // Three columns on a phone, so the buttons drop under the name rather than
+  // being squeezed in beside the money. Spanning from the name's column keeps
+  // them clear of the rank strip, which is the only part of this row narrow
+  // enough to ruin a word.
   .alliance-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
-  .alliance-row em { grid-column: 2 / -1; }
+  .alliance-row-actions { grid-column: 2 / -1; justify-self: start; }
 }
 
 .alliance-powers {
@@ -860,4 +869,29 @@ input:focus-visible, textarea:focus-visible {
   --#{$prefix}btn-active-bg: #{$tab-chosen};
   --#{$prefix}btn-active-border-color: #{$tab-chosen-edge};
   --#{$prefix}btn-font-weight: #{$font-weight-normal};
+}
+
+// -- The panel you were sent to ----------------------------------------------
+// Guidance, the opening ladder and the walkthrough all take somebody to a
+// specific panel, and scrolling alone only ever says "somewhere around here" -
+// the page arrives mid-flight, everything on it is a card, and the one that was
+// meant is indistinguishable from its neighbours.
+//
+// A ring rather than a colour change, so nothing a panel says about itself is
+// overwritten: a warning border stays a warning border underneath this.
+// Outline rather than border for the same reason, and because it takes no space
+// and so cannot move the layout it is drawing attention to.
+//
+// It takes itself off after a couple of seconds, from the script that put it
+// on. Anything that waits to be dismissed is one more thing to dismiss, and the
+// mark has done its job the moment the eye lands.
+//
+// Deliberately no animation. A pulse would be the obvious thing and it is the
+// one thing that cannot survive the motion preference: collapsed to nothing, a
+// keyframe leaves the ring invisible, so the people who most need a static
+// marker would be the only ones who never see one. On and off is honest, and
+// reads the same however anybody has their machine set.
+.area-found {
+  outline: 2px solid $gold;
+  outline-offset: 3px;
 }

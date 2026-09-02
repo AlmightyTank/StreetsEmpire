@@ -780,13 +780,20 @@ public sealed record StoreItemResponse(
     string? MinRepLevelName,
     bool Locked,
     /// <summary>Why it is locked, in the same words the refusal would use. Null when it is not.</summary>
-    string? LockedReason);
+    string? LockedReason,
+    /// <summary>
+    /// How many the counter has left, or null where nothing is counting - the places describing the
+    /// shop rather than standing in it.
+    /// </summary>
+    int? Available = null);
 
 /// <summary>
 /// Where a player stands with the store: what they have, what it is worth, what is above it, and what
 /// money would buy of it right now.
 /// </summary>
 public sealed record StoreRepResponse(
+    /// <summary>Whose counter this is. The shop stopped being furniture the day it got a name.</summary>
+    TraderResponse Trader,
     int Rep,
     int Level,
     string LevelName,
@@ -803,18 +810,7 @@ public sealed record StoreRepResponse(
     /// <summary>When the counter will take another investment, and how long that is.</summary>
     DateTime? InvestmentReadyAtUtc,
     int InvestmentReadySeconds,
-    IReadOnlyList<StoreRepLevelResponse> Levels,
     IReadOnlyList<StoreInvestmentResponse> Investments);
-
-public sealed record StoreRepLevelResponse(
-    int Level,
-    string Name,
-    int Rep,
-    int DiscountPercent,
-    /// <summary>What arriving here opens, in words. Empty when it opens nothing but the discount.</summary>
-    string Unlocks,
-    bool Reached,
-    bool Current);
 
 public sealed record StoreInvestmentResponse(
     string Key,
@@ -829,6 +825,87 @@ public sealed record StoreInvestmentResponse(
     string? LockedReason);
 
 public sealed record StoreInvestRequest(string? Key);
+
+/// <summary>Who runs the counter in this town, and what they say to this player.</summary>
+public sealed record TraderResponse(
+    string Name,
+    string City,
+    /// <summary>Where they trade from, in a phrase.</summary>
+    string Pitch,
+    /// <summary>One line in their own voice.</summary>
+    string Patter,
+    /// <summary>What they say to you specifically, which is what standing feels like before it unlocks anything.</summary>
+    string Greeting);
+
+/// <summary>
+/// One job on the dealer's board, whoever it is actually for.
+///
+/// One shape where there were two. A wanted order and a contract carried the same fifteen fields under
+/// different names - ShopPricePerUnit and ListPricePerUnit were the same number for the same purpose -
+/// and the client drew two nearly identical rows from two nearly identical records.
+/// </summary>
+public sealed record TraderJobResponse(
+    long Id,
+    /// <summary>Which of the three slots this is sitting in, so a reroll can name it.</summary>
+    int Slot,
+    /// <summary>"Supply" when the dealer wants it for their own shelf, "Product" when a buyer does.</summary>
+    string Kind,
+    /// <summary>Who is asking. Always the town's dealer - every job on the board is theirs.</summary>
+    string Buyer,
+    /// <summary>Why they are asking, in their own terms. "Covering Duchess Oyelaran in Miami".</summary>
+    string Reason,
+    string Good,
+    string GoodLabel,
+    int Quantity,
+    long PricePerUnit,
+    /// <summary>What the same good goes for ordinarily, so the premium is legible.</summary>
+    long ReferencePricePerUnit,
+    long Payout,
+    /// <summary>What finishing pays on top of the going rate. Never split across instalments.</summary>
+    long CompletionBonus,
+    int? MinimumPurityPercent,
+    /// <summary>Standing for finishing it. Nothing until the last unit goes in.</summary>
+    int Rep,
+    int MinutesRemaining,
+    int Held,
+    int Delivered,
+    int Remaining,
+    /// <summary>How much of the remainder this player could hand over right now.</summary>
+    int CanDeliverNow,
+    /// <summary>Whether the bench could make this, and the room it needs when it cannot yet.</summary>
+    bool CanForge,
+    int? WorkshopLevelNeeded,
+    /// <summary>True when this player has already put goods in, which pins it in the hand.</summary>
+    bool Yours,
+    string? BlockedReason);
+
+/// <summary>What asking the dealer to look again would cost, and whether it can be afforded.</summary>
+public sealed record TraderJobRerollResponse(
+    /// <summary>What the next single swap costs, which is what the first tick box is worth.</summary>
+    long NextCash,
+    int NextRep,
+    /// <summary>The cost of taking the whole hand at once, which is the three next steps together.</summary>
+    long AllCash,
+    int AllRep,
+    /// <summary>How many have been paid for in this cycle, and when the free one comes back.</summary>
+    int UsedThisCycle,
+    DateTime? FreeAgainAtUtc,
+    int FreeAgainSeconds,
+    /// <summary>Rep above the current rung: what can be spent here without losing the rung.</summary>
+    int SpendableRep);
+
+public sealed record TraderJobBoardResponse(
+    string City,
+    TraderResponse Trader,
+    IReadOnlyList<TraderJobResponse> Jobs,
+    /// <summary>How many are going in town altogether, so the page can say how deep the book is.</summary>
+    int OpenInTown,
+    TraderJobRerollResponse Reroll);
+
+public sealed record DeliverJobRequest(int? Quantity);
+
+/// <summary>Which slots to ask again about. One, two, or the lot.</summary>
+public sealed record RerollJobsRequest(IReadOnlyList<int>? Slots);
 
 public sealed record ActivityResponse(
     long Id,
@@ -1092,30 +1169,6 @@ public sealed record GuidanceResponse(
     int ObjectivesTotal);
 
 /// <summary>One order on a town's board, with why it cannot be filled if it cannot.</summary>
-public sealed record ContractResponse(
-    long Id,
-    string Buyer,
-    string Good,
-    int Quantity,
-    long PricePerUnit,
-    long ListPricePerUnit,
-    long Payout,
-    long PremiumOverFlat,
-    int? MinimumPurityPercent,
-    int MinutesRemaining,
-    int Held,
-    /// <summary>How much is already in, how much the buyer still wants, and what finishing pays.</summary>
-    int Delivered,
-    int Remaining,
-    long CompletionBonus,
-    /// <summary>How much of the remainder this player could hand over right now.</summary>
-    int CanDeliverNow,
-    /// <summary>True when the player has started this one, so the board can say so.</summary>
-    bool Yours,
-    string? BlockedReason);
-
-public sealed record ContractBoardResponse(string City, IReadOnlyList<ContractResponse> Contracts);
-
 /// <summary>One line in a room, as it is shown.</summary>
 public sealed record ChatMessageResponse(
     long Id,

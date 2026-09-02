@@ -338,10 +338,10 @@ input:focus-visible, textarea:focus-visible {
 // The numbers along the top
 // -----------------------------------------------------------------------------
 
-// Seven figures. On a phone these were a sideways scroller, which put cash and
+// Eight figures. On a phone these were a sideways scroller, which put cash and
 // heat - the two numbers every decision in the game is made against - off the
 // right-hand edge behind a gesture nothing advertised. Two columns that wrap
-// show all seven at once, and the page scrolls the way a page is expected to.
+// show all eight at once, and the page scrolls the way a page is expected to.
 //
 // Set here rather than with a gtc-* utility because a utility carries !important
 // and would win against the wider layout below it.
@@ -349,7 +349,7 @@ input:focus-visible, textarea:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 
   @include media-breakpoint-up(md) {
-    grid-template-columns: repeat(7, minmax(138px, 1fr));
+    grid-template-columns: repeat(8, minmax(138px, 1fr));
     overflow-x: auto;
     scrollbar-gutter: stable;
   }

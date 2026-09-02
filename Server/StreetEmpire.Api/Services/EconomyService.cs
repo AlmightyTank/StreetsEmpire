@@ -324,10 +324,13 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var uncoveredThugs = Math.Max(0, player.Thugs - player.Weapons);
         var condomsNeeded = RequiredUpkeep(player.Hoes, _options.MaxActionTurns, morale.TurnsPerCondom);
         var beerNeeded = RequiredUpkeep(player.Thugs, _options.MaxActionTurns, morale.TurnsPerBeer);
-        var hourlyTurns = Math.Max(1, (int)Math.Ceiling(60.0 / Math.Max(1, _options.TurnTickMinutes)));
-        var hourlyCondoms = RequiredUpkeep(player.Hoes, hourlyTurns, morale.TurnsPerCondom);
-        var hourlyBeer = RequiredUpkeep(player.Pimps + player.Thugs, hourlyTurns, morale.TurnsPerBeer);
+        var hourlyCondoms = RequiredHourlyUpkeep(player.Hoes, 1, morale.TurnsPerCondom);
+        var hourlyBeer = RequiredHourlyUpkeep(player.Pimps + player.Thugs, 1, morale.TurnsPerBeer);
         var hourlyDrugs = RequiredHourlyUpkeep(player.Pimps + player.Hoes + player.Thugs, 1, morale.HoursPerDrugUpkeep);
+        var townHeat = _options.CityMarkets.HeatMultiplier(player.City);
+        var pimpHeat = player.Pimps * _options.Hideout.PimpHeat * townHeat;
+        var hoeHeat = player.Hoes * _options.Hideout.HoeHeat * townHeat;
+        var thugHeat = player.Thugs * _options.Hideout.ThugHeat * townHeat;
         var condomCost = (long)condomsNeeded * _options.CondomPrice;
         var beerCost = (long)beerNeeded * _options.BeerPrice;
         var totalCrew = TotalCrew(player);
@@ -360,6 +363,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             hourlyCondoms,
             hourlyBeer,
             hourlyDrugs,
+            Math.Round(pimpHeat, 2),
+            Math.Round(hoeHeat, 2),
+            Math.Round(thugHeat, 2),
+            Math.Round(pimpHeat + hoeHeat + thugHeat, 2),
             hoesStorageCanSupply,
             thugsStorageCanSupply,
             storageLevelToSupplyCrew,
@@ -401,7 +408,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null, string? district = null)
     {
         TravelGate.EnsureLanded(player);
-        ValidateTurns(player, turns, _options.MaxActionTurns, "Work the streets");
+        ValidateStreetTurns(player, turns);
 
         var street = _options.StreetAction;
         // Named rather than accepted quietly: asking for a district that does not exist is a caller
@@ -1728,6 +1735,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         if (turns is < 1 || turns > max)
             throw new GameRuleException($"{action} runs from 1 to {max} turns.");
+        if (player.Turns < turns)
+            throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
+    }
+
+    private static void ValidateStreetTurns(Player player, int turns)
+    {
+        if (turns < 1)
+            throw new GameRuleException("Work the streets runs from 1 turn up to what you have banked.");
         if (player.Turns < turns)
             throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
     }

@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -2699,14 +2699,13 @@ function OverviewPage(ctx: PageContext) {
         <StatusRow label="Armed thugs" value={`${Math.min(dashboard.weapons, dashboard.thugs)}/${dashboard.thugs}`} warn={dashboard.weapons < dashboard.thugs} />
         <StatusRow label="Weapon coverage" value={`${weaponCoverage.toFixed(0)}%`} warn={weaponCoverage < 75} />
         <StatusRow label="Combat status" value={dashboard.combatStatus.eligibility} warn={dashboard.combatStatus.isProtected} />
+        <StatusRow label="Crew heat" value={`${heatAmount(dashboard.crewReport.crewHeat)} heat`} warn={dashboard.hideout.heatLabel !== 'Quiet' && dashboard.crewReport.crewHeat > dashboard.hideout.heat / 2} />
         <StatusRow label="Condoms for a full shift" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
         <StatusRow label="Beer for a full shift" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
         <StatusRow
           label="Hourly keep"
-          value={`${number.format(dashboard.crewReport.condomsNeededPerHour)} condoms / ${number.format(dashboard.crewReport.beerNeededPerHour)} beer / ${number.format(dashboard.crewReport.drugsNeededPerHour)} drugs`}
-          warn={dashboard.condoms < dashboard.crewReport.condomsNeededPerHour
-            || dashboard.beer + dashboard.moonshine < dashboard.crewReport.beerNeededPerHour
-            || dashboard.weed + dashboard.coke < dashboard.crewReport.drugsNeededPerHour}
+          value={hourlyUpkeepLabel(dashboard)}
+          warn={hourlyUpkeepWarn(dashboard)}
         />
       </section>
 
@@ -2989,6 +2988,8 @@ function StreetPage(ctx: PageContext) {
   const { dashboard, combatMissions, busy, streetTurns, autoBuySupplies, hoeCut, bankAmount, storeQty, district, setActivePage, setStreetTurns, setAutoBuySupplies, setHoeCut, setBankAmount, setStoreQty, setDistrict, act } = ctx
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
   const restock = restockEstimate(dashboard, streetTurns)
+  const pickedDistrict = selectedDistrict(dashboard, district)
+  const projectedHeat = streetHeatFor(dashboard, streetTurns, district)
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
     <section className="card p-3 gcol-full" data-area="street-action">
       <div className="panel-title"><h2>Work the Streets</h2><span>Income + recruiting</span></div>
@@ -2998,6 +2999,11 @@ function StreetPage(ctx: PageContext) {
         <span className="text-body-secondary text-end">Street work unlocks after the next mission update in {timeUntil(nextMissionTime(pendingOutgoingAttack))}.</span>
       </div>}
       <DistrictPicker districts={dashboard.districts} selected={district} onSelect={setDistrict} />
+      <div className="tnum d-grid gtc-1 gtc-md-3 gap-2 my-3">
+        <AdminMetric label="Shift heat" value={`+${heatAmount(projectedHeat)}`} sub={`${pickedDistrict?.name ?? 'Selected district'} / ${streetTurnCount(dashboard, streetTurns)} turns`} />
+        <AdminMetric label="Crew heat" value={heatAmount(dashboard.crewReport.crewHeat)} sub={crewHeatLabel(dashboard.crewReport)} />
+        <AdminMetric label="Hourly keep" value={hourlyUpkeepShort(dashboard)} sub="Passive upkeep while time passes" />
+      </div>
       <StorageSupplyNotice dashboard={dashboard} />
       <StreetSupplyPanel
         dashboard={dashboard}
@@ -3009,7 +3015,7 @@ function StreetPage(ctx: PageContext) {
         onMarket={() => setActivePage('market', 'trade')}
       />
       <div className="control-row">
-        <label className="field">Turns<input className="form-control" type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
+        <label className="field">Turns<input className="form-control" type="number" min={1} max={Math.max(1, dashboard.turns)} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
         <label className="field">Hoe Cut %<input className="form-control" type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
         <Button className="btn btn-secondary" blocked={firstReason(
           busy && BUSY,
@@ -3022,8 +3028,8 @@ function StreetPage(ctx: PageContext) {
           !!pendingOutgoingAttack && 'Your crew is out on a job. Nobody is left to work a shift.',
           streetTurns < 1 && 'Set the shift to at least one turn.',
           streetTurns > dashboard.turns && `A ${streetTurns}-turn shift costs more turns than you have. You have ${dashboard.turns}.`,
-          streetTurns > dashboard.maxActionTurns && `You can work ${dashboard.maxActionTurns} turns at a time at most.`,
         )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</Button>
+        <button className="btn btn-secondary" type="button" disabled={busy || dashboard.turns < 1} onClick={() => setStreetTurns(Math.max(1, dashboard.turns))}>Max</button>
       </div>
       <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>
         <input className="form-check-input flex-shrink-0 mt-1" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
@@ -6948,6 +6954,13 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
     <Stat label="Net Worth" value={money.format(dashboard.netWorth)} />
     <Stat label="Turns" value={`${dashboard.turns} / ${dashboard.maxTurns}`} sub={nextTurn === 'MAX' ? 'Turn bank full' : `+${dashboard.turnsPerTick} in ${nextTurn}`} />
     <Stat
+      label="Upkeep"
+      value={hourlyUpkeepShort(dashboard)}
+      sub="Per hour"
+      tone={hourlyUpkeepWarn(dashboard) ? 'border-warning' : undefined}
+      title={hourlyUpkeepLabel(dashboard)}
+    />
+    <Stat
       label="Heat"
       value={dashboard.hideout.heatLabel}
       sub={dashboard.hideout.heatDetail}
@@ -6959,9 +6972,50 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
   </section>
 }
 
+function hourlyUpkeepLabel(dashboard: Dashboard) {
+  const report = dashboard.crewReport
+  return `${number.format(report.condomsNeededPerHour)} condoms / ${number.format(report.beerNeededPerHour)} beer / ${number.format(report.drugsNeededPerHour)} drugs`
+}
+
+function hourlyUpkeepShort(dashboard: Dashboard) {
+  const report = dashboard.crewReport
+  return `${number.format(report.condomsNeededPerHour)}C / ${number.format(report.beerNeededPerHour)}B / ${number.format(report.drugsNeededPerHour)}D`
+}
+
+function hourlyUpkeepWarn(dashboard: Dashboard) {
+  const report = dashboard.crewReport
+  return dashboard.condoms < report.condomsNeededPerHour
+    || dashboard.beer + dashboard.moonshine < report.beerNeededPerHour
+    || dashboard.weed + dashboard.coke < report.drugsNeededPerHour
+}
+
+function heatAmount(value: number) {
+  if (value > 0 && value < 0.1) return '<0.1'
+  return value.toFixed(value < 10 && value % 1 !== 0 ? 1 : 0)
+}
+
+function crewHeatLabel(report: CrewReport) {
+  return `P ${heatAmount(report.pimpHeat)} / H ${heatAmount(report.hoeHeat)} / T ${heatAmount(report.thugHeat)}`
+}
+
+function selectedDistrict(dashboard: Dashboard, district: string) {
+  return dashboard.districts.find(entry => entry.key === district)
+    ?? dashboard.districts.find(entry => entry.isDefault)
+    ?? dashboard.districts[0]
+}
+
+function streetHeatFor(dashboard: Dashboard, turns: number, district: string) {
+  return (selectedDistrict(dashboard, district)?.heatPerTurn ?? 0) * streetTurnCount(dashboard, turns)
+}
+
+function streetTurnCount(dashboard: Dashboard, turns: number) {
+  if (dashboard.turns < 1) return 0
+  return Math.max(1, Math.min(turns, dashboard.turns))
+}
+
 /** Upkeep a street action of this length burns, scaled from the server's max-action figures. */
 function upkeepFor(dashboard: Dashboard, turns: number) {
-  const planned = Math.max(1, Math.min(turns, dashboard.maxActionTurns))
+  const planned = streetTurnCount(dashboard, turns)
   const scale = (maxActionNeed: number) => Math.ceil(maxActionNeed * planned / dashboard.maxActionTurns)
   return {
     planned,

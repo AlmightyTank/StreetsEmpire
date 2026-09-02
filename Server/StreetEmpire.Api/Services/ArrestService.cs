@@ -46,7 +46,7 @@ public sealed class ArrestService(
         var where = district is null
             ? _options.StreetAction.DefaultDistrict()
             : _options.StreetAction.District(district);
-        var shift = Math.Clamp(turns / (double)Math.Max(1, _options.MaxActionTurns), 0, 1);
+        var shift = Math.Max(0, turns / (double)Math.Max(1, _options.MaxActionTurns));
 
         // How much of a target the shift was. Crew on the street, how long they were out, where they
         // worked, and how much notice the house was already drawing - heat lifts the odds rather than

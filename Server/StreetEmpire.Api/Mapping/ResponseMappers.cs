@@ -221,7 +221,7 @@ internal static class ResponseMappers
     }
 
     /// <summary>Where a shift can be worked, and what each place is actually for.</summary>
-    internal static List<StreetDistrictResponse> ToDistricts(GameOptions options)
+    internal static List<StreetDistrictResponse> ToDistricts(GameOptions options, string city)
         => options.StreetAction.Districts
             .Select(x => new StreetDistrictResponse(
                 x.Key,
@@ -233,7 +233,10 @@ internal static class ResponseMappers
                 x.ThugRecruitPercent,
                 x.PimpRecruitPercent,
                 x.FindPercent,
-                x.HeatPercent))
+                x.HeatPercent,
+                Math.Round(options.Hideout.HeatPerStreetTurn
+                    * options.CityMarkets.HeatMultiplier(city)
+                    * x.Scale(x.HeatPercent), 2)))
             .ToList();
 
     /// <summary>The gun rack as the client sees it: what is held, what it costs, what it is worth.</summary>
@@ -635,7 +638,7 @@ internal static class ResponseMappers
             _ => string.Empty
         };
         if (heat <= config.HeatBustFloor)
-            return $"Nobody is looking your way. Nothing you hold is worth a door being kicked in yet.{town}";
+            return $"Nobody is looking your way. Your crew and stock are not loud enough for a door being kicked in yet.{town}";
 
         // What the band costs, said before it is paid rather than afterwards. A player who is one bad
         // hour from having their labs put through a wall should be able to read that off the strip and
@@ -644,9 +647,9 @@ internal static class ResponseMappers
         var band = HeatBands.Of(heat, config);
         var rooms = HeatBands.RoomsWrecked(band, config);
         var wrecking = rooms <= 0
-            ? " At this much they take the stock and go."
+            ? " At this much they take whatever is hot and go."
             : $" At {HeatBands.Label(band)} they do not just take the stash: they wreck {(rooms == 1 ? "a room" : $"{rooms:N0} rooms")} on the way out, and it stays dead until you pay to have it put back.";
-        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid.{wrecking} Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
+        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid.{wrecking} Sell down, trim crew, or lie low: earned heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
     }
 
     /// <summary>

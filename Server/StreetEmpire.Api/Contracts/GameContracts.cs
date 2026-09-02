@@ -426,7 +426,8 @@ public sealed record StreetDistrictResponse(
     int ThugRecruitPercent,
     int PimpRecruitPercent,
     int FindPercent,
-    int HeatPercent);
+    int HeatPercent,
+    double HeatPerTurn);
 
 /// <summary>
 /// The shrine as the player sees it: what the gods want this week, whether they will hear you, and what
@@ -749,6 +750,10 @@ public sealed record CrewReportResponse(
     int CondomsNeededPerHour,
     int BeerNeededPerHour,
     int DrugsNeededPerHour,
+    double PimpHeat,
+    double HoeHeat,
+    double ThugHeat,
+    double CrewHeat,
     /// <summary>
     /// How much crew a completely full storage room can carry through a full-length action. This is a
     /// harder limit than what a player currently holds: past it they cannot buy their way out, and

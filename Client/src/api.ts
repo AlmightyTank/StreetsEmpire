@@ -131,6 +131,10 @@ export type CrewReport = {
   condomsNeededPerHour: number
   beerNeededPerHour: number
   drugsNeededPerHour: number
+  pimpHeat: number
+  hoeHeat: number
+  thugHeat: number
+  crewHeat: number
   hoesStorageCanSupply: number
   thugsStorageCanSupply: number
   storageLevelToSupplyCrew?: number | null
@@ -547,6 +551,7 @@ export type StreetDistrict = {
   pimpRecruitPercent: number
   findPercent: number
   heatPercent: number
+  heatPerTurn: number
 }
 
 /** One crew on the board, worth the sum of what its members are worth. */

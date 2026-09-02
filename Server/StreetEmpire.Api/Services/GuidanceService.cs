@@ -116,8 +116,8 @@ public sealed class GuidanceService(IOptionsSnapshot<GameOptions> options, Hideo
 
         if (heat > _options.Hideout.HeatBustFloor)
         {
-            Add(14, "Sell down, or lie low",
-                $"You are drawing enough notice to be raided. Heat falls {_options.Hideout.HeatDecayPerHour:N0} an hour on its own, and selling stock takes it off faster.",
+            Add(14, "Trim crew, sell down, or lie low",
+                $"You are drawing enough notice to be raided. Earned heat falls {_options.Hideout.HeatDecayPerHour:N0} an hour on its own; stock and crew heat stay until the footprint is smaller.",
                 GuidancePages.Production);
         }
 

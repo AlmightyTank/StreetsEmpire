@@ -939,6 +939,14 @@ public sealed class HideoutOptions
     public double CutHeatPerUnit { get; set; } = 0.03;
 
     /// <summary>
+    /// Standing crew heat. Bodies in the house are a footprint even before a shift starts: one new
+    /// player stays quiet, while a packed Penthouse is itself enough for the street to know.
+    /// </summary>
+    public double PimpHeat { get; set; } = 0.4;
+    public double HoeHeat { get; set; } = 0.03;
+    public double ThugHeat { get; set; } = 0.08;
+
+    /// <summary>
     /// Units of coke a turn of stepping on it can stretch, per level of the mix house.
     ///
     /// Cutting is mixing rather than manufacturing, so it goes far faster than making the cut did: a

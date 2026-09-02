@@ -85,16 +85,31 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public double HeatFor(Player player)
     {
+        return EarnedHeatFor(player) + HeldGoodsHeatFor(player) + CrewHeatFor(player);
+    }
+
+    public double EarnedHeatFor(Player player)
+        => Math.Max(0, player.Heat);
+
+    public double HeldGoodsHeatFor(Player player)
+    {
         var config = _options.Hideout;
-        // What is held draws notice at the town's own rate: the same stash is more conspicuous in a
-        // watchful city than a quiet one, which is what makes where you live a standing decision.
-        var town = _options.CityMarkets.HeatMultiplier(player.City);
-        return Math.Max(0, player.Heat)
-               + town * (player.Coke * config.CokeHeatPerUnit
+        return TownHeatMultiplier(player) * (player.Coke * config.CokeHeatPerUnit
                + player.Moonshine * config.MoonshineHeatPerUnit
                + player.Weed * config.WeedHeatPerUnit
                + player.Cut * config.CutHeatPerUnit);
     }
+
+    public double CrewHeatFor(Player player)
+    {
+        var config = _options.Hideout;
+        return TownHeatMultiplier(player) * (player.Pimps * config.PimpHeat
+               + player.Hoes * config.HoeHeat
+               + player.Thugs * config.ThugHeat);
+    }
+
+    private double TownHeatMultiplier(Player player)
+        => _options.CityMarkets.HeatMultiplier(player.City);
 
     /// <summary>
     /// Cools earned heat and then rolls for the law turning up, once per elapsed hour.

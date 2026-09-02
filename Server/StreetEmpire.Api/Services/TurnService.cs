@@ -22,7 +22,7 @@ public sealed class TurnService(IOptionsSnapshot<GameOptions> options, PimpRoste
         var thugs = Math.Max(0, player.Thugs);
         var beerCrew = activePimps + thugs;
         var totalCrew = activePimps + hoes + thugs;
-        var upkeepTurns = Math.Max(1, (int)Math.Ceiling(hours * (60.0 / Math.Max(1, _options.TurnTickMinutes))));
+        var upkeepTurns = hours;
 
         var condomsNeeded = RequiredUpkeep(hoes, upkeepTurns, morale.TurnsPerCondom);
         var beerNeeded = RequiredUpkeep(beerCrew, upkeepTurns, morale.TurnsPerBeer);

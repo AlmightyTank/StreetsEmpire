@@ -36,9 +36,11 @@ var tests = new (string Name, Action Test)[]
     ("turn refresh passively recovers morale", TurnRefreshPassivelyRecoversMorale),
     ("hourly upkeep feeds every crew type", HourlyUpkeepFeedsEveryCrewType),
     ("street action returns deterministic tuned breakdown", StreetActionBreakdownIsDeterministic),
+    ("street work can spend the whole turn bank", StreetWorkCanSpendTheWholeTurnBank),
     ("production uses configured tables", ProductionUsesConfiguredTables),
     ("invalid product is a rule error", InvalidProductIsRuleError),
     ("crew report calculates operating requirements", CrewReportCalculatesRequirements),
+    ("crew report shows upkeep and crew heat", CrewReportShowsUpkeepAndCrewHeat),
     ("hire crew spends cash and respects morale gates", HireCrewSpendsCashAndChecksMorale),
     ("fire crew updates counts and morale", FireCrewUpdatesCountsAndMorale),
     ("trap house recovery spends resources and boosts morale", TrapHouseRecoverySpendsResourcesAndBoostsMorale),
@@ -74,6 +76,7 @@ var tests = new (string Name, Action Test)[]
     ("workshop makes weapons under the store price", WorkshopMakesWeaponsUnderStorePrice),
     ("moonshine drinks like beer and cut stretches coke", ContrabandGoodsDoTheirJob),
     ("heat comes from what you hold and what you do", HeatDrivesTheBust),
+    ("crew size adds heat to the premises", CrewSizeAddsHeatToThePremises),
     ("a raid at heat takes the rooms apart, and a broken room does nothing", ARaidBreaksRooms),
     ("a wrecked room is paid for, waited out, and comes back", AWreckedRoomComesBack),
     ("broken labs still lose the hours they were down for", BrokenLabsLoseTheHours),
@@ -708,16 +711,16 @@ static void HourlyUpkeepFeedsEveryCrewType()
 
     var upkeep = service.ChargeHourlyUpkeep(player, 2);
 
-    AssertEqual(12, upkeep.CondomsNeeded);
-    AssertEqual(20, upkeep.BeerNeeded);
+    AssertEqual(2, upkeep.CondomsNeeded);
+    AssertEqual(4, upkeep.BeerNeeded);
     AssertEqual(11, upkeep.DrugsNeeded);
-    AssertEqual(0, player.Condoms);
+    AssertEqual(10, player.Condoms);
     AssertEqual(0, player.Beer);
-    AssertEqual(0, player.Moonshine);
+    AssertEqual(6, player.Moonshine);
     AssertEqual(0, player.Weed);
     AssertEqual(0, player.Coke);
     AssertEqual(0, upkeep.CondomShortage);
-    AssertEqual(10, upkeep.BeerShortage);
+    AssertEqual(0, upkeep.BeerShortage);
     AssertEqual(2, upkeep.DrugShortage);
     AssertTrue(player.HoeHappiness < 70, "drug shortages should reach hoes too");
     AssertTrue(player.ThugHappiness < 80, "beer and drug shortages should reach thugs");
@@ -782,6 +785,42 @@ static void StreetActionBreakdownIsDeterministic()
     AssertEqual(22L, Value<long>(breakdown, "playerProfit"));
     AssertEqual(4, Value<int>(breakdown, "condomsUsed"));
     AssertEqual(2, Value<int>(breakdown, "beerUsed"));
+}
+
+static void StreetWorkCanSpendTheWholeTurnBank()
+{
+    var service = CreateEconomy(new GameOptions
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 1,
+            HoeGrossPerTurn = new RangeOptions(0, 0),
+            PimpGrossPerTurn = new RangeOptions(0, 0),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0,
+            ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Morale = new MoraleOptions
+        {
+            TurnsPerCondom = 10,
+            TurnsPerBeer = 10,
+            HoeStreetWorkGainPerTurn = 0,
+            ThugStreetWorkGainPerTurn = 0,
+            HoeCutMoraleScalePerTurn = 0,
+            DesertionThreshold = 0
+        }
+    });
+    var player = new Player { Turns = 50, Hoes = 1, Condoms = 5, HoeCutPercent = 0, Hideout = new Hideout() };
+
+    var result = service.Scout(player, 50);
+
+    AssertEqual(0, player.Turns);
+    AssertEqual(50L, Value<long>(RequiredBreakdown(result), "gross"));
+    AssertRuleError(
+        () => service.Scout(new Player { Turns = 50 }, 51),
+        "That is 51 turns and you have 50.");
 }
 
 static void ProductionUsesConfiguredTables()
@@ -871,6 +910,38 @@ static void CrewReportCalculatesRequirements()
     AssertEqual(46, report.CondomsNeededForMaxStreetAction);
     AssertEqual(28, report.BeerNeededForMaxStreetAction);
     AssertEqual(880L, report.SupplyCostForMaxStreetAction);
+}
+
+static void CrewReportShowsUpkeepAndCrewHeat()
+{
+    var options = Resolve(new GameOptions
+    {
+        TurnTickMinutes = 15,
+        Morale = new MoraleOptions
+        {
+            TurnsPerCondom = 12,
+            TurnsPerBeer = 10,
+            HoursPerDrugUpkeep = 24
+        },
+        Hideout = new HideoutOptions
+        {
+            PimpHeat = 0.5,
+            HoeHeat = 0.05,
+            ThugHeat = 0.1
+        }
+    });
+    var service = CreateEconomy(options);
+    var player = new Player { City = "Atlanta", Pimps = 2, Hoes = 24, Thugs = 10 };
+
+    var report = service.GetCrewReport(player);
+
+    AssertEqual(2, report.CondomsNeededPerHour);
+    AssertEqual(2, report.BeerNeededPerHour);
+    AssertEqual(2, report.DrugsNeededPerHour);
+    AssertEqual(1.0, report.PimpHeat);
+    AssertEqual(1.2, report.HoeHeat);
+    AssertEqual(1.0, report.ThugHeat);
+    AssertEqual(3.2, report.CrewHeat);
 }
 
 static void HireCrewSpendsCashAndChecksMorale()
@@ -6393,6 +6464,31 @@ static void HeatDrivesTheBust()
     decaying.Hideout.BustChancePerHeat = 0;
     CreateHideouts(decaying).RollBust(cooling, 5, new AlwaysRandom(), DateTime.UtcNow);
     AssertEqual(15.0, cooling.Heat);
+}
+
+static void CrewSizeAddsHeatToThePremises()
+{
+    var options = Resolve(new GameOptions
+    {
+        Hideout = new HideoutOptions
+        {
+            HeatDecayPerHour = 0,
+            PimpHeat = 0.5,
+            HoeHeat = 0.05,
+            ThugHeat = 0.1
+        }
+    });
+    var hideouts = CreateHideouts(options);
+    var atlanta = new Player { City = "Atlanta", Pimps = 2, Hoes = 20, Thugs = 10 };
+    var newYork = new Player { City = "New York", Pimps = 2, Hoes = 20, Thugs = 10 };
+
+    AssertEqual(3.0, hideouts.CrewHeatFor(atlanta));
+    AssertEqual(3.0, hideouts.HeatFor(atlanta));
+    AssertTrue(hideouts.CrewHeatFor(newYork) > hideouts.CrewHeatFor(atlanta),
+        "a bigger town spotlight should make the same crew hotter");
+
+    var withStash = new Player { City = "Atlanta", Pimps = 2, Hoes = 20, Thugs = 10, Coke = 10, Heat = 4 };
+    AssertEqual(10.5, hideouts.HeatFor(withStash));
 }
 
 /// <summary>

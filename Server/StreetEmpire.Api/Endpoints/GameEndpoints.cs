@@ -236,7 +236,7 @@ internal static class GameEndpoints
                 economy.GetStore(player, await shelves.RemainingAsync(player.City, economy.GetStore(player), now, ct)),
                 ToStoreRep(player, opts, now),
                 strikes.MethodsFor(player),
-                ToDistricts(opts),
+                ToDistricts(opts, player.City),
                 player.Alliance is { } crew
                     ? new AllianceBriefResponse(crew.Id, crew.Name, crew.OffensiveThugs, crew.DefensiveThugs, allianceRules.BorrowLimit(player.Thugs), player.AllianceDefenders)
                     : null,

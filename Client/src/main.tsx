@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3151,7 +3151,57 @@ function HideoutPage(ctx: PageContext) {
   const { dashboard, busy, act } = ctx
   const hideout = dashboard.hideout
   const workshop = hideout.stations?.find(station => station.key === 'workshop')
+  const damage = hideout.damage ?? []
+  const repairing = hideout.repair ?? null
+  const broken = (room: BreakableRoom) => damage.find(x => x.room === room) ?? null
+  const repair = (room: BreakableRoom) => void act(() => api.repairHideout(room))
+
+  // The panel keeps its own second hand, for the reason the tier panel gives: the app-wide one stops
+  // once turns are maxed, which is exactly when somebody sitting on a full bank is waiting out a
+  // repair with nothing else to spend it on.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!repairing) return
+    const timer = window.setInterval(() => setTick(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [repairing?.completesAtUtc])
+
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
+    {/* Above the capacity bars on purpose. A house with three dark rooms has one decision in it and
+        this is it, and a player who has to scroll past their storage graph to find out why the mules
+        will not leave has been told last. Absent entirely when nothing is broken, rather than an
+        empty panel headed "Damage" that everybody learns to stop reading. */}
+    {damage.length > 0 && <section className="card p-3 gcol-full border-danger" data-area="damage">
+      <div className="panel-title">
+        <h2>What is broken</h2>
+        <span>{damage.length === 1 ? 'One room' : `${number.format(damage.length)} rooms`} down</span>
+      </div>
+      <p>
+        A raid leaves the place standing and the rooms in it not working. Each one does nothing at all
+        until it is paid for, and the crew can only be in one room at a time - so the order is a
+        decision, and it is yours.
+      </p>
+      <div className="d-grid gap-2">
+        {damage.map(room => <div key={room.room} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded p-2">
+          <div className="min-w-0">
+            <strong className="text-capitalize">{room.name}</strong>
+            <div className="small text-body-secondary">
+              Level {room.level}, down since {new Date(room.wreckedAtUtc).toLocaleString()}. While it is,{' '}
+              {room.stops}.
+            </div>
+          </div>
+          <Button className="btn btn-danger btn-sm" blocked={firstReason(
+            busy && BUSY,
+            repairing?.room === room.room && `The crew are in there now. Working again in ${timeUntil(repairing.completesAtUtc)}.`,
+            !!repairing && repairing.room !== room.room && `Your crew are in the ${repairing.name} for another ${timeUntil(repairing.completesAtUtc)}.`,
+            dashboard.cash + dashboard.bankCash < room.repairCost && `That costs ${money.format(room.repairCost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+          )} onClick={() => repair(room.room)}>
+            {repairing?.room === room.room ? 'Being fixed' : `Repair ${money.format(room.repairCost)}`}
+          </Button>
+        </div>)}
+      </div>
+    </section>}
+
     <section className="card p-3 gcol-full" data-area="capacity">
       <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier}</span></div>
       <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
@@ -3206,6 +3256,9 @@ function HideoutPage(ctx: PageContext) {
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('weedlab'))}
+          damage={broken('weedlab')}
+          repairing={repairing}
+          onRepair={() => repair('weedlab')}
         />
         <RoomRow
           name="Coke Lab"
@@ -3217,6 +3270,9 @@ function HideoutPage(ctx: PageContext) {
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
+          damage={broken('cokelab')}
+          repairing={repairing}
+          onRepair={() => repair('cokelab')}
         />
         {workshop && <RoomRow
           name="Workshop"
@@ -3228,6 +3284,9 @@ function HideoutPage(ctx: PageContext) {
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('workshop'))}
+          damage={broken('workshop')}
+          repairing={repairing}
+          onRepair={() => repair('workshop')}
         />}
         {workshop && <WorkshopUnlockGrid dashboard={dashboard} />}
         <RoomRow
@@ -3240,6 +3299,9 @@ function HideoutPage(ctx: PageContext) {
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('lookout'))}
+          damage={broken('lookout')}
+          repairing={repairing}
+          onRepair={() => repair('lookout')}
         />
         <RoomRow
           name="Intelligence Centre"
@@ -3251,6 +3313,9 @@ function HideoutPage(ctx: PageContext) {
           funds={dashboard.cash + dashboard.bankCash}
           busy={busy}
           onUpgrade={() => void act(() => api.upgradeHideout('intelligence'))}
+          damage={broken('intelligence')}
+          repairing={repairing}
+          onRepair={() => repair('intelligence')}
         />
       </div>
       {(hideout.weedLabLevel > 0 || hideout.cokeLabLevel > 0) && <p className="text-body-tertiary small mt-3">
@@ -3339,7 +3404,12 @@ function MulePage(ctx: PageContext) {
         their fares and keep before anybody leaves.
       </p>
       {board.concurrentRunCap === 0 && <div className="alert alert-danger">
-        <span>You need an intelligence centre before you can run mules. Build one under Business / Hideout.</span>
+        {/* Two different reasons for the same zero, and they want two different sentences: one is
+            something to go and buy, the other is something already paid for that somebody kicked in.
+            Telling a raided player to build the centre they are looking at is the game losing track. */}
+        <span>{dashboard.hideout.damage?.some(room => room.room === 'intelligence')
+          ? 'Your intelligence centre is wrecked, so nobody is briefing routes and no runs leave. Repair it under Business / Hideout.'
+          : 'You need an intelligence centre before you can run mules. Build one under Business / Hideout.'}</span>
       </div>}
     </section>
 
@@ -3937,7 +4007,16 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
 
 // funds, not cash on hand: the server pays for a room from the bank first, because the safe is one of
 // the things being bought and several rooms cost more than the safe below them holds.
-function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
+/**
+ * One room, and the two things that can be done to it.
+ *
+ * A wrecked room takes the row over rather than getting a badge on the side of it. That is the point:
+ * the level a player paid for is still there and still worthless, and a row that reads "Level 4" with
+ * a small red word next to it is a row somebody scrolls past on the way to the upgrade they meant to
+ * buy. While it is down the row says what has stopped, what it costs to undo, and nothing else - the
+ * upgrade button is not an option here, because the server will not sell a level on top of a wreck.
+ */
+function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair }: {
   name: string
   level: number
   detail: string
@@ -3945,34 +4024,61 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
   funds: number
   busy: boolean
   onUpgrade: () => void
+  damage?: HideoutDamage | null
+  repairing?: HideoutRepair | null
+  onRepair?: () => void
 }) {
   const tierLocked = upgrade?.tierLocked ?? false
   const workshopLocked = upgrade?.workshopLocked ?? false
   const locked = tierLocked || workshopLocked
-  return <div className="room-row">
+  const underway = damage != null && repairing?.room === damage.room
+  const elsewhere = damage != null && repairing != null && repairing.room !== damage.room
+
+  return <div className={`room-row${damage ? ' room-row-wrecked' : ''}`}>
     <div className="room-copy">
       <strong>{name}</strong>
-      <span>{detail}</span>
+      {damage
+        ? <span className="text-danger">Wrecked, so {damage.stops}.</span>
+        : <span>{detail}</span>}
+      {damage && <small className="text-body-secondary">
+        {underway
+          ? `The crew are in there. Working again in ${timeUntil(repairing!.completesAtUtc)}.`
+          : `Putting it back costs ${money.format(damage.repairCost)} and takes ${damage.repairMinutes} minute(s).`}
+      </small>}
       {/* What the upgrade actually returns. The later levels are meant to be a poor deal - somewhere
           for money to go once there is nothing left to buy - and saying so is the difference between
           a trophy and a room that quietly took a fortune while looking like an investment. */}
-      {!locked && upgrade?.paybackDays != null && <small className={upgrade.paybackDays > 30 ? 'text-primary' : 'text-body-secondary'}>
+      {!damage && !locked && upgrade?.paybackDays != null && <small className={upgrade.paybackDays > 30 ? 'text-primary' : 'text-body-secondary'}>
         {upgrade.paybackDays > 30
           ? `Pays for itself in ${upgrade.paybackDays} days. A trophy more than an investment.`
           : `Pays for itself in ${upgrade.paybackDays} days.`}
       </small>}
     </div>
-    <em>{level === 0 ? 'Not built' : `Level ${level}`}</em>
-    <Button className="btn btn-primary" blocked={firstReason(
-      busy && BUSY,
-      !upgrade && `The ${name.toLowerCase()} is at its highest level. There is nothing left to buy here.`,
-      tierLocked && workshopLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better and a level ${upgrade!.requiredWorkshopLevel} workshop.`,
-      tierLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better. Move the building up first.`,
-      workshopLocked && `Level ${upgrade!.level} wants a level ${upgrade!.requiredWorkshopLevel} workshop first.`,
-      !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} between cash and the bank.`,
-    )} onClick={onUpgrade}>
-      {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
-    </Button>
+    {/* The damage row carries the level off the deeds, which is the one a wrecked room has to show.
+        Several rows read their level off what the room can currently do, and that is zero while it is
+        down - so without this the workshop would report "Level 0, down" to somebody who paid for four. */}
+    <em className={damage ? 'text-danger' : undefined}>
+      {damage ? `Level ${damage.level}, down` : level === 0 ? 'Not built' : `Level ${level}`}
+    </em>
+    {damage
+      ? <Button className="btn btn-danger" blocked={firstReason(
+        busy && BUSY,
+        underway && `The crew are already in the ${damage.name}. They are out in ${timeUntil(repairing!.completesAtUtc)}.`,
+        elsewhere && `Your crew are in the ${repairing!.name} until ${timeUntil(repairing!.completesAtUtc)} from now. They can only be in one room at a time.`,
+        funds < damage.repairCost && `Putting it back costs ${money.format(damage.repairCost)} and you have ${money.format(funds)} between cash and the bank.`,
+      )} onClick={() => onRepair?.()}>
+        {underway ? 'Being fixed' : `Repair ${money.format(damage.repairCost)}`}
+      </Button>
+      : <Button className="btn btn-primary" blocked={firstReason(
+        busy && BUSY,
+        !upgrade && `The ${name.toLowerCase()} is at its highest level. There is nothing left to buy here.`,
+        tierLocked && workshopLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better and a level ${upgrade!.requiredWorkshopLevel} workshop.`,
+        tierLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better. Move the building up first.`,
+        workshopLocked && `Level ${upgrade!.level} wants a level ${upgrade!.requiredWorkshopLevel} workshop first.`,
+        !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} between cash and the bank.`,
+      )} onClick={onUpgrade}>
+        {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
+      </Button>}
   </div>
 }
 

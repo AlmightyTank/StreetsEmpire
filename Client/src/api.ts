@@ -275,6 +275,28 @@ export type Hideout = {
   workshopCraft?: WorkshopCraft | null
   production: ProductionStation[]
   stations: HideoutStation[]
+  /** Rooms that are not working. Empty for a house nobody has been through, which is most of them. */
+  damage: HideoutDamage[]
+  /** The room the crew are in right now. One at a time, so one room rather than a list. */
+  repair?: HideoutRepair | null
+}
+
+export type HideoutDamage = {
+  room: BreakableRoom
+  name: string
+  /** What stops while it is down, in the words the page prints under the room's own row. */
+  stops: string
+  level: number
+  repairCost: number
+  repairMinutes: number
+  wreckedAtUtc: string
+}
+
+export type HideoutRepair = {
+  room: BreakableRoom
+  name: string
+  completesAtUtc: string
+  secondsRemaining: number
 }
 
 export type ProductionStation = {
@@ -352,6 +374,12 @@ export type HideoutBuild = {
 
 /** The rooms you can buy. The still and the mix house were folded into the workshop. */
 export type HideoutRoom = 'tier' | 'storage' | 'safe' | 'weedlab' | 'cokelab' | 'workshop' | 'intelligence' | 'lookout'
+
+/**
+ * The rooms a raid can put out of action. Every one of them is a function or a bonus, so breaking it
+ * stops something; the store and the safe are capacity and are deliberately not on the list.
+ */
+export type BreakableRoom = Extract<HideoutRoom, 'weedlab' | 'cokelab' | 'workshop' | 'intelligence' | 'lookout'>
 
 export type Pimp = {
   id: number
@@ -1911,6 +1939,10 @@ export const api = {
     body: JSON.stringify({ strategy }),
   }),
   upgradeHideout: (room: HideoutRoom) => request<ActionResult>('/api/game/hideout/upgrade', {
+    method: 'POST',
+    body: JSON.stringify({ room }),
+  }),
+  repairHideout: (room: BreakableRoom) => request<ActionResult>('/api/game/hideout/repair', {
     method: 'POST',
     body: JSON.stringify({ room }),
   }),

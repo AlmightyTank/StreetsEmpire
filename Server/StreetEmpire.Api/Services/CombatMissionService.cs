@@ -191,6 +191,9 @@ public sealed class CombatMissionService(
             .Include(x => x.Attacker).ThenInclude(x => x.Crew)
             .Include(x => x.Defender).ThenInclude(x => x.Crew)
             .Include(x => x.Defender).ThenInclude(x => x.Account)
+            // Tracked with the rest: a won raid breaks a room in here, and a wrecked room that was
+            // never loaded is a wrecked room that is silently never saved.
+            .Include(x => x.Defender).ThenInclude(x => x.Hideout)
             .Include(x => x.CommanderPimp)
             .Include(x => x.Events)
             // Tracked, not AsNoTracking: a won raid writes the new holder onto this row. The garrison
@@ -338,6 +341,7 @@ public sealed class CombatMissionService(
             DefenderHoesLost = mission.DefenderHoesLost,
             DefenderThugsLost = mission.DefenderThugsLost,
             DefenderWeaponsLost = mission.DefenderWeaponsLost,
+            DefenderRoomWrecked = mission.DefenderRoomWrecked,
             DefenderProtectionUntilUtc = mission.DefenderProtectionUntilUtc,
             ResolvesAtUtc = nowUtc,
             ResolvedAtUtc = nowUtc,
@@ -613,8 +617,23 @@ public sealed class CombatMissionService(
             if (defenderFate.Happened)
                 mission.DefenderPimpsLost = 1;
 
+            // On the way out. Only a house, never a corner: a corner is contested rather than robbed,
+            // and there was never a room inside it to break.
+            //
+            // This is the half of a raid that is still there tomorrow. Everything else it takes grows
+            // back by morning - cash off a shift, product off a lab, crew off a hiring - which made
+            // being raided an expensive evening rather than something that happened to an empire, and
+            // made winning one a withdrawal rather than a blow.
+            var wrecked = mission.TerritoryId is null
+                ? hideout.Wreck(mission.Defender.Hideout, _options.Combat.RoomsWreckedOnRaidLoss, random, nowUtc)
+                : [];
+            mission.DefenderRoomWrecked = wrecked.Count == 0 ? null : string.Join(",", wrecked);
+            var broke = wrecked.Count == 0
+                ? string.Empty
+                : $" They put {mission.Defender.Name}'s {string.Join(" and ", wrecked.Select(HideoutRooms.Name))} through a wall.";
+
             var fell = defenderFate.Happened ? $" {defenderFate.Name} died holding the house." : string.Empty;
-            BeginReturn(mission, "Victory", $"{mission.CommanderName} broke {mission.Defender.Name}'s defense and grabbed ${mission.CashStolen:N0}, {mission.WeedStolen:N0} weed, and {mission.CokeStolen:N0} coke.{fell}{lootOverflow.Describe()}", nowUtc);
+            BeginReturn(mission, "Victory", $"{mission.CommanderName} broke {mission.Defender.Name}'s defense and grabbed ${mission.CashStolen:N0}, {mission.WeedStolen:N0} weed, and {mission.CokeStolen:N0} coke.{fell}{broke}{lootOverflow.Describe()}", nowUtc);
         }
         else if (mission.CurrentRound >= mission.MaxRounds)
         {
@@ -818,6 +837,7 @@ public sealed class CombatMissionService(
             DefenderHoesLost = mission.DefenderHoesLost,
             DefenderWeaponsLost = mission.DefenderWeaponsLost,
             DefenderPimpsLost = mission.DefenderPimpsLost,
+            DefenderRoomWrecked = mission.DefenderRoomWrecked,
             CreatedAtUtc = nowUtc
         };
         string headline;

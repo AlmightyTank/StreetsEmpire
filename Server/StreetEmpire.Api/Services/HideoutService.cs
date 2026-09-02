@@ -40,6 +40,12 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         // A still counts as a reason to run the clock even though it makes nothing passively: the
         // hours it reports are what the contraband risk is rolled over, and a brewer with no lab would
         // otherwise never be at risk at all.
+        //
+        // Read off what was built rather than off what is standing, which matters now that a room can
+        // be down. A house whose labs have all been wrecked still runs this clock and still banks
+        // nothing from it, so the hours a raid cost are hours that are genuinely gone. Gating the
+        // clock on working rooms would hold the whole outage in credit and pay it out the moment the
+        // repair landed, which is a raid that costs its victim nothing at all.
         if (hideout is null || (hideout.WeedLabLevel <= 0 && hideout.CokeLabLevel <= 0 && hideout.WorkshopLevel <= 0))
             return LabYield.None;
 
@@ -97,8 +103,14 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// they are at the screen, and costs one who sells and lays low almost nothing. A bust takes a
     /// share of every contraband pile and fines them, and the fine stops at cash on hand: one that
     /// could push a player into debt is a different and much nastier mechanic than losing the stash.
+    ///
+    /// What band the heat was in when they came through decides the rest: how much of the stash goes,
+    /// and whether the place is left standing. Under Watched they take stock and go, which is the bill
+    /// for holding it. At Watched and above they take the house apart on the way out, and that is the
+    /// part still costing the player tomorrow - the labs are dark, the bench is cold, nobody is on the
+    /// corner watching for the next one, and the mules are going nowhere until it is paid for.
     /// </summary>
-    public ContrabandBust RollBust(Player player, int hours, IGameRandom random)
+    public ContrabandBust RollBust(Player player, int hours, IGameRandom random, DateTime nowUtc)
     {
         if (hours <= 0)
             return ContrabandBust.None;
@@ -119,7 +131,11 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         if (!caught)
             return ContrabandBust.None;
 
-        var share = Math.Clamp(config.SeizedPercent, 0, 1);
+        // Read before anything is taken. Seizing first would drop the held-goods half of the number
+        // and quietly demote a Hunted house to a Watched one mid-raid, so the stash somebody was
+        // caught with would decide how hard they were hit only until it was carried out of the door.
+        var band = HeatBands.Of(heat, config);
+        var share = HeatBands.SeizedPercent(band, config);
         var weed = Seize(player, "weed", share);
         var coke = Seize(player, "coke", share);
         var moonshine = Seize(player, "moonshine", share);
@@ -128,11 +144,45 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         var units = weed + coke + moonshine + cut;
         var fine = Math.Min(player.Cash, (long)Math.Round(units * Math.Max(0, config.FinePerSeizedUnit)));
         player.Cash -= fine;
+        var wrecked = Wreck(player.Hideout, HeatBands.RoomsWrecked(band, config), random, nowUtc);
         // A raid resets the attention it was drawn by. Leaving it high would mean one bust guarantees
         // the next, which is a spiral rather than a risk.
         player.Heat = 0;
 
-        return new ContrabandBust(weed, coke, moonshine, cut, fine, Math.Round(heat, 1));
+        return new ContrabandBust(weed, coke, moonshine, cut, fine, Math.Round(heat, 1), HeatBands.Label(band), wrecked);
+    }
+
+    /// <summary>
+    /// Puts rooms out of action and says which ones went.
+    ///
+    /// Picked at random from what is actually standing, and never more than there is to break. Which
+    /// room goes is not a decision anybody in the fiction makes carefully - the law goes through the
+    /// door it is nearest to, and a raiding crew has minutes rather than a survey - and a weighting
+    /// table here would only be the designer picking the same room every time with extra steps. The
+    /// decision this creates is the one that comes after: three dark rooms and one repair crew.
+    ///
+    /// A room already down cannot be broken again, which is what stops a second raid from silently
+    /// resetting a repair that is halfway through.
+    /// </summary>
+    public IReadOnlyList<string> Wreck(Hideout? hideout, int count, IGameRandom random, DateTime nowUtc)
+    {
+        if (hideout is null || count <= 0)
+            return [];
+
+        var standing = HideoutRooms.Breakable
+            .Where(room => hideout.BuiltLevel(room) > 0 && !hideout.IsWrecked(room))
+            .ToList();
+
+        var broken = new List<string>();
+        while (broken.Count < count && standing.Count > 0)
+        {
+            var pick = standing[random.NextInclusive(0, standing.Count - 1)];
+            standing.Remove(pick);
+            hideout.SetWrecked(pick, nowUtc);
+            broken.Add(pick);
+        }
+
+        return broken;
     }
 
     /// <summary>Takes a share of one pile, through the same mapping every other mover of goods uses.</summary>
@@ -151,7 +201,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public WorkshopLevelOptions? WorkshopFor(Hideout? hideout)
     {
-        var level = hideout?.WorkshopLevel ?? 0;
+        var level = hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0;
         return level <= 0 ? null : Level(_options.Hideout.Workshop, level, x => x.Level);
     }
 
@@ -161,7 +211,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public double BustRiskReduction(Hideout? hideout)
     {
-        var level = hideout?.LookoutLevel ?? 0;
+        var level = hideout?.WorkingLevel(HideoutRooms.Lookout) ?? 0;
         if (level <= 0) return 0;
         var percent = Level(_options.Hideout.Lookout, level, x => x.Level)?.BustChanceReductionPercent ?? 0;
         return Math.Clamp(percent / 100.0, 0, 0.85);
@@ -173,7 +223,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public int ConcurrentRunCap(Hideout? hideout)
     {
-        var level = hideout?.IntelligenceLevel ?? 0;
+        var level = hideout?.WorkingLevel(HideoutRooms.Intelligence) ?? 0;
         if (level <= 0) return Math.Max(0, _options.Mules.BaseConcurrentRuns);
         return Level(_options.Hideout.Intelligence, level, x => x.Level)?.ConcurrentRuns
                ?? Math.Max(0, _options.Mules.BaseConcurrentRuns);
@@ -185,7 +235,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     /// </summary>
     public double RouteRiskReduction(Hideout? hideout)
     {
-        var level = hideout?.IntelligenceLevel ?? 0;
+        var level = hideout?.WorkingLevel(HideoutRooms.Intelligence) ?? 0;
         if (level <= 0) return 0;
         var percent = Level(_options.Hideout.Intelligence, level, x => x.Level)?.RiskReductionPercent ?? 0;
         return Math.Clamp(percent / 100.0, 0, 0.9);
@@ -306,14 +356,22 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         // A lab level upgrades the workshop level below it: level 1 can stand alone, level 2 needs a
         // level 1 workshop, and so on. Existing saves keep their purchased lab level, but output waits
         // for the bench that can actually support it.
-        var workshopReach = Math.Max(1, (hideout?.WorkshopLevel ?? 0) + 1);
+        //
+        // The bench that has to be standing, not the one that was paid for: a wrecked workshop drags
+        // every lab above the first rung down with it, which is the knock-on that makes the bench the
+        // room a raider actually wants and the one a player fixes first.
+        var workshopReach = Math.Max(1, (hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0) + 1);
         return (levels, Math.Min(level, workshopReach));
     }
 
+    /// <summary>
+    /// The lab table and the level it is running at, which is nothing while the lab is down. Every
+    /// yield and every passive hour is read through here, so one wrecked room silences all of them.
+    /// </summary>
     private (List<LabLevelOptions> Levels, int Level) LabFor(Hideout? hideout, string product)
         => product == "coke"
-            ? (_options.Hideout.CokeLab, hideout?.CokeLabLevel ?? 0)
-            : (_options.Hideout.WeedLab, hideout?.WeedLabLevel ?? 0);
+            ? (_options.Hideout.CokeLab, hideout?.WorkingLevel(HideoutRooms.CokeLab) ?? 0)
+            : (_options.Hideout.WeedLab, hideout?.WorkingLevel(HideoutRooms.WeedLab) ?? 0);
 
     private static int RequiredWorkshopForLab(int labLevel) => Math.Max(0, labLevel - 1);
 
@@ -412,8 +470,16 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public ActionResultResponse Upgrade(Player player, string? room, DateTime nowUtc)
     {
         var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
-        var key = room?.Trim().ToLowerInvariant() ?? string.Empty;
+        var key = HideoutRooms.Normalize(room);
         var config = _options.Hideout;
+
+        // Nothing gets built on top of a wreck. Allowing it would let a player skip the repair bill by
+        // buying the next level instead - the same room, standing again, for a price that has nothing
+        // to do with the damage - and it would make being raided a discount for anybody who was going
+        // to upgrade that room anyway.
+        if (HideoutRooms.CanBreak(key) && hideout.IsWrecked(key))
+            throw new GameRuleException(
+                $"Your {HideoutRooms.Name(key)} is wrecked. Nobody is building on top of it until it is put back.");
 
         return key switch
         {
@@ -477,6 +543,110 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
                 ["cashRemaining"] = player.Cash,
                 ["bankRemaining"] = player.BankCash
             });
+    }
+
+    /// <summary>
+    /// What putting a room back costs: a share of every pound that got it to the level it is.
+    ///
+    /// Priced off the built level rather than a flat fee, so the bill is proportionate to what was
+    /// taken away. Somebody whose first-rung lookout went through a window is out pocket money, and
+    /// somebody whose maxed coke lab went is out something they will feel - which is correct, because
+    /// that is also the difference in what the room was earning them while it stood.
+    /// </summary>
+    public long RepairCost(Hideout? hideout, string room)
+    {
+        var level = hideout?.BuiltLevel(room) ?? 0;
+        if (level <= 0) return 0;
+        var built = HideoutValue.OfRoom(_options.Hideout, room, level);
+        return Math.Max(1, (long)Math.Round(built * Math.Clamp(_options.Hideout.RepairCostPercent, 0, 1)));
+    }
+
+    /// <summary>How long the crew are in there. Longer for a deeper room, and never instant.</summary>
+    public int RepairMinutes(Hideout? hideout, string room)
+    {
+        var level = hideout?.BuiltLevel(room) ?? 0;
+        if (level <= 0) return 0;
+        return Math.Max(
+            Math.Max(1, _options.Hideout.MinRepairMinutes),
+            level * Math.Max(1, _options.Hideout.RepairMinutesPerLevel));
+    }
+
+    /// <summary>
+    /// Puts a crew into one wrecked room and starts the clock.
+    ///
+    /// Paid for up front and one room at a time, which is the whole shape of the mechanic: the money
+    /// goes now, the room comes back later, and a house with three dark rooms has to decide which one
+    /// it wants working tonight. Paid from the bank first like every other hideout bill, for the reason
+    /// <see cref="ChargeCapital"/> gives - the safe is one of the things a raid can leave you short of,
+    /// and a repair nobody can afford because their own safe is too small is a dead end.
+    ///
+    /// No turns. A raid is something done to a player rather than something they chose, and charging
+    /// the scarcest resource in the game to undo somebody else's decision is where a setback turns into
+    /// a reason to stop playing. Cash and hours are the price; the turns stay theirs.
+    /// </summary>
+    public ActionResultResponse Repair(Player player, string? room, DateTime nowUtc)
+    {
+        var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
+        var key = HideoutRooms.Normalize(room);
+        if (!HideoutRooms.CanBreak(key))
+            throw new GameRuleException($"Room must be one of {string.Join(", ", HideoutRooms.Breakable)}.");
+
+        // Land a repair that is already due before deciding whether the crew are free. The clock does
+        // this too and gets here first on every real request, but only here is it load-bearing: without
+        // it, a call that arrived at the exact moment the last one finished would overwrite the room
+        // being repaired and leave the finished one wrecked for ever, with the money already spent.
+        CompleteRepair(hideout, nowUtc);
+
+        if (hideout.RepairingRoom is { } busy && hideout.RepairCompletesAtUtc is { } due && due > nowUtc)
+        {
+            var left = Math.Max(1, (int)Math.Ceiling((due - nowUtc).TotalMinutes));
+            throw new GameRuleException(
+                $"The crew are still in the {HideoutRooms.Name(busy)}. They are out in about {left} minute(s).");
+        }
+
+        if (!hideout.IsWrecked(key))
+            throw new GameRuleException($"Your {HideoutRooms.Name(key)} is not broken.");
+
+        var cost = RepairCost(hideout, key);
+        if (player.Cash + player.BankCash < cost)
+            throw new GameRuleException(
+                $"Putting the {HideoutRooms.Name(key)} back costs {cost:C0} across your cash and bank. You have {player.Cash + player.BankCash:C0}.");
+
+        var fromBank = ChargeCapital(player, cost);
+        var minutes = RepairMinutes(hideout, key);
+        hideout.RepairingRoom = key;
+        hideout.RepairCompletesAtUtc = nowUtc.AddMinutes(minutes);
+
+        return new ActionResultResponse(
+            $"Put a crew on the {HideoutRooms.Name(key)} for {cost:C0}. It is working again in {minutes} minute(s).",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["room"] = key,
+                ["cost"] = cost,
+                ["minutes"] = minutes,
+                ["paidFromBank"] = fromBank,
+                ["readyAtUtc"] = hideout.RepairCompletesAtUtc,
+                ["cashRemaining"] = player.Cash,
+                ["bankRemaining"] = player.BankCash
+            });
+    }
+
+    /// <summary>
+    /// Lands a finished repair. Called wherever a player is refreshed, exactly like a finished tier
+    /// build, so a room that came back while nobody was looking is working the first time they look.
+    /// </summary>
+    public string? CompleteRepair(Hideout? hideout, DateTime nowUtc)
+    {
+        if (hideout?.RepairingRoom is not { } room || hideout.RepairCompletesAtUtc is not { } due)
+            return null;
+        if (nowUtc < due)
+            return null;
+
+        hideout.SetWrecked(room, null);
+        hideout.RepairingRoom = null;
+        hideout.RepairCompletesAtUtc = null;
+        return room;
     }
 
     /// <summary>The next level available for a room, whether or not the tier allows it yet.</summary>
@@ -685,13 +855,36 @@ public sealed record LabYield(int Weed, int Coke, int Hours, bool HitOfflineCeil
     }
 }
 
-/// <summary>What a raid took. Zero units means nothing happened.</summary>
-public sealed record ContrabandBust(int Weed, int Coke, int Moonshine, int Cut, long Fine, double HeatAtBust)
+/// <summary>
+/// What a raid took, and what it left broken.
+///
+/// The band is carried rather than worked out again later, because the heat it was read off is gone by
+/// the time anybody describes this: the raid took the stash that was half of it and reset the rest to
+/// nothing, so a report that recomputed the band afterwards would tell every player they had been
+/// Quiet at the time.
+/// </summary>
+public sealed record ContrabandBust(
+    int Weed,
+    int Coke,
+    int Moonshine,
+    int Cut,
+    long Fine,
+    double HeatAtBust,
+    string Band = "Quiet",
+    IReadOnlyList<string>? Wrecked = null)
 {
     public static readonly ContrabandBust None = new(0, 0, 0, 0, 0, 0);
 
+    public IReadOnlyList<string> WreckedRooms => Wrecked ?? [];
+
     public int Units => Weed + Coke + Moonshine + Cut;
-    public bool Happened => Units > 0;
+
+    /// <summary>
+    /// Whether there is anything to report. Rooms count, and have to: somebody with a lot of earned
+    /// heat and an empty store can be raided, and before rooms could break, that raid took nothing,
+    /// wrote no log and told nobody it had happened.
+    /// </summary>
+    public bool Happened => Units > 0 || WreckedRooms.Count > 0;
 
     /// <summary>Names what was actually taken rather than listing every pile including the empty ones.</summary>
     public string Describe()
@@ -702,9 +895,20 @@ public sealed record ContrabandBust(int Weed, int Coke, int Moonshine, int Cut, 
         if (Weed > 0) taken.Add($"{Weed:N0} weed");
         if (Cut > 0) taken.Add($"{Cut:N0} cut");
         var haul = taken.Count == 0 ? "nothing worth naming" : string.Join(", ", taken);
-        return Fine > 0
-            ? $"The law came through. They took {haul} and fined you {Fine:C0}."
-            : $"The law came through and took {haul}.";
+        var opening = Units == 0
+            ? "The law came through and found nothing worth carrying out."
+            : Fine > 0
+                ? $"The law came through. They took {haul} and fined you {Fine:C0}."
+                : $"The law came through and took {haul}.";
+        if (WreckedRooms.Count == 0)
+            return opening;
+
+        var rooms = string.Join(" and ", WreckedRooms.Select(HideoutRooms.Name));
+        // Two rooms is the ordinary case at the top band, so the plural is not a nicety here.
+        var tail = WreckedRooms.Count == 1
+            ? "and it stays down until you pay to have it put back"
+            : "and they stay down until you pay to have them put back";
+        return $"{opening} They wrecked your {rooms} on the way out, {tail}.";
     }
 }
 

@@ -711,7 +711,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
         var key = NormalizeProduct(product);
         var production = GetProduction(key);
-        var workshopLevel = player.Hideout?.WorkshopLevel ?? 0;
+        // The working level, so a wrecked bench reads as no bench at all and says so in the same
+        // sentence a player who never built one gets. The reason it is at zero is on the hideout page,
+        // which is also where the button that fixes it lives.
+        var workshopLevel = player.Hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0;
         if (workshopLevel < production.MinWorkshopLevel)
             throw new GameRuleException($"{TradeGoods.Label(key)} needs a level {production.MinWorkshopLevel} workshop. Yours is level {workshopLevel}.");
 
@@ -777,7 +780,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         // Stepping on coke needs a bench that can make the cut it is stepped on with, which is the
         // same level the recipe asks for rather than a second number that could drift away from it.
         var needsLevel = _options.Makeables.FirstOrDefault(x => x.Key == "cut")?.MinWorkshopLevel ?? 1;
-        var mixLevel = player.Hideout?.WorkshopLevel ?? 0;
+        var mixLevel = player.Hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0;
         if (mixLevel < needsLevel)
             throw new GameRuleException($"Stepping on coke needs a level {needsLevel} workshop.");
         if (hideout.WorkshopRequiredTier() is { } needed && (player.Hideout?.Tier ?? 1) < needed)

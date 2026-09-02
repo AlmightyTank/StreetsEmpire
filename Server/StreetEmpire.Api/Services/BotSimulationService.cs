@@ -1035,12 +1035,12 @@ public sealed class BotSimulationService(
     /// <summary>Steps on the coke, when there is cut, coke and somewhere to put the result.</summary>
     private int TryCutCoke(Player bot, DateTime actionTimeUtc)
     {
-        if (bot.Cut <= 0 || bot.Coke <= 0 || (bot.Hideout?.WorkshopLevel ?? 0) <= 0)
+        if (bot.Cut <= 0 || bot.Coke <= 0 || (bot.Hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0) <= 0)
             return 0;
         if (hideouts.CapacityFor(bot.Hideout).MaxCoke - bot.Coke <= 0)
             return 0;
 
-        var perTurn = Math.Max(1, _options.Hideout.CutPerTurnPerMixLevel) * (bot.Hideout?.WorkshopLevel ?? 1);
+        var perTurn = Math.Max(1, _options.Hideout.CutPerTurnPerMixLevel) * (bot.Hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 1);
         var turns = Math.Clamp((int)Math.Ceiling(bot.Cut / (double)perTurn), 1, _options.MaxActionTurns);
         return TryAction(bot, "CUT", turns, actionTimeUtc, () => economy.CutCoke(bot, turns));
     }
@@ -1053,6 +1053,19 @@ public sealed class BotSimulationService(
 
         var reserve = CashReserve(bot, brain);
         var capacity = hideouts.CapacityFor(hideout);
+
+        // Repairs before anything else, and ahead of even the safe. A rival gets raided on the same
+        // rules a player does, and without this a season would slowly fill up with bots whose labs,
+        // benches and centres had all been kicked in months ago and never put back - which is the same
+        // lesson as rivals not upgrading their hideouts, arriving by a different door. Oldest damage
+        // first, because that is the room that has been costing them longest.
+        if (hideout.RepairingRoom is null)
+            foreach (var room in hideout.WreckedRooms().OrderBy(x => hideout.WreckedAtUtc(x)))
+            {
+                if (bot.Cash + bot.BankCash < hideouts.RepairCost(hideout, room) + reserve)
+                    continue;
+                return TryAction(bot, "HIDEOUT", 0, actionTimeUtc, () => hideouts.Repair(bot, room, actionTimeUtc));
+            }
 
         // The safe first. Cash over it is swept into the bank, and a bot that cannot hold cash on hand
         // can never save up for anything larger.

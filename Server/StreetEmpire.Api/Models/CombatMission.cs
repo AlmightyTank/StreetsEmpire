@@ -107,6 +107,15 @@ public sealed class CombatMission
     public int DefenderThugsLost { get; set; }
     public int DefenderWeaponsLost { get; set; }
 
+    /// <summary>
+    /// The rooms this raid left broken, comma-separated, or null for a raid that broke none.
+    ///
+    /// A string of keys rather than a table, because there is nothing to ask of it: nobody queries
+    /// which raids wrecked a lab, and the only reader is the sentence the loser is shown. The damage
+    /// itself lives on the hideout, where the repair bill can find it; this is the receipt.
+    /// </summary>
+    public string? DefenderRoomWrecked { get; set; }
+
     public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime ArrivesAtUtc { get; set; }
     public DateTime? NextRoundAtUtc { get; set; }

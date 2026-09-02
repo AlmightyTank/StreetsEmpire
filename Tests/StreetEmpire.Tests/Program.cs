@@ -2222,13 +2222,10 @@ static void DiscordIsOffUntilItIsConfigured()
     AssertTrue(new DiscordOptions { ClientId = "an-id", ClientSecret = "a-secret" }.IsConfigured, "both should offer Discord");
 
     // And the shipped file must never carry either of them, because the shipped file is public.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     var shipped = new ConfigurationBuilder()
-        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .AddJsonFile(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
         .Build();
     var options = new DiscordOptions();
     shipped.GetSection("Auth:Discord").Bind(options);
@@ -2365,13 +2362,10 @@ static void MailIsOffUntilItIsConfigured()
 
     // The shipped file must carry no key, for the same reason it carries no Discord secret: it is
     // public. And it must still carry the numbers, because those are the safety and not the secret.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     var shipped = new ConfigurationBuilder()
-        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .AddJsonFile(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
         .Build();
     var options = new EmailOptions();
     shipped.GetSection("Auth:Email").Bind(options);
@@ -2544,14 +2538,11 @@ static void TheRealEnvironmentAlwaysBeatsTheFile()
 
 static void TheCommittedExampleHoldsNoSecrets()
 {
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     // .env is where the secrets go, so it must never be committable. This is the one line standing
     // between a working setup and a published API key.
-    var ignore = File.ReadAllLines(Path.Combine(root!.FullName, ".gitignore")).Select(x => x.Trim());
+    var ignore = File.ReadAllLines(Path.Combine(root.FullName, ".gitignore")).Select(x => x.Trim());
     AssertTrue(ignore.Contains(".env"), ".gitignore must ignore .env");
 
     var examplePath = Path.Combine(root.FullName, ".env.example");
@@ -2712,13 +2703,10 @@ static void ACodeIsOnlyGoodForWhatItWasSentFor()
 
     // Existing rows predate the column, and every one of them was a confirmation. The migration has to
     // say so, because the empty string EF would otherwise write is not a name the enum reads back from.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     var migration = Directory
-        .GetFiles(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Migrations"), "*_PasswordResetCodes.cs")
+        .GetFiles(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Migrations"), "*_PasswordResetCodes.cs")
         .Single(x => !x.EndsWith(".Designer.cs", StringComparison.Ordinal));
     var text = File.ReadAllText(migration);
     AssertTrue(text.Contains($"defaultValue: \"{nameof(VerificationPurpose.ConfirmAddress)}\""),
@@ -3857,15 +3845,12 @@ static void MoneyIsDollarsWhereverTheServerIs()
     // And the wiring, checked at the source: the suite cannot boot the app, so what it asserts is that
     // the app still asks. Without this the thirty-eight sites would be correct in every test and wrong
     // in production, which is the state they were already in.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     // A line that calls it, not a line that mentions it. ReadAllText plus Contains was the first
     // attempt, and a commented-out call satisfied it - which is the one way this is actually likely
     // to be lost.
-    var program = File.ReadAllLines(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Program.cs"));
+    var program = File.ReadAllLines(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Program.cs"));
     AssertTrue(program.Any(line => line.TrimStart().StartsWith("GameCulture.Apply()", StringComparison.Ordinal)),
         "Program.cs no longer sets the culture - money will print as \u00a4 on any server without a locale");
 }
@@ -3922,13 +3907,10 @@ static void OneInboxCanOnlyBeAimedAtSoManyTimes()
     AssertTrue(options.MaxCodesPerDay >= 5, "the ceiling must not get in a real player's way");
 
     // And the shipped file has to agree, since that is the one that actually runs.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     var shipped = new ConfigurationBuilder()
-        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .AddJsonFile(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
         .Build();
     var configured = new EmailOptions();
     shipped.GetSection("Auth:Email").Bind(configured);
@@ -3949,12 +3931,9 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
     //
     // So this reads the client and checks its keys against the ones the server actually answers to.
     // Crossing the language boundary is the point: no test on either side alone could have caught it.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
-    var client = File.ReadAllText(Path.Combine(root!.FullName, "Client", "src", "main.tsx"));
+    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
 
     // Everything the server will answer to, from the three lists that decide it.
     var known = new HashSet<string>(StringComparer.Ordinal);
@@ -4012,12 +3991,9 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
 /// </summary>
 static void GuidanceOnlyPointsWhereTheClientCanGo()
 {
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
-    var client = File.ReadAllText(Path.Combine(root!.FullName, "Client", "src", "main.tsx"));
+    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
 
     // The client's own mapping, read out of it: name -> page, the tab when it names one, and the area
     // within the tab when it names that too. All three parts optional after the page, because a
@@ -4926,13 +4902,10 @@ static void TurningSeasonsOnDoesNotRollAStaleClock()
 /// </summary>
 static void TheShippedSeasonRunsTheWindowItWasAnnouncedFor()
 {
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
     var shipped = new ConfigurationBuilder()
-        .AddJsonFile(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
+        .AddJsonFile(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "appsettings.json"))
         .Build();
 
     var seasons = new SeasonOptions();
@@ -5308,12 +5281,9 @@ static void TheVersionIsWrittenDownOnce()
     // It comes from the VERSION file now: MSBuild reads it into the assembly, vite reads it into the
     // bundle. This is the wiring test for that, because both halves fail silently - MSBuild would fall
     // back to 0.0.0 and vite would leave the token in place, and neither stops a build.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
-    var declared = File.ReadAllText(Path.Combine(root!.FullName, "VERSION")).Trim();
+    var declared = File.ReadAllText(Path.Combine(root.FullName, "VERSION")).Trim();
     AssertTrue(declared.Length > 0, "VERSION should say something");
 
     // The server half. This assembly is built by the same props file the API is, so its version having
@@ -5360,12 +5330,9 @@ static void TheVersionIsWrittenDownOnce()
 
 static void EveryTestWrittenIsATestThatRuns()
 {
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
-    var path = Path.Combine(root!.FullName, "Tests", "StreetEmpire.Tests", "Program.cs");
+    var path = Path.Combine(root.FullName, "Tests", "StreetEmpire.Tests", "Program.cs");
     AssertTrue(File.Exists(path), $"this suite should be able to read itself at {path}");
     var source = File.ReadAllText(path);
 
@@ -5397,12 +5364,9 @@ static void ShippedSettingsObeyTheSameRules()
     // Read the file in the server project, never the copy sitting beside this test binary. The build
     // drops one there, and a test that reads it passes against whatever was last compiled - which is
     // precisely how a stale copy convinced this suite the ladder had been updated when it had not.
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    AssertTrue(root is not null, "the solution root should be findable from the test binary");
+    var root = SolutionRoot();
 
-    var path = Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "appsettings.json");
+    var path = Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "appsettings.json");
     AssertTrue(File.Exists(path), $"the server's own appsettings.json should be readable at {path}");
 
     var shipped = new ConfigurationBuilder().AddJsonFile(path).Build();
@@ -6951,10 +6915,8 @@ static void ABiggerBuildingHoldsMoreGround()
 /// </summary>
 static bool TerritoryBoardAdvancesTheClock()
 {
-    var root = new DirectoryInfo(AppContext.BaseDirectory);
-    while (root is not null && !File.Exists(Path.Combine(root.FullName, "StreetEmpire.sln")))
-        root = root.Parent;
-    var source = File.ReadAllText(Path.Combine(root!.FullName, "Server", "StreetEmpire.Api", "Endpoints", "TerritoryEndpoints.cs"));
+    var root = SolutionRoot();
+    var source = File.ReadAllText(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Endpoints", "TerritoryEndpoints.cs"));
     var board = source[source.IndexOf("/api/game/territories\"", StringComparison.Ordinal)..];
     board = board[..board.IndexOf("/api/game/territories/claim", StringComparison.Ordinal)];
     return board.Contains("clock.AdvanceAsync", StringComparison.Ordinal);
@@ -11468,6 +11430,26 @@ static GameOptions StorageCapOptions(int condoms)
 static IOptionsSnapshot<GameOptions> Snapshot(GameOptions options) => new OptionsSnapshotStub<GameOptions>(options);
 
 static IOptions<T> Options<T>(T value) where T : class => new OptionsSnapshotStub<T>(value);
+
+/// <summary>
+/// The repository root, found by walking up from the test binary until the solution file turns up.
+///
+/// Thirteen tests read a shipped file off disk, and each of them walked up on its own. Twelve checked
+/// the walk found something; the thirteenth dereferenced it. So a suite run from a binary outside the
+/// tree - a different output directory, a copied dll - failed twelve times with a sentence saying
+/// exactly what was wrong, and once with a NullReferenceException reported against the hideout test
+/// that happened to call it, which is a morning spent reading territory code that was never at fault.
+///
+/// One home, one message, and the message carries the directory it actually looked from.
+/// </summary>
+static DirectoryInfo SolutionRoot()
+{
+    var found = new DirectoryInfo(AppContext.BaseDirectory);
+    while (found is not null && !File.Exists(Path.Combine(found.FullName, "StreetEmpire.sln")))
+        found = found.Parent;
+    AssertTrue(found is not null, $"the solution root should be findable from the test binary, walking up from {AppContext.BaseDirectory}");
+    return found!;
+}
 
 static void AssertRuleError(Action action, string expectation)
 {

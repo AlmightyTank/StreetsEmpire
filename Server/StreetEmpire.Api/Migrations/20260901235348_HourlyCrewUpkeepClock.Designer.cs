@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901235348_HourlyCrewUpkeepClock")]
+    partial class HourlyCrewUpkeepClock
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2198,18 +2201,6 @@ namespace StreetEmpire.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
-
-                    b.Property<long>("RaidCashTaken")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("RaidCokeTaken")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("RaidScore")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("RaidWeedTaken")
-                        .HasColumnType("integer");
 
                     b.Property<int>("Rank")
                         .HasColumnType("integer");

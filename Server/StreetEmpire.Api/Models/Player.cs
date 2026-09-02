@@ -176,6 +176,13 @@ public sealed class Player
     public DateTime LastHeatRollUtc { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// Crew upkeep runs on whole hours, separate from the turn clock for the same reason heat does:
+    /// checking in every few minutes must not dodge the bill, and the remainder has to stay on the
+    /// clock until it becomes a real hour.
+    /// </summary>
+    public DateTime LastUpkeepUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
     /// When a flight lands. Null on the ground. Travel used to be instant, which made a town's distance
     /// a pure turn cost and nothing else: you could be somewhere else the moment you decided to be.
     /// Now the distance is time as well, and while it is running you are on a plane and cannot act.

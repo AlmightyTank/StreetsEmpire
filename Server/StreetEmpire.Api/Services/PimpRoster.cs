@@ -238,6 +238,13 @@ public sealed class PimpRoster(IOptionsSnapshot<GameOptions> options, IGameRando
             pimp.Loyalty = Clamp(pimp.Loyalty + amount);
     }
 
+    public void Pressure(Player player, double amount)
+    {
+        if (amount <= 0) return;
+        foreach (var pimp in Active(player))
+            pimp.Loyalty = Clamp(pimp.Loyalty - amount);
+    }
+
     public double PassiveRecoveryPerTick => Math.Max(0, _options.PassiveRecoveryPerTick);
     public double RestRecovery => _options.RestRecovery;
     public double PartyRecovery => _options.PartyRecovery;

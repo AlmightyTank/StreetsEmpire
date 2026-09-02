@@ -105,6 +105,7 @@ builder.Services.AddHostedService<DiscordGatewayService>();
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
 // false until a client id and secret arrive from user-secrets or the environment.
 builder.Services.AddScoped<RecoveryCodes>();
+builder.Services.AddScoped<BetaKeys>();
 builder.Services.AddScoped<IntelService>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection("Auth:Discord"));
 builder.Services.AddHttpClient<DiscordAuthService>(client => client.Timeout = TimeSpan.FromSeconds(15));
@@ -234,6 +235,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 // traffic has no player to name and falls back to the address.
 const int requestsPerMinute = 300;
 const int signInAttemptsPerMinute = 10;
+const int betaKeyChecksPerMinute = 30;
 
 builder.Services.AddRateLimiter(limiter =>
 {
@@ -257,6 +259,15 @@ builder.Services.AddRateLimiter(limiter =>
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = signInAttemptsPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    limiter.AddPolicy("beta-key", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = betaKeyChecksPerMinute,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));

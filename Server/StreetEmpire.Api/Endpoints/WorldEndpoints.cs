@@ -26,6 +26,51 @@ internal static class WorldEndpoints
 {
     internal static void MapWorldEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/public/stats", async (
+            GameDbContext db,
+            EconomyService economy,
+            IOptionsSnapshot<GameOptions> gameOptions,
+            CancellationToken ct) =>
+        {
+            var now = DateTime.UtcNow;
+            var options = gameOptions.Value;
+            options.Territory.ApplyDefaultsWhereEmpty();
+            var cities = options.Territory.Cities().ToList();
+
+            var players = await db.Players.AsNoTracking().CountAsync(ct);
+            var alliances = await db.Alliances.AsNoTracking().CountAsync(ct);
+            var territoriesHeld = await db.Territories.AsNoTracking().CountAsync(x => x.HolderId != null, ct);
+            var activeMissions = await db.CombatMissions.AsNoTracking().CountAsync(x => x.Status != "Complete", ct);
+            var totalNetWorth = await db.Players.AsNoTracking().SumAsync(economy.NetWorthExpression, ct);
+            var leaderRows = await db.Players.AsNoTracking()
+                .OrderByDescending(economy.NetWorthExpression)
+                .ThenBy(x => x.CreatedAtUtc)
+                .Take(5)
+                .ToListAsync(ct);
+            var headlines = await HeadlinesAsync(db, economy, now.AddHours(-24), ct);
+            var rankedLeaders = await RankPageAsync(leaderRows, db, economy, ct);
+
+            var leaders = rankedLeaders
+                .Select(x => new PublicLeaderResponse(
+                    x.Rank,
+                    x.Player.Name,
+                    x.Player.City,
+                    x.NetWorth,
+                    x.Player.Pimps + x.Player.Hoes + x.Player.Thugs))
+                .ToList();
+
+            return Results.Ok(new PublicStatsResponse(
+                now,
+                players,
+                cities.Count,
+                alliances,
+                territoriesHeld,
+                activeMissions,
+                totalNetWorth,
+                leaders,
+                headlines));
+        });
+
 
         app.MapGet("/api/game/leaderboard", async (
             GameDbContext db,
@@ -51,20 +96,21 @@ internal static class WorldEndpoints
                 .ThenBy(x => x.CreatedAtUtc)
                 .Take(50)
                 .ToListAsync(ct);
-            var result = top
-                .Select((x, index) => new LeaderboardEntryResponse(
-                    index + 1,
-                    x.Id,
-                    x.Name,
-                    AvatarUrl(x.Account),
-                    x.Account.ProfileTagline,
-                    x.City,
-                    economy.CalculateNetWorth(x),
-                    x.Cash,
-                    x.BankCash,
-                    x.Pimps,
-                    x.Hoes,
-                    x.Thugs))
+            var ranked = await RankPageAsync(top, db, economy, ct);
+            var result = ranked
+                .Select(x => new LeaderboardEntryResponse(
+                    x.Rank,
+                    x.Player.Id,
+                    x.Player.Name,
+                    AvatarUrl(x.Player.Account),
+                    x.Player.Account.ProfileTagline,
+                    x.Player.City,
+                    x.NetWorth,
+                    x.Player.Cash,
+                    x.Player.BankCash,
+                    x.Player.Pimps,
+                    x.Player.Hoes,
+                    x.Player.Thugs))
                 .ToList();
             return Results.Ok(result);
         }).RequireAuthorization();

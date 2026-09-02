@@ -34,6 +34,12 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         var turns = Math.Max(
             Math.Max(1, mules.MinTurnCost),
             (int)Math.Ceiling(travelTurns * Math.Max(0, mules.TurnCostPerTravelTurn)));
+        var supplyTurns = SupplyTurnsFor(tripMinutes);
+        var condomsNeeded = RequiredUpkeep(crew, supplyTurns, _options.Morale.TurnsPerCondom);
+        var beerNeeded = RequiredUpkeep(heads, supplyTurns, _options.Morale.TurnsPerBeer);
+        var condomsUsed = Math.Min(player.Condoms, condomsNeeded);
+        var beerUsed = Math.Min(player.Beer, beerNeeded);
+        var moonshineUsed = Math.Min(player.Moonshine, beerNeeded - beerUsed);
 
         var capacity = crew * Math.Max(1, mules.HoeCarryCapacity);
         var unitPrice = TradeGoods.ReferencePrice(_options, product, destination);
@@ -54,6 +60,12 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
             fare + upkeep + cash,
             unitPrice,
             unitPrice <= 0 ? 0 : (int)Math.Min(capacity, cash / unitPrice),
+            supplyTurns,
+            condomsNeeded,
+            condomsUsed,
+            beerNeeded,
+            beerUsed,
+            moonshineUsed,
             BustChancePercent(player, destination, crew),
             DefectChancePercent(player, null, destination));
     }
@@ -87,6 +99,9 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         if (player.Cash + player.BankCash < quote.TotalCost)
             throw new GameRuleException(
                 $"A run to {quote.DestinationCity} costs {quote.TotalCost:C0}: {quote.CashSent:C0} to buy with, {quote.Fare:C0} in fares and {quote.Upkeep:C0} to keep them while they are gone.");
+        if (quote.CondomShortage > 0 || quote.BeerShortage > 0)
+            throw new GameRuleException(
+                $"A run to {quote.DestinationCity} needs {SupplyList(quote.CondomsNeeded, quote.BeerNeeded, "beer or moonshine")} for {quote.SupplyTurns} upkeep turn(s). You have {SupplyList(player.Condoms, player.Beer + player.Moonshine, "beer or moonshine")}.");
 
         // Bank first, same as a hideout upgrade: money is money, and making a player withdraw by hand
         // before every run would be a chore rather than a decision.
@@ -94,6 +109,9 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         player.BankCash -= fromBank;
         player.Cash -= quote.TotalCost - fromBank;
         player.Turns -= quote.Turns;
+        player.Condoms -= quote.CondomsUsed;
+        player.Beer -= quote.BeerUsed;
+        player.Moonshine -= quote.MoonshineUsed;
         // The hoes go with them, so they are off the books until they come back. Counting them at home
         // would have them earning on the streets and carrying cargo at the same time.
         player.Hoes -= quote.Hoes;
@@ -267,6 +285,26 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         => _options.CityMarkets.ResolveCity(city)
            ?? throw new GameRuleException($"Pick one of: {string.Join(", ", _options.CityMarkets.Profiles.Where(x => !string.Equals(x.City, player.City, StringComparison.OrdinalIgnoreCase)).Select(x => x.City))}.");
 
+    private int SupplyTurnsFor(int tripMinutes)
+    {
+        var tickMinutes = Math.Max(1, _options.TurnTickMinutes);
+        return Math.Max(1, (int)Math.Ceiling((double)Math.Max(0, tripMinutes) / tickMinutes));
+    }
+
+    private static int RequiredUpkeep(int crewCount, int turns, double turnsPerSupply)
+    {
+        if (turnsPerSupply <= 0) return 0;
+        return Math.Max(0, (int)Math.Ceiling(crewCount * turns / turnsPerSupply));
+    }
+
+    private static string SupplyList(int condoms, int beer, string beerLabel = "beer")
+    {
+        var parts = new List<string>();
+        if (condoms > 0) parts.Add($"{condoms:N0} condom{(condoms == 1 ? string.Empty : "s")}");
+        if (beer > 0) parts.Add($"{beer:N0} {beerLabel}");
+        return parts.Count == 0 ? "no supplies" : parts.Count == 1 ? parts[0] : $"{parts[0]} and {parts[1]}";
+    }
+
     /// <summary>
     /// Only what is worth a plane ticket. Condoms and beer are the same price everywhere, so a run for
     /// them would be a pure loss dressed up as a decision.
@@ -314,5 +352,15 @@ public sealed record MuleQuote(
     long TotalCost,
     long UnitPriceThere,
     int UnitsAffordable,
+    int SupplyTurns,
+    int CondomsNeeded,
+    int CondomsUsed,
+    int BeerNeeded,
+    int BeerUsed,
+    int MoonshineUsed,
     int BustChancePercent,
-    int DefectChancePercent);
+    int DefectChancePercent)
+{
+    public int CondomShortage => Math.Max(0, CondomsNeeded - CondomsUsed);
+    public int BeerShortage => Math.Max(0, BeerNeeded - BeerUsed - MoonshineUsed);
+}

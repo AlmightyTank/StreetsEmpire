@@ -642,6 +642,146 @@ internal static class AdminOpsEndpoints
         }).RequireAuthorization();
 
 
+        app.MapGet("/api/admin/keys", async (
+            string? query,
+            CurrentPlayerService current,
+            GameDbContext db,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            IQueryable<BetaKey> keysQuery = db.BetaKeys.AsNoTracking()
+                .Include(x => x.IssuedToAccount)
+                    .ThenInclude(x => x!.Player)
+                .Include(x => x.RedeemedByAccount)
+                    .ThenInclude(x => x!.Player);
+
+            var term = query?.Trim().ToLowerInvariant();
+            if (!string.IsNullOrEmpty(term))
+            {
+                keysQuery = keysQuery.Where(x =>
+                    x.Code.ToLower().Contains(term)
+                    || (x.Label != null && x.Label.ToLower().Contains(term))
+                    || (x.IssuedToAccount != null
+                        && (x.IssuedToAccount.Username.ToLower().Contains(term)
+                            || (x.IssuedToAccount.Player != null && x.IssuedToAccount.Player.Name.ToLower().Contains(term))))
+                    || (x.RedeemedByAccount != null
+                        && (x.RedeemedByAccount.Username.ToLower().Contains(term)
+                            || (x.RedeemedByAccount.Player != null && x.RedeemedByAccount.Player.Name.ToLower().Contains(term)))));
+            }
+
+            var total = await keysQuery.CountAsync(ct);
+            var now = DateTime.UtcNow;
+            var keys = await keysQuery
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
+                .Take(100)
+                .ToListAsync(ct);
+
+            return Results.Ok(new AdminBetaKeysResponse(
+                total,
+                keys.Select(x => BetaKeyMappers.ToAdminResponse(x, now)).ToList()));
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/admin/keys", async (
+            AdminMintBetaKeysRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AdminService admins,
+            BetaKeys betaKeys,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            if (request.Count is < 1 or > 500)
+                return Results.BadRequest(new { error = "Mint between 1 and 500 beta keys at a time." });
+
+            var label = string.IsNullOrWhiteSpace(request.Label) ? null : request.Label.Trim();
+            if (label?.Length > 120)
+                return Results.BadRequest(new { error = "Label must be 120 characters or fewer." });
+
+            var maxUses = request.MaxUses ?? 1;
+            if (maxUses is < 1 or > 1000)
+                return Results.BadRequest(new { error = "Max uses must be between 1 and 1,000." });
+
+            var now = DateTime.UtcNow;
+            if (request.ExpiresAtUtc is { } expires && expires <= now)
+                return Results.BadRequest(new { error = "Expiration must be in the future." });
+
+            PlayerAccount? issuedTo = null;
+            if (request.IssuedToAccountId is { } issuedToAccountId)
+            {
+                issuedTo = await db.Accounts
+                    .Include(x => x.Player)
+                    .SingleOrDefaultAsync(x => x.Id == issuedToAccountId, ct);
+                if (issuedTo is null)
+                    return Results.NotFound(new { error = "That account does not exist." });
+            }
+
+            var keys = await betaKeys.MintAsync(request.Count, request.IssuedToAccountId, label, maxUses, request.ExpiresAtUtc, ct);
+            foreach (var key in keys)
+                key.IssuedToAccount = issuedTo;
+
+            var summary = $"minted {keys.Count:N0} beta key{(keys.Count == 1 ? string.Empty : "s")}";
+            if (issuedTo is not null)
+                summary += $" for {issuedTo.Player?.Name ?? issuedTo.Username}";
+            if (!string.IsNullOrWhiteSpace(label))
+                summary += $" ({label})";
+
+            admins.Record(admin.Account, "MintBetaKeys", issuedTo?.Player, summary, request.Reason, now);
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new AdminBetaKeysResponse(
+                keys.Count,
+                keys.Select(x => BetaKeyMappers.ToAdminResponse(x, now)).ToList()));
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/admin/keys/{keyId:guid}/revoke", async (
+            Guid keyId,
+            AdminReasonRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AdminService admins,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            var key = await db.BetaKeys
+                .Include(x => x.IssuedToAccount)
+                    .ThenInclude(x => x!.Player)
+                .Include(x => x.RedeemedByAccount)
+                    .ThenInclude(x => x!.Player)
+                .SingleOrDefaultAsync(x => x.Id == keyId, ct);
+            if (key is null)
+                return Results.NotFound(new { error = "Beta key not found." });
+
+            var now = DateTime.UtcNow;
+            if (key.RevokedAtUtc is null)
+            {
+                key.RevokedAtUtc = now;
+                key.Version += 1;
+                admins.Record(
+                    admin.Account,
+                    "RevokeBetaKey",
+                    key.IssuedToAccount?.Player ?? key.RedeemedByAccount?.Player,
+                    $"revoked beta key {BetaKeys.Display(key.Code)}",
+                    request.Reason,
+                    now);
+                await db.SaveChangesAsync(ct);
+            }
+
+            return Results.Ok(BetaKeyMappers.ToAdminResponse(key, now));
+        }).RequireAuthorization();
+
+
         app.MapGet("/api/admin/audit", async (
             CurrentPlayerService current,
             AdminService admins,

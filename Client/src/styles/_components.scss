@@ -72,11 +72,47 @@ body {
 // leave it there: a phone reports a tap as a hover and never takes it back,
 // which is how a stuck highlight follows you around.
 @media (hover: hover) {
-  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn-primary:hover:not(:disabled):not(.is-blocked) { filter: brightness(1.08); }
 }
 
-.btn-primary:active:not(:disabled),
-.btn-secondary:active:not(:disabled) { transform: translateY(1px); }
+.btn-primary:active:not(:disabled):not(.is-blocked),
+.btn-secondary:active:not(:disabled):not(.is-blocked) { transform: translateY(1px); }
+
+// A button turned off with a reason attached rather than with the disabled
+// attribute - see Button in main.tsx. It has to read as switched off and still
+// take a pointer, a tab stop and a tap, because hovering it is how the player is
+// told why it will not go, and Bootstrap's :disabled rule sets pointer-events to
+// none. So the greying is copied here off the same variables :disabled reads,
+// and the lift and brightening above are held back by hand.
+//
+// The focus ring is deliberately left alone: a blocked button keeps its place in
+// the tab order, and a keyboard lands on it to read the reason.
+.btn.is-blocked,
+.btn.is-blocked:hover,
+.btn.is-blocked:active {
+  color: var(--#{$prefix}btn-disabled-color);
+  background-color: var(--#{$prefix}btn-disabled-bg);
+  border-color: var(--#{$prefix}btn-disabled-border-color);
+  opacity: var(--#{$prefix}btn-disabled-opacity);
+  filter: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
+// The reason itself. Wider than Bootstrap's default, because these are sentences
+// rather than labels, and left-aligned so a two-line one does not read as a
+// ragged banner.
+.tooltip.blocked-reason {
+  --#{$prefix}tooltip-max-width: 260px;
+  --#{$prefix}tooltip-padding-x: .6rem;
+  --#{$prefix}tooltip-padding-y: .4rem;
+
+  .tooltip-inner {
+    text-align: left;
+    border: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
+    box-shadow: 0 .5rem 1rem rgba($black, .4);
+  }
+}
 
 // Bootstrap routes every component shadow through a mixin that $enable-shadows
 // switches off wholesale, and this build wants exactly one shadow - the panel's -
@@ -772,11 +808,151 @@ input:focus-visible, textarea:focus-visible {
   min-height: 100dvh;
 }
 
+.landing-shell {
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 430px);
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
 .auth-card { width: min(430px, 100%); }
 
 .brand-mark {
   width: 54px;
   height: 54px;
+}
+
+.landing-view {
+  min-width: 0;
+}
+
+.landing-hero {
+  max-width: 700px;
+
+  h1 {
+    font-size: clamp(3rem, 5vw, 5.25rem);
+    line-height: .92;
+    margin: 0;
+  }
+
+  .lead {
+    max-width: 620px;
+    color: var(--#{$prefix}secondary-color);
+  }
+}
+
+.landing-screens {
+  grid-template-columns: minmax(0, 1.25fr) minmax(220px, .75fr);
+}
+
+.landing-screen {
+  display: grid;
+  gap: $spacer * .75;
+  min-height: 210px;
+  border: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
+  border-radius: var(--#{$prefix}border-radius);
+  background:
+    linear-gradient(140deg, rgba(218, 171, 91, .12), transparent 40%),
+    linear-gradient(320deg, rgba(79, 187, 184, .10), transparent 42%),
+    var(--#{$prefix}body-bg);
+  box-shadow: 0 20px 60px rgba(#000, .22);
+  padding: $spacer;
+  overflow: hidden;
+}
+
+.screen-command { grid-row: span 2; }
+
+.screen-bar {
+  display: flex;
+  gap: .35rem;
+
+  span {
+    width: .55rem;
+    height: .55rem;
+    border-radius: 50%;
+    background: var(--#{$prefix}border-color);
+  }
+}
+
+.screen-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacer * .75;
+
+  > div {
+    display: grid;
+    gap: .2rem;
+    min-width: 0;
+    border: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color-translucent);
+    border-radius: var(--#{$prefix}border-radius-sm);
+    background: rgba(#000, .18);
+    padding: $spacer * .75;
+  }
+
+  strong, small { min-width: 0; }
+  .screen-wide { grid-column: 1 / -1; }
+}
+
+.screen-progress {
+  height: .45rem;
+  border-radius: 999px;
+  background: rgba(#fff, .08);
+  overflow: hidden;
+
+  span {
+    display: block;
+    width: 68%;
+    height: 100%;
+    background: linear-gradient(90deg, #daab5b, #4fbbb8);
+  }
+}
+
+.map-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: .4rem;
+  min-height: 130px;
+
+  span {
+    border-radius: var(--#{$prefix}border-radius-sm);
+    background: rgba(#fff, .08);
+    border: var(--#{$prefix}border-width) solid rgba(#fff, .08);
+  }
+
+  .held { background: rgba(79, 187, 184, .30); border-color: rgba(79, 187, 184, .45); }
+  .hot { background: rgba(218, 91, 91, .28); border-color: rgba(218, 91, 91, .45); }
+}
+
+.feed-line {
+  display: grid;
+  gap: .15rem;
+  border-left: 3px solid rgba(218, 171, 91, .75);
+  padding-left: $spacer * .75;
+
+  small { color: var(--#{$prefix}secondary-color); }
+}
+
+.landing-leader-row {
+  grid-template-columns: 44px minmax(0, 1fr) minmax(90px, .65fr) minmax(100px, .65fr);
+}
+
+@include media-breakpoint-down(lg) {
+  .landing-shell {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .auth-card { margin-inline: auto; }
+}
+
+@include media-breakpoint-down(md) {
+  .landing-shell { padding: $spacer !important; }
+  .landing-screens { grid-template-columns: minmax(0, 1fr); }
+  .landing-hero h1 { font-size: 3rem; }
+  .landing-leader-row { grid-template-columns: 36px minmax(0, 1fr) minmax(90px, .7fr); }
+  .landing-leader-row .tnum.text-end { grid-column: 2 / -1; text-align: left !important; }
 }
 
 // A labelled group of controls under a rule, with a caption underneath.

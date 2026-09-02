@@ -28,8 +28,21 @@ internal static class AuthEndpoints
         });
 
         // Public, and the reason the Discord button is never drawn on a server that cannot honour it.
-        app.MapGet("/api/auth/providers", (DiscordAuthService discord) =>
-            Results.Ok(new AuthProvidersResponse(discord.Options.IsConfigured)));
+        app.MapGet("/api/auth/providers", (DiscordAuthService discord, IOptionsSnapshot<GameOptions> gameOptions) =>
+            Results.Ok(new AuthProvidersResponse(discord.Options.IsConfigured, gameOptions.Value.Beta.RequireKey)));
+
+        app.MapGet("/api/auth/beta/check", async (
+            string? code,
+            BetaKeys betaKeys,
+            IOptionsSnapshot<GameOptions> gameOptions,
+            CancellationToken ct) =>
+        {
+            if (!gameOptions.Value.Beta.RequireKey)
+                return Results.Ok(new BetaKeyCheckResponse(false, true, null));
+
+            var decision = await betaKeys.CheckAsync(code, DateTime.UtcNow, ct);
+            return Results.Ok(new BetaKeyCheckResponse(true, decision.Accepted, decision.Error));
+        }).RequireRateLimiting("beta-key");
 
         app.MapPost("/api/auth/register", async (
             RegisterRequest request,
@@ -38,6 +51,7 @@ internal static class AuthEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             PimpRoster pimps,
             EmailVerificationService verification,
+            BetaKeys betaKeys,
             HttpContext http,
             CancellationToken ct) =>
         {
@@ -90,6 +104,9 @@ internal static class AuthEndpoints
             var account = new PlayerAccount { Username = username, IsAdmin = isFirstAccount };
             account.SetEmail(email);
             account.PasswordHash = passwordHasher.HashPassword(account, request.Password);
+            var keyDecision = await betaKeys.RedeemForAccountAsync(request.BetaKey, account, isFirstAccount, opts, DateTime.UtcNow, ct);
+            if (!keyDecision.Accepted)
+                return BetaKeyProblem(keyDecision);
             var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
 
             db.Accounts.Add(account);
@@ -98,6 +115,10 @@ internal static class AuthEndpoints
             try
             {
                 await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Results.Conflict(new { error = "That beta key has already been used." });
             }
             catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex, oneName) is { } taken)
             {
@@ -316,6 +337,7 @@ internal static class AuthEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             PimpRoster pimps,
             EmailVerificationService verification,
+            BetaKeys betaKeys,
             CancellationToken ct) =>
         {
             var profile = tickets.ReadSignUp(http.Request.Cookies[DiscordTickets.SignUpCookie]);
@@ -371,6 +393,9 @@ internal static class AuthEndpoints
                 DiscordLinkedAtUtc = nowUtc,
             };
             account.SetEmail(email);
+            var keyDecision = await betaKeys.RedeemForAccountAsync(request.BetaKey, account, isFirstAccount, opts, nowUtc, ct);
+            if (!keyDecision.Accepted)
+                return BetaKeyProblem(keyDecision);
             var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
             DiscordLinkRewards.GrantOnce(account, player, nowUtc);
 
@@ -380,6 +405,10 @@ internal static class AuthEndpoints
             try
             {
                 await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Results.Conflict(new { error = "That beta key has already been used." });
             }
             catch (Exception ex) when (DatabaseErrors.DescribeUniqueViolation(ex, oneName) is { } taken)
             {
@@ -396,6 +425,11 @@ internal static class AuthEndpoints
             return Results.Ok(new AuthResponse(player.Id, player.Name, account.Username));
         }).RequireRateLimiting("sign-in");
     }
+
+    private static IResult BetaKeyProblem(BetaKeyDecision decision)
+        => decision.Error == "That beta key has already been used."
+            ? Results.Conflict(new { error = decision.Error })
+            : Results.BadRequest(new { error = decision.Error ?? "That beta key cannot be used." });
 
     /// <summary>
     /// Takes whatever Discord currently says about this account: the handle, the avatar, and the fact

@@ -34,10 +34,21 @@ internal static class PlayerRanking
         if (page.Count == 0)
             return [];
 
+        var playerIds = page.Select(x => x.Id).ToList();
+        var standingsByPlayer = await db.Players.AsNoTracking()
+            .Where(x => playerIds.Contains(x.Id))
+            .Select(economy.StandingRowExpression())
+            .ToDictionaryAsync(x => x.PlayerId, x => new PlayerStanding(x.NetWorth, x.CreatedAtUtc), cancellationToken);
+
         var standings = page
-            .Select(x => new PlayerStanding(economy.CalculateNetWorth(x), x.CreatedAtUtc))
+            .Select(x => standingsByPlayer.GetValueOrDefault(
+                x.Id,
+                new PlayerStanding(economy.CalculateNetWorth(x), x.CreatedAtUtc)))
             .ToList();
-        var weakest = standings[^1];
+        var weakest = standings
+            .OrderBy(x => x.NetWorth)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .First();
         var contenders = await db.Players.AsNoTracking()
             .Where(economy.RanksAbove(weakest.NetWorth, weakest.CreatedAtUtc))
             .Select(economy.StandingExpression())

@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, GameAnnouncement, GameUpdates, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -35,6 +35,205 @@ window.bootstrap = bootstrap
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
+
+async function copyToClipboard(value: string) {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+
+  const area = document.createElement('textarea')
+  area.value = value
+  area.setAttribute('readonly', '')
+  area.style.position = 'fixed'
+  area.style.left = '-9999px'
+  document.body.appendChild(area)
+  area.select()
+  document.execCommand('copy')
+  document.body.removeChild(area)
+}
+
+function compactDateTime(iso: string | null | undefined) {
+  return iso ? new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Never'
+}
+
+function betaKeyStatusClass(status: AccountInviteKey['status'] | AdminBetaKey['status']) {
+  return status === 'Available'
+    ? 'text-bg-success'
+    : status === 'Used'
+      ? 'text-bg-primary'
+      : status === 'Expired'
+        ? 'text-bg-warning'
+        : 'text-bg-secondary'
+}
+
+/*
+  Why a button will not go.
+
+  A greyed-out control is a question the player is already asking - why not? - and the answer is
+  nearly always something the screen in front of them knows: you are eighty short, the crew is out,
+  the shift is longer than the turns left in the day. The `disabled` attribute cannot give that
+  answer. A disabled button takes no focus, and Bootstrap puts pointer-events: none on top of that,
+  so hovering one lands on the panel behind it and the player is left to work it out from the
+  numbers.
+
+  So a button that cannot be pressed is blocked rather than disabled, and the prop that blocks it is
+  the sentence explaining why rather than a boolean. The reason therefore has to be written before
+  the button can be switched off, which is the whole point of the exercise. A blocked button looks
+  the way a disabled one did, refuses the click and the Enter key that would have submitted its
+  form, and gives the reason up to a hover, a tab stop or a tap.
+*/
+type Blocked = string | false | null | undefined
+
+/**
+ * The first reason that applies, or null when the button is good to go.
+ *
+ * Written to be fed `condition && 'why not'` in the order the player would think of them, so the
+ * one thing they are told is the first thing standing in the way rather than the last:
+ *
+ *   blocked={firstReason(
+ *     busy && BUSY,
+ *     turns < cost && `That run wants ${cost} turns and you have ${turns}.`,
+ *   )}
+ */
+function firstReason(...reasons: Blocked[]): string | null {
+  return reasons.find((reason): reason is string => typeof reason === 'string' && reason !== '') ?? null
+}
+
+// The reason almost every button in the game can give, because almost every one of them waits on the
+// same in-flight request.
+const BUSY = 'Hold on - your last move is still going through.'
+
+// The same thing said behind the admin desk, where the buttons act on the game rather than play it.
+const WORKING = 'Hold on - the last request is still going through.'
+
+function Button({ blocked, className, title, onClick, children, ...rest }: {
+  blocked?: Blocked
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>) {
+  const button = useRef<HTMLButtonElement>(null)
+  const reason = firstReason(blocked)
+
+  /*
+    Bootstrap's tooltip rather than the browser's title bubble: the browser's waits the best part of a
+    second, is styled by the operating system rather than by this game, and never appears for someone
+    arriving by keyboard. Constructed by hand because tooltips are the one Bootstrap plugin that stays
+    opt-in under the data-attribute API, and disposed on the way out so a button that unmounts while
+    the bubble is up does not leave it behind on the page.
+  */
+  useEffect(() => {
+    if (!button.current || !reason) return
+    const tip = new bootstrap.Tooltip(button.current, {
+      title: reason,
+      trigger: 'hover focus',
+      customClass: 'blocked-reason',
+      // On the body, so a reason raised from inside a dialog or the chat dock is not clipped by it.
+      container: 'body',
+    })
+    return () => tip.dispose()
+  }, [reason])
+
+  return <button
+    {...rest}
+    ref={button}
+    className={reason ? `${className ?? ''} is-blocked` : className}
+    // Not the disabled attribute: this button keeps its place in the tab order precisely so that
+    // someone who never touches a mouse can land on it and be told why it is off.
+    aria-disabled={reason ? true : undefined}
+    title={reason ? undefined : title}
+    onClick={event => {
+      if (reason) {
+        // Stops the click, and with it the submit that a button inside a form would otherwise fire -
+        // including the one the browser sends here when Enter is pressed in a text field.
+        event.preventDefault()
+        return
+      }
+      onClick?.(event)
+    }}
+  >{children}</button>
+}
+
+function LandingView({ stats }: { stats: PublicStats | null }) {
+  const leaders = stats?.leaders ?? []
+  const headlines = stats?.headlines ?? []
+  const top = leaders[0]
+
+  return <section className="landing-view d-grid gap-4">
+    <div className="landing-hero d-grid gap-3">
+      <div className="brand-mark d-grid place-items-center border border-primary text-primary fw-bolder">SE</div>
+      <div>
+        <span className="eyebrow text-primary">Browser strategy crime sim</span>
+        <h1>Street Empire</h1>
+      </div>
+      <p className="lead mb-0">
+        Build a crew, hold ground, move product, and climb a live city ladder where every run leaves a mark.
+      </p>
+    </div>
+
+    <div className="landing-stats d-grid gtc-2 gtc-md-4 gap-2">
+      <Stat label="Players" value={stats ? number.format(stats.players) : '...'} />
+      <Stat label="Cities" value={stats ? number.format(stats.cities) : '...'} />
+      <Stat label="Alliances" value={stats ? number.format(stats.alliances) : '...'} />
+      <Stat label="Net Worth" value={stats ? money.format(stats.totalNetWorth) : '...'} />
+    </div>
+
+    <div className="landing-screens d-grid gap-3">
+      <div className="landing-screen screen-command">
+        <div className="screen-bar"><span /><span /><span /></div>
+        <div className="screen-grid">
+          <div>
+            <span className="eyebrow">Overview</span>
+            <strong>{top?.playerName ?? 'The city is waking up'}</strong>
+            <small>{top ? `${top.city} / ${money.format(top.netWorth)}` : 'Be first on the board'}</small>
+          </div>
+          <div>
+            <span className="eyebrow">Crew</span>
+            <strong>{top ? number.format(top.crew) : '0'}</strong>
+            <small>people on payroll</small>
+          </div>
+          <div className="screen-wide">
+            <span className="eyebrow">Clock</span>
+            <div className="screen-progress"><span /></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="landing-screen screen-map">
+        <div className="screen-bar"><span /><span /><span /></div>
+        <div className="map-grid" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, index) => <span key={index} className={index % 5 === 0 ? 'held' : index % 7 === 0 ? 'hot' : ''} />)}
+        </div>
+        <div className="d-flex justify-content-between small">
+          <strong>{stats ? number.format(stats.territoriesHeld) : '...'} pieces held</strong>
+          <span className="text-body-tertiary">{stats ? number.format(stats.activeMissions) : '...'} live fights</span>
+        </div>
+      </div>
+
+      <div className="landing-screen screen-feed">
+        <div className="screen-bar"><span /><span /><span /></div>
+        {(headlines.length > 0 ? headlines.slice(0, 3) : [
+          { kind: 'street', title: 'Work the street', detail: 'Spend turns for cash and reputation.' },
+          { kind: 'market', title: 'Move goods', detail: 'Buy, craft, list, and deliver.' },
+          { kind: 'crew', title: 'Pick a fight', detail: 'Scout before you swing.' },
+        ]).map(item => <div className="feed-line" key={item.kind}>
+          <strong>{item.title}</strong>
+          <small>{item.detail}</small>
+        </div>)}
+      </div>
+    </div>
+
+    {leaders.length > 0 && <div className="landing-leaders border rounded p-3">
+      <div className="panel-title mb-2"><h2 className="h5 mb-0">Top Houses</h2><span>{compactDateTime(stats?.generatedAtUtc)}</span></div>
+      <div className="d-grid gap-2">
+        {leaders.map(leader => <div className="d-grid landing-leader-row gap-2 align-items-center" key={`${leader.rank}-${leader.playerName}`}>
+          <span className="tnum text-body-tertiary">#{leader.rank}</span>
+          <strong className="text-truncate">{leader.playerName}</strong>
+          <span className="text-body-tertiary text-truncate">{leader.city}</span>
+          <span className="tnum text-end">{money.format(leader.netWorth)}</span>
+        </div>)}
+      </div>
+    </div>}
+  </section>
+}
 
 type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'seasons' | 'updates' | 'alliance' | 'account' | 'admin'
 
@@ -744,7 +943,12 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
           value={draft}
           onChange={event => setDraft(event.target.value)}
         />
-        <button className="btn btn-primary btn-sm" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
+        <Button className="btn btn-primary btn-sm" type="submit" blocked={firstReason(
+          busy && BUSY,
+          sending && 'Your last line is still on its way.',
+          over && `That is ${draft.length} characters and the room takes ${max}.`,
+          draft.trim().length === 0 && 'Write something first.',
+        )}>Send</Button>
       </form>}
       {channel !== 'Direct' && draft.length > max * 0.75 && <small className={`d-block small text-end ${over ? 'text-danger' : 'text-body-tertiary'}`}>
         {draft.length} / {max}
@@ -850,9 +1054,13 @@ function PeoplePicker({ busy, onCancel, onStarted }: {
 
     <div className="d-flex justify-content-between gap-2">
       <button className="btn btn-secondary btn-sm" type="button" onClick={onCancel}>Cancel</button>
-      <button className="btn btn-primary btn-sm" type="button" disabled={busy || working || chosen.length === 0} onClick={() => void start()}>
+      <Button className="btn btn-primary btn-sm" type="button" blocked={firstReason(
+        busy && BUSY,
+        working && 'Opening the room now.',
+        chosen.length === 0 && 'Pick somebody to talk to first.',
+      )} onClick={() => void start()}>
         {chosen.length > 1 ? `Start group of ${chosen.length + 1}` : 'Open'}
-      </button>
+      </Button>
     </div>
   </div>
 }
@@ -970,7 +1178,12 @@ function ConversationWindow({ conversationId, index, busy, onClose }: {
           value={draft}
           onChange={event => setDraft(event.target.value)}
         />
-        <button className="btn btn-primary btn-sm" type="submit" disabled={busy || sending || over || draft.trim().length === 0}>Send</button>
+        <Button className="btn btn-primary btn-sm" type="submit" blocked={firstReason(
+          busy && BUSY,
+          sending && 'Your last line is still on its way.',
+          over && `That is ${draft.length} characters and a message takes ${max}.`,
+          draft.trim().length === 0 && 'Write something first.',
+        )}>Send</Button>
       </form>
     </>}
   </section>
@@ -1101,8 +1314,12 @@ function App() {
   useEffect(() => { void api.cities().then(setCities).catch(() => setCities([])) }, [])
   // Which doors this server can actually open. A button for a provider with no credentials behind it
   // is a button that fails, so it is never drawn.
-  const [providers, setProviders] = useState<AuthProviders>({ discord: false })
-  useEffect(() => { void api.providers().then(setProviders).catch(() => setProviders({ discord: false })) }, [])
+  const [providers, setProviders] = useState<AuthProviders>({ discord: false, betaKeyRequired: false })
+  useEffect(() => {
+    void api.providers().then(setProviders).catch(() => setProviders({ discord: false, betaKeyRequired: false }))
+  }, [])
+  const [publicStats, setPublicStats] = useState<PublicStats | null>(null)
+  useEffect(() => { void api.publicStats().then(setPublicStats).catch(() => setPublicStats(null)) }, [])
   // A Discord login that turned out to belong to nobody yet, waiting on a name and a town.
   const [discordTicket, setDiscordTicket] = useState<DiscordSignUpTicket | null>(null)
   /*
@@ -1312,7 +1529,12 @@ function App() {
     setBusy(true); setError('')
     try {
       if (authMode === 'register')
-        await api.register(String(form.get('username')), String(form.get('password')), String(form.get('city')), String(form.get('email') ?? ''))
+        await api.register(
+          String(form.get('username')),
+          String(form.get('password')),
+          String(form.get('city')),
+          String(form.get('email') ?? ''),
+          String(form.get('betaKey') ?? ''))
       else
         await api.login(String(form.get('username')), String(form.get('password')))
       await refresh()
@@ -1331,7 +1553,8 @@ function App() {
       await api.completeDiscordSignUp(
         String(form.get('username')),
         String(form.get('city')),
-        String(form.get('email') ?? ''))
+        String(form.get('email') ?? ''),
+        String(form.get('betaKey') ?? ''))
       sessionStorage.removeItem(discordPendingKey)
       setDiscordTicket(null)
       await refresh()
@@ -1445,10 +1668,11 @@ function App() {
       So the sign-in card steps aside for a shorter form that asks only those two, and the identity
       behind it stays where it was put - in a signed cookie the browser cannot read or forge.
     */
-    return <main className="auth-shell d-grid place-items-center p-4">
+    return <main className="auth-shell landing-shell d-grid gap-4 p-4">
+      <LandingView stats={publicStats} />
       <section className="auth-card card p-4">
         <div className="brand-mark d-grid place-items-center border border-primary text-primary fw-bolder mb-3">SE</div>
-        <h1>Street Empire</h1>
+        <h2 className="h1">Street Empire</h2>
 
         {resetStep !== 'off'
           ? <>
@@ -1479,7 +1703,7 @@ function App() {
                   <input className="form-control" name="confirmPassword" type="password" minLength={8} required />
                 </label>
                 {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Use This Code'}</button>
+                <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Use This Code'}</Button>
                 <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
               </form>
               : resetStep === 'asking'
@@ -1489,7 +1713,7 @@ function App() {
                   <input className="form-control" name="identifier" maxLength={254} required autoFocus />
                 </label>
                 {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Send Me a Code'}</button>
+                <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Send Me a Code'}</Button>
                 <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
               </form>
               : <form className="d-grid gap-3 mt-4" onSubmit={finishReset}>
@@ -1519,7 +1743,7 @@ function App() {
                 </label>
                 {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
                 {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-                <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Set My Password'}</button>
+                <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Set My Password'}</Button>
                 <button className="btn btn-link text-body-secondary" type="button" onClick={() => setResetStep('asking')}>Send another code</button>
                 <button className="btn btn-link text-body-secondary" type="button" onClick={leaveReset}>Back to signing in</button>
               </form>}
@@ -1545,6 +1769,11 @@ function App() {
                 </select>
                 <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
               </label>
+              {providers.betaKeyRequired && <label className="field">
+                Beta key
+                <input className="form-control tnum" name="betaKey" placeholder="SE-4K7XQ-9MTBH" required />
+                <small className="form-text">The dash does not matter. Paste it however you were given it.</small>
+              </label>}
               {/*
                 Offered here rather than left to the account page, because an account made this way has
                 no password and no address: Discord is the only way in, and losing the Discord loses the
@@ -1560,7 +1789,7 @@ function App() {
                 </small>
               </label>
               {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-              <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Build My Empire'}</button>
+              <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Build My Empire'}</Button>
               <button className="btn btn-link text-body-secondary" type="button" onClick={abandonDiscordSignUp}>Use a username and password instead</button>
             </form>
           </>
@@ -1634,10 +1863,15 @@ function App() {
                 </select>
                 <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
               </label>}
+              {authMode === 'register' && providers.betaKeyRequired && <label className="field">
+                Beta key
+                <input className="form-control tnum" name="betaKey" placeholder="SE-4K7XQ-9MTBH" required />
+                <small className="form-text">The dash does not matter. Paste it however you were given it.</small>
+              </label>}
               <label className="field">Password<input className="form-control" name="password" type="password" minLength={8} required /></label>
               {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
               {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
-              <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</button>
+              <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : authMode === 'login' ? 'Enter the City' : 'Build My Empire'}</Button>
               {/* Only on the login side. Offering it while somebody is creating an account is offering
                   to reset a password they have not chosen yet. */}
               {authMode === 'login' && <>
@@ -1972,8 +2206,8 @@ function SeasonPanel({ onPage }: { onPage: (page: AppPage) => void }) {
     </div>
     {season.enabled
       ? <p>
-        Everything you have built goes back to day one when this runs out, and everything you did with
-        it stays: your name, your crew, and where you finished. Finish top and next season opens with{' '}
+        This season is a raid race: cash, weed, and coke taken from other players decide the table.
+        Everything you have built goes back to day one when this runs out, and the finish stays. Finish top and next season opens with{' '}
         {money.format(season.championHeadStart)} on account - top three{' '}
         {money.format(season.topThreeHeadStart)}, top ten {money.format(season.topTenHeadStart)}. It is
         paid once, off this season alone, and against a Warehouse it is a rounding error.
@@ -1988,7 +2222,7 @@ function SeasonPanel({ onPage }: { onPage: (page: AppPage) => void }) {
         <small className={honour.honour ? 'text-warning-emphasis' : 'text-body-secondary'}>
           {honour.name}: {honour.honour ?? `finished #${honour.rank}`}
         </small>
-        <small className="text-body-tertiary tnum">{money.format(honour.netWorth)}</small>
+        <small className="text-body-tertiary tnum">{money.format(honour.raidScore)}</small>
       </div>)}
     </div>}
 
@@ -2092,7 +2326,8 @@ function ThisSeasonTab({ ctx, season, now }: {
   season: Season | null
   now: SeasonArchiveEntry | null
 }) {
-  const { dashboard, leaders, cityLeaders } = ctx
+  const { dashboard } = ctx
+  const yourRaidRow = season?.currentStandings.find(row => row.playerName === dashboard.name && row.raidScore > 0) ?? null
   useSecondHand(season?.enabled === true)
 
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
@@ -2114,12 +2349,16 @@ function ThisSeasonTab({ ctx, season, now }: {
                 sub={new Date(season.endsAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               />
               <AdminMetric label="Empires in it" value={now ? number.format(now.players) : '-'} />
-              <AdminMetric label="You" value={`#${dashboard.rank}`} sub={`#${dashboard.cityRank} in ${dashboard.city}`} />
+              <AdminMetric
+                label="You"
+                value={yourRaidRow ? `#${yourRaidRow.rank}` : 'Off board'}
+                sub={yourRaidRow ? money.format(yourRaidRow.raidScore) : `#${dashboard.rank} net worth`}
+              />
             </div>
           </>
           : <p className="text-body-tertiary mt-3 mb-0">
             Seasons are not running on this world. Nothing resets, the date on the clock is only a
-            marker, and the board beside this is simply the board.
+            marker, and the raid board is only a record of what has happened so far.
           </p>}
       </section>}
 
@@ -2150,11 +2389,26 @@ function ThisSeasonTab({ ctx, season, now }: {
       </section>}
     </div>
 
-    {/* The live board: this season's leaderboard, and the table it will finish on. */}
+    {/* The live board: this season's raid table, and the table it will finish on. */}
     <section className="card p-3">
-      <StandingsPanel dashboard={dashboard} leaders={leaders} cityLeaders={cityLeaders} limit={50} />
+      <SeasonRaidBoard rows={season?.currentStandings ?? []} you={dashboard.name} />
     </section>
   </div>
+}
+
+function SeasonRaidBoard({ rows, you }: { rows: SeasonStanding[], you: string }) {
+  const scored = rows.filter(row => row.raidScore > 0)
+  return <>
+    <div className="panel-title">
+      <h2>Raid Take</h2>
+      <span>{scored.length > 0 ? 'Cash and product stolen' : 'No raids scored yet'}</span>
+    </div>
+    {scored.length === 0
+      ? <p className="text-body-tertiary small mt-3 mb-0">No completed raids have put money or product on the season board yet.</p>
+      : <div className="leaderboard tnum d-grid overflow-y-auto mt-3">
+        {scored.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerName === you} />)}
+      </div>}
+  </>
 }
 
 /** How far through the season is, as a bar rather than two dates to subtract in your head. */
@@ -2210,7 +2464,7 @@ function FinishedSeasonsTab({ shelf, you }: { shelf: SeasonArchiveEntry[] | null
   if (finished.length === 0) return <section className="card p-3">
     <div className="panel-title"><h2>Nothing has finished yet</h2><span>The world is on its first</span></div>
     <p className="mt-3 mb-0">
-      When this season ends, everybody in it gets a line here - where they came, what they were worth,
+      When this season ends, everybody in it gets a line here - where they came, what they took in raids,
       what town they did it in and what the season was called. Written for everybody rather than only
       the top, because a season somebody came fortieth in is still a season they played.
     </p>
@@ -2234,7 +2488,7 @@ function FinishedSeasonsTab({ shelf, you }: { shelf: SeasonArchiveEntry[] | null
             </small>
           </span>
           <small className="text-body-tertiary text-truncate">
-            {entry.championName ? `${entry.championName} took it` : 'Nobody was in it'} / {number.format(entry.players)} finished
+            {entry.championName ? `${entry.championName} took ${money.format(entry.championRaidScore)}` : 'Nobody was in it'} / {number.format(entry.players)} finished
           </small>
           {/* The line that makes the archive worth opening for somebody who never came top ten. */}
           {typeof entry.yourRank === 'number' && <small className={entry.yourHonour ? 'text-warning-emphasis' : 'text-body-secondary'}>
@@ -2267,7 +2521,7 @@ function SeasonFinalTable({ table, you }: { table: SeasonTable, you: string }) {
       <AdminMetric
         label="Won by"
         value={rows[0]?.playerName ?? '-'}
-        sub={rows[0] ? money.format(rows[0].netWorth) : undefined}
+        sub={rows[0] ? money.format(rows[0].raidScore) : undefined}
       />
       <AdminMetric
         label="You"
@@ -2303,10 +2557,15 @@ function SeasonRow({ row, mine }: { row: SeasonStanding, mine: boolean }) {
       <small className="text-body-tertiary text-truncate">{row.crewName ? `${row.crewName} / ` : ''}{row.city}</small>
     </span>
     <span className="d-grid justify-items-end gap-1">
-      <span className="text-body-secondary">{money.format(row.netWorth)}</span>
+      <span className="text-body-secondary">{money.format(row.raidScore)}</span>
+      <small className="text-body-tertiary">{raidTake(row)}</small>
       <HonourBadge honour={row.honour} />
     </span>
   </div>
+}
+
+function raidTake(row: SeasonStanding) {
+  return `${money.format(row.raidCashTaken)} / ${number.format(row.raidWeedTaken)} weed / ${number.format(row.raidCokeTaken)} coke`
 }
 
 /**
@@ -2341,7 +2600,7 @@ function YourRecordTab({ season, name }: { season: Season | null, name: string }
       {honours.length === 0
         ? <p className="mt-3 mb-0">
           You have not been through a roll yet. When this season ends you get a line here - where you
-          came, what you were worth, and what it was called - and it stays there through every season
+          came, what you took in raids, and what it was called - and it stays there through every season
           after it, which is more than anything else you own can say.
         </p>
         : <div className="tnum d-grid gtc-fill-140 gap-2 mt-3">
@@ -2363,7 +2622,7 @@ function YourRecordTab({ season, name }: { season: Season | null, name: string }
             </small>
           </span>
           <span className="d-grid justify-items-end gap-1 flex-shrink-0">
-            <span className="tnum text-body-secondary">{money.format(honour.netWorth)}</span>
+            <span className="tnum text-body-secondary">{money.format(honour.raidScore)}</span>
             <HonourBadge honour={honour.honour} />
           </span>
         </div>)}
@@ -2421,6 +2680,13 @@ function OverviewPage(ctx: PageContext) {
         <StatusRow label="Combat status" value={dashboard.combatStatus.eligibility} warn={dashboard.combatStatus.isProtected} />
         <StatusRow label="Condoms for a full shift" value={`${dashboard.condoms}/${dashboard.crewReport.condomsNeededForMaxStreetAction}`} warn={dashboard.condoms < dashboard.crewReport.condomsNeededForMaxStreetAction} />
         <StatusRow label="Beer for a full shift" value={`${dashboard.beer}/${dashboard.crewReport.beerNeededForMaxStreetAction}`} warn={dashboard.beer < dashboard.crewReport.beerNeededForMaxStreetAction} />
+        <StatusRow
+          label="Hourly keep"
+          value={`${number.format(dashboard.crewReport.condomsNeededPerHour)} condoms / ${number.format(dashboard.crewReport.beerNeededPerHour)} beer / ${number.format(dashboard.crewReport.drugsNeededPerHour)} drugs`}
+          warn={dashboard.condoms < dashboard.crewReport.condomsNeededPerHour
+            || dashboard.beer + dashboard.moonshine < dashboard.crewReport.beerNeededPerHour
+            || dashboard.weed + dashboard.coke < dashboard.crewReport.drugsNeededPerHour}
+        />
       </section>
 
       {/* Directly under readiness, because the last two readiness rows are counts of these same piles. */}
@@ -2518,9 +2784,12 @@ function UpdatesPage(ctx: PageContext) {
         <span>New only</span>
       </label>
       <div className="d-flex flex-wrap gap-2 mt-3">
-        <button className="btn btn-secondary btn-sm" type="button" disabled={busy || source.unreadCount === 0} onClick={() => void markRead()}>
+        <Button className="btn btn-secondary btn-sm" type="button" blocked={firstReason(
+          busy && BUSY,
+          source.unreadCount === 0 && 'Nothing here is unread.',
+        )} onClick={() => void markRead()}>
           Mark all read
-        </button>
+        </Button>
         <button className="btn btn-secondary btn-sm" type="button" onClick={() => void load()}>
           Refresh
         </button>
@@ -2553,7 +2822,7 @@ function UpdatesDialog({ updates, unread, busy, onClose, onRead, onViewAll, onOp
       <div className="d-flex flex-wrap justify-content-between gap-2 mt-3">
         <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>Later</button>
         <div className="d-flex flex-wrap gap-2">
-          <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={onRead}>Got it</button>
+          <Button className="btn btn-secondary btn-sm" type="button" blocked={busy && BUSY} onClick={onRead}>Got it</Button>
           {actionUpdate && actionPage && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenAction(actionPage)}>{actionUpdate.actionLabel ?? 'Open'}</button>}
           <button className="btn btn-primary btn-sm" type="button" onClick={onViewAll}>View all</button>
         </div>
@@ -2580,12 +2849,12 @@ function UpdatesPanel({ updates, unread, busy, act, onPage }: {
         {updates.map(update => <UpdateArticle update={update} compact onPage={onPage} key={update.id} />)}
       </div>}
     <div className="d-flex flex-wrap gap-2 mt-3">
-      {unread > 0 && <button
+      {unread > 0 && <Button
         className="btn btn-secondary btn-sm"
         type="button"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => void act(api.markUpdatesSeen)}
-      >Mark read</button>}
+      >Mark read</Button>}
       <button className="btn btn-secondary btn-sm" type="button" onClick={() => onPage('updates')}>View all updates</button>
     </div>
   </section>
@@ -2721,8 +2990,19 @@ function StreetPage(ctx: PageContext) {
       <div className="control-row">
         <label className="field">Turns<input className="form-control" type="number" min={1} max={dashboard.maxActionTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
         <label className="field">Hoe Cut %<input className="form-control" type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
-        <button className="btn btn-secondary" disabled={busy || hoeCut < 10 || hoeCut > 80 || hoeCut === dashboard.hoeCutPercent} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</button>
-        <button className="btn btn-primary" disabled={busy || !!pendingOutgoingAttack || streetTurns < 1 || streetTurns > dashboard.turns || streetTurns > dashboard.maxActionTurns} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</button>
+        <Button className="btn btn-secondary" blocked={firstReason(
+          busy && BUSY,
+          hoeCut < 10 && 'A cut under 10% is not worth their while. Ten is the floor.',
+          hoeCut > 80 && 'Anything over 80% and you are working for them. Eighty is the ceiling.',
+          hoeCut === dashboard.hoeCutPercent && `The cut is already ${dashboard.hoeCutPercent}%.`,
+        )} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</Button>
+        <Button className="btn btn-primary" blocked={firstReason(
+          busy && BUSY,
+          !!pendingOutgoingAttack && 'Your crew is out on a job. Nobody is left to work a shift.',
+          streetTurns < 1 && 'Set the shift to at least one turn.',
+          streetTurns > dashboard.turns && `A ${streetTurns}-turn shift costs more turns than you have. You have ${dashboard.turns}.`,
+          streetTurns > dashboard.maxActionTurns && `You can work ${dashboard.maxActionTurns} turns at a time at most.`,
+        )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</Button>
       </div>
       <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>
         <input className="form-check-input flex-shrink-0 mt-1" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
@@ -2813,7 +3093,7 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hirePimpCost}
           cash={dashboard.cash}
           busy={busy}
-          canFire={dashboard.pimps - crewQty.pimps >= 1}
+          fireBlocked={dashboard.pimps - crewQty.pimps < 1 && 'Somebody has to run the house. You cannot let your last pimp go.'}
           onQuantity={quantity => setCrewQty(value => ({ ...value, pimps: quantity }))}
           onHire={() => void act(() => api.hireCrew('pimps', crewQty.pimps))}
           onFire={() => void act(() => api.fireCrew('pimps', crewQty.pimps))}
@@ -2826,8 +3106,9 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hireHoeCost}
           cash={dashboard.cash}
           busy={busy}
-          canHire={dashboard.hoeHappiness >= dashboard.crewReport.minHoeMoraleToHire}
-          canFire={dashboard.hoes >= crewQty.hoes}
+          hireBlocked={dashboard.hoeHappiness < dashboard.crewReport.minHoeMoraleToHire
+            && `Nobody new signs on to an unhappy house. Morale is ${dashboard.hoeHappiness.toFixed(0)}% and hiring wants ${dashboard.crewReport.minHoeMoraleToHire.toFixed(0)}%.`}
+          fireBlocked={dashboard.hoes < crewQty.hoes && `You are letting ${number.format(crewQty.hoes)} go and you have ${number.format(dashboard.hoes)}.`}
           onQuantity={quantity => setCrewQty(value => ({ ...value, hoes: quantity }))}
           onHire={() => void act(() => api.hireCrew('hoes', crewQty.hoes))}
           onFire={() => void act(() => api.fireCrew('hoes', crewQty.hoes))}
@@ -2846,8 +3127,9 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hireThugCost}
           cash={dashboard.cash}
           busy={busy}
-          canHire={dashboard.thugHappiness >= dashboard.crewReport.minThugMoraleToHire}
-          canFire={dashboard.thugs >= crewQty.thugs}
+          hireBlocked={dashboard.thugHappiness < dashboard.crewReport.minThugMoraleToHire
+            && `Nobody new signs on to an unhappy house. Morale is ${dashboard.thugHappiness.toFixed(0)}% and hiring wants ${dashboard.crewReport.minThugMoraleToHire.toFixed(0)}%.`}
+          fireBlocked={dashboard.thugs < crewQty.thugs && `You are letting ${number.format(crewQty.thugs)} go and you have ${number.format(dashboard.thugs)}.`}
           onQuantity={quantity => setCrewQty(value => ({ ...value, thugs: quantity }))}
           onHire={() => void act(() => api.hireCrew('thugs', crewQty.thugs))}
           onFire={() => void act(() => api.fireCrew('thugs', crewQty.thugs))}
@@ -3033,6 +3315,9 @@ function MulePage(ctx: PageContext) {
   const home = board.runs.filter(r => r.status === 'Done')
   const spread = quote ? quote.homePrice - quote.unitPriceThere : 0
   const unspendable = quote ? quote.cashSent - quote.unitsAffordable * quote.unitPriceThere : 0
+  const supplyBlocked = quote
+    ? dashboard.condoms < quote.condomsNeeded || dashboard.beer + dashboard.moonshine < quote.beerNeeded
+    : false
 
   const send = async () => {
     if (!pimpId) return
@@ -3099,6 +3384,7 @@ function MulePage(ctx: PageContext) {
           <MuleFigure label="Turns" value={number.format(quote.turns)} />
           <MuleFigure label="Round trip" value={`${quote.tripMinutes} min`} />
           <MuleFigure label="Fares and keep" value={money.format(quote.fare + quote.upkeep)} />
+          <MuleFigure label="Supply keep" value={muleSupplyLabel(quote)} tone={supplyBlocked ? 'bad' : undefined} />
           <MuleFigure label="Spent on goods" value={money.format(quote.projectedSpend)} />
           <MuleFigure
             label="Profit if clean"
@@ -3120,13 +3406,23 @@ function MulePage(ctx: PageContext) {
           {money.format(unspendable)} of what you send cannot be spent: {quote.hoes} hoe(s) only carry {number.format(quote.capacity)}.
           It comes home with them, unless they are stopped, in which case it is taken too.
         </p>}
-        <button
+        {supplyBlocked && <p className="text-danger-emphasis small mt-3">
+          Needs {muleSupplyNeedLabel(quote)} for {quote.supplyTurns} upkeep turn{quote.supplyTurns === 1 ? '' : 's'}.
+          You have {number.format(dashboard.condoms)} condoms and {number.format(dashboard.beer + dashboard.moonshine)} beer or moonshine.
+        </p>}
+        <Button
           className="btn btn-primary"
-          disabled={busy || !pimpId || board.runsOut >= board.concurrentRunCap || hoes > board.hoesAvailable}
+          blocked={firstReason(
+            busy && BUSY,
+            !pimpId && 'Nobody is free to lead the run. Every pimp you have is already away.',
+            board.runsOut >= board.concurrentRunCap && `You already have ${board.runsOut} run${board.runsOut === 1 ? '' : 's'} out, which is all your hideout can keep track of.`,
+            hoes > board.hoesAvailable && `You are sending ${hoes} and only ${board.hoesAvailable} ${board.hoesAvailable === 1 ? 'is' : 'are'} free to go.`,
+            supplyBlocked && `They will not travel unsupplied. The run needs ${muleSupplyNeedLabel(quote)}.`,
+          )}
           onClick={() => void send()}
         >
           Send {quote.hoes} hoe(s) to {quote.destinationCity}
-        </button>
+        </Button>
       </div>}
     </section>}
 
@@ -3169,6 +3465,17 @@ function MuleFigure({ label, value, tone }: { label: string, value: string, tone
     <span className="eyebrow">{label}</span>
     <strong className={`fs-6 text-truncate ${value_tone}`}>{value}</strong>
   </div>
+}
+
+function muleSupplyLabel(quote: MuleQuote) {
+  const beer = quote.moonshineUsed > 0
+    ? `${number.format(quote.beerUsed)} beer + ${number.format(quote.moonshineUsed)} moonshine`
+    : `${number.format(quote.beerNeeded)} beer`
+  return `${number.format(quote.condomsNeeded)} condoms / ${beer}`
+}
+
+function muleSupplyNeedLabel(quote: MuleQuote) {
+  return `${number.format(quote.condomsNeeded)} condoms and ${number.format(quote.beerNeeded)} beer or moonshine`
 }
 
 function CapacityBar({ label, used, cap, money: asMoney = false }: { label: string, used: number, cap: number, money?: boolean }) {
@@ -3331,13 +3638,16 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
         const sellPrice = key === 'coke' ? dashboard.cokeSellPriceAtPurity : station.sellPrice
         const saleQty = sellQty[key]
         const built = workshopLevel >= station.requiredWorkshopLevel
-        const canStart = built
-          && !activeCraft
-          && !busy
-          && workUnits >= 1
-          && workUnits <= dashboard.maxActionTurns
-          && workUnits <= dashboard.turns
-          && totalCost <= dashboard.cash
+        // Read in the order the player would ask it, so the one sentence they get back is the first
+        // thing standing in the way rather than the last.
+        const whyNot = firstReason(
+          busy && BUSY,
+          !!activeCraft && `The bench is busy making ${activeCraft.label.toLowerCase()}, ready in ${timeUntil(activeCraft.completesAtUtc)}.`,
+          workUnits < 1 && 'Set the batch to at least one work unit.',
+          workUnits > dashboard.maxActionTurns && `You can spend ${dashboard.maxActionTurns} turns at a time at most.`,
+          workUnits > dashboard.turns && `That batch wants ${workUnits} turns and you have ${dashboard.turns}.`,
+          totalCost > dashboard.cash && `Materials come to ${money.format(totalCost)} and you are carrying ${money.format(dashboard.cash)}.`,
+        )
         return <div className="room-row border-start-thick border-start-danger" key={station.key}>
           <div className="room-copy">
             <strong className="text-body">{station.name}<small className="ms-1 eyebrow text-danger"> contraband</small></strong>
@@ -3364,13 +3674,13 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
                 value={workUnits}
                 onChange={e => setProductionWork(v => ({ ...v, [key]: Number(e.target.value) }))}
               /></label>
-              <button
+              <Button
                 className="btn btn-primary btn-sm"
-                disabled={!canStart}
+                blocked={whyNot}
                 onClick={() => void act(() => api.produce(key, workUnits))}
               >
                 Queue {quantityLabel}
-              </button>
+              </Button>
             </>}
             <label className="field">Sell Qty<input className="form-control"
               type="number"
@@ -3379,13 +3689,17 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
               value={saleQty}
               onChange={e => setSellQty(v => ({ ...v, [key]: Number(e.target.value) }))}
             /></label>
-            <button
+            <Button
               className="btn btn-secondary btn-sm"
-              disabled={busy || saleQty < 1 || saleQty > held}
+              blocked={firstReason(
+                busy && BUSY,
+                saleQty < 1 && 'Set how much to sell first.',
+                saleQty > held && `You are selling ${number.format(saleQty)} and you hold ${number.format(held)}.`,
+              )}
               onClick={() => void act(() => api.sellProduct(key, saleQty))}
             >
               Sell
-            </button>
+            </Button>
           </div>
         </div>
       })}
@@ -3394,13 +3708,14 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
         const built = station.level > 0
         const quantity = station.perTurn * runTurns
         const totalCost = station.costPerUnit * quantity
-        const canStart = built
-          && !activeCraft
-          && !busy
-          && runTurns >= 1
-          && runTurns <= dashboard.maxActionTurns
-          && runTurns <= dashboard.turns
-          && totalCost <= dashboard.cash
+        const whyNot = firstReason(
+          busy && BUSY,
+          !!activeCraft && `The bench is busy making ${activeCraft.label.toLowerCase()}, ready in ${timeUntil(activeCraft.completesAtUtc)}.`,
+          runTurns < 1 && 'Set the run to at least one work unit.',
+          runTurns > dashboard.maxActionTurns && `You can spend ${dashboard.maxActionTurns} turns at a time at most.`,
+          runTurns > dashboard.turns && `That run wants ${runTurns} turns and you have ${dashboard.turns}.`,
+          totalCost > dashboard.cash && `Materials come to ${money.format(totalCost)} and you are carrying ${money.format(dashboard.cash)}.`,
+        )
         return <div
           className={`room-row ${station.heatPerUnit > 0 ? 'border-start-thick border-start-danger' : ''}`}
           key={station.key}
@@ -3429,13 +3744,13 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
                 value={runTurns}
                 onChange={e => setTurns(v => ({ ...v, [station.key]: Number(e.target.value) }))}
               /></label>
-              <button
+              <Button
                 className="btn btn-primary btn-sm"
-                disabled={!canStart}
+                blocked={whyNot}
                 onClick={() => void act(() => api.forge(runTurns, station.weapon ? 'workshop' : station.key, station.weapon as WeaponTierKey | undefined))}
               >
                 Queue {number.format(quantity)}
-              </button>
+              </Button>
             </>}
           </div>
         </div>
@@ -3498,14 +3813,13 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
       stretch still pays, but each one pays less than the last, and a bigger pile of coke draws more
       notice than anything else you can hold.
     </p>
-    {blocked
-      ? <p className="text-body-tertiary small mt-3">{blocked}</p>
-      : <p className="text-body-tertiary small mt-3">
-          {number.format(batch)} coke from {number.format(batch)} cut, in {turnsNeeded} turn{turnsNeeded === 1 ? '' : 's'}.
-          {' '}Purity {dashboard.cokePurityPercent}% to {afterPurity}%, so a unit drops from{' '}
-          {money.format(dashboard.cokeSellPriceAtPurity)} to about {money.format(afterPrice)}.
-          {batch < turns * perTurn && ' That is everything available.'}
-        </p>}
+    {/* What the batch does, only where there is a batch. Why there is not is on the button. */}
+    {!blocked && <p className="text-body-tertiary small mt-3">
+      {number.format(batch)} coke from {number.format(batch)} cut, in {turnsNeeded} turn{turnsNeeded === 1 ? '' : 's'}.
+      {' '}Purity {dashboard.cokePurityPercent}% to {afterPurity}%, so a unit drops from{' '}
+      {money.format(dashboard.cokeSellPriceAtPurity)} to about {money.format(afterPrice)}.
+      {batch < turns * perTurn && ' That is everything available.'}
+    </p>}
     <p className={`mb-2 ${afterValue > nowValue ? 'text-success-emphasis' : 'text-danger-emphasis'}`}>
       {afterValue > nowValue
         ? `Worth ${money.format(afterValue - nowValue)} more in total: ${number.format(dashboard.coke + batch)} weaker units beat ${number.format(dashboard.coke)} clean ones, for now.`
@@ -3519,13 +3833,18 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
         value={turns}
         onChange={e => setTurns(Number(e.target.value))}
       /></label>
-      <button
+      <Button
         className="btn btn-primary btn-sm"
-        disabled={busy || blocked !== null || batch <= 0 || turnsNeeded > dashboard.turns}
+        blocked={firstReason(
+          busy && BUSY,
+          blocked,
+          batch <= 0 && 'There is nothing to stretch at this size.',
+          turnsNeeded > dashboard.turns && `That batch wants ${turnsNeeded} turn${turnsNeeded === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
+        )}
         onClick={() => void act(() => api.cutCoke(turns))}
       >
         Cut {number.format(batch)} coke
-      </button>
+      </Button>
     </div>
   </div>
 }
@@ -3599,13 +3918,17 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
               </span>
             </div>
             <em>Tier {next.level}</em>
-            <button
+            <Button
               className="btn btn-primary"
-              disabled={busy || !canAffordTier || dashboard.turns < next.turns}
+              blocked={firstReason(
+                busy && BUSY,
+                !canAffordTier && `The ${next.name} costs ${money.format(next.cost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+                dashboard.turns < next.turns && `Starting the build costs ${next.turns} turns and you have ${dashboard.turns}.`,
+              )}
               onClick={() => void act(() => api.upgradeHideout('tier'))}
             >
               {!canAffordTier ? 'You cannot cover it' : dashboard.turns < next.turns ? `${next.turns} turns and you have ${dashboard.turns}` : 'Start building'}
-            </button>
+            </Button>
           </div>
         </>
         : <p>The {hideout.tierName} is the biggest building there is. Nothing left to move up to.</p>}
@@ -3630,12 +3953,6 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
     <div className="room-copy">
       <strong>{name}</strong>
       <span>{detail}</span>
-      {tierLocked && workshopLocked
-        ? <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better, and will be needing a level {upgrade!.requiredWorkshopLevel} workshop.</small>
-        : <>
-          {tierLocked && <small>Level {upgrade!.level} needs the {upgrade!.requiredTierName} or better.</small>}
-          {workshopLocked && <small>Level {upgrade!.level} needs a level {upgrade!.requiredWorkshopLevel} workshop.</small>}
-        </>}
       {/* What the upgrade actually returns. The later levels are meant to be a poor deal - somewhere
           for money to go once there is nothing left to buy - and saying so is the difference between
           a trophy and a room that quietly took a fortune while looking like an investment. */}
@@ -3646,9 +3963,16 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade }: {
       </small>}
     </div>
     <em>{level === 0 ? 'Not built' : `Level ${level}`}</em>
-    <button className="btn btn-primary" disabled={busy || !upgrade || locked || funds < upgrade.cost} onClick={onUpgrade}>
+    <Button className="btn btn-primary" blocked={firstReason(
+      busy && BUSY,
+      !upgrade && `The ${name.toLowerCase()} is at its highest level. There is nothing left to buy here.`,
+      tierLocked && workshopLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better and a level ${upgrade!.requiredWorkshopLevel} workshop.`,
+      tierLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better. Move the building up first.`,
+      workshopLocked && `Level ${upgrade!.level} wants a level ${upgrade!.requiredWorkshopLevel} workshop first.`,
+      !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} between cash and the bank.`,
+    )} onClick={onUpgrade}>
       {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
-    </button>
+    </Button>
   </div>
 }
 
@@ -3796,18 +4120,23 @@ function TerritoryPage(ctx: PageContext) {
               </option>)}
             </select></label>}
             {t.heldByYou && <>
-              <button className="btn btn-secondary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</button>
-              <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</button>
+              <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+                busy && BUSY,
+                force(t.id) > board.maxGarrisonThugs && `A corner takes ${board.maxGarrisonThugs} thugs at most and you have set ${force(t.id)}.`,
+              )} onClick={() => void run(() => api.setGarrison(t.id, force(t.id), chosen(t.id)))}>Set garrison</Button>
+              <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</Button>
             </>}
             {/* Priced, gated and timed on the button itself. A greyed control with no reason on it is
                 the thing players come back to ask about, and this one is greyed for four different
                 reasons. */}
-            {t.heldByYou && !t.developing && t.nextDevelopment && <button
+            {t.heldByYou && !t.developing && t.nextDevelopment && <Button
               className="btn btn-primary btn-sm w-100"
-              disabled={busy
-                || t.nextDevelopment.tierLocked
-                || dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
-                || dashboard.turns < t.nextDevelopment.turns}
+              blocked={firstReason(
+                busy && BUSY,
+                t.nextDevelopment.tierLocked && `Working ${t.name} up to ${t.nextDevelopment.name} wants the ${t.nextDevelopment.requiredTierName} behind you first.`,
+                dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost && `The work costs ${money.format(t.nextDevelopment.cost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+                dashboard.turns < t.nextDevelopment.turns && `The work costs ${t.nextDevelopment.turns} turns and you have ${dashboard.turns}.`,
+              )}
               title={`${t.nextDevelopment.effectNow}% now, ${t.nextDevelopment.effectAfter}% once it lands`}
               onClick={() => void run(() => api.developTerritory(t.id))}
             >
@@ -3818,9 +4147,15 @@ function TerritoryPage(ctx: PageContext) {
                   : dashboard.turns < t.nextDevelopment.turns
                     ? `${t.nextDevelopment.turns} turns and you have ${dashboard.turns}`
                     : `Work up to ${t.nextDevelopment.name} (${money.format(t.nextDevelopment.cost)})`}
-            </button>}
-            {t.canClaim && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxGarrisonThugs} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</button>}
-            {t.canRaid && <button className="btn btn-primary btn-sm" disabled={busy || force(t.id) > board.maxRaidThugs} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</button>}
+            </Button>}
+            {t.canClaim && <Button className="btn btn-primary btn-sm" blocked={firstReason(
+              busy && BUSY,
+              force(t.id) > board.maxGarrisonThugs && `A corner takes ${board.maxGarrisonThugs} thugs at most and you have set ${force(t.id)}.`,
+            )} onClick={() => void run(() => api.claimTerritory(t.id, force(t.id), chosen(t.id)))}>Claim</Button>}
+            {t.canRaid && <Button className="btn btn-primary btn-sm" blocked={firstReason(
+              busy && BUSY,
+              force(t.id) > board.maxRaidThugs && `You can send ${board.maxRaidThugs} thugs on a raid at most and you have set ${force(t.id)}.`,
+            )} onClick={() => void run(() => api.raidTerritory(t.id, force(t.id), force(t.id)))}>Raid it</Button>}
           </div>
         </div>)}
       </div>
@@ -3907,13 +4242,19 @@ function TradingPanel(ctx: PageContext) {
           </select></label>
           <label className="field">Quantity<input className="form-control" type="number" min={1} max={good?.held ?? 1} value={qty} onChange={e => setQty(Number(e.target.value))} /></label>
           <label className="field">Price each<input className="form-control" type="number" min={1} value={price} onChange={e => setPrice(Number(e.target.value))} /></label>
-          <button
+          <Button
             className="btn btn-primary btn-sm"
-            disabled={busy || !good || qty < 1 || qty > (good?.held ?? 0) || price < 1}
+            blocked={firstReason(
+              busy && BUSY,
+              !good && 'Pick something to sell first.',
+              qty < 1 && 'List at least one.',
+              !!good && qty > good.held && `You are listing ${number.format(qty)} and you hold ${number.format(good.held)}.`,
+              price < 1 && 'Nobody buys anything for nothing. Put a price on it.',
+            )}
             onClick={() => void run(() => api.listOnMarket(item, qty, price))}
           >
             List for {money.format(qty * price)}
-          </button>
+          </Button>
         </div>
       </div>
     </section>
@@ -3932,7 +4273,7 @@ function TradingPanel(ctx: PageContext) {
             <td>{l.yours ? 'You' : l.sellerName}</td>
             <td className="d-flex gap-1">
               {l.yours
-                ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void run(() => api.cancelListing(l.id))}>Pull it</button>
+                ? <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => void run(() => api.cancelListing(l.id))}>Pull it</Button>
                 : <>
                   <input className="form-control"
                     type="number"
@@ -3941,7 +4282,7 @@ function TradingPanel(ctx: PageContext) {
                     value={buyQty[l.id] ?? l.quantity}
                     onChange={e => setBuyQty(v => ({ ...v, [l.id]: Number(e.target.value) }))}
                   />
-                  <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.buyOnMarket(l.id, buyQty[l.id] ?? l.quantity))}>Buy</button>
+                  <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => void run(() => api.buyOnMarket(l.id, buyQty[l.id] ?? l.quantity))}>Buy</Button>
                 </>}
             </td>
           </tr>)}
@@ -4130,10 +4471,6 @@ function MarketCorePage(ctx: PageContext) {
                 </span>}
               </div>
               <p className="m-0 text-body-secondary">{item.description}</p>
-              {/* Three different reasons a row can be shut and they are not interchangeable: a rung you
-                  have not reached, a line this trader has never carried, and a line they are out of.
-                  Only the first is something to go and earn. */}
-              {item.locked && <p className="m-0 small text-warning-emphasis">{item.lockedReason}</p>}
             </div>
             <div className="d-grid gtc-2 gap-2 align-items-end border rounded bg-body-tertiary p-2">
               <div className="d-grid gap-1">
@@ -4149,17 +4486,30 @@ function MarketCorePage(ctx: PageContext) {
                 <span className="eyebrow">Total</span>
                 <strong className="text-primary fs-6">{money.format(qty * item.price)}</strong>
               </div>
-              <button
+              <Button
                 className="btn btn-primary btn-sm w-100"
-                disabled={busy || item.locked || qty < 1 || dashboard.cash < qty * item.price}
+                blocked={firstReason(
+                  busy && BUSY,
+                  // Three different reasons a row can be shut and they are not interchangeable: a rung
+                  // you have not reached, a line this trader has never carried, and a line they are out
+                  // of. Only the first is something to go and earn, which is why the trader's own
+                  // sentence is used rather than one written here.
+                  item.locked && (item.lockedReason ?? `The shop is not selling you ${item.name.toLowerCase()} yet.`),
+                  qty < 1 && 'Buy at least one.',
+                  dashboard.cash < qty * item.price && `That comes to ${money.format(qty * item.price)} and you are carrying ${money.format(dashboard.cash)}.`,
+                )}
                 onClick={() => void act(() => api.buyStoreItem(item.key, qty))}
-              >{item.locked ? 'Locked' : 'Buy'}</button>
+              >{item.locked ? 'Locked' : 'Buy'}</Button>
               {/* Rides are the only store item with a resale price, so the sell button only exists here. */}
-              {item.key === 'rides' && <button
+              {item.key === 'rides' && <Button
                 className="btn btn-secondary btn-sm w-100"
-                disabled={busy || qty < 1 || dashboard.rides < qty}
+                blocked={firstReason(
+                  busy && BUSY,
+                  qty < 1 && 'Sell at least one.',
+                  dashboard.rides < qty && `You are selling ${number.format(qty)} and you have ${number.format(dashboard.rides)}.`,
+                )}
                 onClick={() => void act(() => api.sellStoreItem(item.key, qty))}
-              >Sell</button>}
+              >Sell</Button>}
             </div>
           </div>
         })}
@@ -4305,7 +4655,6 @@ function TraderBoardPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
                 ? `${number.format(job.delivered)} in, ${number.format(job.remaining)} to go - ${money.format(job.completionBonus)} and ${number.format(job.rep)} rep land when it is finished`
                 : `${money.format(job.payout)} the lot, ${money.format(job.completionBonus)} more than selling it flat`}
               {' - '}{left}
-              {job.blockedReason ? ` - ${job.blockedReason}` : ''}
             </small>
             {started && <div
               className="progress contract-progress mt-1"
@@ -4320,14 +4669,18 @@ function TraderBoardPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
           </div>
           <em>{number.format(job.held)} held</em>
           <div className="d-grid gap-1">
-            <button
+            <Button
               className="btn btn-primary btn-sm"
-              disabled={busy || !!job.blockedReason || job.canDeliverNow <= 0}
+              blocked={firstReason(
+                busy && BUSY,
+                job.blockedReason,
+                job.canDeliverNow <= 0 && `You are holding ${number.format(job.held)} ${job.goodLabel.toLowerCase()} and the job wants ${number.format(job.remaining)}.`,
+              )}
               onClick={() => void fill(job.id)}
             >
               {job.canDeliverNow <= 0 ? 'Nothing to hand over'
                 : finishes ? 'Finish it' : `Run ${number.format(job.canDeliverNow)}`}
-            </button>
+            </Button>
             {/* The tick that decides what the ask below covers. Absent on a job with goods in it,
                 because that one cannot be swapped at any price and a disabled box invites the question. */}
             {!job.yours && <label className="eyebrow d-flex align-items-center gap-1 justify-self-end">
@@ -4363,17 +4716,22 @@ function TraderBoardPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
             ? `Next one costs ${cost.cash > 0 || rr.nextRep > 0 ? `${money.format(rr.nextCash)} and ${number.format(rr.nextRep)} rep` : 'nothing'}`
             : `${'from' in cost ? 'From ' : ''}${money.format(cost.cash)} and ${number.format(cost.rep)} rep`}
         </span>
-        <button
+        <Button
           className="btn btn-secondary btn-sm"
           type="button"
-          disabled={busy || asking.length === 0 || short || overRep}
+          blocked={firstReason(
+            busy && BUSY,
+            asking.length === 0 && 'Tick the jobs you want swapped out first.',
+            short && `Asking again costs ${money.format(cost.cash)} and you are carrying ${money.format(dashboard.cash)}.`,
+            overRep && rr ? `Asking again costs ${number.format(cost.rep)} rep and you only have ${number.format(rr.spendableRep)} to spend without dropping a rung.` : false,
+          )}
           onClick={() => void reroll()}
         >
           {overRep ? 'That would cost you the rung'
             : short ? 'Not enough cash'
             : asking.length === 0 ? 'Pick one'
             : `Ask about ${asking.length === 1 ? 'it' : number.format(asking.length)}`}
-        </button>
+        </Button>
       </div>
     </div>}
   </section>
@@ -4421,15 +4779,19 @@ function StoreStandingPanel({ dashboard, busy, act }: { dashboard: Dashboard, bu
             </div>
             <p className="m-0 text-body-secondary small">{investment.description}</p>
             <span className="eyebrow">{money.format(investment.cost)} / shuts the counter {investment.cooldownHours}h</span>
-            {investment.locked && <span className="small text-warning-emphasis">{investment.lockedReason}</span>}
           </div>
-          <button
+          <Button
             className="btn btn-primary btn-sm w-100"
-            disabled={busy || investment.locked || short || !!waiting}
+            blocked={firstReason(
+              busy && BUSY,
+              investment.locked && (investment.lockedReason ?? `The counter takes this from ${investment.minLevelName} and up.`),
+              short && `That costs ${money.format(investment.cost)} and you are carrying ${money.format(dashboard.cash)}.`,
+              !!waiting && `The counter took one already. It will take another in ${timeUntil(rep.investmentReadyAtUtc!)}.`,
+            )}
             onClick={() => void act(() => api.investInStore(investment.key))}
           >
             {investment.locked ? investment.minLevelName : waiting ? timeUntil(rep.investmentReadyAtUtc!) : short ? 'Short' : `Pay ${money.format(investment.cost)}`}
-          </button>
+          </Button>
         </div>
       })}
     </div>
@@ -4456,7 +4818,6 @@ function TravelPanel({ markets, turns, travel, busy, act }: { markets: CityMarke
   return <section className="card p-3 travel-panel">
     {/* The stake is on the title line because it is the number that decides whether to bank first. */}
     <div className="panel-title"><h2>Travel</h2><span>{turns.toLocaleString()} turns, carrying {money.format(travel.carriedValue)}</span></div>
-    {travel.blockedReason !== null && <p className="travel-note border-start-thick border-start-danger ps-2 text-danger-emphasis">{travel.blockedReason}</p>}
     {travel.carriedValue > 0 && <p className="travel-note text-body-tertiary small">A stop takes {travel.seizureMinPercent}–{travel.seizureMaxPercent}% of what you carry.</p>}
     <div className="tnum d-grid gap-1">
       {/* Column headings, so the prices are not made to label themselves in every row. */}
@@ -4476,13 +4837,17 @@ function TravelPanel({ markets, turns, travel, busy, act }: { markets: CityMarke
             {city.current
               ? <span className="eyebrow text-primary">You are here</span>
               : <>
-                <button
+                <Button
                   className="btn btn-secondary btn-sm"
-                  disabled={busy || travel.blockedReason !== null || shortfall > 0}
+                  blocked={firstReason(
+                    busy && BUSY,
+                    travel.blockedReason,
+                    shortfall > 0 && `${city.city} is ${city.travelTurns} turns away and you have ${turns}.`,
+                  )}
                   onClick={() => void act(() => api.travel(city.city))}
                 >
                   Travel
-                </button>
+                </Button>
                 <small className={`small text-end ${shortfall > 0 ? 'text-danger' : 'text-body-tertiary'}`}>
                   {shortfall > 0 ? `need ${shortfall} more` : `${city.travelTurns} turns`}
                 </small>
@@ -4639,14 +5004,14 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
     <p className="m-0 text-body-secondary">{mission.summary}</p>
     {canCancel && <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 border border-primary rounded bg-body-tertiary p-2">
       <span className="text-primary small">Call the crew back now for {money.format(mission.cancelCashCost)} cash on hand.</span>
-      <button
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => {
           if (window.confirm(`Cancel this attack for ${money.format(mission.cancelCashCost)}?`))
             onCancel(mission.id)
         }}
-      >Cancel Mission</button>
+      >Cancel Mission</Button>
     </div>}
     {showEvents && <div className="d-grid border-top pt-2">
       {mission.events.length === 0 && <small className="text-body-tertiary small">No updates yet.</small>}
@@ -4659,12 +5024,13 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
   </div>
 }
 
-const ADMIN_TABS = ['overview', 'players', 'ai', 'config', 'titles', 'updates', 'liveops', 'audit'] as const
+const ADMIN_TABS = ['overview', 'players', 'keys', 'ai', 'config', 'titles', 'updates', 'liveops', 'audit'] as const
 type AdminTab = typeof ADMIN_TABS[number]
 
 const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
   overview: { label: 'Overview', kicker: 'Totals and distribution' },
   players: { label: 'Players', kicker: 'Search and enforcement' },
+  keys: { label: 'Keys', kicker: 'Mint and revoke' },
   ai: { label: 'AI Rivals', kicker: 'Seed, run, automate' },
   config: { label: 'Tuning', kicker: 'Runtime values' },
   titles: { label: 'Titles', kicker: 'Create earned names' },
@@ -4709,6 +5075,7 @@ function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
     </nav>
     {tab === 'overview' && <AdminOverviewTab overview={ctx.overview} busy={ctx.busy} />}
     {tab === 'players' && <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />}
+    {tab === 'keys' && <AdminKeysPanel busy={ctx.busy} />}
     {tab === 'ai' && <AdminAiTab ctx={ctx} />}
     {tab === 'config' && <><AdminConfigPanel busy={ctx.busy} /><AdminEconomyReadout overview={ctx.overview} /></>}
     {tab === 'titles' && <AdminTitlesPanel busy={ctx.busy} />}
@@ -4753,6 +5120,216 @@ function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
       <StatusRow label="Production" value={`Weed ${money.format(game.production.weed.costPerTurn)} ${game.production.weed.unitsMin}-${game.production.weed.unitsMax}, coke ${money.format(game.production.coke.costPerTurn)} ${game.production.coke.unitsMin}-${game.production.coke.unitsMax}`} />
       <StatusRow label="Morale rules" value={`${game.morale.hoesManagedPerPimp} hoes/pimp, desertion below ${game.morale.desertionThreshold}%`} />
       <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
+    </div>
+  </section>
+}
+
+function AdminKeysPanel({ busy }: { busy: boolean }) {
+  const [keys, setKeys] = useState<AdminBetaKey[]>([])
+  const [total, setTotal] = useState(0)
+  const [query, setQuery] = useState('')
+  const [label, setLabel] = useState('')
+  const [count, setCount] = useState(10)
+  const [maxUses, setMaxUses] = useState(1)
+  const [expiresAt, setExpiresAt] = useState('')
+  const [reason, setReason] = useState('')
+  const [minted, setMinted] = useState<AdminBetaKey[]>([])
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+
+  const load = async (nextQuery = query) => {
+    try {
+      const board = await adminApi.betaKeys(nextQuery.trim())
+      setKeys(board.keys)
+      setTotal(board.total)
+    } catch (e) { setError((e as Error).message) }
+  }
+  useEffect(() => { void load('') }, [])
+
+  const mint = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const expiresAtUtc = expiresAt ? new Date(expiresAt).toISOString() : null
+      const created = await adminApi.mintBetaKeys({
+        count,
+        label: label.trim() || null,
+        maxUses,
+        expiresAtUtc,
+        reason: reason.trim() || null,
+      })
+      setMinted(created.keys)
+      setMessage(`Minted ${number.format(created.keys.length)} beta key${created.keys.length === 1 ? '' : 's'}.`)
+      await load()
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const revoke = async (key: AdminBetaKey) => {
+    if (!window.confirm(`Revoke ${key.displayCode}?`)) return
+    setWorking(true); setError(''); setMessage('')
+    try {
+      const updated = await adminApi.revokeBetaKey(key.id, reason.trim() || undefined)
+      setKeys(current => current.map(item => item.id === updated.id ? updated : item))
+      setMessage(`${updated.displayCode} revoked.`)
+    } catch (e) { setError((e as Error).message) }
+    finally { setWorking(false) }
+  }
+
+  const copy = async (value: string, said: string) => {
+    try {
+      await copyToClipboard(value)
+      setMessage(said)
+    } catch { setError('Could not copy to the clipboard.') }
+  }
+
+  const mintedBlock = minted.map(key => key.displayCode).join('\n')
+
+  return <section className="card p-3 gcol-full">
+    <div className="panel-title"><h2>Beta Keys</h2><span>{total > keys.length ? `${keys.length} of ${total}` : `${keys.length}`}</span></div>
+    {(error || message) && <div className="d-grid gap-2 mb-3">
+      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+      {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
+    </div>}
+
+    <div className="d-grid gtc-1 gtc-xl-2 gap-3 align-items-start">
+      <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={mint}>
+        <div className="panel-title mb-0"><h3 className="h5 mb-0">Mint</h3><span>Admin pool</span></div>
+        <div className="d-grid gtc-1 gtc-md-3 gap-3">
+          <label className="field">
+            Count
+            <input
+              className="form-control"
+              type="number"
+              min={1}
+              max={500}
+              value={count}
+              onChange={event => setCount(Math.max(1, Math.min(500, Number(event.target.value) || 1)))}
+            />
+          </label>
+          <label className="field">
+            Uses
+            <input
+              className="form-control"
+              type="number"
+              min={1}
+              max={1000}
+              value={maxUses}
+              onChange={event => setMaxUses(Math.max(1, Math.min(1000, Number(event.target.value) || 1)))}
+            />
+          </label>
+          <label className="field">
+            Expires
+            <input
+              className="form-control"
+              type="datetime-local"
+              value={expiresAt}
+              onChange={event => setExpiresAt(event.target.value)}
+            />
+          </label>
+        </div>
+        <label className="field">
+          Label
+          <input
+            className="form-control"
+            maxLength={120}
+            value={label}
+            placeholder="Optional batch label"
+            onChange={event => setLabel(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          Audit reason
+          <input
+            className="form-control"
+            value={reason}
+            placeholder="Optional"
+            onChange={event => setReason(event.target.value)}
+          />
+        </label>
+        <Button className="btn btn-primary" blocked={firstReason(busy && WORKING, working && 'The keys are being minted now.')}>
+          {working ? 'Working...' : 'Mint Keys'}
+        </Button>
+      </form>
+
+      <div className="d-grid gap-3">
+        <form className="d-flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void load(query) }}>
+          <input
+            className="form-control flex-fill"
+            value={query}
+            placeholder="Search code, label, player, username"
+            onChange={event => setQuery(event.target.value)}
+          />
+          <Button className="btn btn-secondary" type="submit" blocked={working && WORKING}>Search</Button>
+          <button className="btn btn-link text-body-secondary" type="button" onClick={() => { setQuery(''); void load('') }}>
+            Clear
+          </button>
+        </form>
+        {minted.length > 0 && <div className="border rounded bg-body-secondary p-3">
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <strong>Fresh keys</strong>
+            <button
+              className="btn btn-outline-primary btn-sm"
+              type="button"
+              onClick={() => void copy(mintedBlock, 'Fresh keys copied.')}
+            >Copy Block</button>
+          </div>
+          <pre className="tnum mb-0 small">{mintedBlock}</pre>
+        </div>}
+      </div>
+    </div>
+
+    <div className="table-responsive mt-3">
+      <table className="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Status</th>
+            <th>Uses</th>
+            <th>Chain</th>
+            <th>Dates</th>
+            <th className="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {keys.length === 0 && <tr><td colSpan={6} className="text-body-tertiary">No beta keys found.</td></tr>}
+          {keys.map(key => {
+            const issuedTo = key.issuedToPlayerName ?? key.issuedToUsername ?? 'Admin pool'
+            const redeemedBy = key.redeemedByPlayerName ?? key.redeemedByUsername ?? 'Not redeemed'
+            return <tr key={key.id}>
+              <td className="tnum">
+                <strong>{key.displayCode}</strong>
+                {key.label && <small className="d-block text-body-tertiary text-truncate">{key.label}</small>}
+              </td>
+              <td><span className={`badge ${betaKeyStatusClass(key.status)}`}>{key.status}</span></td>
+              <td className="tnum">{key.uses} / {key.maxUses}<small className="d-block text-body-tertiary">{key.usesLeft} left</small></td>
+              <td className="small">
+                <strong>{issuedTo}</strong>
+                <span className="d-block text-body-tertiary">to {redeemedBy}</span>
+              </td>
+              <td className="small">
+                <span className="d-block">Made {compactDateTime(key.createdAtUtc)}</span>
+                <span className="d-block text-body-tertiary">Redeemed {compactDateTime(key.redeemedAtUtc)}</span>
+                {key.expiresAtUtc && <span className="d-block text-body-tertiary">Expires {compactDateTime(key.expiresAtUtc)}</span>}
+              </td>
+              <td className="text-end">
+                <div className="btn-group btn-group-sm">
+                  <button className="btn btn-outline-secondary" type="button" onClick={() => void copy(key.displayCode, 'Key copied.')}>
+                    Copy
+                  </button>
+                  <Button className="btn btn-outline-danger" type="button" blocked={firstReason(
+                    working && WORKING,
+                    key.status === 'Revoked' && 'This key is already revoked.',
+                  )} onClick={() => void revoke(key)}>
+                    Revoke
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          })}
+        </tbody>
+      </table>
     </div>
   </section>
 }
@@ -4842,7 +5419,7 @@ function AdminTitlesPanel({ busy }: { busy: boolean }) {
       {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
       <div className="d-flex flex-wrap gap-2 mb-3">
         <button className="btn btn-primary btn-sm" type="button" onClick={reset}>New title</button>
-        <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void load()}>Refresh</button>
+        <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void load()}>Refresh</Button>
       </div>
       <div className="d-grid gap-1">
         {titles.length === 0 && <p className="text-body-tertiary small mb-0">No custom titles yet.</p>}
@@ -4907,8 +5484,8 @@ function AdminTitlesPanel({ busy }: { busy: boolean }) {
           <input className="form-control" value={draft.reason ?? ''} onChange={event => setDraft({ ...draft, reason: event.target.value })} placeholder="Added a new milestone title" />
         </label>
         <div className="d-flex flex-wrap gap-2">
-          <button className="btn btn-primary" disabled={locked}>{locked ? 'Working...' : selected ? 'Save Title' : 'Create Title'}</button>
-          {selected && <button className="btn btn-secondary" type="button" disabled={locked} onClick={reset}>Clear Form</button>}
+          <Button className="btn btn-primary" blocked={locked && WORKING}>{locked ? 'Working...' : selected ? 'Save Title' : 'Create Title'}</Button>
+          {selected && <Button className="btn btn-secondary" type="button" blocked={locked && WORKING} onClick={reset}>Clear Form</Button>}
         </div>
       </form>
     </section>
@@ -5311,16 +5888,16 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
             <input className="form-control" value={reason} onChange={event => setReason(event.target.value)} placeholder="Why this is being posted or changed" />
           </label>
           <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-primary" disabled={locked}>
+            <Button className="btn btn-primary" blocked={locked && WORKING}>
               {locked ? 'Working...' : draft.isDraft ? 'Save Draft' : selected ? 'Save and Publish' : 'Publish Update'}
-            </button>
-            {selected && <button className="btn btn-secondary" type="button" disabled={locked} onClick={reset}>Clear Form</button>}
-            {selected && <button
+            </Button>
+            {selected && <Button className="btn btn-secondary" type="button" blocked={locked && WORKING} onClick={reset}>Clear Form</Button>}
+            {selected && <Button
               className="btn btn-outline-danger"
               type="button"
-              disabled={locked}
+              blocked={locked && WORKING}
               onClick={() => void archive(!selected.archivedAtUtc)}
-            >{selected.archivedAtUtc ? 'Restore' : 'Archive'}</button>}
+            >{selected.archivedAtUtc ? 'Restore' : 'Archive'}</Button>}
           </div>
         </form>
       </section>
@@ -5360,11 +5937,14 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
             <input className="form-control" value={deliveryReason} onChange={event => setDeliveryReason(event.target.value)} placeholder="Moved announcements to #updates" />
           </label>
           <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Webhook Settings'}</button>
-            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void loadDelivery()}>Refresh</button>
-            <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !delivery?.discordUsesStoredWebhook} onClick={() => void clearDeliveryWebhook()}>
+            <Button className="btn btn-primary btn-sm" blocked={locked && WORKING}>{locked ? 'Working...' : 'Save Webhook Settings'}</Button>
+            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void loadDelivery()}>Refresh</Button>
+            <Button className="btn btn-outline-danger btn-sm" type="button" blocked={firstReason(
+              locked && WORKING,
+              !delivery?.discordUsesStoredWebhook && 'There is no saved webhook to clear.',
+            )} onClick={() => void clearDeliveryWebhook()}>
               Clear saved webhook
-            </button>
+            </Button>
           </div>
           {delivery && <small className="text-body-tertiary">
             Last changed {new Date(delivery.updatedAtUtc).toLocaleString()}{delivery.updatedBy ? ` by ${delivery.updatedBy}` : ''}.
@@ -5396,7 +5976,7 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
               ? <a className="btn btn-outline-primary btn-sm" href={discordInviteUrl} target="_blank" rel="noreferrer">
                   Add bot to Discord
                 </a>
-              : <button className="btn btn-outline-secondary btn-sm" type="button" disabled>Add bot to Discord</button>}
+              : <Button className="btn btn-outline-secondary btn-sm" type="button" blocked="Fill in the application ID and server ID below and save, and the invite link appears here.">Add bot to Discord</Button>}
           </div>
           <label className="field">
             Bot token
@@ -5453,13 +6033,19 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
             <input className="form-control" value={discordReason} onChange={event => setDiscordReason(event.target.value)} placeholder="Added Discord role sync" />
           </label>
           <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-primary btn-sm" disabled={locked}>{locked ? 'Working...' : 'Save Bot Settings'}</button>
-            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void registerDiscordCommands()}>Register slash commands</button>
-            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void ensureDiscordRoles()}>Create role maps</button>
-            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void syncDiscordCrewChannels()}>Sync crew channels</button>
-            <button className="btn btn-secondary btn-sm" type="button" disabled={locked} onClick={() => void syncDiscordRoles()}>Sync roles now</button>
-            <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !discord?.usesStoredBotToken} onClick={() => void clearDiscordSecret('token')}>Clear token</button>
-            <button className="btn btn-outline-danger btn-sm" type="button" disabled={locked || !discord?.publicKeyConfigured} onClick={() => void clearDiscordSecret('key')}>Clear key</button>
+            <Button className="btn btn-primary btn-sm" blocked={locked && WORKING}>{locked ? 'Working...' : 'Save Bot Settings'}</Button>
+            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void registerDiscordCommands()}>Register slash commands</Button>
+            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void ensureDiscordRoles()}>Create role maps</Button>
+            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void syncDiscordCrewChannels()}>Sync crew channels</Button>
+            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void syncDiscordRoles()}>Sync roles now</Button>
+            <Button className="btn btn-outline-danger btn-sm" type="button" blocked={firstReason(
+              locked && WORKING,
+              !discord?.usesStoredBotToken && 'There is no saved bot token to clear.',
+            )} onClick={() => void clearDiscordSecret('token')}>Clear token</Button>
+            <Button className="btn btn-outline-danger btn-sm" type="button" blocked={firstReason(
+              locked && WORKING,
+              !discord?.publicKeyConfigured && 'There is no saved public key to clear.',
+            )} onClick={() => void clearDiscordSecret('key')}>Clear key</Button>
           </div>
           <div className="border rounded bg-body-secondary p-2 d-grid gap-1">
             <strong className="small">Discord Console</strong>
@@ -5618,23 +6204,25 @@ function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
     <p>Maintenance blocks every gameplay action for players while leaving reads and admin access open, so you can verify a deploy before letting anyone back in.</p>
     <div className="control-row">
-      <button
+      <Button
         className={ops?.maintenanceMode ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-        disabled={locked}
+        blocked={locked && WORKING}
         onClick={() => void apply({ maintenanceMode: !ops?.maintenanceMode })}
       >
         {ops?.maintenanceMode ? 'End maintenance' : 'Start maintenance'}
-      </button>
+      </Button>
       <label className="field">Maintenance notice<input className="form-control" value={maintenanceMessage} onChange={e => setMaintenanceMessage(e.target.value)} placeholder="Back in 10 minutes" /></label>
-      <button className="btn btn-secondary btn-sm" disabled={locked}
-        onClick={() => void apply({ maintenanceMessage })}>Save notice</button>
+      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
+        onClick={() => void apply({ maintenanceMessage })}>Save notice</Button>
     </div>
     <div className="control-row">
       <label className="grow">Announcement banner<input className="form-control" value={announcement} onChange={e => setAnnouncement(e.target.value)} placeholder="Shown to every player" /></label>
-      <button className="btn btn-secondary btn-sm" disabled={locked}
-        onClick={() => void apply({ announcement })}>Save banner</button>
-      <button className="btn btn-secondary btn-sm" disabled={locked || !ops?.announcement}
-        onClick={() => void apply({ announcement: '' })}>Clear</button>
+      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
+        onClick={() => void apply({ announcement })}>Save banner</Button>
+      <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+        locked && WORKING,
+        !ops?.announcement && 'There is no banner up to clear.',
+      )} onClick={() => void apply({ announcement: '' })}>Clear</Button>
     </div>
     {ops && <small className="d-block mt-2 text-body-tertiary small">Last changed {new Date(ops.updatedAtUtc).toLocaleString()}{ops.updatedBy ? ` by ${ops.updatedBy}` : ''}.</small>}
   </section>
@@ -5700,9 +6288,9 @@ function AdminConfigPanel({ busy }: { busy: boolean }) {
 
     <div className="control-row">
       <label className="grow">Filter<input className="form-control" value={filter} onChange={e => setFilter(e.target.value)} placeholder="combat, morale, price..." /></label>
-      <button className="btn btn-secondary btn-sm" disabled={locked} onClick={() => setShowAll(value => !value)}>
+      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING} onClick={() => setShowAll(value => !value)}>
         {showAll ? 'Show overrides only' : `Show all ${config.settings.length}`}
-      </button>
+      </Button>
     </div>
 
     <div className="d-grid gap-1 mt-3 config-list">
@@ -5737,8 +6325,14 @@ function ConfigRow({ entry, draft, locked, onDraft, onSave, onClear }: {
       <span>{entry.type}{entry.isOverridden ? ' / overridden' : ' / from appsettings'}</span>
     </div>
     <input className="form-control" value={draft} onChange={e => onDraft(e.target.value)} />
-    <button className="btn btn-primary btn-sm" disabled={locked || !dirty} onClick={onSave}>Save</button>
-    <button className="btn btn-secondary btn-sm" disabled={locked || !entry.isOverridden} onClick={onClear}>Reset</button>
+    <Button className="btn btn-primary btn-sm" blocked={firstReason(
+      locked && WORKING,
+      !dirty && 'Nothing has been changed here.',
+    )} onClick={onSave}>Save</Button>
+    <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+      locked && WORKING,
+      !entry.isOverridden && 'This one is still the value from appsettings. There is no override to reset.',
+    )} onClick={onClear}>Reset</Button>
   </div>
 }
 
@@ -5811,8 +6405,8 @@ function AdminOversightPanel({ busy }: { busy: boolean }) {
           <p>{mission.commanderName ?? 'A pimp'} ({mission.attackerName}) vs {mission.defenderName}</p>
           <div className="control-row">
             <em>{mission.nextEventAtUtc ? `next ${new Date(mission.nextEventAtUtc).toLocaleTimeString()}` : 'no timer'}</em>
-            <button className="btn btn-secondary btn-sm" disabled={busy || working}
-              onClick={() => void resolve(mission.missionId)}>Force resolve</button>
+            <Button className="btn btn-secondary btn-sm" blocked={firstReason(busy && WORKING, working && WORKING)}
+              onClick={() => void resolve(mission.missionId)}>Force resolve</Button>
           </div>
         </div>)}
       </div>
@@ -5892,7 +6486,7 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
     <div className="panel-title"><h2>Players</h2><span>Find and fix</span></div>
     <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-3" onSubmit={search}>
       <label className="field">Search<input className="form-control" value={query} onChange={e => setQuery(e.target.value)} placeholder="Player, username, or city" /></label>
-      <button className="btn btn-secondary btn-sm" disabled={locked}>Search</button>
+      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}>Search</Button>
     </form>
 
     {error && <div className="alert alert-danger"><span>{error}</span></div>}
@@ -5901,11 +6495,11 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
     <div className="d-grid gtc-1 gtc-lg-split-280 gap-3 mt-3">
       <div className="admin-player-list d-grid gap-1 align-content-start overflow-y-auto">
         {results.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No players matched.</p>}
-        {results.map(player => <button
+        {results.map(player => <Button
           className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${target?.playerId === player.playerId ? 'active border-primary' : ''}`}
           key={player.playerId}
           type="button"
-          disabled={locked}
+          blocked={locked && WORKING}
           onClick={() => void open(player.playerId)}
         >
           <strong>{player.name}</strong>
@@ -5917,7 +6511,7 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           </small>
           <em>{enforcementLabel(player)}</em>
           <b>{money.format(player.netWorth)}</b>
-        </button>)}
+        </Button>)}
       </div>
 
       {detail && target && <div className="d-grid gap-3 align-content-start border rounded bg-body-tertiary p-3">
@@ -5964,14 +6558,14 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
         <div className="control-block">
           <strong>Quick grants</strong>
           <div className="d-grid gtc-1 gtc-md-4 gap-2">
-            {adjustPresets.map(preset => <button
+            {adjustPresets.map(preset => <Button
               className="btn btn-secondary btn-sm"
               key={preset.label}
-              disabled={locked}
+              blocked={locked && WORKING}
               onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, preset.resource, preset.delta, reason))}
-            >{preset.label}</button>)}
-            <button className="btn btn-secondary btn-sm" disabled={locked}
-              onClick={() => void run('Morale set', () => adminApi.setMorale(target.playerId, 100, reason))}>Morale 100%</button>
+            >{preset.label}</Button>)}
+            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
+              onClick={() => void run('Morale set', () => adminApi.setMorale(target.playerId, 100, reason))}>Morale 100%</Button>
           </div>
         </div>
 
@@ -5982,10 +6576,12 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
               {detail.adjustableResources.map(key => <option key={key} value={key}>{key}</option>)}
             </select></label>
             <label className="field">Change<input className="form-control" type="number" value={delta} onChange={e => setDelta(Number(e.target.value))} /></label>
-            <button className="btn btn-primary btn-sm" disabled={locked || delta === 0}
-              onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, resource, delta, reason))}>
+            <Button className="btn btn-primary btn-sm" blocked={firstReason(
+              locked && WORKING,
+              delta === 0 && 'A change of zero does nothing. Set an amount first.',
+            )} onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, resource, delta, reason))}>
               Apply
-            </button>
+            </Button>
           </div>
           <small>Negative values take resources away. Nothing drops below zero.</small>
         </div>
@@ -5993,27 +6589,29 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
         <div className="control-block">
           <strong>Account</strong>
           <div className="control-row">
-            <button className="btn btn-secondary btn-sm" disabled={locked}
+            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
               onClick={() => void run('Banned', () => adminApi.enforcement(target.playerId, 'ban', null, reason))}>
               Ban
-            </button>
+            </Button>
             <label className="field">Suspend hours<input className="form-control" type="number" min={1} value={suspendHours} onChange={e => setSuspendHours(Number(e.target.value))} /></label>
-            <button className="btn btn-secondary btn-sm" disabled={locked || suspendHours < 1}
-              onClick={() => void run('Suspended', () => adminApi.enforcement(
+            <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+              locked && WORKING,
+              suspendHours < 1 && 'A suspension has to run for at least an hour.',
+            )} onClick={() => void run('Suspended', () => adminApi.enforcement(
                 target.playerId,
                 'suspend',
                 new Date(Date.now() + suspendHours * 3600_000).toISOString(),
                 reason))}>
               Suspend
-            </button>
-            <button className="btn btn-secondary btn-sm" disabled={locked}
+            </Button>
+            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
               onClick={() => void run('Cleared', () => adminApi.enforcement(target.playerId, 'clear', null, reason))}>
               Lift
-            </button>
-            <button className="btn btn-secondary btn-sm" disabled={locked}
+            </Button>
+            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
               onClick={() => void run('Logged out', () => adminApi.forceLogout(target.playerId, reason))}>
               Force logout
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -6021,14 +6619,18 @@ function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () =
           <strong>Identity and rights</strong>
           <div className="control-row">
             <label className="field">Name<input className="form-control" value={renameTo} onChange={e => setRenameTo(e.target.value)} minLength={3} maxLength={32} /></label>
-            <button className="btn btn-secondary btn-sm" disabled={locked || renameTo.trim() === target.name}
-              onClick={() => void run('Renamed', () => adminApi.rename(target.playerId, renameTo, reason))}>
+            <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+              locked && WORKING,
+              renameTo.trim() === target.name && `They are already called ${target.name}.`,
+            )} onClick={() => void run('Renamed', () => adminApi.rename(target.playerId, renameTo, reason))}>
               Rename
-            </button>
-            <button className="btn btn-secondary btn-sm" disabled={locked || target.isBot}
-              onClick={() => void run('Rights changed', () => adminApi.setAdminRights(target.playerId, !target.isAdmin, reason))}>
+            </Button>
+            <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+              locked && WORKING,
+              target.isBot && 'A rival run by the game cannot be given admin rights.',
+            )} onClick={() => void run('Rights changed', () => adminApi.setAdminRights(target.playerId, !target.isAdmin, reason))}>
               {target.isAdmin ? 'Revoke admin' : 'Grant admin'}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -6324,13 +6926,19 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
             {room === 0 ? 'Storage full' : short > 0 ? `${number.format(short)} short` : 'Covered'}
           </em>
           <label className="field gcol-full small">Qty<input className="form-control" aria-label={`${item.name} quantity`} type="number" min={1} max={Math.max(1, room)} value={qty} onChange={event => setStoreQty(value => ({ ...value, [supply.key]: Number(event.target.value) }))} /></label>
-          <button
+          <Button
             className="btn btn-primary gcol-full w-100 min-w-0"
-            disabled={busy || qty < 1 || room === 0 || qty > room || dashboard.cash < total}
+            blocked={firstReason(
+              busy && BUSY,
+              room === 0 && `Your store already holds ${number.format(supply.cap)} ${item.name.toLowerCase()}, which is all it has room for.`,
+              qty < 1 && 'Buy at least one.',
+              qty > room && `There is room for ${number.format(room)} more and you are buying ${number.format(qty)}.`,
+              dashboard.cash < total && `That comes to ${money.format(total)} and you are carrying ${money.format(dashboard.cash)}.`,
+            )}
             onClick={() => void act(() => api.buyStoreItem(supply.key, qty))}
           >
             {room === 0 ? 'Storage Full' : `Buy ${money.format(total)}`}
-          </button>
+          </Button>
         </div>
       })}
     </div>
@@ -6581,8 +7189,10 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
             ? `Needs ${report.hqPartyWeedCost} weed and you have ${dashboard.weed}.`
             : null
 
-  const canRest = !busy && restReason === null
-  const canParty = !busy && partyReason === null
+  // The buttons carry these rather than printing them underneath. Said in both places at once, the
+  // sentence appeared twice on screen the moment anybody hovered the thing it was about.
+  const restBlocked = firstReason(busy && BUSY, restReason)
+  const partyBlocked = firstReason(busy && BUSY, partyReason)
 
   return <section className="card p-3 gcol-full" data-area="recovery">
     <div className="panel-title"><h2>Recovery</h2><span>{dashboard.hideout.tierName} morale</span></div>
@@ -6592,12 +7202,11 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
         <p className="m-0">Your crew comes back here after street work and fights. Low morale heals slowly over time, or you can spend turns and supplies to steady them faster.</p>
       </div>
       <div className="d-grid gtc-1 gtc-md-2 gap-2">
-        <button className="btn btn-secondary btn-stacked" disabled={!canRest} onClick={() => void act(() => api.recoverMorale('rest'))}>
+        <Button className="btn btn-secondary btn-stacked" blocked={restBlocked} onClick={() => void act(() => api.recoverMorale('rest'))}>
           Rest Crew
           <span>{report.hqRestTurnCost} turns / {money.format(report.hqRestCashCost)} / +{report.hqRestMoraleGain.toFixed(0)}% to both</span>
-          {restReason && <span className="text-warning-emphasis">{restReason}</span>}
-        </button>
-        <button className="btn btn-primary btn-stacked" disabled={!canParty} onClick={() => void act(() => api.recoverMorale('party'))}>
+        </Button>
+        <Button className="btn btn-primary btn-stacked" blocked={partyBlocked} onClick={() => void act(() => api.recoverMorale('party'))}>
           Throw Party
           {/* The party's two gains were the one thing this panel never said, while the rest button
               beside it has always shown its own. A player whose thugs are the half that is suffering
@@ -6606,8 +7215,7 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
             {report.hqPartyTurnCost} turns / {money.format(report.hqPartyCashCost)} / {report.hqPartyBeerCost} beer / {report.hqPartyWeedCost} weed
             {' / '}+{report.hqPartyHoeMoraleGain.toFixed(0)}% hoes, +{report.hqPartyThugMoraleGain.toFixed(0)}% thugs
           </span>
-          {partyReason && <span className="text-warning-emphasis">{partyReason}</span>}
-        </button>
+        </Button>
       </div>
     </div>
   </section>
@@ -6765,18 +7373,18 @@ function PlayerCardHeader({ profile, isSelf }: { profile: PlayerProfile, isSelf:
         </div>
         {/* The only place a conversation can start. Everywhere else in chat you are answering
             somebody; this is where you pick who to write to in the first place. */}
-        <button
+        <Button
           className="btn btn-secondary btn-sm"
           type="button"
-          disabled={!profile.canMessage}
-          title={profile.messageBlockedReason ?? 'Start a direct conversation'}
+          blocked={!profile.canMessage && (profile.messageBlockedReason ?? `${profile.name} is not taking messages.`)}
+          title="Start a direct conversation"
           onClick={() => void (async () => {
             try {
               const { id } = await api.openDirect(profile.playerId)
               window.dispatchEvent(new CustomEvent('street-empire:conversation', { detail: { conversationId: id } }))
             } catch { /* the profile shows its own errors elsewhere */ }
           })()}
-        >{profile.canMessage ? 'Message' : 'Closed'}</button>
+        >{profile.canMessage ? 'Message' : 'Closed'}</Button>
         {/* Silences them. Says so plainly, because a player who thinks this also keeps them from
             raiding the house will find out the hard way and blame the button. */}
         {!isSelf && <button
@@ -6832,12 +7440,12 @@ function IntelBand({ profile, onScouted }: { profile: PlayerProfile, onScouted?:
 
   return <div className={`d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded p-2 mb-3 ${fresh ? 'bg-body-tertiary' : 'border-warning-subtle'}`}>
     <small className="min-w-0 text-body-secondary">{error || said}</small>
-    {yourCentreLevel >= 1 && <button
+    {yourCentreLevel >= 1 && <Button
       className="btn btn-outline-primary btn-sm"
       type="button"
-      disabled={busy}
+      blocked={busy && BUSY}
       onClick={() => void scout()}
-    >{busy ? 'Looking...' : `Scout (${scoutTurnCost} turn${scoutTurnCost === 1 ? '' : 's'})`}</button>}
+    >{busy ? 'Looking...' : `Scout (${scoutTurnCost} turn${scoutTurnCost === 1 ? '' : 's'})`}</Button>}
   </div>
 }
 
@@ -6967,13 +7575,17 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
     : undefined
   const crew = dashboard.combatCrew
   const freeCommanders = dashboard.crew.filter(pimp => !pimp.isCommanding)
-  const raidReady = crew.availablePimps >= 1
-    && attackCrew.thugs >= 1
-    && attackCrew.weapons >= 0
-    && attackCrew.weapons <= attackCrew.thugs
-    && attackCrew.thugs <= crew.availableThugs
-    && attackCrew.weapons <= crew.availableWeapons
-    && crew.activeAttackMissions < crew.maxActiveAttackMissions
+  // Written as reasons rather than as one boolean, because "Assign available crew" was the whole of
+  // what the page could say about six different ways of getting the party wrong.
+  const raidBlocker = firstReason(
+    crew.availablePimps < 1 && 'Every pimp you have is already out. A raid needs one to lead it.',
+    attackCrew.thugs < 1 && 'Send at least one thug.',
+    attackCrew.thugs > crew.availableThugs && `You are sending ${number.format(attackCrew.thugs)} thugs and ${number.format(crew.availableThugs)} are free to go.`,
+    attackCrew.weapons < 0 && 'You cannot send a negative number of guns.',
+    attackCrew.weapons > attackCrew.thugs && `${number.format(attackCrew.weapons)} guns and ${number.format(attackCrew.thugs)} thugs: there is nobody to carry the rest.`,
+    attackCrew.weapons > crew.availableWeapons && `You are sending ${number.format(attackCrew.weapons)} guns and ${number.format(crew.availableWeapons)} are on the rack.`,
+    crew.activeAttackMissions >= crew.maxActiveAttackMissions && `You have ${crew.activeAttackMissions} raids out already, which is all you can run at once.`,
+  )
   const method = dashboard.attackMethods.find(x => x.key === attackMethod) ?? dashboard.attackMethods[0]
   // Worked out by the server against this exact pairing, so it is the same sentence the launch would
   // have thrown rather than a second opinion the page arrived at on its own.
@@ -6981,17 +7593,38 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   const isRaid = method?.key === 'raid'
   // A strike is gated by the method's own requirements, which the server has already worked out, plus
   // the turns it costs. A raid is gated by crew, which only it commits.
-  const methodReady = !!method
-    && !method.blockedReason
-    && dashboard.turns >= method.turnCost
-    && (!isRaid || raidReady)
+  const methodBlocker = firstReason(
+    !method && 'Pick how you want to hit them first.',
+    method?.blockedReason,
+    !!method && dashboard.turns < method.turnCost && `${method.label} costs ${method.turnCost} turns and you have ${dashboard.turns}.`,
+    isRaid && raidBlocker,
     // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
-    && (method.key !== 'poach' || (poachCoke > 0 && poachCoke <= dashboard.coke))
+    method?.key === 'poach' && poachCoke <= 0 && 'Set how much coke to put on the table first.',
+    method?.key === 'poach' && poachCoke > dashboard.coke && `You are spending ${number.format(poachCoke)} coke and you hold ${number.format(dashboard.coke)}.`,
+  )
+  const methodReady = methodBlocker === null
+  // Everything above is about your own side. This adds theirs, and is only answerable once somebody is
+  // actually being looked at.
+  const attackBlocked = (target: PlayerProfile) => firstReason(
+    busy && BUSY,
+    isRaid && !!activeAgainstProfile && `Your crew is already out against ${target.name}. Next update in ${timeUntil(nextMissionTime(activeAgainstProfile))}.`,
+    methodBlocker,
+    // The method menu is built from your own crew and garage and has never seen who you are looking
+    // at, so a strike with nothing to take on the other end sat under a live button and was only
+    // refused once you had pressed it.
+    strikeBlocker,
+    !isRaid && target.combatStatus.isStrikeProtected && `${target.name} was just hit and is watching the street.`,
+    !target.combatStatus.canAttackNow && attackStatusText(
+      target.combatStatus,
+      activeAgainstProfile,
+      activeOutgoingMissions[0],
+      methodReady),
+  )
   return <div className="card p-3 gcol-full">
     <div className="panel-title" data-area="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
     <form className="d-grid gtc-1 gtc-md-1-auto-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
       <label className="field">Search<input className="form-control" value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
-      <button className="btn btn-secondary btn-sm" disabled={busy}>Search</button>
+      <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY}>Search</Button>
       {/*
         Your own card, from the one screen where the numbers on it mean something. Attack and defence
         were readable for every player in the game except the one reading them, which made judging a
@@ -7000,21 +7633,21 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         The same endpoint and the same card - the server already knew what this was, answering with an
         eligibility of "Self" and every strike blocked, and nothing had ever asked it.
       */}
-      <button
+      <Button
         className="btn btn-outline-secondary btn-sm"
         type="button"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => onInspect(currentPlayerId)}
-      >Your card</button>
+      >Your card</Button>
     </form>
     <div className="d-grid gtc-1 gtc-xl-split-80 gap-3 align-items-start">
       <div className="d-grid gap-2">
         {targets.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No targets found.</p>}
-        {targets.map(target => <button
+        {targets.map(target => <Button
           className={`target-row w-100 d-grid gap-1 column-gap-2 align-items-center text-start border rounded p-2 ${profile?.playerId === target.playerId ? 'active border-info' : 'bg-body-secondary'}`}
           key={target.playerId}
           type="button"
-          disabled={busy}
+          blocked={busy && BUSY}
           onClick={() => onInspect(target.playerId)}
         >
           <span className="text-primary fw-bolder">#{target.rank}</span>
@@ -7025,9 +7658,9 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <small className="text-body-secondary small">{target.profileTagline || `${target.city}${target.aiPersonality ? ` / ${target.aiPersonality}` : target.isBot ? ' / AI' : ''}`}</small>
           <em className={`eyebrow fst-normal ${target.combatStatus.mismatchReason ? 'text-warning-emphasis' : ''}`}>{target.titles.length > 0 ? target.titles.join(', ') : `${target.combatStatus.eligibility} / ${target.combatReadiness.riskBand}`}{target.rides > 0 ? ` / ${target.rides} parked` : ''}</em>
           <b className="text-body">{money.format(target.netWorth)}</b>
-        </button>)}
+        </Button>)}
       </div>
-      {profile && (() => { const isSelf = profile.playerId === currentPlayerId; return <div className="border rounded bg-body-secondary p-3">
+      {profile && (() => { const isSelf = profile.playerId === currentPlayerId; const blocked = attackBlocked(profile); return <div className="border rounded bg-body-secondary p-3">
         <PlayerCardHeader profile={profile} isSelf={isSelf} />
         {isSelf
           ? <p className="text-body-tertiary small">
@@ -7086,33 +7719,23 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
           <small className="d-block mt-1 text-body-tertiary small measure">{strikeNote(method, profile, dashboard, poachCoke)}</small>
         </div>}
         <div className="d-grid gtc-1 gtc-md-auto-1 gap-2 align-items-center mb-3 border rounded p-2">
-          <button
+          <Button
             className="btn btn-primary"
             type="button"
-            disabled={busy
-              || (isRaid && !!activeAgainstProfile)
-              || !methodReady
-              // Their half of the rule. The method menu is built from your own crew and garage and has
-              // never seen who you are looking at, so a strike with nothing to take on the other end
-              // sat under a live button and was only refused once you had pressed it.
-              || !!strikeBlocker
-              || !profile.combatStatus.canAttackNow
-              || (!isRaid && profile.combatStatus.isStrikeProtected)}
+            blocked={blocked}
             onClick={() => onAttack(profile.playerId)}
           >
             {isRaid ? 'Send the Raid' : method?.label ?? 'Attack'}
-          </button>
-          <span>{method?.blockedReason
-            ?? strikeBlocker
-            ?? (!isRaid && profile.combatStatus.isStrikeProtected
-              ? `${profile.name} was just hit and is watching the street.`
-              : method && !isRaid
-                ? strikeStatusText(method, dashboard, profile.combatStatus)
-                : attackStatusText(
-                  profile.combatStatus,
-                  activeAgainstProfile,
-                  activeOutgoingMissions[0],
-                  methodReady))}</span>
+          </Button>
+          {/* What it costs, and only while it can actually be thrown. Why it cannot is on the button
+              beside this, and printing both put the same sentence on screen twice. */}
+          {!blocked && <span>{method && !isRaid
+            ? strikeStatusText(method, dashboard, profile.combatStatus)
+            : attackStatusText(
+              profile.combatStatus,
+              activeAgainstProfile,
+              activeOutgoingMissions[0],
+              methodReady)}</span>}
         </div>
         </>}
         <PlayerCardStats profile={profile} isSelf={isSelf} onScouted={() => onInspect(profile.playerId)} />
@@ -7140,7 +7763,7 @@ function AttackMethodPicker({ methods, selected, turns, onSelect }: {
         className={`tile d-grid gap-1 text-start border rounded p-2 ${method.key === selected ? 'active border-primary' : 'bg-body-tertiary'}`}
         key={method.key}
         type="button"
-        title={method.blockedReason ?? method.description}
+        title={method.description}
         onClick={() => onSelect(method.key)}
       >
         <strong className="text-body">{method.label}</strong>
@@ -7277,20 +7900,22 @@ function ArrestPanel({ dashboard, busy, act }: {
             Swept up in {arrest.city}{arrest.district ? ` / ${arrest.district}` : ''} on a {arrest.chancePercent}% shift.
           </small>
           <div className="control-row">
-            <button
+            <Button
               className="btn btn-primary"
-              disabled={busy || !arrest.canAffordBail}
-              title={arrest.canAffordBail ? undefined : `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)}.`}
+              blocked={firstReason(
+                busy && BUSY,
+                !arrest.canAffordBail && `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)} between cash and the bank.`,
+              )}
               onClick={() => void act(async () => { const r = await api.bailArrest(arrest.id); await load(); return r })}>
               Bail out ({money.format(arrest.bailAmount)})
-            </button>
-            <button
+            </Button>
+            <Button
               className="btn btn-outline-secondary"
-              disabled={busy}
+              blocked={busy && BUSY}
               title="They are gone, and the crew still out will notice."
               onClick={() => void act(async () => { const r = await api.abandonArrest(arrest.id); await load(); return r })}>
               Leave them
-            </button>
+            </Button>
           </div>
         </div>
       })}
@@ -7337,9 +7962,17 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
         value={offered}
         onChange={event => setOffered(Number(event.target.value))}
       /></label>
-      <button
+      <Button
         className="btn btn-primary"
-        disabled={busy || !board.canPray || !enough || offered < board.quantity || offered > board.held}
+        blocked={firstReason(
+          busy && BUSY,
+          !board.canPray && (board.blockedReason ?? (board.nextPrayerAtUtc
+            ? `They have had their week. Come back in ${timeUntil(board.nextPrayerAtUtc)}.`
+            : 'The shrine is closed to you right now.')),
+          !enough && `They asked for ${number.format(board.quantity)} ${board.label} and you hold ${number.format(board.held)}.`,
+          offered < board.quantity && `They asked for ${number.format(board.quantity)}. Anything less is an insult.`,
+          offered > board.held && `You are offering ${number.format(offered)} and you hold ${number.format(board.held)}.`,
+        )}
         onClick={() => void act(async () => {
           const result = await api.pray(offered)
           await load()
@@ -7347,12 +7980,11 @@ function ShrinePanel({ busy, act }: { busy: boolean, act: PageContext['act'] }) 
         })}
       >
         Make the offering
-      </button>
+      </Button>
       <span className="text-body-tertiary small">
-        {board.blockedReason
-          ?? (generous
-            ? `Twice what they asked. Generosity buys what meeting the ask does not.`
-            : `${number.format(board.generousQuantity)} would count as generous.`)}
+        {generous
+          ? 'Twice what they asked. Generosity buys what meeting the ask does not.'
+          : `${number.format(board.generousQuantity)} would count as generous.`}
       </span>
     </div>
     </div>
@@ -7471,9 +8103,9 @@ function AlliancePage(ctx: PageContext) {
         {board.yourRank === 'Boss' && <AllianceSettingsPanel crew={yours} board={board} maxDues={board.maxDuesPercent} busy={busy} onSave={run} />}
 
         <div className="control-row">
-          <button className="btn btn-secondary" disabled={busy} onClick={() => run(() => api.leaveAlliance())}>
+          <Button className="btn btn-secondary" blocked={busy && BUSY} onClick={() => run(() => api.leaveAlliance())}>
             {yours.youFounded && yours.members > 1 ? 'Leave (throw everybody out first)' : 'Leave the crew'}
-          </button>
+          </Button>
         </div>
       </section>
       : <section className="card p-3 gcol-full">
@@ -7497,11 +8129,14 @@ function AlliancePage(ctx: PageContext) {
         <div className="control-row">
           <label className="field">Name<input className="form-control" value={name} maxLength={32} onChange={event => setName(event.target.value)} /></label>
           <label className="field">Motto<input className="form-control" value={motto} maxLength={140} onChange={event => setMotto(event.target.value)} /></label>
-          <button
+          <Button
             className="btn btn-primary"
-            disabled={busy || name.trim().length < 3}
+            blocked={firstReason(
+              busy && BUSY,
+              name.trim().length < 3 && 'A crew needs a name of at least three characters.',
+            )}
             onClick={() => run(() => api.foundAlliance(name.trim(), motto.trim()))}
-          >Found it</button>
+          >Found it</Button>
         </div>
       </section>}
 
@@ -7548,33 +8183,36 @@ function AlliancePage(ctx: PageContext) {
             {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
                 does not want is how a player learns a rule by being refused. */}
             {!yours && crew.members >= crew.maxMembers && <em>Full</em>}
-            {!yours && crew.members < crew.maxMembers && crew.door === 'Open' && <button
+            {!yours && crew.members < crew.maxMembers && crew.door === 'Open' && <Button
               className="btn btn-secondary btn-sm"
-              disabled={busy}
+              blocked={busy && BUSY}
               onClick={() => run(() => api.joinAlliance(crew.id))}
-            >Join</button>}
-            {!yours && crew.members < crew.maxMembers && crew.door === 'Application' && <button
+            >Join</Button>}
+            {!yours && crew.members < crew.maxMembers && crew.door === 'Application' && <Button
               className="btn btn-secondary btn-sm"
-              disabled={busy}
+              blocked={busy && BUSY}
               onClick={() => run(() => api.applyToAlliance(crew.id))}
-            >Ask</button>}
+            >Ask</Button>}
             {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
-            {yours && !crew.yours && !hasPactWith(board, crew.id) && <button
+            {yours && !crew.yours && !hasPactWith(board, crew.id) && <Button
               className="btn btn-secondary btn-sm"
-              disabled={busy}
+              blocked={busy && BUSY}
               onClick={() => run(() => api.requestAlliancePact(crew.id))}
-            >Ally</button>}
+            >Ally</Button>}
             {/* Offered only where it could actually be pressed: your rank has to allow spending the
                 treasury, neither crew can already be in a war, and you cannot declare on people you
                 hold a truce with. Every one of those is refused by the server too - this is so nobody
                 learns the rules by being told no. */}
             {yours && !crew.yours && board.warTerms.youCanDeclare && !hasPactWith(board, crew.id)
-              && !board.war && !crew.atWarWith && <button
+              && !board.war && !crew.atWarWith && <Button
                 className="btn btn-outline-danger btn-sm text-nowrap"
-                disabled={busy || board.treasury < board.warTerms.stake}
+                blocked={firstReason(
+                  busy && BUSY,
+                  board.treasury < board.warTerms.stake && `A war stakes ${money.format(board.warTerms.stake)} and the treasury holds ${money.format(board.treasury)}.`,
+                )}
                 title={`${money.format(board.warTerms.stake)} out of the treasury, ${board.warTerms.durationHours} hours, winner takes the stake and ${board.warTerms.tributePercent}% of the losing treasury.`}
                 onClick={() => run(() => api.declareWar(crew.id))}
-              >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</button>}
+              >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</Button>}
           </div>
         </div>)}
       </div>
@@ -7626,21 +8264,21 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
         {member.rank === 'Boss' && <option value="">Boss</option>}
         {promotable.map(rank => <option key={rank} value={rank}>{rank}</option>)}
       </select>}
-      {isBoss && <button
+      {isBoss && <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => onAct(() => api.handOverAlliance(member.playerId))}
-      >Hand over</button>}
-      {canExpel && member.youOutrankThem && <button
+      >Hand over</Button>}
+      {canExpel && member.youOutrankThem && <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => onAct(() => api.expelMember(member.playerId))}
-      >Throw out</button>}
-      <button
+      >Throw out</Button>}
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => setSendOpen(value => !value)}
-      >Send</button>
+      >Send</Button>
     </div>}
     {!member.isYou && sendOpen && <div className="alliance-transfer-controls d-flex flex-wrap align-items-end gap-1">
       <label className="field mb-0">Send
@@ -7649,11 +8287,14 @@ function AllianceMemberRow({ member, board, busy, onAct }: {
         </select>
       </label>
       <label className="field mb-0">Qty<input className="form-control" type="number" min={1} value={quantity} onChange={event => setQuantity(Number(event.target.value))} /></label>
-      <button
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy || quantity < 1}
+        blocked={firstReason(
+          busy && BUSY,
+          quantity < 1 && 'Send at least one.',
+        )}
         onClick={() => onAct(() => api.sendAllianceResource(member.playerId, item, quantity))}
-      >Confirm</button>
+      >Confirm</Button>
     </div>}
   </div>
 }
@@ -7698,7 +8339,7 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
           <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
         </div>
         {ask.kind === 'Invitation'
-          ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.withdrawAllianceRequest(ask.id))}>Take it back</button>
+          ? <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.withdrawAllianceRequest(ask.id))}>Take it back</Button>
           : <small className="text-body-secondary text-sm-end">Waiting on the crew</small>}
       </div>)}
     </>}
@@ -7708,8 +8349,8 @@ function AllianceRequestsPanel({ board, busy, onAct }: {
         <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
         <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
       </div>
-      <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</button>
-      <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</button>
+      <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</Button>
+      <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</Button>
     </div>)}
   </div>
 }
@@ -7810,12 +8451,12 @@ function AlliancePactRow({ pact, ownAllianceId, busy, onAct }: {
     </div>
     {pact.yoursToAnswer
       ? <>
-        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAlliancePact(pact.id, true))}>Accept</button>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.answerAlliancePact(pact.id, false))}>Refuse</button>
+        <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAlliancePact(pact.id, true))}>Accept</Button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAlliancePact(pact.id, false))}>Refuse</Button>
       </>
-      : <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAct(() => api.cancelAlliancePact(pact.id))}>
+      : <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.cancelAlliancePact(pact.id))}>
         {pact.status === 'Active' ? 'Break pact' : 'Take it back'}
-      </button>}
+      </Button>}
   </div>
 }
 
@@ -7877,11 +8518,11 @@ function AllianceAssistRow({ call, ownAllianceId, ownPlayerId, busy, onAct }: {
         The fight is over. What you sent still counts as theirs until you take it back, and whatever did
         not survive it is gone.
       </span>
-      <button
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy}
+        blocked={busy && BUSY}
         onClick={() => onAct(() => api.recallAllianceAssist(call.id))}
-      >Take back what is left</button>
+      >Take back what is left</Button>
     </div>}
     {canAnswer && <div className="d-grid gtc-2 gtc-md-fill-120 gap-2">
       <label className="field">Thugs<input className="form-control" type="number" min={0} value={thugs} onChange={event => setThugs(Number(event.target.value))} /></label>
@@ -7889,11 +8530,14 @@ function AllianceAssistRow({ call, ownAllianceId, ownPlayerId, busy, onAct }: {
       <label className="field">Shotguns<input className="form-control" type="number" min={0} value={shotguns} onChange={event => setShotguns(Number(event.target.value))} /></label>
       <label className="field">SMGs<input className="form-control" type="number" min={0} value={smgs} onChange={event => setSmgs(Number(event.target.value))} /></label>
       <label className="field">Rifles<input className="form-control" type="number" min={0} value={rifles} onChange={event => setRifles(Number(event.target.value))} /></label>
-      <button
+      <Button
         className="btn btn-primary btn-sm align-self-end"
-        disabled={busy || thugs + pistols + shotguns + smgs + rifles < 1}
+        blocked={firstReason(
+          busy && BUSY,
+          thugs + pistols + shotguns + smgs + rifles < 1 && 'Put something in the boxes above. Help with nothing in it is not help.',
+        )}
         onClick={() => onAct(() => api.answerAllianceAssist(call.id, thugs, pistols, shotguns, smgs, rifles))}
-      >Send help</button>
+      >Send help</Button>
     </div>}
   </div>
 }
@@ -7945,30 +8589,49 @@ function AlliancePoolPanel({ board, crew, busy, onAct }: {
 
     {crew.youFounded && <div className="d-grid gtc-1 gtc-md-3 gap-2">
       <label className="field">Buy<input className="form-control" type="number" min={1} value={buy} onChange={event => setBuy(Number(event.target.value))} /></label>
-      <button
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy || buy < 1 || board.treasury < board.offensiveThugCost * buy}
+        blocked={firstReason(
+          busy && BUSY,
+          buy < 1 && 'Buy at least one.',
+          board.treasury < board.offensiveThugCost * buy && `${number.format(buy)} offensive thugs cost ${money.format(board.offensiveThugCost * buy)} and the treasury holds ${money.format(board.treasury)}.`,
+        )}
         onClick={() => onAct(() => api.buyAllianceThugs('offensive', buy))}
-      >Offensive {money.format(board.offensiveThugCost * buy)}</button>
-      <button
+      >Offensive {money.format(board.offensiveThugCost * buy)}</Button>
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy || buy < 1 || board.treasury < board.defensiveThugCost * buy}
+        blocked={firstReason(
+          busy && BUSY,
+          buy < 1 && 'Buy at least one.',
+          board.treasury < board.defensiveThugCost * buy && `${number.format(buy)} defensive thugs cost ${money.format(board.defensiveThugCost * buy)} and the treasury holds ${money.format(board.treasury)}.`,
+        )}
         onClick={() => onAct(() => api.buyAllianceThugs('defensive', buy))}
-      >Defensive {money.format(board.defensiveThugCost * buy)}</button>
+      >Defensive {money.format(board.defensiveThugCost * buy)}</Button>
     </div>}
 
     <div className="d-grid gtc-1 gtc-md-3 gap-2">
       <label className="field">Defenders<input className="form-control" type="number" min={1} value={post} onChange={event => setPost(Number(event.target.value))} /></label>
-      <button
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy || post < 1 || post > room || crew.defensiveThugs < post}
+        blocked={firstReason(
+          busy && BUSY,
+          post < 1 && 'Post at least one.',
+          post > room && (board.borrowLimit === 0
+            ? 'You can borrow nothing until you have thugs of your own.'
+            : `You may borrow ${number.format(board.borrowLimit)} and ${number.format(board.yourDefenders)} of them already stand at your place.`),
+          crew.defensiveThugs < post && `The pool has ${number.format(crew.defensiveThugs)} defensive thugs in it and you are posting ${number.format(post)}.`,
+        )}
         onClick={() => onAct(() => api.postDefenders(post))}
-      >Post to your place</button>
-      <button
+      >Post to your place</Button>
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy || post < 1 || board.yourDefenders < post}
+        blocked={firstReason(
+          busy && BUSY,
+          post < 1 && 'Send back at least one.',
+          board.yourDefenders < post && `You have ${number.format(board.yourDefenders)} of the crew's thugs standing here and you are sending back ${number.format(post)}.`,
+        )}
         onClick={() => onAct(() => api.postDefenders(-post))}
-      >Send back</button>
+      >Send back</Button>
     </div>
     <small className="d-block mt-1 text-body-tertiary small measure">
       Offensive thugs ride along on a raid and defensive ones stand at your place. Both die like anybody
@@ -8015,11 +8678,15 @@ function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
           {board.doors.map(option => <option key={option.door} value={option.door}>{option.label}</option>)}
         </select>
       </label>
-      <button
+      <Button
         className="btn btn-secondary btn-sm"
-        disabled={busy || dues < 0 || dues > maxDues}
+        blocked={firstReason(
+          busy && BUSY,
+          dues < 0 && 'Dues cannot be negative. The crew pays you, not the other way about.',
+          dues > maxDues && `Dues top out at ${maxDues}%.`,
+        )}
         onClick={() => onSave(() => api.updateAlliance({ duesPercent: dues, door }))}
-      >Save</button>
+      >Save</Button>
     </div>
     <small className="d-block mt-1 text-body-tertiary small measure">
       Dues come off the gross of every member's shift, beside the hoe cut. The ceiling is {maxDues}%.{' '}
@@ -8093,18 +8760,25 @@ function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className,
       </div>
       <div className="control-row">
         <label className="field">Amount<input className="form-control" type="number" min={1} value={bankAmount} onChange={e => setBankAmount(Number(e.target.value))} /></label>
-        <button
+        <Button
           className="btn btn-secondary"
-          disabled={busy || cannotAfford || bankAmount < 1 || bankAmount > dashboard.cash}
-          title={cannotAfford ? `A trip to the bank costs ${fare} turns.` : undefined}
-          onClick={() => void act(() => api.deposit(bankAmount))}>Deposit{fareLabel}</button>
-        <button
+          blocked={firstReason(
+            busy && BUSY,
+            cannotAfford && `A trip to the bank costs ${fare} turns and you have ${dashboard.turns}.`,
+            bankAmount < 1 && 'Bank at least a dollar.',
+            bankAmount > dashboard.cash && `You are banking ${money.format(bankAmount)} and you are carrying ${money.format(dashboard.cash)}.`,
+          )}
+          onClick={() => void act(() => api.deposit(bankAmount))}>Deposit{fareLabel}</Button>
+        <Button
           className="btn btn-secondary"
-          disabled={busy || cannotAfford || bankAmount < 1 || bankAmount > dashboard.bankCash || bankAmount > safeRoom}
-          title={cannotAfford
-            ? `A trip to the bank costs ${fare} turns.`
-            : bankAmount > safeRoom ? `Your safe only has room for ${money.format(safeRoom)} more.` : undefined}
-          onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw{fareLabel}</button>
+          blocked={firstReason(
+            busy && BUSY,
+            cannotAfford && `A trip to the bank costs ${fare} turns and you have ${dashboard.turns}.`,
+            bankAmount < 1 && 'Draw out at least a dollar.',
+            bankAmount > dashboard.bankCash && `You are drawing ${money.format(bankAmount)} and the bank holds ${money.format(dashboard.bankCash)}.`,
+            bankAmount > safeRoom && `Your safe only has room for ${money.format(safeRoom)} more.`,
+          )}
+          onClick={() => void act(() => api.withdraw(bankAmount))}>Withdraw{fareLabel}</Button>
       </div>
     </div>
   </section>
@@ -8236,7 +8910,7 @@ function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
         <label className="field">Thugs<input className="form-control" type="number" min={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>
       </>}
 
-      <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onRun(directive())}>Do it</button>
+      <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => onRun(directive())}>Do it</Button>
     </div>
   </div>
 }
@@ -8289,13 +8963,16 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
         timing takes effect on the next tick without one.
       </p>
       <div className="control-row">
-        <button
+        <Button
           className={auto.enabled ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
-          disabled={busy || overview.botAccounts < 1}
+          blocked={firstReason(
+            busy && WORKING,
+            overview.botAccounts < 1 && 'There are no rivals for the loop to run. Seed some below first.',
+          )}
           onClick={() => setBotAutomation(!auto.enabled)}
         >
           {auto.enabled ? 'Turn off' : 'Turn on'}
-        </button>
+        </Button>
         <label className="field">Tick seconds<input className="form-control"
           type="number"
           min={auto.minTickSeconds}
@@ -8310,42 +8987,52 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
           value={roundsPerTick}
           onChange={e => setRoundsPerTick(Number(e.target.value))}
         /></label>
-        <button
+        <Button
           className="btn btn-secondary btn-sm"
-          disabled={busy || !timingChanged || !timingValid}
+          blocked={firstReason(
+            busy && WORKING,
+            !timingChanged && 'The timing is already what is saved.',
+            !timingValid && `Tick has to be ${auto.minTickSeconds}-${auto.maxTickSeconds}s and rounds ${auto.minRoundsPerTick}-${auto.maxRoundsPerTick}.`,
+          )}
           onClick={() => setBotAutomation(auto.enabled, { tickSeconds, roundsPerTick })}
         >
           Save timing
-        </button>
-        <button
+        </Button>
+        <Button
           className="btn btn-secondary btn-sm"
-          disabled={busy || atDefaults}
+          blocked={firstReason(
+            busy && WORKING,
+            atDefaults && 'The timing is already at the defaults.',
+          )}
           onClick={() => setBotAutomation(auto.enabled, { resetTiming: true })}
         >
           Reset to {auto.defaultTickSeconds}s / {auto.defaultRoundsPerTick}
-        </button>
+        </Button>
       </div>
-      {!timingValid && <p className="text-body-tertiary small mt-3">
-        Tick must be {auto.minTickSeconds}-{auto.maxTickSeconds}s and rounds {auto.minRoundsPerTick}-{auto.maxRoundsPerTick}.
-      </p>}
-      {overview.botAccounts < 1 && <p className="text-body-tertiary small mt-3">Seed some rivals below before turning the loop on.</p>}
     </section>
 
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Seed and Run</h2><span>{number.format(overview.botAccounts)} rivals exist</span></div>
       <div className="control-row">
         <label className="field">Seed count<input className="form-control" type="number" min={1} max={15} value={seedCount} onChange={e => setSeedCount(Number(e.target.value))} /></label>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setSeedCount(5)}>5</button>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setSeedCount(10)}>10</button>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setSeedCount(15)}>15</button>
-        <button className="btn btn-primary btn-sm" disabled={busy || seedCount < 1 || seedCount > 15} onClick={() => seedBots(seedCount)}>Seed rivals</button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setSeedCount(5)}>5</Button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setSeedCount(10)}>10</Button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setSeedCount(15)}>15</Button>
+        <Button className="btn btn-primary btn-sm" blocked={firstReason(
+          busy && WORKING,
+          (seedCount < 1 || seedCount > 15) && 'Seed between 1 and 15 rivals at a time.',
+        )} onClick={() => seedBots(seedCount)}>Seed rivals</Button>
       </div>
       <div className="control-row">
         <label className="field">Rounds<input className="form-control" type="number" min={1} max={10} value={runRounds} onChange={e => setRunRounds(Number(e.target.value))} /></label>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRunRounds(1)}>1</button>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRunRounds(3)}>3</button>
-        <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setRunRounds(10)}>10</button>
-        <button className="btn btn-primary btn-sm" disabled={busy || overview.botAccounts < 1 || runRounds < 1 || runRounds > 10} onClick={() => runBots(runRounds)}>Run now</button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setRunRounds(1)}>1</Button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setRunRounds(3)}>3</Button>
+        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setRunRounds(10)}>10</Button>
+        <Button className="btn btn-primary btn-sm" blocked={firstReason(
+          busy && WORKING,
+          overview.botAccounts < 1 && 'There are no rivals to run. Seed some first.',
+          (runRounds < 1 || runRounds > 10) && 'Run between 1 and 10 rounds at a time.',
+        )} onClick={() => runBots(runRounds)}>Run now</Button>
       </div>
     </section>
 
@@ -8364,28 +9051,31 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
             <td>{bot.habits}</td>
             <td>{bot.isPaused ? 'Paused' : botPresence(bot)}</td>
             <td className="d-flex gap-1">
-              <button
+              <Button
                 className="btn btn-secondary btn-sm"
-                disabled={working === bot.playerId}
+                blocked={working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`}
                 onClick={() => void rivalAction(bot.playerId, () => opsApi.setBotPaused(bot.playerId, !bot.isPaused))}
               >
                 {bot.isPaused ? 'Resume' : 'Pause'}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="btn btn-secondary btn-sm"
-                disabled={working === bot.playerId || bot.isPaused}
-                title={bot.isPaused ? 'Resume them first' : 'Act now, ignoring the cooldown'}
+                blocked={firstReason(
+                  working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`,
+                  bot.isPaused && `${bot.name} is paused. Resume them first.`,
+                )}
+                title="Act now, ignoring the cooldown"
                 onClick={() => void rivalAction(bot.playerId, () => opsApi.actNow(bot.playerId))}
               >
                 Act now
-              </button>
-              <button
+              </Button>
+              <Button
                 className="btn btn-secondary btn-sm"
-                disabled={working === bot.playerId}
+                blocked={working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`}
                 onClick={() => setDirecting(id => id === bot.playerId ? null : bot.playerId)}
               >
                 {directing === bot.playerId ? 'Close' : 'Direct'}
-              </button>
+              </Button>
             </td>
           </tr>)}
         </tbody>
@@ -8652,13 +9342,14 @@ function formatBreakdownValue(key: string, value: unknown) {
   return String(value)
 }
 
-const ACCOUNT_TABS = ['profile', 'display', 'signin', 'privacy', 'alerts', 'security'] as const
+const ACCOUNT_TABS = ['profile', 'display', 'signin', 'invites', 'privacy', 'alerts', 'security'] as const
 type AccountTab = typeof ACCOUNT_TABS[number]
 
 const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = {
   profile: { label: 'Profile', kicker: 'Who you are here' },
   display: { label: 'Display', kicker: 'How this device shows it' },
   signin: { label: 'Sign-in', kicker: 'Email, password, Discord' },
+  invites: { label: 'Invites', kicker: 'Beta keys you hold' },
   privacy: { label: 'Privacy', kicker: 'Discord and messages' },
   alerts: { label: 'Alerts', kicker: 'Email and sync' },
   security: { label: 'Security', kicker: 'Sessions and last doors' },
@@ -8744,6 +9435,99 @@ function AccountDisplayPanel() {
       table colour is compiled into the stylesheet as a dark value, so light means authoring a second
       palette rather than flipping one.
     </p>
+  </section>
+}
+
+function AccountInvitesPanel({ busy }: { busy: boolean }) {
+  const [keys, setKeys] = useState<AccountInviteKey[]>([])
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(true)
+  const available = keys.filter(key => key.status === 'Available' && key.usesLeft > 0)
+
+  const load = async () => {
+    setLoading(true); setError('')
+    try {
+      const board = await api.invites()
+      setKeys(board.keys)
+    } catch (e) { setError((e as Error).message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { void load() }, [])
+
+  const copy = async (value: string, said: string) => {
+    try {
+      await copyToClipboard(value)
+      setMessage(said)
+    } catch { setError('Could not copy to the clipboard.') }
+  }
+
+  return <section className="card p-3 gcol-xl-full">
+    <div className="panel-title">
+      <h2>Invites</h2>
+      <span>{loading ? 'Reading' : `${available.length} available`}</span>
+    </div>
+    {(error || message) && <div className="d-grid gap-2 mb-3">
+      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
+      {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
+    </div>}
+
+    <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+      <div className="tnum d-grid gtc-3 gap-2">
+        <AdminMetric label="Total" value={number.format(keys.length)} />
+        <AdminMetric label="Available" value={number.format(available.length)} />
+        <AdminMetric label="Used" value={number.format(keys.filter(key => key.status === 'Used').length)} />
+      </div>
+      <Button
+        className="btn btn-outline-primary"
+        type="button"
+        blocked={firstReason(
+          busy && BUSY,
+          available.length === 0 && 'You have no unused invites left to copy.',
+        )}
+        onClick={() => void copy(available.map(key => key.displayCode).join('\n'), 'Available invites copied.')}
+      >Copy Available</Button>
+    </div>
+
+    <div className="table-responsive">
+      <table className="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Status</th>
+            <th>Uses</th>
+            <th>Redeemed by</th>
+            <th>Dates</th>
+            <th className="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {!loading && keys.length === 0 && <tr>
+            <td colSpan={6} className="text-body-tertiary">No invites have been issued to this account.</td>
+          </tr>}
+          {loading && <tr><td colSpan={6} className="text-body-tertiary">Reading your invites.</td></tr>}
+          {keys.map(key => <tr key={key.id}>
+            <td className="tnum">
+              <strong>{key.displayCode}</strong>
+              {key.label && <small className="d-block text-body-tertiary text-truncate">{key.label}</small>}
+            </td>
+            <td><span className={`badge ${betaKeyStatusClass(key.status)}`}>{key.status}</span></td>
+            <td className="tnum">{key.uses} / {key.maxUses}<small className="d-block text-body-tertiary">{key.usesLeft} left</small></td>
+            <td className="small">{key.redeemedByPlayerName ?? 'Not redeemed'}</td>
+            <td className="small">
+              <span className="d-block">Made {compactDateTime(key.createdAtUtc)}</span>
+              <span className="d-block text-body-tertiary">Redeemed {compactDateTime(key.redeemedAtUtc)}</span>
+              {key.expiresAtUtc && <span className="d-block text-body-tertiary">Expires {compactDateTime(key.expiresAtUtc)}</span>}
+            </td>
+            <td className="text-end">
+              <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => void copy(key.displayCode, 'Invite copied.')}>
+                Copy
+              </button>
+            </td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
   </section>
 }
 
@@ -8891,6 +9675,7 @@ function AccountPage(ctx: PageContext) {
         <AccountPasswordPanel {...panel} />
         <AccountDiscordPanel {...panel} />
       </>}
+      {tab === 'invites' && <AccountInvitesPanel busy={busy} />}
       {tab === 'display' && <AccountDisplayPanel />}
       {tab === 'privacy' && <AccountPrivacyPanel {...panel} />}
       {tab === 'alerts' && <AccountAlertsPanel {...panel} />}
@@ -9060,18 +9845,21 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
           <div className={`profile-banner ${bannerClass(banner)} d-flex align-items-end p-2`}>
             <strong className={`${profileAccentClass(accent)} text-truncate`}>{account.playerName}</strong>
           </div>
-          <button
+          <Button
             className="btn btn-primary"
-            disabled={busy
-              || (tagline.trim() === (account.profileTagline ?? '')
+            blocked={firstReason(
+              busy && BUSY,
+              tagline.trim() === (account.profileTagline ?? '')
                 && pronouns.trim() === (account.profilePronouns ?? '')
                 && location.trim() === (account.profileLocation ?? '')
                 && accent === account.profileAccent
                 && banner === account.profileBanner
-                && featured === (account.featuredTitle ?? ''))}
+                && featured === (account.featuredTitle ?? '')
+                && 'Nothing on the card has been changed.',
+            )}
           >
             {busy ? 'Working...' : 'Save Profile'}
-          </button>
+          </Button>
         </form>
 
         <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={uploadAvatar}>
@@ -9088,25 +9876,35 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
             <small className="form-text">PNG, JPG, GIF, or WebP. 1 MB max.</small>
           </label>
           <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Upload and Use'}</button>
-            <button
+            <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Upload and Use'}</Button>
+            <Button
               className="btn btn-secondary"
               type="button"
-              disabled={busy || account.avatarSource === 'Custom' || !account.customAvatarUrl}
+              blocked={firstReason(
+                busy && BUSY,
+                !account.customAvatarUrl && 'You have not uploaded a picture yet.',
+                account.avatarSource === 'Custom' && 'Your uploaded picture is the one already in use.',
+              )}
               onClick={() => void run(() => api.setAvatarSource('Custom'), 'Custom avatar selected.')}
-            >Use Custom</button>
-            <button
+            >Use Custom</Button>
+            <Button
               className="btn btn-outline-secondary"
               type="button"
-              disabled={busy || account.avatarSource === 'None'}
+              blocked={firstReason(
+                busy && BUSY,
+                account.avatarSource === 'None' && 'You are already on the default picture.',
+              )}
               onClick={() => void run(() => api.setAvatarSource('None'), 'Default avatar selected.')}
-            >Use Default</button>
-            <button
+            >Use Default</Button>
+            <Button
               className="btn btn-outline-danger"
               type="button"
-              disabled={busy || !account.customAvatarUrl}
+              blocked={firstReason(
+                busy && BUSY,
+                !account.customAvatarUrl && 'There is no uploaded picture to remove.',
+              )}
               onClick={() => void run(() => api.deleteCustomAvatar(), 'Custom avatar removed.')}
-            >Remove Custom</button>
+            >Remove Custom</Button>
           </div>
         </form>
       </div>
@@ -9304,19 +10102,22 @@ function AccountEmailPanel({ account, busy, run, email, setEmail }: AccountPanel
             required
           />
         </label>
-        <button className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : 'Confirm'}</button>
+        <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Confirm'}</Button>
       </form>}
 
-      <button
+      <Button
         className="btn btn-secondary"
         type="button"
-        disabled={busy || resendIn > 0}
+        blocked={firstReason(
+          busy && BUSY,
+          resendIn > 0 && `A code went out already. You can ask for another in ${countdown(resendIn)}.`,
+        )}
         onClick={() => void run(() => api.sendEmailCode(), 'A new code is on its way.')}
       >
         {resendIn > 0
           ? `Send another in ${countdown(resendIn)}`
           : pending ? 'Send a new code' : 'Send a code'}
-      </button>
+      </Button>
     </div>}
 
     {account.emailVerified && account.emailVerifiedAtUtc && <p className="text-body-tertiary small">
@@ -9346,13 +10147,13 @@ function AccountEmailPanel({ account, busy, run, email, setEmail }: AccountPanel
         says it first. A refusal a player could have seen coming is a worse refusal than one that
         explains itself before they click.
       */}
-      {removingLastWayBack && <div className="alert alert-warning mb-0">
-        This address is the only way back into your account if you forget your password. Connect Discord
-        on this page and you can remove it.
-      </div>}
-      <button className="btn btn-primary" disabled={busy || !emailChanged || removingLastWayBack}>
+      <Button className="btn btn-primary" blocked={firstReason(
+        busy && BUSY,
+        !emailChanged && 'That is the address already on the account.',
+        removingLastWayBack && 'This address is the only way back into your account if you forget your password. Connect Discord on this page and you can remove it.',
+      )}>
         {busy ? 'Working...' : email.trim() ? 'Save Email' : 'Remove Email'}
-      </button>
+      </Button>
     </form>
   </section>
 }
@@ -9393,9 +10194,9 @@ function AccountPasswordPanel({ account, busy, run, fail }: AccountPanel) {
         New password again
         <input className="form-control" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required />
       </label>
-      <button className="btn btn-primary" disabled={busy}>
+      <Button className="btn btn-primary" blocked={busy && BUSY}>
         {busy ? 'Working...' : account.hasPassword ? 'Change Password' : 'Set Password'}
-      </button>
+      </Button>
     </form>
   </section>
 }
@@ -9425,14 +10226,14 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
         </div>}
         {!account.discordLinkRewardClaimedAtUtc && <div className="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2">
           <span>Claim your first-link reward: $10,000, 25 condoms, 25 beer, and the Discord Connected title.</span>
-          <button
+          <Button
             className="btn btn-primary btn-sm"
             type="button"
-            disabled={busy}
+            blocked={busy && BUSY}
             onClick={() => void run(() => api.claimDiscordLinkReward(), 'Discord link reward claimed.')}
           >
             {busy ? 'Working...' : 'Claim reward'}
-          </button>
+          </Button>
         </div>}
         <div className="border rounded bg-body-secondary p-3 mb-3 d-grid gap-3">
           <div className="d-flex align-items-center gap-3 min-w-0">
@@ -9458,22 +10259,29 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
             </div>
           </div>
           <div className="d-flex flex-wrap gap-2">
-            <button
+            <Button
               className="btn btn-secondary"
               type="button"
-              disabled={busy || !account.discordAvatarUrl || account.avatarSource === 'Discord'}
+              blocked={firstReason(
+                busy && BUSY,
+                !account.discordAvatarUrl && 'Discord has no custom picture for you to use.',
+                account.avatarSource === 'Discord' && 'Your Discord picture is the one already in use.',
+              )}
               onClick={() => void run(() => api.setAvatarSource('Discord'), 'Discord avatar selected.')}
             >
               Use Discord avatar
-            </button>
-            <button
+            </Button>
+            <Button
               className="btn btn-outline-secondary"
               type="button"
-              disabled={busy || account.avatarSource === 'None'}
+              blocked={firstReason(
+                busy && BUSY,
+                account.avatarSource === 'None' && 'You are already on the default picture.',
+              )}
               onClick={() => void run(() => api.setAvatarSource('None'), 'Default avatar selected.')}
             >
               Use default
-            </button>
+            </Button>
             <a className="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href={discordStartUrl()}>
               <i className="bi bi-arrow-repeat" aria-hidden="true" />
               Refresh from Discord
@@ -9501,14 +10309,17 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
               />
               <small className="form-text">Taking away a way in costs the password, as changing your address does.</small>
             </label>}
-            <button
+            <Button
               className="btn btn-outline-danger"
               type="button"
-              disabled={busy || (account.hasPassword && password.length === 0)}
+              blocked={firstReason(
+                busy && BUSY,
+                account.hasPassword && password.length === 0 && 'Type your password above. Taking away a way in costs it.',
+              )}
               onClick={() => void run(
                 async () => { const a = await api.disconnectDiscord(password); setPassword(''); return a },
                 'Discord disconnected.')}
-            >Disconnect Discord</button>
+            >Disconnect Discord</Button>
           </div>}
       </>
       : account.discordConfigured
@@ -9611,7 +10422,10 @@ function AccountPrivacyPanel({ account, busy, run }: AccountPanel) {
           city and your worth are on the leaderboard either way; this is the part that is not.
         </small>
       </label>
-      <button className="btn btn-primary" disabled={busy || !changed}>{busy ? 'Working...' : 'Save Privacy'}</button>
+      <Button className="btn btn-primary" blocked={firstReason(
+        busy && BUSY,
+        !changed && 'Nothing here has been changed.',
+      )}>{busy ? 'Working...' : 'Save Privacy'}</Button>
     </form>
   </section>
 }
@@ -9812,7 +10626,10 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
         </small>
       </div>
 
-      <button className="btn btn-primary" disabled={busy || !changed}>{busy ? 'Working...' : 'Save Alerts'}</button>
+      <Button className="btn btn-primary" blocked={firstReason(
+        busy && BUSY,
+        !changed && 'Nothing here has been changed.',
+      )}>{busy ? 'Working...' : 'Save Alerts'}</Button>
     </form>
   </section>
 }
@@ -9914,23 +10731,23 @@ function SessionsCard({ account, busy, run }: { account: Account, busy: boolean,
             {session.isCurrent ? '' : ` / signed in ${new Date(session.createdAtUtc).toLocaleDateString()}`}
           </small>
         </div>
-        <button
+        <Button
           className="btn btn-outline-danger btn-sm"
           type="button"
-          disabled={busy}
+          blocked={busy && BUSY}
           onClick={() => void revokeOne(session)}
-        >{session.isCurrent ? 'Sign out here' : 'End it'}</button>
+        >{session.isCurrent ? 'Sign out here' : 'End it'}</Button>
       </div>)}
     </div>}
 
-    <button
+    <Button
       className="btn btn-outline-danger"
       type="button"
-      disabled={busy}
+      blocked={busy && BUSY}
       onClick={() => void run(
         async () => { const a = await api.revokeSessions(password); setPassword(''); await load(); return a },
         'Every other session has been signed out.')}
-    >{busy ? 'Working...' : 'Sign out everywhere else'}</button>
+    >{busy ? 'Working...' : 'Sign out everywhere else'}</Button>
   </section>
 }
 
@@ -10007,12 +10824,16 @@ function RecoveryCodesCard({ account, busy }: { account: Account, busy: boolean 
         </label>}
         {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
         <div>
-          <button
+          <Button
             className="btn btn-outline-primary"
             type="button"
-            disabled={busy || working || (account.hasPassword && password.length === 0)}
+            blocked={firstReason(
+              busy && BUSY,
+              working && 'Your codes are being made now.',
+              account.hasPassword && password.length === 0 && 'Type your password above first.',
+            )}
             onClick={() => void issue()}
-          >{working ? 'Working...' : remaining ? 'Make a new set' : 'Make my codes'}</button>
+          >{working ? 'Working...' : remaining ? 'Make a new set' : 'Make my codes'}</Button>
         </div>
         {remaining !== null && remaining > 0 && <small className="text-body-tertiary">
           Making a new set voids the old one, so any sheet you already have stops working.
@@ -10125,15 +10946,18 @@ function InventoryCard({ name, count, note }: { name: string, count: number, not
   </div>
 }
 
-function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire = true, canFire, onQuantity, onHire, onFire, note, trims = [], firePenalty = 0, maxFirePenalty = 0 }: {
+// hireBlocked and fireBlocked are sentences rather than flags, because the two callers stop these
+// buttons for different reasons - morale on one side, the last pimp on the other - and only the caller
+// knows which. A boolean here could only ever be answered with a shrug.
+function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, hireBlocked, fireBlocked, onQuantity, onHire, onFire, note, trims = [], firePenalty = 0, maxFirePenalty = 0 }: {
   label: string
   owned: number
   quantity: number
   hireCost: number
   cash: number
   busy: boolean
-  canHire?: boolean
-  canFire: boolean
+  hireBlocked?: Blocked
+  fireBlocked?: Blocked
   onQuantity: (quantity: number) => void
   onHire: () => void
   onFire: () => void
@@ -10154,34 +10978,43 @@ function CrewManageRow({ label, owned, quantity, hireCost, cash, busy, canHire =
       <strong>{label}</strong>
       <span className="text-body-secondary">{number.format(owned)} owned | {money.format(hireCost)} each | {note}</span>
       {worthTrimming.length > 0 && <span className="d-flex flex-wrap gap-1 column-gap-3 mt-1 small text-body-tertiary">
-        {worthTrimming.map(trim => <button
+        {worthTrimming.map(trim => <Button
           type="button"
           key={trim.label}
           className="btn btn-link"
-          disabled={busy}
+          blocked={busy && BUSY}
           onClick={() => onQuantity(trim.cut)}
         >
           let {number.format(trim.cut)} go to {trim.label}
-        </button>)}
+        </Button>)}
       </span>}
       {firePenalty > 0 && quantity > 0 && <span className="d-flex flex-wrap gap-1 column-gap-3 mt-1 small text-body-tertiary">
         Firing {number.format(quantity)} costs {moraleCost.toFixed(0)}% morale{moraleCost >= (maxFirePenalty || Infinity) ? ', the most a single cut can' : ''}.
       </span>}
     </div>
     <input className="form-control" aria-label={`${label} quantity`} type="number" min={1} max={1000} value={quantity} onChange={e => onQuantity(Number(e.target.value))} />
-    <button className="btn btn-primary btn-sm" disabled={busy || quantity < 1 || !canHire || cash < totalCost} onClick={onHire}>Hire</button>
-    <button className="btn btn-secondary btn-sm" disabled={busy || quantity < 1 || !canFire} onClick={onFire}>Fire</button>
+    <Button className="btn btn-primary btn-sm" blocked={firstReason(
+      busy && BUSY,
+      quantity < 1 && 'Take on at least one.',
+      hireBlocked,
+      cash < totalCost && `${number.format(quantity)} ${label.toLowerCase()} cost ${money.format(totalCost)} and you are carrying ${money.format(cash)}.`,
+    )} onClick={onHire}>Hire</Button>
+    <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+      busy && BUSY,
+      quantity < 1 && 'Let at least one go.',
+      fireBlocked,
+    )} onClick={onFire}>Fire</Button>
   </div>
 }
 
-function SellRow({ name, owned, price, quantity, onQuantity, onSell, disabled }: {
+function SellRow({ name, owned, price, quantity, onQuantity, onSell, blocked }: {
   name: string
   owned: number
   price: number
   quantity: number
   onQuantity: (quantity: number) => void
   onSell: () => void
-  disabled: boolean
+  blocked?: Blocked
 }) {
   return <div className="sell-row d-grid gap-2 align-items-center border-top pt-2">
     <div className="d-grid gap-1">
@@ -10189,7 +11022,11 @@ function SellRow({ name, owned, price, quantity, onQuantity, onSell, disabled }:
       <span className="text-body-secondary">{number.format(owned)} owned | {money.format(price)} each</span>
     </div>
     <input className="form-control" type="number" min={1} max={Math.max(1, owned)} value={quantity} onChange={e => onQuantity(Number(e.target.value))} />
-    <button className="btn btn-secondary btn-sm" disabled={disabled || quantity < 1 || quantity > owned} onClick={onSell}>Sell</button>
+    <Button className="btn btn-secondary btn-sm" blocked={firstReason(
+      blocked,
+      quantity < 1 && 'Sell at least one.',
+      quantity > owned && `You are selling ${number.format(quantity)} and you have ${number.format(owned)}.`,
+    )} onClick={onSell}>Sell</Button>
   </div>
 }
 

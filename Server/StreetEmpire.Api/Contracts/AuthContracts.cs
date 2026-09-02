@@ -8,7 +8,13 @@ namespace StreetEmpire.Api.Contracts;
 /// Every account therefore has at least one identity that can be recovered, which is the whole point
 /// of asking.
 /// </param>
-public sealed record RegisterRequest(string? Username, string? Password, string? PlayerName, string? City = null, string? Email = null);
+public sealed record RegisterRequest(
+    string? Username,
+    string? Password,
+    string? PlayerName,
+    string? City = null,
+    string? Email = null,
+    string? BetaKey = null);
 
 /// <param name="Username">A username or an email address. The field kept its name because the login
 /// box has always sent it, and both are looked up the same way.</param>
@@ -16,7 +22,27 @@ public sealed record LoginRequest(string? Username, string? Password);
 public sealed record AuthResponse(Guid PlayerId, string PlayerName, string Username);
 
 /// <summary>Which ways in this server can actually offer, so the login box only shows doors that open.</summary>
-public sealed record AuthProvidersResponse(bool Discord);
+public sealed record AuthProvidersResponse(bool Discord, bool BetaKeyRequired);
+
+public sealed record BetaKeyCheckResponse(bool Required, bool Valid, string? Error);
+
+public sealed record AccountInviteKeyResponse(
+    Guid Id,
+    string Code,
+    string DisplayCode,
+    string? Label,
+    int MaxUses,
+    int Uses,
+    int UsesLeft,
+    string Status,
+    Guid? RedeemedByPlayerId,
+    string? RedeemedByPlayerName,
+    DateTime? RedeemedAtUtc,
+    DateTime? ExpiresAtUtc,
+    DateTime? RevokedAtUtc,
+    DateTime CreatedAtUtc);
+
+public sealed record AccountInvitesResponse(IReadOnlyList<AccountInviteKeyResponse> Keys);
 
 /// <summary>
 /// What the account page shows. The password is described rather than sent: whether one exists is the
@@ -172,7 +198,12 @@ public sealed record ChangeNotificationPreferencesRequest(
 /// the one moment the player is already filling in a form, so it is the cheapest moment to offer them a
 /// second way back. Confirmed the usual way, by a code, like any other address.
 /// </param>
-public sealed record CompleteDiscordSignUpRequest(string? PlayerName, string? City, string? Username, string? Email = null);
+public sealed record CompleteDiscordSignUpRequest(
+    string? PlayerName,
+    string? City,
+    string? Username,
+    string? Email = null,
+    string? BetaKey = null);
 
 /// <summary>
 /// Handed to the client when a Discord login turns out to belong to nobody yet. Carries the handle so

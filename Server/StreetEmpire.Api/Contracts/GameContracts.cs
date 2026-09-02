@@ -270,6 +270,8 @@ public sealed record SeasonResponse(
     long ChampionHeadStart,
     long TopThreeHeadStart,
     long TopTenHeadStart,
+    /// <summary>Live table for this season, ranked by raid take.</summary>
+    IReadOnlyList<SeasonStandingResponse> CurrentStandings,
     /// <summary>Every season this player has finished, newest first.</summary>
     IReadOnlyList<SeasonHonourResponse> Honours,
     /// <summary>How the last one finished, top first. Empty in a world on its first season.</summary>
@@ -288,6 +290,10 @@ public sealed record SeasonHonourResponse(
     string Name,
     int Rank,
     long NetWorth,
+    long RaidScore,
+    long RaidCashTaken,
+    int RaidWeedTaken,
+    int RaidCokeTaken,
     string? Honour,
     DateTime? EndedAtUtc);
 
@@ -297,6 +303,10 @@ public sealed record SeasonStandingResponse(
     string City,
     string? CrewName,
     long NetWorth,
+    long RaidScore,
+    long RaidCashTaken,
+    int RaidWeedTaken,
+    int RaidCokeTaken,
     string? Honour);
 
 /// <summary>
@@ -319,9 +329,17 @@ public sealed record SeasonArchiveEntryResponse(
     string? ChampionCity,
     string? ChampionCrewName,
     long ChampionNetWorth,
+    long ChampionRaidScore,
+    long ChampionRaidCashTaken,
+    int ChampionRaidWeedTaken,
+    int ChampionRaidCokeTaken,
     int? YourRank,
     string? YourHonour,
-    long? YourNetWorth);
+    long? YourNetWorth,
+    long? YourRaidScore,
+    long? YourRaidCashTaken,
+    int? YourRaidWeedTaken,
+    int? YourRaidCokeTaken);
 
 /// <summary>
 /// How one season finished, in full - or as much of it as a page can hold.
@@ -725,6 +743,9 @@ public sealed record CrewReportResponse(
     int UncoveredThugs,
     int CondomsNeededForMaxStreetAction,
     int BeerNeededForMaxStreetAction,
+    int CondomsNeededPerHour,
+    int BeerNeededPerHour,
+    int DrugsNeededPerHour,
     /// <summary>
     /// How much crew a completely full storage room can carry through a full-length action. This is a
     /// harder limit than what a player currently holds: past it they cannot buy their way out, and
@@ -1103,6 +1124,12 @@ public sealed record MuleQuoteResponse(
     long ProjectedGross,
     long ProjectedSpend,
     long ProjectedProfit,
+    int SupplyTurns,
+    int CondomsNeeded,
+    int CondomsUsed,
+    int BeerNeeded,
+    int BeerUsed,
+    int MoonshineUsed,
     int BustChancePercent,
     int DefectChancePercent);
 
@@ -1550,6 +1577,24 @@ public sealed record WorldNewsResponse(
     IReadOnlyList<WorldHeadlineResponse> Headlines,
     IReadOnlyList<WorldNewsEntryResponse> Feed);
 
+public sealed record PublicStatsResponse(
+    DateTime GeneratedAtUtc,
+    int Players,
+    int Cities,
+    int Alliances,
+    int TerritoriesHeld,
+    int ActiveMissions,
+    long TotalNetWorth,
+    IReadOnlyList<PublicLeaderResponse> Leaders,
+    IReadOnlyList<WorldHeadlineResponse> Headlines);
+
+public sealed record PublicLeaderResponse(
+    int Rank,
+    string PlayerName,
+    string City,
+    long NetWorth,
+    int Crew);
+
 /// <summary>A standing fact about the world rather than a single event: who leads, who was hit hardest.</summary>
 public sealed record WorldHeadlineResponse(
     string Kind,
@@ -1631,6 +1676,38 @@ public sealed record AdminEnforcementRequest(string? Action, DateTime? UntilUtc,
 public sealed record AdminSetAdminRequest(bool IsAdmin, string? Reason);
 public sealed record AdminRenameRequest(string? Name, string? Reason);
 public sealed record AdminReasonRequest(string? Reason);
+
+public sealed record AdminBetaKeyResponse(
+    Guid Id,
+    string Code,
+    string DisplayCode,
+    string? Label,
+    int MaxUses,
+    int Uses,
+    int UsesLeft,
+    string Status,
+    Guid? IssuedToAccountId,
+    Guid? IssuedToPlayerId,
+    string? IssuedToPlayerName,
+    string? IssuedToUsername,
+    Guid? RedeemedByAccountId,
+    Guid? RedeemedByPlayerId,
+    string? RedeemedByPlayerName,
+    string? RedeemedByUsername,
+    DateTime? RedeemedAtUtc,
+    DateTime? ExpiresAtUtc,
+    DateTime? RevokedAtUtc,
+    DateTime CreatedAtUtc);
+
+public sealed record AdminBetaKeysResponse(int Total, IReadOnlyList<AdminBetaKeyResponse> Keys);
+
+public sealed record AdminMintBetaKeysRequest(
+    int Count,
+    string? Label,
+    int? MaxUses,
+    DateTime? ExpiresAtUtc,
+    Guid? IssuedToAccountId,
+    string? Reason);
 
 /// <param name="Email">
 /// The address on the account, and whether anybody proved it. A moderator looking at a returning

@@ -479,6 +479,7 @@ internal static class GameEndpoints
             var season = await seasons.CurrentAsync(now, ct);
             var config = gameOptions.Value.Seasons;
             var honours = await seasons.HonoursForAsync(player.Id, ct);
+            var currentTable = await seasons.CurrentTableForAsync(season, 50, ct);
             var previous = (await seasons.PastSeasonsAsync(1, ct)).FirstOrDefault();
             var table = previous is null
                 ? new List<SeasonResult>()
@@ -495,14 +496,19 @@ internal static class GameEndpoints
                 config.ChampionHeadStart,
                 config.TopThreeHeadStart,
                 config.TopTenHeadStart,
+                currentTable.Select(StandingFromLive).ToList(),
                 honours.Select(x => new SeasonHonourResponse(
                     x.Season.Number,
                     x.Season.Name,
                     x.Rank,
                     x.NetWorth,
+                    x.RaidScore,
+                    x.RaidCashTaken,
+                    x.RaidWeedTaken,
+                    x.RaidCokeTaken,
                     x.Honour,
                     x.Season.EndedAtUtc)).ToList(),
-                table.Select(Standing).ToList(),
+                table.Select(StandingFromResult).ToList(),
                 previous?.Name));
         }).RequireAuthorization();
 
@@ -550,9 +556,17 @@ internal static class GameEndpoints
                     champion?.City,
                     champion?.CrewName,
                     champion?.NetWorth ?? 0,
+                    champion?.RaidScore ?? 0,
+                    champion?.RaidCashTaken ?? 0,
+                    champion?.RaidWeedTaken ?? 0,
+                    champion?.RaidCokeTaken ?? 0,
                     yours?.Rank,
                     yours?.Honour,
-                    yours?.NetWorth);
+                    yours?.NetWorth,
+                    yours?.RaidScore,
+                    yours?.RaidCashTaken,
+                    yours?.RaidWeedTaken,
+                    yours?.RaidCokeTaken);
             }).ToList());
         }).RequireAuthorization();
 
@@ -590,8 +604,8 @@ internal static class GameEndpoints
                 season.EndedAtUtc,
                 running,
                 running ? await seasons.PlayersNowAsync(ct) : season.Players,
-                table.Select(Standing).ToList(),
-                yours is null ? null : Standing(yours)));
+                table.Select(StandingFromResult).ToList(),
+                yours is null ? null : StandingFromResult(yours)));
         }).RequireAuthorization();
 
 
@@ -924,8 +938,31 @@ internal static class GameEndpoints
 
         // One finish, as the shelf and the table both show it. Shared so the dashboard panel and the
         // archive can never disagree about what a row of a season's table is.
-        static SeasonStandingResponse Standing(SeasonResult result)
-            => new(result.Rank, result.PlayerName, result.City, result.CrewName, result.NetWorth, result.Honour);
+        static SeasonStandingResponse StandingFromResult(SeasonResult result)
+            => new(
+                result.Rank,
+                result.PlayerName,
+                result.City,
+                result.CrewName,
+                result.NetWorth,
+                result.RaidScore,
+                result.RaidCashTaken,
+                result.RaidWeedTaken,
+                result.RaidCokeTaken,
+                result.Honour);
+
+        static SeasonStandingResponse StandingFromLive(SeasonStanding result)
+            => new(
+                result.Rank,
+                result.PlayerName,
+                result.City,
+                result.CrewName,
+                result.NetWorth,
+                result.RaidScore,
+                result.RaidCashTaken,
+                result.RaidWeedTaken,
+                result.RaidCokeTaken,
+                result.Honour);
 
         static string PendingAttackMessage(CombatMission mission)
         {

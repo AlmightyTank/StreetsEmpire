@@ -9398,7 +9398,7 @@ type AccountTab = typeof ACCOUNT_TABS[number]
 const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = {
   profile: { label: 'Profile', kicker: 'Who you are here' },
   display: { label: 'Display', kicker: 'How this device shows it' },
-  signin: { label: 'Sign-in', kicker: 'Email, password, Discord' },
+  signin: { label: 'Account', kicker: 'Name and sign-in' },
   invites: { label: 'Invites', kicker: 'Beta keys you hold' },
   privacy: { label: 'Privacy', kicker: 'Discord and messages' },
   alerts: { label: 'Alerts', kicker: 'Email and sync' },
@@ -9726,6 +9726,7 @@ function AccountPage(ctx: PageContext) {
     <div className="account-grid d-grid gtc-1 gtc-xl-2 gap-3 align-items-start min-w-0">
       {tab === 'profile' && <AccountProfilePanel {...panel} dashboard={ctx.dashboard} onTab={setTab} />}
       {tab === 'signin' && <>
+        <AccountNamePanel {...panel} />
         <AccountEmailPanel {...panel} email={email} setEmail={setEmail} />
         <AccountPasswordPanel {...panel} />
         <AccountDiscordPanel {...panel} />
@@ -9748,11 +9749,58 @@ type AccountPanel = {
   fail: (message: string) => void
 }
 
+function AccountNamePanel({ account, busy, run }: AccountPanel) {
+  const [playerName, setPlayerName] = useState(account.playerName)
+  useEffect(() => { setPlayerName(account.playerName) }, [account.playerName])
+  const nameTicker = useSecondsTicker(!!account.playerNameChangeReadyAtUtc)
+  const nameCooldownSeconds = secondsUntil(account.playerNameChangeReadyAtUtc, nameTicker)
+
+  const savePlayerName = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void run(() => api.setPlayerName(playerName.trim()), 'Player name changed.')
+  }
+
+  return <section className="card p-3">
+    <div className="panel-title"><h2>Player Name</h2><span>{nameCooldownSeconds > 0 ? timeUntil(account.playerNameChangeReadyAtUtc!) : 'Ready'}</span></div>
+    <p>
+      This is the name other players see on ladders, news, profiles, chat, crew rosters, wars, and season
+      tables. Your username stays private and still handles sign-in.
+    </p>
+    <form className="d-grid gap-3" onSubmit={savePlayerName}>
+      <label className="field">
+        Display name
+        <input
+          className="form-control"
+          maxLength={32}
+          value={playerName}
+          onChange={event => setPlayerName(event.target.value)}
+        />
+        <small className="form-text">
+          {nameCooldownSeconds > 0
+            ? `You can change it again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`
+            : 'Names must be 3-32 characters.'}
+        </small>
+      </label>
+      <Button
+        className="btn btn-primary"
+        blocked={firstReason(
+          busy && BUSY,
+          playerName.trim().length < 3 && 'Player name must be at least three characters.',
+          playerName.trim().length > 32 && 'Player name must be 32 characters or less.',
+          playerName.trim() === account.playerName && 'That is already your player name.',
+          nameCooldownSeconds > 0 && `You can change your player name again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`,
+        )}
+      >
+        {busy ? 'Working...' : 'Change Name'}
+      </Button>
+    </form>
+  </section>
+}
+
 function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: AccountPanel & { dashboard: Dashboard, onTab: (tab: AccountTab) => void }) {
   // Two names, and they are not the same thing, which is worth saying plainly on the page where both
   // appear: one is how you sign in and nobody else sees it, the other is what the whole city calls you.
   const open = waysIn(account)
-  const [playerName, setPlayerName] = useState(account.playerName)
   const [tagline, setTagline] = useState(account.profileTagline ?? '')
   const [pronouns, setPronouns] = useState(account.profilePronouns ?? '')
   const [location, setLocation] = useState(account.profileLocation ?? '')
@@ -9764,23 +9812,14 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
   const [held, setHeld] = useState<PlayerTitle[]>([])
   useEffect(() => { void (async () => { try { setHeld(await api.myTitles()) } catch { /* the picker just stays empty */ } })() }, [])
   useEffect(() => {
-    setPlayerName(account.playerName)
     setTagline(account.profileTagline ?? '')
     setPronouns(account.profilePronouns ?? '')
     setLocation(account.profileLocation ?? '')
     setAccent(account.profileAccent)
     setBanner(account.profileBanner)
     setFeatured(account.featuredTitle ?? '')
-  }, [account.playerName, account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent,
+  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent,
       account.profileBanner, account.featuredTitle])
-
-  const nameTicker = useSecondsTicker(!!account.playerNameChangeReadyAtUtc)
-  const nameCooldownSeconds = secondsUntil(account.playerNameChangeReadyAtUtc, nameTicker)
-
-  const savePlayerName = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    void run(() => api.setPlayerName(playerName.trim()), 'Player name changed.')
-  }
 
   const saveProfile = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -9824,35 +9863,6 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
         sign in, and nobody else is shown it.
       </p>
       <div className="d-grid gtc-1 gtc-lg-2 gap-3 mt-3">
-        <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={savePlayerName}>
-          <label className="field">
-            Player name
-            <input
-              className="form-control"
-              maxLength={32}
-              value={playerName}
-              onChange={event => setPlayerName(event.target.value)}
-            />
-            <small className="form-text">
-              {nameCooldownSeconds > 0
-                ? `You can change it again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`
-                : 'Shown on the ladder, news, profiles, chat, and crew rosters.'}
-            </small>
-          </label>
-          <Button
-            className="btn btn-primary"
-            blocked={firstReason(
-              busy && BUSY,
-              playerName.trim().length < 3 && 'Player name must be at least three characters.',
-              playerName.trim().length > 32 && 'Player name must be 32 characters or less.',
-              playerName.trim() === account.playerName && 'That is already your player name.',
-              nameCooldownSeconds > 0 && `You can change your player name again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`,
-            )}
-          >
-            {busy ? 'Working...' : 'Change Name'}
-          </Button>
-        </form>
-
         <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={saveProfile}>
           <label className="field">
             Tagline

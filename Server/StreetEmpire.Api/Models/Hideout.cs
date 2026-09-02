@@ -51,10 +51,91 @@ public sealed class Hideout
     public int IntelligenceLevel { get; set; }
 
     /// <summary>
+    /// When each room was put out of action, or null for one that is standing.
+    ///
+    /// A timestamp rather than a flag because "wrecked" is a thing that happened at a moment and the
+    /// player was almost certainly not there for it: the hideout page can say the coke lab has been
+    /// down since Tuesday, and the repair bill is arguing with a date rather than with a boolean.
+    ///
+    /// The level itself is deliberately left alone. What a player paid for is still theirs - the
+    /// building is still worth it on the board, the ladder still remembers where they were, and
+    /// fixing the room hands back exactly the level that was taken away. A raid that knocked levels
+    /// off would be a raid that can un-buy an upgrade, and there is no honest price for that.
+    /// </summary>
+    public DateTime? WeedLabWreckedAtUtc { get; set; }
+    public DateTime? CokeLabWreckedAtUtc { get; set; }
+    public DateTime? WorkshopWreckedAtUtc { get; set; }
+    public DateTime? LookoutWreckedAtUtc { get; set; }
+    public DateTime? IntelligenceWreckedAtUtc { get; set; }
+
+    /// <summary>
+    /// The room the builders are in right now, and when they are done. Set together or not at all,
+    /// exactly like a tier build.
+    ///
+    /// One repair at a time, on purpose, and it is the whole reason damage is worth having. Three
+    /// wrecked rooms and one crew is a question - the labs that make the money, the lookout that
+    /// stops it happening again, or the centre that gets the mules moving - and a player who could
+    /// pay for all three at once on a Tuesday evening would never have to answer it.
+    /// </summary>
+    public string? RepairingRoom { get; set; }
+    public DateTime? RepairCompletesAtUtc { get; set; }
+
+    /// <summary>
     /// When passive lab output was last banked. Null means the labs have never run, and accrual starts
     /// from the moment the first one is built rather than from the hideout's creation.
     /// </summary>
     public DateTime? LabsCollectedAtUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>The level on the deeds: what was bought, whether or not it is standing today.</summary>
+    public int BuiltLevel(string room) => room switch
+    {
+        HideoutRooms.Storage => StorageLevel,
+        HideoutRooms.Safe => SafeLevel,
+        HideoutRooms.WeedLab => WeedLabLevel,
+        HideoutRooms.CokeLab => CokeLabLevel,
+        HideoutRooms.Workshop => WorkshopLevel,
+        HideoutRooms.Lookout => LookoutLevel,
+        HideoutRooms.Intelligence => IntelligenceLevel,
+        _ => 0
+    };
+
+    public DateTime? WreckedAtUtc(string room) => room switch
+    {
+        HideoutRooms.WeedLab => WeedLabWreckedAtUtc,
+        HideoutRooms.CokeLab => CokeLabWreckedAtUtc,
+        HideoutRooms.Workshop => WorkshopWreckedAtUtc,
+        HideoutRooms.Lookout => LookoutWreckedAtUtc,
+        HideoutRooms.Intelligence => IntelligenceWreckedAtUtc,
+        _ => null
+    };
+
+    public void SetWrecked(string room, DateTime? whenUtc)
+    {
+        switch (room)
+        {
+            case HideoutRooms.WeedLab: WeedLabWreckedAtUtc = whenUtc; break;
+            case HideoutRooms.CokeLab: CokeLabWreckedAtUtc = whenUtc; break;
+            case HideoutRooms.Workshop: WorkshopWreckedAtUtc = whenUtc; break;
+            case HideoutRooms.Lookout: LookoutWreckedAtUtc = whenUtc; break;
+            case HideoutRooms.Intelligence: IntelligenceWreckedAtUtc = whenUtc; break;
+        }
+    }
+
+    public bool IsWrecked(string room) => WreckedAtUtc(room) is not null;
+
+    /// <summary>
+    /// The level the room actually runs at, which is nothing at all while it is down.
+    ///
+    /// Every rule that asks what a room does asks this one, and every rule that asks what a player
+    /// owns asks <see cref="BuiltLevel"/>. Keeping the two questions apart in the names is what stops
+    /// a wrecked lab from quietly costing somebody their place on the leaderboard, or a repaired one
+    /// from having to be bought again.
+    /// </summary>
+    public int WorkingLevel(string room) => IsWrecked(room) ? 0 : BuiltLevel(room);
+
+    /// <summary>Everything that is down, in the order the rooms are listed. A method so EF leaves it alone.</summary>
+    public IReadOnlyList<string> WreckedRooms()
+        => HideoutRooms.Breakable.Where(IsWrecked).ToList();
 }

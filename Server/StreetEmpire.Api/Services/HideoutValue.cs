@@ -26,6 +26,26 @@ public static class HideoutValue
     private static long CumulativeCost<T>(IEnumerable<T> levels, int level, Func<T, int> levelOf, Func<T, long> costOf)
         => levels.Where(x => levelOf(x) <= level).Sum(costOf);
 
+    /// <summary>
+    /// What one room cost to reach the level it is standing at.
+    ///
+    /// The same sum as the whole-building total, taken one room at a time, because a repair bill has
+    /// to be priced against the room that was broken rather than the house it is in. Sharing the
+    /// arithmetic is the point: re-tune a lab's ladder and the cost of putting one back moves with it,
+    /// exactly as the leaderboard value does.
+    /// </summary>
+    public static long OfRoom(HideoutOptions config, string room, int level) => room switch
+    {
+        HideoutRooms.Storage => CumulativeCost(config.Storage, level, x => x.Level, x => x.UpgradeCost),
+        HideoutRooms.Safe => CumulativeCost(config.Safe, level, x => x.Level, x => x.UpgradeCost),
+        HideoutRooms.WeedLab => CumulativeCost(config.WeedLab, level, x => x.Level, x => x.UpgradeCost),
+        HideoutRooms.CokeLab => CumulativeCost(config.CokeLab, level, x => x.Level, x => x.UpgradeCost),
+        HideoutRooms.Workshop => CumulativeCost(config.Workshop, level, x => x.Level, x => x.UpgradeCost),
+        HideoutRooms.Intelligence => CumulativeCost(config.Intelligence, level, x => x.Level, x => x.UpgradeCost),
+        HideoutRooms.Lookout => CumulativeCost(config.Lookout, level, x => x.Level, x => x.UpgradeCost),
+        _ => 0
+    };
+
     public static long Of(Hideout? hideout, GameOptions options)
     {
         if (hideout is null) return 0;

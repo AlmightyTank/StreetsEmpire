@@ -406,6 +406,14 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
+// A room that is not working. Marked on the row itself rather than only on the
+// button, because the thing being said is about the room and not about what can
+// be bought for it - the page has to read as "these two are dead" at a glance.
+.room-row-wrecked {
+  border-left: 3px solid var(--bs-danger);
+  padding-left: $spacer * .5;
+}
+
 .room-copy {
   display: grid;
   gap: $spacer * .25;

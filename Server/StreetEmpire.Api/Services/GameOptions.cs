@@ -1,4 +1,4 @@
-﻿using StreetEmpire.Api.Models;
+using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
 
@@ -895,8 +895,11 @@ public sealed class HideoutOptions
     /// <summary>
     /// The intelligence centre level, or zero. Here rather than in the service that asks, because the
     /// question "how much of a building does this player have" is the options' to answer.
+    ///
+    /// What is standing rather than what was bought. Scouting is people going and looking, and there
+    /// is nobody to send out of a room that has been put through a wall.
     /// </summary>
-    public int LevelOfIntelligence(Hideout? hideout) => hideout?.IntelligenceLevel ?? 0;
+    public int LevelOfIntelligence(Hideout? hideout) => hideout?.WorkingLevel(HideoutRooms.Intelligence) ?? 0;
 
     /// <summary>
     /// The turn bank a building of this size holds, never below the opening one.
@@ -967,9 +970,49 @@ public sealed class HideoutOptions
     public double BustChancePerHeat { get; set; } = 0.002;
     public double MaxBustChancePerHour { get; set; } = 0.35;
 
+    /// <summary>
+    /// Where the bands sit, as multiples of the floor. Noticed starts at the floor, Watched at twice
+    /// it, Hunted at four times. Read by <see cref="HeatBands"/> rather than written out again in the
+    /// mapper that prints the word, which is where they used to live as two literals.
+    /// </summary>
+    public double WatchedHeatMultiple { get; set; } = 2;
+    public double HuntedHeatMultiple { get; set; } = 4;
+
     /// <summary>Share of every contraband pile taken when it happens, and the fine per unit lost.</summary>
     public double SeizedPercent { get; set; } = 0.5;
+
+    /// <summary>What they take instead from a house they have been watching all week.</summary>
+    public double SeizedPercentWhenHunted { get; set; } = 0.75;
+
     public double FinePerSeizedUnit { get; set; } = 40;
+
+    /// <summary>
+    /// Rooms a raid puts out of action, by band. Nothing at all below Watched: see
+    /// <see cref="HeatBands.RoomsWrecked"/> for why the low bands stay a matter of stock and fines.
+    /// </summary>
+    public int RoomsWreckedWhenWatched { get; set; } = 1;
+    public int RoomsWreckedWhenHunted { get; set; } = 2;
+
+    /// <summary>
+    /// What putting a room back costs, as a share of every pound that built it to the level it is.
+    ///
+    /// A share rather than a price list, because a repair bill has to track the room. A third of a
+    /// maxed coke lab is millions and a third of a first-rung lookout is pocket money, and both of
+    /// those are the right answer: the bigger the thing that was taken away, the more it was worth
+    /// per hour and the more it is worth paying to get back.
+    /// </summary>
+    public double RepairCostPercent { get; set; } = 0.35;
+
+    /// <summary>
+    /// How long the crew are in there, per level of the room, and the least it can ever take.
+    ///
+    /// Deliberately measured in an evening rather than in days. The cost of a wrecked room is the
+    /// hours it was not running plus the money, and stretching the clock past that turns one bad
+    /// night into a weekend somebody spends locked out of their own hideout - which is how a setback
+    /// becomes a reason to stop playing.
+    /// </summary>
+    public int RepairMinutesPerLevel { get; set; } = 20;
+    public int MinRepairMinutes { get; set; } = 15;
 
     /// <summary>
     /// How much passive lab output can pile up while a player is away. Past this the labs sit idle, so
@@ -2309,6 +2352,18 @@ public sealed class CombatOptions
     public double WinnerCrewLossPercent { get; set; } = 0.03;
     public double LoserCrewLossPercent { get; set; } = 0.10;
     public double WeaponLossPercent { get; set; } = 0.08;
+
+    /// <summary>
+    /// Rooms a won raid leaves broken behind it. One, and only on a house.
+    ///
+    /// Everything a raid used to take grew back by morning: cash comes off a shift, product comes off
+    /// a lab, and crew are a hiring away. That made losing a raid an expensive evening rather than
+    /// something that happened to your empire, and it made winning one a withdrawal rather than a
+    /// blow. A room is the part still costing the loser tomorrow, and the part the winner can point
+    /// at. Ground gets none of this: a corner is contested rather than robbed, and nobody's house was
+    /// ever inside it.
+    /// </summary>
+    public int RoomsWreckedOnRaidLoss { get; set; } = 1;
     public double AttackerDefeatThugMoralePenalty { get; set; } = 8;
     public double AttackerDefeatHoeMoralePenalty { get; set; } = 3;
     public double AttackerStandstillThugMoralePenalty { get; set; } = 3;

@@ -3,6 +3,51 @@
 ## 0.2.7
 
 ### Added
+- **A raid takes the house apart, and the rooms stay down until you pay to put them back.** Everything a
+  raid used to take grew back by morning - cash off a shift, product off a lab, crew off a hiring - so
+  being raided was an expensive evening rather than something that happened to an empire, and winning
+  one was a withdrawal rather than a blow. Five rooms can now be wrecked: **the weed lab, the coke lab,
+  the workshop, the lookout and the intelligence centre.** A wrecked room is worth exactly nothing while
+  it is down. No mule runs leave and nobody gets scouted without a centre. Nothing comes off the bench,
+  and every lab above the first rung is dragged down with it. Nobody is on the corner, so the odds of
+  the next raid go back to full.
+- **The store and the safe cannot be broken**, on purpose. They are capacity rather than function, and
+  wrecking capacity does not stop a buff - it destroys stock and cash already sitting in the room, which
+  is a different and much nastier mechanic than the one this is.
+- **Repairs cost a third of what the room cost to build, take an evening, and there is one crew.** The
+  bill tracks the room, so a first-rung lookout is pocket money and a maxed coke lab is not - which is
+  also the difference in what they were earning while they stood. **No turns**: a raid is done to a
+  player rather than chosen by them, and charging the scarcest thing in the game to undo somebody else's
+  decision is where a setback stops being one. One room at a time is the whole point: three dark rooms
+  and one crew is a question, and the order is yours to answer.
+- **Nothing gets built on top of a wreck.** Buying the next level would be the same room standing again
+  for a price that has nothing to do with the damage, and would make being raided a discount for anybody
+  who was going to upgrade it anyway.
+- **A raid cannot un-buy an upgrade.** The level stays on the deeds, the building is still worth every
+  pound of it on the board, and the repair hands back exactly what was taken away.
+
+### Changed
+- **Heat decides more than the odds now.** The four words on the status strip - Quiet, Noticed, Watched,
+  Hunted - used to be a label that nothing read: the number bought one thing, a dice roll per hour, and
+  being the most watched house in town was identical to being the quietest one that got unlucky. Under
+  **Watched** the law still takes stock and goes, which is the bill for holding it. At **Watched** they
+  wreck a room on the way out; at **Hunted** they wreck two, and they take three quarters of every pile
+  instead of half. The status note says so before it happens rather than afterwards, so selling down is
+  a decision somebody can actually make.
+- **A won raid leaves a room broken behind it**, on a house and never on a corner - a corner is
+  contested rather than robbed, and there was never a room inside it. The loser is told which one, in
+  words, because every other loss on that row is a number a shift puts back and this one has a bill and
+  a clock.
+- **A police raid that finds nothing still counts.** Somebody with a lot of earned heat and an empty
+  store could be raided and told nothing at all, because the notice only fired when something was
+  carried out of the door.
+- Rivals get raided on the same rules and **repair on the same bill**, oldest damage first, or a season
+  would slowly fill up with bots whose labs were kicked in months ago and never put back.
+- The returning-player digest, the bell and the Next Moves panel all lead with what is broken. The
+  digest reads the house as it stands rather than what happened during the absence, deliberately: a room
+  that was already dark on Monday is still dark and still costing on Tuesday, which is exactly the
+  morning somebody needs telling.
+
 - **A counter is a shop with stock in it now, and it runs on two clocks.** What a trader *sells* turns
   over at **midnight Central** - a whole day of the same shop, so "Pete has SMGs this week" is a thing
   worth knowing and worth travelling on. How many they *have* comes back **every two hours**, so a

@@ -37,6 +37,22 @@ public static class CatchUp
         foreach (var build in facts.HideoutBuilds)
             items.Add(new CatchUpItemResponse("hideout", "Building finished", build, "good"));
 
+        // Read off the house as it stands rather than off what happened while they were gone, which is
+        // the one item here that is deliberately not a report of the absence. A room that was already
+        // dark when they left is still dark now and still costing them every hour, and a digest that
+        // only mentioned rooms broken since Tuesday would go quiet on the second morning - which is
+        // exactly the morning somebody needs telling.
+        if (facts.WreckedRooms.Count > 0)
+            items.Add(new CatchUpItemResponse(
+                "hideout",
+                facts.WreckedRooms.Count == 1
+                    ? $"Your {facts.WreckedRooms[0]} is wrecked"
+                    : $"{facts.WreckedRooms.Count:N0} of your rooms are wrecked",
+                facts.WreckedRooms.Count == 1
+                    ? $"Your {facts.WreckedRooms[0]} does nothing until it is repaired."
+                    : $"{Names(facts.WreckedRooms)} do nothing until they are repaired.",
+                "bad"));
+
         if (facts.GroundLost.Count > 0)
             items.Add(new CatchUpItemResponse(
                 "ground",
@@ -196,8 +212,11 @@ public sealed record CatchUpFacts(
     IReadOnlyList<string>? GroundLostNames = null,
     IReadOnlyList<string>? GroundTakenNames = null,
     IReadOnlyList<string>? GroundHeldNames = null,
-    int GarrisonThugsLost = 0)
+    int GarrisonThugsLost = 0,
+    /// <summary>Rooms that are not working right now, named the way the hideout page names them.</summary>
+    IReadOnlyList<string>? WreckedRoomNames = null)
 {
+    public IReadOnlyList<string> WreckedRooms => WreckedRoomNames ?? [];
     public IReadOnlyList<string> OvertookYou => OvertookYouNames ?? [];
     public IReadOnlyList<string> YouOvertook => YouOvertookNames ?? [];
     public IReadOnlyList<string> GroundLost => GroundLostNames ?? [];

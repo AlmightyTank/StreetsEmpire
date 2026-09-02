@@ -47,6 +47,13 @@ public sealed class CombatLog
     public int HoesTaken { get; set; }
     public int RidesTaken { get; set; }
 
+    /// <summary>
+    /// Rooms this attack left broken, comma-separated, or null for one that broke none. Copied off the
+    /// mission so the defender's alert can name them: every other loss on this row is a number, and a
+    /// wrecked room is the one the reader most needs told in words.
+    /// </summary>
+    public string? DefenderRoomWrecked { get; set; }
+
     public DateTime? DefenderProtectionUntilUtc { get; set; }
     public DateTime? ResolvesAtUtc { get; set; }
     public DateTime? ResolvedAtUtc { get; set; }

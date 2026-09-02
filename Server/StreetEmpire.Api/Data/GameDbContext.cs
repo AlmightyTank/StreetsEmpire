@@ -356,6 +356,10 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         modelBuilder.Entity<Hideout>(entity =>
         {
             entity.HasIndex(x => x.PlayerId).IsUnique();
+            // A room key, so it is short and it is one of a fixed set. Bounded for the same reason
+            // every other key column here is: a string column with no length is a column somebody can
+            // eventually write a paragraph into.
+            entity.Property(x => x.RepairingRoom).HasMaxLength(16);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
@@ -652,6 +656,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Method).HasMaxLength(16);
             entity.Property(x => x.Outcome).HasMaxLength(32);
             entity.Property(x => x.Summary).HasMaxLength(800);
+            // Room keys joined by commas, and there are five rooms that can break.
+            entity.Property(x => x.DefenderRoomWrecked).HasMaxLength(96);
             entity.HasOne(x => x.Attacker)
                 .WithMany(x => x.AttacksMade)
                 .HasForeignKey(x => x.AttackerId)
@@ -672,6 +678,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Status).HasMaxLength(32);
             entity.Property(x => x.Outcome).HasMaxLength(32);
             entity.Property(x => x.Summary).HasMaxLength(800);
+            entity.Property(x => x.DefenderRoomWrecked).HasMaxLength(96);
             entity.Property(x => x.AttackerMorale).HasPrecision(5, 2);
             entity.Property(x => x.DefenderMorale).HasPrecision(5, 2);
             // The ground outliving the raid matters: deleting a territory must not take its history.

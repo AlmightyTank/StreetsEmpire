@@ -451,7 +451,40 @@ internal static class ResponseMappers
                     craft.CompletesAtUtc,
                     Math.Max(0, (int)Math.Ceiling((craft.CompletesAtUtc - nowUtc).TotalSeconds))),
             ProductionStations(player, hideouts, options),
-            Stations(player, hideouts, options));
+            Stations(player, hideouts, options),
+            Damage(player.Hideout, hideouts),
+            Repair(player.Hideout, hideouts, nowUtc));
+    }
+
+    /// <summary>
+    /// Every room that is down, oldest damage first, so the room that has been costing the longest is
+    /// the one at the top of the list rather than whichever happens to be first in the table.
+    /// </summary>
+    private static List<HideoutDamageResponse> Damage(Hideout? hideout, HideoutService hideouts)
+    {
+        if (hideout is null) return [];
+        return hideout.WreckedRooms()
+            .Select(room => new HideoutDamageResponse(
+                room,
+                HideoutRooms.Name(room),
+                HideoutRooms.Stops(room),
+                hideout.BuiltLevel(room),
+                hideouts.RepairCost(hideout, room),
+                hideouts.RepairMinutes(hideout, room),
+                hideout.WreckedAtUtc(room) ?? DateTime.UtcNow))
+            .OrderBy(x => x.WreckedAtUtc)
+            .ToList();
+    }
+
+    private static HideoutRepairResponse? Repair(Hideout? hideout, HideoutService hideouts, DateTime nowUtc)
+    {
+        if (hideout?.RepairingRoom is not { } room || hideout.RepairCompletesAtUtc is not { } due)
+            return null;
+        return new HideoutRepairResponse(
+            room,
+            HideoutRooms.Name(room),
+            due,
+            Math.Max(0, (int)Math.Ceiling((due - nowUtc).TotalSeconds)));
     }
 
     private static List<ProductionStationResponse> ProductionStations(Player player, HideoutService hideouts, GameOptions options)
@@ -511,7 +544,10 @@ internal static class ResponseMappers
         // One bench, and everything it can currently turn out. The still and the mix house used to be
         // rooms of their own; they are recipes now, and a recipe the shop cannot reach yet is still
         // listed so the player can see what the next level buys rather than discovering it afterwards.
-        var level = player.Hideout?.WorkshopLevel ?? 0;
+        // What the bench can do today, not what it cost. A wrecked workshop reports level zero and
+        // every recipe under it goes back to locked, which is the same reading a player who has never
+        // built one gets - and the row itself carries the damage notice saying which of the two it is.
+        var level = player.Hideout?.WorkingLevel(HideoutRooms.Workshop) ?? 0;
         var throughput = workshopLevel?.Throughput ?? 0;
         var upgrade = ToRoomUpgrade(hideouts, player.Hideout, "workshop");
 
@@ -567,16 +603,7 @@ internal static class ResponseMappers
     /// The floor is the honest dividing line: under it nobody is looking, however long you sit there.
     /// </summary>
     private static string HeatLabel(double heat, GameOptions options)
-    {
-        var floor = options.Hideout.HeatBustFloor;
-        return heat switch
-        {
-            var value when value <= floor => "Quiet",
-            var value when value <= floor * 2 => "Noticed",
-            var value when value <= floor * 4 => "Watched",
-            _ => "Hunted"
-        };
-    }
+        => HeatBands.Label(heat, options.Hideout);
 
     /// <summary>
     /// The same reading in a few words, for the status strip. The strip is on every page, so it gets
@@ -609,7 +636,17 @@ internal static class ResponseMappers
         };
         if (heat <= config.HeatBustFloor)
             return $"Nobody is looking your way. Nothing you hold is worth a door being kicked in yet.{town}";
-        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid. Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
+
+        // What the band costs, said before it is paid rather than afterwards. A player who is one bad
+        // hour from having their labs put through a wall should be able to read that off the strip and
+        // decide to sell down, which is the entire decision heat exists to create - and it was
+        // invisible while the only thing the number bought was a dice roll.
+        var band = HeatBands.Of(heat, config);
+        var rooms = HeatBands.RoomsWrecked(band, config);
+        var wrecking = rooms <= 0
+            ? " At this much they take the stock and go."
+            : $" At {HeatBands.Label(band)} they do not just take the stash: they wreck {(rooms == 1 ? "a room" : $"{rooms:N0} rooms")} on the way out, and it stays dead until you pay to have it put back.";
+        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid.{wrecking} Sell down, or lie low: heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
     }
 
     /// <summary>

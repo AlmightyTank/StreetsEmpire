@@ -1890,6 +1890,26 @@ public sealed class ArrestOptions
     /// <summary>The chance a sweep also picks up a named pimp, who is the decision worth having.</summary>
     public double PimpTakenChance { get; set; } = 0.12;
 
+    /// <summary>
+    /// What a sweep adds to the attention on the house: a flat charge for being on a report at all,
+    /// then a share per head taken, and more again for a named pimp.
+    ///
+    /// Without this a sweep quietly made a house cooler, because the crew heat of the people taken
+    /// left with them - so the worst night the law could give you also lowered your odds of the next
+    /// one. It should read the other way round: a house that just had people taken off its corner is
+    /// a house with a file open on it. The pimp is worth the most of the three because he is the one
+    /// who knows the addresses.
+    ///
+    /// Distinct from <see cref="TalkHeat"/>, which is a later and separate event - the pimp you chose
+    /// to leave inside giving you up. This is charged on the sweep itself and whatever you do next.
+    ///
+    /// Earned heat rather than derived, so it decays like everything else a player did - a sweep
+    /// makes the next few hours dearer and then fades, which keeps laying low the answer to it.
+    /// </summary>
+    public double HeatPerArrest { get; set; } = 6;
+    public double HeatPerArrestedCrew { get; set; } = 1.5;
+    public double HeatPerArrestedPimp { get; set; } = 10;
+
     public int BailWindowHours { get; set; } = 6;
 
     public long BailPerHoe { get; set; } = 900;

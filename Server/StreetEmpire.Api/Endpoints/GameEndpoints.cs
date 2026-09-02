@@ -41,7 +41,10 @@ internal static class GameEndpoints
         if (arrest.PimpName is not null) taken.Add(arrest.PimpName);
         var hours = Math.Max(1, (int)Math.Round((arrest.BailDeadlineUtc - arrest.ArrestedAtUtc).TotalHours));
         return $" The law swept up {string.Join(" and ", taken)}."
-               + $" Bail is ${arrest.BailAmount:N0}, and you have {hours} hour(s) to pay it.";
+               + $" Bail is ${arrest.BailAmount:N0}, and you have {hours} hour(s) to pay it."
+               // Said out loud, because the heat is the half of a sweep a player cannot see happening
+               // and it is the half that decides whether tonight gets worse.
+               + " There is a file open on the house now, and it is drawing more attention until it cools.";
     }
 
     internal static void MapGameEndpoints(this IEndpointRouteBuilder app)

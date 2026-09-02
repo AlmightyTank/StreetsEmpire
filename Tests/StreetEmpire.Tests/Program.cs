@@ -1627,17 +1627,34 @@ static void CrewAreSweptUpBailedOrLeftInside()
         .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
         .Options);
     var roster = new PimpRoster(snapshot, new MinimumRandom());
-    var service = new ArrestService(db, snapshot, new ZeroRandom(), new HideoutService(snapshot), roster);
+    var hideouts = new HideoutService(snapshot);
+    var service = new ArrestService(db, snapshot, new ZeroRandom(), hideouts, roster);
     var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
 
     var player = new Player { Cash = 500_000, Hoes = 200, Thugs = 110, Turns = 200, Hideout = new Hideout() };
     roster.Hire(player, 3, now);
     AssertEqual(3, player.Pimps);
 
+    var heatBefore = player.Heat;
     var arrest = service.RollForShift(player, 20, "lowrent", now);
     AssertTrue(arrest is not null, "a forced sweep should take somebody");
     AssertTrue(arrest!.Hoes + arrest.Thugs > 0, "a sweep takes heads");
     AssertTrue(arrest.PimpName is not null, "a forced pimp roll should jail one");
+
+    // A sweep leaves a file open on the house. It used to leave it cooler instead: the crew heat of
+    // the people taken walked out with them, so the worst night the law could give you also lowered
+    // your odds of the next one.
+    AssertEqual(
+        heatBefore + service.HeatFromArrest(arrest.Hoes + arrest.Thugs, true),
+        player.Heat);
+    AssertTrue(player.Heat > heatBefore, "and the house is hotter afterwards, not cooler");
+    // The record keeps what drew them rather than what they caused, so the house reads hotter now than
+    // the number written on the arrest. Both sides are total heat: the earned figure above is only the
+    // decaying part, and crew and stock make up the rest.
+    AssertTrue(hideouts.HeatFor(player) > arrest.HeatAtArrest,
+        $"the house is hotter than the arrest recorded ({hideouts.HeatFor(player):N1} against {arrest.HeatAtArrest:N1})");
+    // The named one is worth more than a head, because he is the one who knows the addresses.
+    AssertTrue(service.HeatFromArrest(1, true) > service.HeatFromArrest(1, false), "a pimp costs more than a hand");
     AssertEqual(2, player.Pimps);
     AssertEqual(310 - (arrest.Hoes + arrest.Thugs), player.Hoes + player.Thugs);
     AssertEqual(1, roster.Jailed(player).Count);

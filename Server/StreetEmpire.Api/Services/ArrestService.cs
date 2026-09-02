@@ -114,7 +114,21 @@ public sealed class ArrestService(
         };
 
         db.Arrests.Add(arrest);
+
+        // Added after the record is written, so HeatAtArrest stays the heat that drew the sweep rather
+        // than the heat the sweep caused. Earned heat, so it decays: the law has your name for a few
+        // hours and then the file goes cold.
+        player.Heat += HeatFromArrest(hoes + thugs, pimp is not null);
         return arrest;
+    }
+
+    /// <summary>What one sweep puts on the house, before any of it decays.</summary>
+    public double HeatFromArrest(int crew, bool pimp)
+    {
+        var config = _options.Arrests;
+        return Math.Max(0, config.HeatPerArrest)
+               + Math.Max(0, crew) * Math.Max(0, config.HeatPerArrestedCrew)
+               + (pimp ? Math.Max(0, config.HeatPerArrestedPimp) : 0);
     }
 
     public long BailFor(int hoes, int thugs, bool pimp)

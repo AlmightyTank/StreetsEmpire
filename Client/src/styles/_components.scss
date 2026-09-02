@@ -222,7 +222,14 @@ input:focus-visible, textarea:focus-visible {
   .nav-brand strong,
   .nav-brand small,
   .nav-page strong { display: none; }
-  .nav-page { grid-template-columns: 1fr; justify-items: center; }
+  .nav-page {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    justify-self: center;
+    width: 44px;
+    background: transparent !important;
+    border-color: transparent !important;
+  }
 }
 
 .app-main {
@@ -286,9 +293,26 @@ input:focus-visible, textarea:focus-visible {
   z-index: 1030;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  background: var(--#{$prefix}body-tertiary-bg);
+  background-color: $surface-deep;
+  background-image: $surface-rail;
   // Clears the home indicator on a notched phone, costs nothing on one without.
   padding: $spacer * .25 $spacer * .25 calc(#{$spacer * .25} + env(safe-area-inset-bottom));
+
+  .btn {
+    --#{$prefix}btn-bg: #{$surface};
+    --#{$prefix}btn-hover-bg: #{$btn-quiet-lift};
+    --#{$prefix}btn-active-bg: #{$btn-quiet-lift};
+    background-color: $surface !important;
+    background-image: none !important;
+    border-color: transparent;
+  }
+
+  .btn.bg-primary {
+    --#{$prefix}btn-bg: #{$gold-lit};
+    --#{$prefix}btn-hover-bg: #{$gold-lit};
+    --#{$prefix}btn-active-bg: #{$gold-lit};
+    background-color: $gold-lit !important;
+  }
 }
 
 .nav-sheet-backdrop {
@@ -671,15 +695,58 @@ input:focus-visible, textarea:focus-visible {
   right: $spacer;
   bottom: 0;
   width: min(340px, calc(100vw - #{$spacer * 2}));
+  background-color: $surface !important;
+  background-image: $surface-lit;
+  box-shadow: $box-shadow-lg;
 
   @include media-breakpoint-down(md) {
     right: 0;
     left: 0;
-    bottom: calc(70px + env(safe-area-inset-bottom));
+    bottom: calc(53px + env(safe-area-inset-bottom));
     width: auto;
     border-left: 0;
     border-right: 0;
+    max-height: calc(100dvh - 280px - env(safe-area-inset-bottom));
+    overflow: hidden;
   }
+}
+
+.chat-dock.open {
+  @include media-breakpoint-down(md) {
+    row-gap: $spacer * .25 !important;
+  }
+}
+
+.chat-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background-color: $surface !important;
+  border-radius: var(--#{$prefix}border-radius);
+  padding: $spacer * .125;
+
+  .btn {
+    --#{$prefix}btn-bg: #{$surface-deep};
+    --#{$prefix}btn-hover-bg: #{$surface};
+    --#{$prefix}btn-active-bg: #{$surface};
+    background-color: $surface-deep !important;
+    background-image: none !important;
+    border-color: $line;
+    min-width: 0;
+    min-height: 44px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn.border-primary {
+    --#{$prefix}btn-bg: #{$surface};
+    --#{$prefix}btn-hover-bg: #{$surface};
+    --#{$prefix}btn-active-bg: #{$surface};
+    background-color: $surface !important;
+    background-image: none !important;
+  }
+}
+
+.chat-direct-actions {
+  margin-block-start: -.25rem;
 }
 
 // A conversation window, stacked leftwards from the dock. One fits on a phone:
@@ -710,7 +777,12 @@ input:focus-visible, textarea:focus-visible {
 
 .chat-log {
   height: 240px;
-  @include media-breakpoint-down(md) { height: 44vh; }
+  background-color: $surface-deep !important;
+  @include media-breakpoint-down(md) { height: clamp(150px, 22vh, 240px); }
+}
+
+.chat-log-direct {
+  @include media-breakpoint-down(md) { height: clamp(160px, 24vh, 260px); }
 }
 
 .chat-line {
@@ -725,9 +797,42 @@ input:focus-visible, textarea:focus-visible {
 // A conversation in the list: who, what they last said, and when.
 .chat-thread {
   grid-template-columns: minmax(0, 1fr) auto;
+  background-color: $surface-deep !important;
 
+  strong { grid-column: 1 / 2; min-width: 0; }
   span { grid-column: 1 / 2; }
   small { grid-row: 1 / 2; grid-column: 2 / 3; }
+}
+
+.chat-conversation-row {
+  grid-template-areas:
+    "name date"
+    "preview preview";
+  column-gap: $spacer * .75;
+  row-gap: $spacer * .25;
+  align-items: start;
+  min-height: 72px;
+
+  > strong {
+    grid-area: name;
+    display: block !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  > span {
+    grid-area: preview;
+    min-width: 0;
+  }
+
+  > small {
+    grid-area: date;
+    justify-self: end;
+    max-width: 7ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 // Reopens what the close button closed. Small, out of the way, and the only

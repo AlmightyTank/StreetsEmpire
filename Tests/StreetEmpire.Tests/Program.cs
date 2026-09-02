@@ -36,7 +36,7 @@ var tests = new (string Name, Action Test)[]
     ("turn refresh passively recovers morale", TurnRefreshPassivelyRecoversMorale),
     ("hourly upkeep feeds every crew type", HourlyUpkeepFeedsEveryCrewType),
     ("street action returns deterministic tuned breakdown", StreetActionBreakdownIsDeterministic),
-    ("street work can spend the whole turn bank", StreetWorkCanSpendTheWholeTurnBank),
+    ("street work stops at the storage supplied turn limit", StreetWorkStopsAtStorageSuppliedTurnLimit),
     ("production uses configured tables", ProductionUsesConfiguredTables),
     ("invalid product is a rule error", InvalidProductIsRuleError),
     ("crew report calculates operating requirements", CrewReportCalculatesRequirements),
@@ -787,10 +787,11 @@ static void StreetActionBreakdownIsDeterministic()
     AssertEqual(2, Value<int>(breakdown, "beerUsed"));
 }
 
-static void StreetWorkCanSpendTheWholeTurnBank()
+static void StreetWorkStopsAtStorageSuppliedTurnLimit()
 {
     var service = CreateEconomy(new GameOptions
     {
+        MaxTurns = 200,
         MaxActionTurns = 20,
         StreetAction = new StreetActionOptions
         {
@@ -812,12 +813,17 @@ static void StreetWorkCanSpendTheWholeTurnBank()
             DesertionThreshold = 0
         }
     });
-    var player = new Player { Turns = 50, Hoes = 1, Condoms = 5, HoeCutPercent = 0, Hideout = new Hideout() };
+    var player = new Player { Turns = 200, Hoes = 10, Condoms = 42, HoeCutPercent = 0, Hideout = new Hideout { StorageLevel = 1 } };
 
-    var result = service.Scout(player, 50);
+    AssertEqual(42, service.GetCrewReport(player).SuppliedStreetActionTurns);
+    AssertRuleError(
+        () => service.Scout(new Player { Turns = 200, Hoes = 10, Condoms = 42, HoeCutPercent = 0, Hideout = new Hideout { StorageLevel = 1 } }, 43),
+        "storage can supply");
 
-    AssertEqual(0, player.Turns);
-    AssertEqual(50L, Value<long>(RequiredBreakdown(result), "gross"));
+    var result = service.Scout(player, 42);
+
+    AssertEqual(158, player.Turns);
+    AssertEqual(42L, Value<long>(RequiredBreakdown(result), "gross"));
     AssertRuleError(
         () => service.Scout(new Player { Turns = 50 }, 51),
         "That is 51 turns and you have 50.");
@@ -1086,13 +1092,12 @@ static void StreetAutoBuyToppsUpWithinLimits()
     AssertEqual(8, Value<int>(brokeBreakdown, "condomShortage"));
     AssertEqual(10, Value<int>(brokeBreakdown, "turnsSpent"));
 
-    // Storage is the other ceiling: a level 1 room caps the top-up at what fits. Fifty hoes on a level
-    // 1 room is a state the crew caps now stop anybody reaching by hiring, but the clamp still has to
-    // hold for a player who had the crew before the caps were tied to the store.
-    var cramped = new Player { Turns = 20, Cash = 10_000, Hoes = 50, Thugs = 5, Hideout = new Hideout { StorageLevel = 1 } };
-    var crampedBreakdown = RequiredBreakdown(service.Scout(cramped, 20, autoBuySupplies: true));
+    // Storage is the other ceiling: a nearly full level 1 room caps the top-up at what fits.
+    var cramped = new Player { Turns = 42, Cash = 10_000, Hoes = 10, Condoms = 40, Hideout = new Hideout { StorageLevel = 1 } };
+    var crampedBreakdown = RequiredBreakdown(service.Scout(cramped, 42, autoBuySupplies: true));
 
-    AssertEqual(42, Value<int>(crampedBreakdown, "autoBoughtCondoms"));
+    AssertEqual(2, Value<int>(crampedBreakdown, "autoBoughtCondoms"));
+    AssertEqual(0, Value<int>(crampedBreakdown, "condomShortage"));
 
     // Left off, nothing is bought at all.
     var manual = new Player { Turns = 20, Cash = 10_000, Hoes = 10, Thugs = 5, Hideout = new Hideout { StorageLevel = 3 } };
@@ -1177,12 +1182,22 @@ static void CrewReportNamesTheStorageLevelNeeded()
 {
     var service = CreateEconomy();
 
-    // A level 2 room holds 84 condoms, which carries 50 hoes through a 20 turn shift and no more.
+    // A level 2 room holds 84 condoms and 50 beer, which carries this crew through a 20 turn shift and
+    // no more on either side.
+    //
+    // The moonshine shelf is not added to the beer shelf here. Moonshine drinks the same once it is in
+    // the still, but empty space in the still is not drink and no amount of cash makes it drink: the
+    // counter does not sell it. Counting it let the street panel wave through a shift whose own
+    // supplies card was still reporting a shortage nobody could close.
     var supplied = new Player { Pimps = 6, Hoes = 50, Thugs = 25, Hideout = new Hideout { StorageLevel = 2 } };
     var fine = service.GetCrewReport(supplied);
     AssertEqual(50, fine.HoesStorageCanSupply);
     AssertEqual(25, fine.ThugsStorageCanSupply);
     AssertTrue(fine.StorageLevelToSupplyCrew is null, "a room that already covers the crew needs no upgrade named");
+
+    // What is already distilled does count, and the same room carries twice the thugs on it.
+    var distilled = new Player { Pimps = 6, Hoes = 50, Thugs = 50, Moonshine = 50, Hideout = new Hideout { StorageLevel = 2 } };
+    AssertEqual(50, service.GetCrewReport(distilled).ThugsStorageCanSupply);
 
     // One hoe past it and the room is the constraint, not the stock on the shelf.
     var stretched = new Player { Pimps = 6, Hoes = 59, Thugs = 25, Condoms = 84, Hideout = new Hideout { StorageLevel = 2 } };
@@ -5083,6 +5098,9 @@ static void TheSeasonIsWonByTheTakeAndNotByTheEmpire()
     AssertEqual(1, board.Count);
     AssertEqual(1, board[0].Rank);
     AssertEqual("Robber", board[0].PlayerName);
+    // Carried because the panel asks "is this row me?" of the id and never of the name: two empires
+    // are allowed to be called the same thing, and a rename would otherwise take you off your own board.
+    AssertEqual(robber.Id, board[0].PlayerId);
     AssertEqual(expected, board[0].RaidScore);
     AssertEqual(42_000L, board[0].RaidCashTaken);
     AssertEqual(4, board[0].RaidWeedTaken);
@@ -5862,7 +5880,7 @@ static void ContrabandGoodsDoTheirJob()
             Finds = NoFinds()
         },
         Production = new ProductionOptions { Coke = new ProductProductionOptions(0, 4, 4) },
-        Morale = new MoraleOptions { TurnsPerBeer = 1, TurnsPerCondom = 1000, DesertionThreshold = 0, MaxDesertionChance = 0 }
+        Morale = new MoraleOptions { TurnsPerBeer = 10, TurnsPerCondom = 1000, DesertionThreshold = 0, MaxDesertionChance = 0 }
     };
 
     // Ten thugs over ten turns need ten beer. Six bought, four moonshine, so nothing runs short.
@@ -5927,7 +5945,7 @@ static void ShortShiftsAreASupplyAnswer()
     var report = economy.GetCrewReport(stretched);
     AssertEqual(25, report.HoesStorageCanSupply);
     AssertEqual(2, report.StorageLevelToSupplyCrew);
-    AssertTrue(report.SuppliedStreetActionTurns > 0 && report.SuppliedStreetActionTurns < options.MaxActionTurns,
+    AssertTrue(report.SuppliedStreetActionTurns > 0 && report.SuppliedStreetActionTurns < options.MaxTurnsFor(stretched),
         $"a shorter shift is supplied ({report.SuppliedStreetActionTurns} turns)");
 
     // And the number is true: a shift that length needs no more than the room holds.
@@ -5939,13 +5957,32 @@ static void ShortShiftsAreASupplyAnswer()
     var oneMore = (int)Math.Ceiling(stretched.Hoes * (report.SuppliedStreetActionTurns + 1) / options.Morale.TurnsPerCondom);
     AssertTrue(oneMore > capacity.MaxCondoms, "and it is the longest shift that fits, not merely a safe one");
 
+    // Thugs drink beer, and drink the still dry once the bought beer is gone - so moonshine already
+    // distilled lengthens a shift, and an empty still does not. Counting the moonshine shelf rather
+    // than what is standing in it authorised shifts nobody could pour: there is no moonshine at the
+    // counter, so that space cannot be filled before tonight the way the beer shelf can, and the
+    // supplies panel went on reporting a shortage the button had already waved through.
+    var dry = new Player { Hoes = 0, Thugs = 26, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    var dryTurns = economy.GetCrewReport(dry).SuppliedStreetActionTurns;
+    // A level one room holds 25 beer, and 26 thugs drink one between them every ten turns.
+    AssertEqual(9, dryTurns);
+
+    var stocked = new Player { Hoes = 0, Thugs = 26, Moonshine = 25, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    AssertEqual(19, economy.GetCrewReport(stocked).SuppliedStreetActionTurns);
+
+    // And the shift the gate refuses is the same one the report calls unsupplied, rather than a
+    // second opinion arrived at somewhere else.
+    AssertRuleError(
+        () => economy.Scout(new Player { Turns = 200, Thugs = 26, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } }, dryTurns + 1),
+        "storage can supply");
+
     // A crew the room comfortably covers is not limited at all.
-    var comfortable = new Player { Hoes = 3, Thugs = 1, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
-    AssertEqual(options.MaxActionTurns, economy.GetCrewReport(comfortable).SuppliedStreetActionTurns);
+    var comfortable = new Player { Hoes = 1, Thugs = 0, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
+    AssertEqual(options.MaxTurnsFor(comfortable), economy.GetCrewReport(comfortable).SuppliedStreetActionTurns);
 
     // Neither is an empire with nobody in it, which would otherwise divide by a crew of zero.
     var empty = new Player { Hoes = 0, Thugs = 0, Hideout = new Hideout { Tier = 1, StorageLevel = 1 } };
-    AssertEqual(options.MaxActionTurns, economy.GetCrewReport(empty).SuppliedStreetActionTurns);
+    AssertEqual(options.MaxTurnsFor(empty), economy.GetCrewReport(empty).SuppliedStreetActionTurns);
 }
 
 static void TheFirstTierHasNoDeadZone()
@@ -6438,14 +6475,27 @@ static void HeatDrivesTheBust()
     var loaded = new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Heat = 20, Cash = 10_000 };
     AssertTrue(hideouts.HeatFor(new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8 }) < config.HeatBustFloor,
         "a working stash on its own stays under the floor");
+    // AlwaysRandom rolls zero twice: caught, and then the kindest raid this band can produce. Half of
+    // every pile is what the band says; the roll takes 15% off that, so a lucky night leaves a little
+    // more of the stash standing than the band alone would.
     var bust = hideouts.RollBust(loaded, 1, new AlwaysRandom(), DateTime.UtcNow);
-    AssertEqual(20, bust.Coke);
-    AssertEqual(10, bust.Weed);
-    AssertEqual(5, bust.Moonshine);
-    AssertEqual(4, bust.Cut);
-    AssertEqual(39 * 40L, bust.Fine);
-    AssertEqual(20, loaded.Coke);
-    AssertTrue(bust.Describe().Contains("20 coke"), $"the notice names what went: {bust.Describe()}");
+    AssertEqual(17, bust.Coke);
+    AssertEqual(8, bust.Weed);
+    AssertEqual(4, bust.Moonshine);
+    AssertEqual(3, bust.Cut);
+    AssertEqual(32 * 40L, bust.Fine);
+    AssertEqual(23, loaded.Coke);
+    AssertTrue(bust.Describe().Contains("17 coke"), $"the notice names what went: {bust.Describe()}");
+
+    // And the other end of the same roll: caught, then a raid that found everything. The take is
+    // bigger than the band's own share rather than capped at it, which is the whole point of rolling
+    // it - and the fine rides up with the units, so a bad night is dearer twice over.
+    var unlucky = new Player { City = ordinary, Coke = 40, Weed = 20, Moonshine = 10, Cut = 8, Heat = 20, Cash = 10_000 };
+    var worst = hideouts.RollBust(unlucky, 1, new ScriptedRandom(0, 1), DateTime.UtcNow);
+    AssertTrue(worst.Coke > bust.Coke, $"a bad roll takes more than a good one ({worst.Coke} against {bust.Coke})");
+    AssertTrue(worst.Coke > (int)Math.Round(40 * config.SeizedPercent),
+        $"and more than the band's share on its own ({worst.Coke} against {Math.Round(40 * config.SeizedPercent)})");
+    AssertTrue(worst.Fine > bust.Fine, "the fine follows what was carried out");
 
     // The fine never reaches past cash on hand.
     var broke = new Player { City = ordinary, Coke = 100, Cash = 500 };
@@ -11599,6 +11649,21 @@ sealed class FixedRandom(double value) : IGameRandom
 {
     public int NextInclusive(int min, int max) => min;
     public double NextDouble() => value;
+}
+
+/// <summary>
+/// Rolls a written list in order, then holds the last value.
+///
+/// A raid spends two different rolls - one an hour deciding whether the door goes in, and one more
+/// deciding how much of the house they turn over once it has. A double that answers both with the
+/// same number cannot say "caught, and they found everything", because the roll that catches you is
+/// the low one and the roll that cleans you out is the high one.
+/// </summary>
+sealed class ScriptedRandom(params double[] values) : IGameRandom
+{
+    private int _next;
+    public int NextInclusive(int min, int max) => min;
+    public double NextDouble() => values.Length == 0 ? 0 : values[Math.Min(_next++, values.Length - 1)];
 }
 
 /// <summary>A database with a town's book of work in it, and people to walk up to it.</summary>

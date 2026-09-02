@@ -974,9 +974,16 @@ public sealed class HideoutOptions
     /// <summary>Below this nobody is looking. Above it, every hour is a roll.</summary>
     public double HeatBustFloor { get; set; } = 20;
 
-    /// <summary>Chance per hour per point of heat over the floor, and the ceiling on that chance.</summary>
-    public double BustChancePerHeat { get; set; } = 0.002;
-    public double MaxBustChancePerHour { get; set; } = 0.35;
+    /// <summary>
+    /// Chance per hour per point of heat over the floor, and the ceiling on that chance.
+    ///
+    /// At the old rate a Hunted house sat at about a one-in-six hour, which is four or five hours of
+    /// play before the door goes in - long enough that the sensible move was to ignore the number and
+    /// keep working. Doubled, a hundred heat is roughly a one-in-three hour and the ceiling is a coin
+    /// flip: being Hunted is now a thing you deal with tonight rather than a warning you outrun.
+    /// </summary>
+    public double BustChancePerHeat { get; set; } = 0.004;
+    public double MaxBustChancePerHour { get; set; } = 0.5;
 
     /// <summary>
     /// Where the bands sit, as multiples of the floor. Noticed starts at the floor, Watched at twice
@@ -987,12 +994,33 @@ public sealed class HideoutOptions
     public double HuntedHeatMultiple { get; set; } = 4;
 
     /// <summary>Share of every contraband pile taken when it happens, and the fine per unit lost.</summary>
-    public double SeizedPercent { get; set; } = 0.5;
+    public double SeizedPercent { get; set; } = 0.65;
 
     /// <summary>What they take instead from a house they have been watching all week.</summary>
-    public double SeizedPercentWhenHunted { get; set; } = 0.75;
+    public double SeizedPercentWhenHunted { get; set; } = 0.85;
 
-    public double FinePerSeizedUnit { get; set; } = 40;
+    /// <summary>
+    /// How far one raid's luck moves that share, down and up.
+    ///
+    /// The share used to be exactly what the band said, so every raid at a given band was the same
+    /// raid and the only question heat ever asked was whether tonight was the night. A raid is a crew
+    /// going through a house in a hurry: sometimes they find the floorboard and sometimes they walk
+    /// past it. Skewed upward on purpose - a bad night takes a little less, a good one takes the lot,
+    /// and at Hunted the top of the range is everything you were holding.
+    /// </summary>
+    public double SeizedRollDown { get; set; } = 0.15;
+    public double SeizedRollUp { get; set; } = 0.35;
+
+    /// <summary>
+    /// Charged per unit carried out of the door, on top of losing the unit.
+    /// </summary>
+    /// <remarks>
+    /// Forty a unit made the fine the small half of a raid - a stash worth thousands cost a few
+    /// hundred, so the loss was the goods and the court was an afterthought. At a hundred the fine is
+    /// the part that hurts a player who was holding cheap volume, which is the hole the old number
+    /// left: weed was near enough free to sit on.
+    /// </remarks>
+    public double FinePerSeizedUnit { get; set; } = 100;
 
     /// <summary>
     /// Rooms a raid puts out of action, by band. Nothing at all below Watched: see

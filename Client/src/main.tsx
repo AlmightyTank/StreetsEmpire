@@ -853,7 +853,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
     </header>
 
     {isOpen && <>
-      <div className="d-flex gap-1">
+      <div className="chat-tabs d-grid gap-1">
         {(board?.channels ?? []).map(tab => <button
           className={`btn btn-sm flex-fill small fw-bold ${tab.channel === channel ? 'border-primary bg-body-tertiary text-primary' : 'btn-secondary text-body-secondary'}`}
           key={tab.channel}
@@ -871,7 +871,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
         </button>
       </div>
 
-      {channel === 'Direct' && <div className="d-flex align-items-center justify-content-between gap-2">
+      {channel === 'Direct' && <div className="chat-direct-actions d-flex align-items-center justify-content-between gap-2">
         <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setPicking(v => !v); setShowBlocked(false) }}>
           {picking ? 'Cancel' : 'New message'}
         </button>
@@ -888,7 +888,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
           onCancel={() => setPicking(false)}
           onStarted={id => { setPicking(false); onOpenConversation(id); void refreshList() }}
         />
-        : <div className="chat-log d-grid align-content-start gap-1 border rounded bg-body-tertiary p-2 overflow-y-auto" ref={log} onScroll={onScroll}>
+        : <div className={`chat-log d-grid align-content-start gap-1 border rounded bg-body-tertiary p-2 overflow-y-auto ${channel === 'Direct' ? 'chat-log-direct' : ''}`} ref={log} onScroll={onScroll}>
           {channel === 'Direct' && showBlocked && blocked?.blocked.map(person => <div className="chat-thread d-grid border rounded bg-body-secondary p-2" key={person.playerId}>
             <strong>{person.name}</strong>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => void (async () => {
@@ -903,7 +903,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
               Nobody yet. Use New message to find somebody.
             </p>}
             {list?.conversations.map(row => <button
-              className={`chat-thread d-grid text-start border rounded bg-body-secondary p-2 ${row.unread > 0 ? 'border-primary' : ''}`}
+              className={`chat-thread chat-conversation-row d-grid text-start border rounded bg-body-secondary p-2 ${row.unread > 0 ? 'border-primary' : ''}`}
               key={row.id}
               type="button"
               onClick={() => onOpenConversation(row.id)}
@@ -2312,7 +2312,7 @@ function SeasonsPage(ctx: PageContext) {
     />
     {failed && <p className="alert alert-danger mb-0">The season record would not load. The standings are live either way.</p>}
     {tab === 'now' && <ThisSeasonTab ctx={ctx} season={season} now={shelf?.find(entry => entry.running) ?? null} />}
-    {tab === 'past' && <FinishedSeasonsTab shelf={shelf} you={ctx.dashboard.name} />}
+    {tab === 'past' && <FinishedSeasonsTab shelf={shelf} you={ctx.dashboard.playerId} />}
     {tab === 'you' && <YourRecordTab season={season} name={ctx.dashboard.name} />}
   </div>
 }
@@ -2327,19 +2327,19 @@ function SeasonsPage(ctx: PageContext) {
 const SEASON_KEEPS = [
   'Your account and how you sign in',
   'Your player name and your town',
-  'The crew you run with, and the crew itself',
+  'Your alliance and who you run with',
   'Every honour you have ever won',
   'Every season result ever recorded',
 ]
 
 const SEASON_TAKES = [
   'Cash and bank',
-  'Hoes, thugs, and the named roster',
+  'Your pimps, hoes, thugs, and named roster reset to the starting crew',
   'The building and every room in it',
   'All stock, at whatever it was worth',
   'All held ground, and the work put into it',
   'Every combat clock and shield',
-  'The crew treasury and its thug pool',
+  'The alliance treasury and its thug pool',
 ]
 
 function ThisSeasonTab({ ctx, season, now }: {
@@ -2348,7 +2348,7 @@ function ThisSeasonTab({ ctx, season, now }: {
   now: SeasonArchiveEntry | null
 }) {
   const { dashboard } = ctx
-  const yourRaidRow = season?.currentStandings.find(row => row.playerName === dashboard.name && row.raidScore > 0) ?? null
+  const yourRaidRow = season?.currentStandings.find(row => row.playerId === dashboard.playerId && row.raidScore > 0) ?? null
   useSecondHand(season?.enabled === true)
 
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
@@ -2371,9 +2371,9 @@ function ThisSeasonTab({ ctx, season, now }: {
               />
               <AdminMetric label="Empires in it" value={now ? number.format(now.players) : '-'} />
               <AdminMetric
-                label="You"
-                value={yourRaidRow ? `#${yourRaidRow.rank}` : 'Off board'}
-                sub={yourRaidRow ? money.format(yourRaidRow.raidScore) : `#${dashboard.rank} net worth`}
+                label="Your raid rank"
+                value={yourRaidRow ? `#${yourRaidRow.rank}` : 'Unranked'}
+                sub={yourRaidRow ? `${money.format(yourRaidRow.raidScore)} taken` : 'No raid of yours has scored yet'}
               />
             </div>
           </>
@@ -2412,11 +2412,12 @@ function ThisSeasonTab({ ctx, season, now }: {
 
     {/* The live board: this season's raid table, and the table it will finish on. */}
     <section className="card p-3">
-      <SeasonRaidBoard rows={season?.currentStandings ?? []} you={dashboard.name} />
+      <SeasonRaidBoard rows={season?.currentStandings ?? []} you={dashboard.playerId} />
     </section>
   </div>
 }
 
+/** <param name="you">Your player id. Rows are matched on it, never on a name two empires can share.</param> */
 function SeasonRaidBoard({ rows, you }: { rows: SeasonStanding[], you: string }) {
   const scored = rows.filter(row => row.raidScore > 0)
   return <>
@@ -2427,7 +2428,7 @@ function SeasonRaidBoard({ rows, you }: { rows: SeasonStanding[], you: string })
     {scored.length === 0
       ? <p className="text-body-tertiary small mt-3 mb-0">No completed raids have put money or product on the season board yet.</p>
       : <div className="leaderboard tnum d-grid overflow-y-auto mt-3">
-        {scored.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerName === you} />)}
+        {scored.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerId === you} />)}
       </div>}
   </>
 }
@@ -2461,6 +2462,7 @@ function dayOfSeason(season: Season) {
  * A list beside a table rather than a table per season down one column: the archive only ever grows,
  * and the question is nearly always about one particular season.
  */
+/** <param name="you">Your player id, passed down to the table so a row knows whether it is yours.</param> */
 function FinishedSeasonsTab({ shelf, you }: { shelf: SeasonArchiveEntry[] | null, you: string }) {
   const [picked, setPicked] = useState<number | null>(null)
   const [table, setTable] = useState<SeasonTable | null>(null)
@@ -2554,7 +2556,7 @@ function SeasonFinalTable({ table, you }: { table: SeasonTable, you: string }) {
     {rows.length === 0
       ? <p className="text-body-tertiary small mt-3 mb-0">No table was written for this one.</p>
       : <div className="leaderboard tnum d-grid overflow-y-auto mt-3">
-        {rows.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerName === you} />)}
+        {rows.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerId === you} />)}
       </div>}
 
     {/* The page stops at a hundred; the record does not. Somebody past it still gets their own line. */}
@@ -2720,7 +2722,7 @@ function OverviewPage(ctx: PageContext) {
       </section>
     </div>
 
-    <WorldNewsPanel news={worldNews} currentPlayer={dashboard.name} />
+    <WorldNewsPanel news={worldNews} currentPlayerId={dashboard.playerId} />
   </div>
 }
 
@@ -2987,6 +2989,11 @@ function updateSeverityClass(severity: GameAnnouncement['severity']) {
 function StreetPage(ctx: PageContext) {
   const { dashboard, combatMissions, busy, streetTurns, autoBuySupplies, hoeCut, bankAmount, storeQty, district, setActivePage, setStreetTurns, setAutoBuySupplies, setHoeCut, setBankAmount, setStoreQty, setDistrict, act } = ctx
   const pendingOutgoingAttack = combatMissions.find(mission => mission.attackerId === dashboard.playerId && mission.status !== 'Complete')
+  const maxStreetTurns = streetTurnLimit(dashboard)
+  const clampedStreetTurns = Math.max(1, maxStreetTurns)
+  useEffect(() => {
+    if (streetTurns > clampedStreetTurns) setStreetTurns(clampedStreetTurns)
+  }, [clampedStreetTurns, setStreetTurns, streetTurns])
   const restock = restockEstimate(dashboard, streetTurns)
   const pickedDistrict = selectedDistrict(dashboard, district)
   const projectedHeat = streetHeatFor(dashboard, streetTurns, district)
@@ -3015,7 +3022,7 @@ function StreetPage(ctx: PageContext) {
         onMarket={() => setActivePage('market', 'trade')}
       />
       <div className="control-row">
-        <label className="field">Turns<input className="form-control" type="number" min={1} max={Math.max(1, dashboard.turns)} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
+        <label className="field">Turns<input className="form-control" type="number" min={1} max={clampedStreetTurns} value={streetTurns} onChange={e => setStreetTurns(Number(e.target.value))} /></label>
         <label className="field">Hoe Cut %<input className="form-control" type="number" min={10} max={80} value={hoeCut} onChange={e => setHoeCut(Number(e.target.value))} /></label>
         <Button className="btn btn-secondary" blocked={firstReason(
           busy && BUSY,
@@ -3026,10 +3033,12 @@ function StreetPage(ctx: PageContext) {
         <Button className="btn btn-primary" blocked={firstReason(
           busy && BUSY,
           !!pendingOutgoingAttack && 'Your crew is out on a job. Nobody is left to work a shift.',
+          maxStreetTurns < 1 && 'Your storage cannot supply even a 1-turn street shift for this crew.',
           streetTurns < 1 && 'Set the shift to at least one turn.',
           streetTurns > dashboard.turns && `A ${streetTurns}-turn shift costs more turns than you have. You have ${dashboard.turns}.`,
+          streetTurns > maxStreetTurns && `Your storage can supply this crew for ${number.format(maxStreetTurns)} turn${maxStreetTurns === 1 ? '' : 's'} at most.`,
         )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</Button>
-        <button className="btn btn-secondary" type="button" disabled={busy || dashboard.turns < 1} onClick={() => setStreetTurns(Math.max(1, dashboard.turns))}>Max</button>
+        <button className="btn btn-secondary" type="button" disabled={busy || maxStreetTurns < 1} onClick={() => setStreetTurns(clampedStreetTurns)}>Max</button>
       </div>
       <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>
         <input className="form-check-input flex-shrink-0 mt-1" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
@@ -4539,8 +4548,82 @@ function FleaPage(ctx: PageContext) {
   </div>
 }
 
+type StoreTopOffLine = {
+  key: string
+  name: string
+  quantity: number
+  cost: number
+  storageLimited: boolean
+}
+
+function storeTopOffPlan(dashboard: Dashboard): { lines: StoreTopOffLine[], cost: number, needed: number, storageLimited: boolean, blocked?: string } {
+  const items = new Map(dashboard.store.map(item => [item.key, item]))
+  const lines: StoreTopOffLine[] = []
+  let cash = dashboard.cash
+  let needed = 0
+  let storageLimited = false
+
+  const add = (key: string, target: number, heldForNeed: number, storageRoom: number) => {
+    const short = Math.max(0, Math.ceil(target) - heldForNeed)
+    if (short <= 0) return
+    needed += short
+
+    const item = items.get(key)
+    if (!item || item.locked) return
+
+    const room = Math.max(0, storageRoom)
+    if (room < short) storageLimited = true
+    const available = typeof item.available === 'number' ? Math.max(0, item.available) : 10_000
+    const affordable = item.price <= 0 ? 0 : Math.floor(cash / item.price)
+    const quantity = Math.min(short, room, available, affordable, 10_000)
+    if (quantity <= 0) return
+
+    const cost = quantity * item.price
+    cash -= cost
+    lines.push({ key, name: item.name, quantity, cost, storageLimited: quantity < short && quantity === room })
+  }
+
+  add('condoms', dashboard.crewReport.condomsNeededPerHour * 24, dashboard.condoms, dashboard.hideout.maxCondoms - dashboard.condoms)
+  add('beer', dashboard.crewReport.beerNeededPerHour * 24, dashboard.beer + dashboard.moonshine, dashboard.hideout.maxBeer - dashboard.beer)
+
+  const cost = lines.reduce((sum, line) => sum + line.cost, 0)
+  const blocked = lines.length > 0
+    ? undefined
+    : needed <= 0
+      ? 'You already have enough condoms and beer for the next 24 hours.'
+      : dashboard.cash <= 0
+        ? 'You need cash on hand to top off at the counter.'
+        : storageLimited
+          ? 'Your storage room is full before it can hold 24 hours of upkeep.'
+          : 'The counter cannot fill any more of your current needs.'
+
+  return { lines, cost, needed, storageLimited, blocked }
+}
+
+async function buyStoreTopOff(lines: StoreTopOffLine[]): Promise<ActionResult> {
+  const results: ActionResult[] = []
+  for (const line of lines)
+    results.push(await api.buyStoreItem(line.key, line.quantity))
+
+  const bought = lines.map(line => `${number.format(line.quantity)} ${line.name.toLowerCase()}`).join(', ')
+  const cost = results.reduce((sum, result) => sum + numberFromBreakdown(result, 'total'), 0)
+    || lines.reduce((sum, line) => sum + line.cost, 0)
+  const rep = results.reduce((sum, result) => sum + numberFromBreakdown(result, 'repEarned'), 0)
+  const capped = lines.some(line => line.storageLimited)
+  return {
+    summary: `Topped off ${bought} for ${money.format(cost)}.${capped ? ' Storage capped the rest.' : ''}${rep > 0 ? ` Counter rep rose by ${number.format(rep)}.` : ''}`,
+    turnsRemaining: results.at(-1)?.turnsRemaining ?? 0,
+  }
+}
+
+function numberFromBreakdown(result: ActionResult, key: string): number {
+  const value = result.breakdown?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
 function MarketCorePage(ctx: PageContext) {
   const { dashboard, busy, bankAmount, storeQty, setBankAmount, setStoreQty, act } = ctx
+  const topOff = storeTopOffPlan(dashboard)
   return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
@@ -4578,7 +4661,14 @@ function MarketCorePage(ctx: PageContext) {
           worked in - which is a strange thing for the one room every player opens every day. */}
       <div className="panel-title">
         <h2>{dashboard.storeRep.trader.name}'s Counter</h2>
-        <span>Cash on hand only{dashboard.storeRep.discountPercent > 0 ? `, ${dashboard.storeRep.discountPercent}% off as ${dashboard.storeRep.levelName}` : ''}</span>
+        <div className="d-flex flex-wrap align-items-center justify-content-end gap-2">
+          <span className="text-body-secondary small">Cash on hand only{dashboard.storeRep.discountPercent > 0 ? `, ${dashboard.storeRep.discountPercent}% off as ${dashboard.storeRep.levelName}` : ''}</span>
+          <Button
+            className="btn btn-secondary btn-sm"
+            blocked={firstReason(busy && BUSY, topOff.blocked)}
+            onClick={() => void act(() => buyStoreTopOff(topOff.lines))}
+          >Top off 24h{topOff.cost > 0 ? ` ${money.format(topOff.cost)}` : ''}</Button>
+        </div>
       </div>
       <div className="d-grid gtc-1 gtc-xl-3 gap-2 mt-3">
         {dashboard.store.map(item => {
@@ -5018,7 +5108,7 @@ function CityPrice({ price, base, showDelta }: { price: number, base: number | u
   </div>
 }
 
-const COMBAT_TABS = ['targets', 'ground'] as const
+const COMBAT_TABS = ['targets', 'ground', 'missions'] as const
 
 function CombatPage(ctx: PageContext) {
   const [tab, setTab] = useRouteTab('recon', COMBAT_TABS, 'targets')
@@ -5030,10 +5120,12 @@ function CombatPage(ctx: PageContext) {
       tabs={[
         { key: 'targets', label: 'Raids' },
         { key: 'ground', label: 'Map' },
+        { key: 'missions', label: 'Missions' },
       ]}
     />
     {tab === 'targets' && <ReconPage {...ctx} />}
     {tab === 'ground' && <TerritoryPage {...ctx} />}
+    {tab === 'missions' && <CombatActivityPage {...ctx} />}
   </div>
 }
 
@@ -5063,6 +5155,11 @@ function ReconPage(ctx: PageContext) {
       onInspect={ctx.inspectTarget}
       onAttack={ctx.attackTarget}
     />
+  </div>
+}
+
+function CombatActivityPage(ctx: PageContext) {
+  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start">
     <CombatMissionsPanel ctx={ctx} />
     <CombatHistoryPanel entries={ctx.combatLogs} currentPlayerId={ctx.dashboard.playerId} />
     {/* Fifty rows of ladder, last on the page with nothing beside it. */}
@@ -7008,9 +7105,14 @@ function streetHeatFor(dashboard: Dashboard, turns: number, district: string) {
   return (selectedDistrict(dashboard, district)?.heatPerTurn ?? 0) * streetTurnCount(dashboard, turns)
 }
 
+function streetTurnLimit(dashboard: Dashboard) {
+  return Math.max(0, Math.min(dashboard.turns, dashboard.crewReport.suppliedStreetActionTurns))
+}
+
 function streetTurnCount(dashboard: Dashboard, turns: number) {
-  if (dashboard.turns < 1) return 0
-  return Math.max(1, Math.min(turns, dashboard.turns))
+  const limit = streetTurnLimit(dashboard)
+  if (limit < 1) return 0
+  return Math.max(1, Math.min(turns, limit))
 }
 
 /** Upkeep a street action of this length burns, scaled from the server's max-action figures. */
@@ -7062,9 +7164,21 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
   const turnLabel = `${plannedTurns} turn${plannedTurns === 1 ? '' : 's'}`
   const catalog = new Map(dashboard.store.map(item => [item.key, item] as const))
   const hideout = dashboard.hideout
-  const supplies = [
+  const supplies: {
+    key: string
+    owned: number
+    cap: number
+    needed: number
+    basis: string
+    /** Held stock of something else that covers the same need. Not buyable here, so it never reaches the qty box. */
+    covered?: number
+    coveredLabel?: string
+  }[] = [
     { key: 'condoms', owned: dashboard.condoms, cap: hideout.maxCondoms, needed: upkeep.condoms, basis: `to work ${turnLabel}` },
-    { key: 'beer', owned: dashboard.beer, cap: hideout.maxBeer, needed: upkeep.beer, basis: `to work ${turnLabel}` },
+    // Thugs drink the still dry once the bought beer is gone, so moonshine already distilled covers
+    // part of the need. Counted here and nowhere near the buy control, which stays about beer: the
+    // counter does not sell moonshine, and the beer shelf is the only room a purchase can go into.
+    { key: 'beer', owned: dashboard.beer, cap: hideout.maxBeer, needed: upkeep.beer, basis: `to work ${turnLabel}`, covered: dashboard.moonshine, coveredLabel: 'moonshine' },
     // Guns are permanent cover rather than something a shift burns through, so the number to reach is
     // the crew rather than the turns. Pistols specifically, because the counter stopped selling a thing
     // called "weapons" the day guns split into tiers: this row asked for a key that no longer existed
@@ -7093,7 +7207,8 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
     <div className="d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2">
       {supplies.map(supply => {
         const item = catalog.get(supply.key)!
-        const short = Math.max(0, supply.needed - supply.owned)
+        const covered = supply.covered ?? 0
+        const short = Math.max(0, supply.needed - supply.owned - covered)
         // The storage room refuses buys that do not fit, so never offer more than the room left.
         const room = Math.max(0, supply.cap - supply.owned)
         const qty = Math.min(storeQty[supply.key] ?? Math.max(1, short), Math.max(1, room))
@@ -7101,7 +7216,11 @@ function StreetSupplyPanel({ dashboard, busy, streetTurns, storeQty, setStoreQty
         return <div className={`d-grid gtc-1-auto gap-2 align-content-start border rounded p-3 ${short > 0 ? 'border-warning' : 'bg-body-tertiary'}`} key={supply.key}>
           <div className="d-grid gap-1">
             <strong className="text-body">{item.name}</strong>
-            <span className={`small ${short > 0 ? 'text-primary' : 'text-body-secondary'}`}>{number.format(supply.owned)} on hand / {number.format(supply.needed)} {supply.basis} / {number.format(supply.cap)} storage</span>
+            <span className={`small ${short > 0 ? 'text-primary' : 'text-body-secondary'}`}>
+              {number.format(supply.owned)} on hand
+              {covered > 0 && ` + ${number.format(covered)} ${supply.coveredLabel ?? ''}`}
+              {' / '}{number.format(supply.needed)} {supply.basis} / {number.format(supply.cap)} storage
+            </span>
           </div>
           <em className={`eyebrow fst-normal align-self-start justify-self-end text-nowrap ${short > 0 ? 'text-primary' : 'text-body-tertiary'}`}>
             {room === 0 ? 'Storage full' : short > 0 ? `${number.format(short)} short` : 'Covered'}
@@ -9358,14 +9477,14 @@ function StandingsPanel({ dashboard, leaders, cityLeaders, limit }: {
     </div>
     {rows.length === 0
       ? <p className="text-body-tertiary small mt-3 mb-0">Nobody else has set up in {dashboard.city} yet. That makes you first.</p>
-      : <Leaderboard leaders={rows.slice(0, limit)} currentPlayer={dashboard.name} />}
+      : <Leaderboard leaders={rows.slice(0, limit)} currentPlayerId={dashboard.playerId} />}
   </>
 }
 
-function Leaderboard({ leaders, currentPlayer }: { leaders: LeaderboardEntry[], currentPlayer: string }) {
+function Leaderboard({ leaders, currentPlayerId }: { leaders: LeaderboardEntry[], currentPlayerId: string }) {
   return <div className="leaderboard tnum d-grid overflow-y-auto">
     {leaders.map(l => <div
-      className={`leader d-grid gap-2 p-2 border-top ${l.playerName === currentPlayer ? 'bg-success-subtle' : ''}`}
+      className={`leader d-grid gap-2 p-2 border-top ${l.playerId === currentPlayerId ? 'bg-success-subtle' : ''}`}
       key={l.rank}
     >
       <span className="text-body-secondary">#{l.rank}</span>
@@ -9431,7 +9550,7 @@ const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
   money: 'Money'
 }
 
-function WorldNewsPanel({ news, currentPlayer }: { news: WorldNews, currentPlayer: string }) {
+function WorldNewsPanel({ news, currentPlayerId }: { news: WorldNews, currentPlayerId: string }) {
   const entries = news.feed.slice(0, 8)
   return <div className="card p-3 gcol-full">
     <div className="panel-title"><h2>World News</h2><span>What is worth knowing</span></div>
@@ -9447,7 +9566,7 @@ function WorldNewsPanel({ news, currentPlayer }: { news: WorldNews, currentPlaye
     <div className="world-news d-grid overflow-y-auto">
       {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing worth reporting yet. Small moves stay off the page.</p>}
       {entries.map(entry => <div
-        className={`feed-item py-2 border-top ${entry.playerName === currentPlayer ? 'mine' : ''}`}
+        className={`feed-item py-2 border-top ${entry.playerId === currentPlayerId ? 'mine' : ''}`}
         key={entry.id}
       >
         <div className="d-flex flex-column flex-sm-row justify-content-between gap-1 gap-sm-2">

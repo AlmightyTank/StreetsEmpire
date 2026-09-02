@@ -649,6 +649,8 @@ export type SeasonHonour = {
 }
 
 export type SeasonStanding = {
+  /** Who the row is. Names change and repeat; this is what "is this me?" compares. */
+  playerId: string
   rank: number
   playerName: string
   city: string

@@ -150,7 +150,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         // and quietly demote a Hunted house to a Watched one mid-raid, so the stash somebody was
         // caught with would decide how hard they were hit only until it was carried out of the door.
         var band = HeatBands.Of(heat, config);
-        var share = HeatBands.SeizedPercent(band, config);
+        // One roll for the whole raid: the band decides how prepared they came through the door, and
+        // this decides how much of the house they actually turned over once they were in.
+        var share = HeatBands.SeizedPercent(band, config, random.NextDouble());
         var weed = Seize(player, "weed", share);
         var coke = Seize(player, "coke", share);
         var moonshine = Seize(player, "moonshine", share);
@@ -717,6 +719,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     {
         int? best = null;
         foreach (var level in _options.Hideout.Storage)
+            // Beer rather than beer-and-moonshine: the room being recommended has to hold the drink the
+            // player can go out and buy. A level picked because its moonshine shelf made up the
+            // difference is a level they upgrade to and are still short in, since the counter sells no
+            // moonshine to put on that shelf.
             if (level.Condoms >= condoms && level.Beer >= beer && (best is null || level.Level < best))
                 best = level.Level;
         return best;

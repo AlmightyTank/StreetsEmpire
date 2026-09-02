@@ -301,6 +301,8 @@ public sealed record SeasonHonourResponse(
     DateTime? EndedAtUtc);
 
 public sealed record SeasonStandingResponse(
+    /// <summary>Who the row is, rather than what they are currently called. What "is this me?" reads.</summary>
+    Guid PlayerId,
     int Rank,
     string PlayerName,
     string City,

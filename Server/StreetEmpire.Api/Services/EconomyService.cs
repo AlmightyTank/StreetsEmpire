@@ -341,17 +341,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         // their way past. Beyond it every full-length shift runs a shortage until the room is bigger.
         var capacity = hideout.CapacityFor(player.Hideout);
         var hoesStorageCanSupply = SupportableCrew(capacity.MaxCondoms, _options.MaxActionTurns, morale.TurnsPerCondom);
-        var thugsStorageCanSupply = SupportableCrew(capacity.MaxBeer, _options.MaxActionTurns, morale.TurnsPerBeer);
+        var thugsStorageCanSupply = SupportableCrew(DrinkAShiftCanPour(player, capacity), _options.MaxActionTurns, morale.TurnsPerBeer);
         var storageLevelToSupplyCrew = player.Hoes <= hoesStorageCanSupply && player.Thugs <= thugsStorageCanSupply
             ? null
             : hideout.StorageLevelThatHolds(condomsNeeded, beerNeeded);
-        // Whichever of the two runs out first decides how long a shift can actually be supplied.
-        var suppliedTurns = Math.Clamp(
-            Math.Min(
-                SuppliedTurns(capacity.MaxCondoms, player.Hoes, morale.TurnsPerCondom, _options.MaxActionTurns),
-                SuppliedTurns(capacity.MaxBeer, player.Thugs, morale.TurnsPerBeer, _options.MaxActionTurns)),
-            0,
-            _options.MaxActionTurns);
+        // Whichever of the two runs out first decides how long a street shift can actually be
+        // supplied. Street work can spend the whole turn bank, so the storage answer has to be sized
+        // against the same bank rather than against the shorter generic action cap.
+        var suppliedTurns = StorageSuppliedStreetTurns(player, capacity, _options.MaxTurnsFor(player));
 
         return new CrewReportResponse(
             managementCapacity,
@@ -409,6 +406,12 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     {
         TravelGate.EnsureLanded(player);
         ValidateStreetTurns(player, turns);
+        var capacity = hideout.CapacityFor(player.Hideout);
+        var suppliedTurnLimit = StorageSuppliedStreetTurns(player, capacity, _options.MaxTurnsFor(player));
+        if (turns > suppliedTurnLimit)
+            throw new GameRuleException(suppliedTurnLimit <= 0
+                ? "Your storage cannot supply even a 1-turn street shift for this crew."
+                : $"Your storage can supply this crew for {suppliedTurnLimit:N0} turn{Plural(suppliedTurnLimit)} at most.");
 
         var street = _options.StreetAction;
         // Named rather than accepted quietly: asking for a district that does not exist is a caller
@@ -1864,6 +1867,30 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         => crewCount <= 0 || turnsPerSupply <= 0
             ? maxTurns
             : (int)Math.Floor(supplyHeld * turnsPerSupply / crewCount);
+
+    private int StorageSuppliedStreetTurns(Player player, HideoutCapacity capacity, int maxTurns)
+    {
+        var morale = _options.Morale;
+        return Math.Clamp(
+            Math.Min(
+                SuppliedTurns(capacity.MaxCondoms, player.Hoes, morale.TurnsPerCondom, maxTurns),
+                SuppliedTurns(DrinkAShiftCanPour(player, capacity), player.Thugs, morale.TurnsPerBeer, maxTurns)),
+            0,
+            maxTurns);
+    }
+
+    /// <summary>
+    /// Drink a shift can actually be poured, which is not the same as shelf space for drink.
+    ///
+    /// Beer is bought, so the whole beer shelf counts whether or not it is full right now: the counter
+    /// will fill it before the shift, and auto-buy does exactly that. Moonshine is distilled, so only
+    /// what is already in the still counts. Counting the empty moonshine shelf was the bug this
+    /// replaces - it authorised shifts nobody could supply, because there is no way to buy moonshine
+    /// and turn that capacity into drink before tonight. Held to its own shelf, since anything spilled
+    /// over the cap is not drink either.
+    /// </summary>
+    private static int DrinkAShiftCanPour(Player player, HideoutCapacity capacity)
+        => capacity.MaxBeer + Math.Min(player.Moonshine, capacity.MaxMoonshine);
 
     private static int SupportableCrew(int supplyHeld, int turns, double turnsPerSupply)
         => turns <= 0 ? 0 : (int)Math.Floor(supplyHeld * turnsPerSupply / turns);

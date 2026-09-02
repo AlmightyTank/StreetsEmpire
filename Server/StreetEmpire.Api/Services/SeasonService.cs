@@ -178,6 +178,7 @@ public sealed class SeasonService(
     public async Task<IReadOnlyList<SeasonStanding>> CurrentTableForAsync(Season season, int take, CancellationToken ct = default)
         => (await RaidStandingsForAsync(season, take, ct))
             .Select((x, index) => new SeasonStanding(
+                x.Player.Id,
                 index + 1,
                 x.Player.Name,
                 x.Player.City,
@@ -461,6 +462,7 @@ public sealed class SeasonService(
 public sealed record SeasonRoll(Season Ended, Season Opened, int Players);
 
 public sealed record SeasonStanding(
+    Guid PlayerId,
     int Rank,
     string PlayerName,
     string City,

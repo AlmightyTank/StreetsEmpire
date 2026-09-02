@@ -56,6 +56,27 @@ public static class HeatBands
         => Math.Clamp(band == HeatBand.Hunted ? options.SeizedPercentWhenHunted : options.SeizedPercent, 0, 1);
 
     /// <summary>
+    /// The same share, moved by how the raid itself went.
+    ///
+    /// The band says how prepared they came; this says what they actually found once they were in.
+    /// One roll decides it for every pile, because this is one crew going through one house in a
+    /// hurry rather than four separate searches - a player who lost the lot should be able to name it
+    /// as one bad night rather than four coincidences.
+    ///
+    /// The range is deliberately lopsided. Down is a small mercy and up is the real tail: at Hunted
+    /// the top of it reaches everything held, which is the thing that makes sitting on a full stash at
+    /// a hundred heat a gamble rather than a predictable tax.
+    /// </summary>
+    /// <param name="roll">Zero for the kindest raid this band can produce, one for the worst.</param>
+    public static double SeizedPercent(HeatBand band, HideoutOptions options, double roll)
+    {
+        var down = Math.Max(0, options.SeizedRollDown);
+        var up = Math.Max(0, options.SeizedRollUp);
+        var luck = 1 - down + Math.Clamp(roll, 0, 1) * (down + up);
+        return Math.Clamp(SeizedPercent(band, options) * luck, 0, 1);
+    }
+
+    /// <summary>
     /// How many rooms a raid at this band puts out of action.
     ///
     /// Nothing under Watched. A player who has been noticed once loses stock and a fine, which is the

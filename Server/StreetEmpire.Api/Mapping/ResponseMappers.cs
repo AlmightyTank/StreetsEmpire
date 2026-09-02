@@ -646,10 +646,15 @@ internal static class ResponseMappers
         // invisible while the only thing the number bought was a dice roll.
         var band = HeatBands.Of(heat, config);
         var rooms = HeatBands.RoomsWrecked(band, config);
+        // Said as the range it actually is rather than as one number. A raid's luck moves the take, and
+        // a player deciding whether to sell down tonight is deciding against the top of that range -
+        // quoting them the middle of it would be describing a raid they might not get.
+        var take = $" They leave with {HeatBands.SeizedPercent(band, config, 0):P0} to {HeatBands.SeizedPercent(band, config, 1):P0}"
+                   + $" of every pile you are holding, and {config.FinePerSeizedUnit:C0} a unit on top of that.";
         var wrecking = rooms <= 0
             ? " At this much they take whatever is hot and go."
             : $" At {HeatBands.Label(band)} they do not just take the stash: they wreck {(rooms == 1 ? "a room" : $"{rooms:N0} rooms")} on the way out, and it stays dead until you pay to have it put back.";
-        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid.{wrecking} Sell down, trim crew, or lie low: earned heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
+        return $"Roughly a {RaidChance(heat, options):P0} chance an hour of a raid.{take}{wrecking} Sell down, trim crew, or lie low: earned heat falls {config.HeatDecayPerHour:N0} an hour on its own.{town}";
     }
 
     /// <summary>

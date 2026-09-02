@@ -970,6 +970,7 @@ internal static class GameEndpoints
         // archive can never disagree about what a row of a season's table is.
         static SeasonStandingResponse StandingFromResult(SeasonResult result)
             => new(
+                result.PlayerId,
                 result.Rank,
                 result.PlayerName,
                 result.City,
@@ -983,6 +984,7 @@ internal static class GameEndpoints
 
         static SeasonStandingResponse StandingFromLive(SeasonStanding result)
             => new(
+                result.PlayerId,
                 result.Rank,
                 result.PlayerName,
                 result.City,

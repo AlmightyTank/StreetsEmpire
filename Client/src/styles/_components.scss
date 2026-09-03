@@ -570,6 +570,24 @@ input:focus-visible, textarea:focus-visible {
 .world-news { max-height: 680px; }
 .combat-history { max-height: 520px; }
 
+.combat-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .15rem $spacer * .75;
+
+  > strong,
+  > span {
+    min-width: 0;
+  }
+
+  > span {
+    color: var(--#{$prefix}secondary-color);
+    font-size: $small-font-size;
+  }
+}
+
 // Panels that would change height as their contents load, which makes the column
 // beside them jump. A floor, not a fixed height.
 .market-bank { min-height: 172px; }

@@ -1,7 +1,5 @@
 namespace StreetEmpire.Api.Contracts;
 
-/// <param name="City">The town to set up in. Ground is contested inside a town, so this is the map
-/// the player will actually be playing on. Omitted falls back to the first configured city.</param>
 /// <param name="Email">
 /// Required on this door, because it is the only way back into an account made through it. The other
 /// door - Discord - carries its own way back in, so the address is optional there and demanded here.
@@ -12,7 +10,6 @@ public sealed record RegisterRequest(
     string? Username,
     string? Password,
     string? PlayerName,
-    string? City = null,
     string? Email = null,
     string? BetaKey = null);
 
@@ -202,7 +199,6 @@ public sealed record ChangeNotificationPreferencesRequest(
 /// </param>
 public sealed record CompleteDiscordSignUpRequest(
     string? PlayerName,
-    string? City,
     string? Username,
     string? Email = null,
     string? BetaKey = null);

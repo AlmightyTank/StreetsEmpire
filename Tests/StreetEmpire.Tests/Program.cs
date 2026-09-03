@@ -2846,8 +2846,8 @@ static void AResetNeedsAProvenAddress()
 static void ADiscordSignUpIsAWholeAccount()
 {
     // The second door into the game, and the one that is easiest to leave half-built: Discord answers
-    // who somebody is and has no opinion about what they want to be called, which town they set up in,
-    // or how they get back in if they lose the Discord. All three are the game's to ask.
+    // who somebody is and has no opinion about what they want to be called or how they get back in if
+    // they lose the Discord. Those are the game's to ask.
     var options = Resolve(new GameOptions { StartingCash = 5_000, StartingPimps = 1, StartingTurns = 200 });
 
     var account = new PlayerAccount

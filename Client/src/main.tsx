@@ -1357,10 +1357,6 @@ function App() {
     }
   }, [scrollRequest])
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
-  // Fetched rather than hardcoded: the towns come from the territory map, so a city with no ground
-  // could never be offered as somewhere to set up.
-  const [cities, setCities] = useState<string[]>([])
-  useEffect(() => { void api.cities().then(setCities).catch(() => setCities([])) }, [])
   // Which doors this server can actually open. A button for a provider with no credentials behind it
   // is a button that fails, so it is never drawn.
   const [providers, setProviders] = useState<AuthProviders>({ discord: false, betaKeyRequired: false })
@@ -1369,7 +1365,7 @@ function App() {
   }, [])
   const [publicStats, setPublicStats] = useState<PublicStats | null>(null)
   useEffect(() => { void api.publicStats().then(setPublicStats).catch(() => setPublicStats(null)) }, [])
-  // A Discord login that turned out to belong to nobody yet, waiting on a name and a town.
+  // A Discord login that turned out to belong to nobody yet, waiting on a player name.
   const [discordTicket, setDiscordTicket] = useState<DiscordSignUpTicket | null>(null)
   /*
     Where the sign-in card is in the reset flow, if it is in it at all. Two steps rather than one
@@ -1600,7 +1596,6 @@ function App() {
         await api.register(
           String(form.get('username')),
           String(form.get('password')),
-          String(form.get('city')),
           String(form.get('email') ?? ''),
           String(form.get('betaKey') ?? ''))
       else
@@ -1620,7 +1615,6 @@ function App() {
     try {
       await api.completeDiscordSignUp(
         String(form.get('username')),
-        String(form.get('city')),
         String(form.get('email') ?? ''),
         String(form.get('betaKey') ?? ''))
       sessionStorage.removeItem(discordPendingKey)
@@ -1732,8 +1726,8 @@ function App() {
       One shell, two things it can be showing.
 
       A Discord login that belongs to nobody yet cannot become a player on its own: Discord knows who
-      you are and has no opinion about what you want to be called or which town you are setting up in.
-      So the sign-in card steps aside for a shorter form that asks only those two, and the identity
+      you are and has no opinion about what you want to be called.
+      So the sign-in card steps aside for a shorter form that asks for that one name, and the identity
       behind it stays where it was put - in a signed cookie the browser cannot read or forge.
     */
     return <main className="auth-shell landing-shell d-grid gap-4 p-4">
@@ -1820,7 +1814,7 @@ function App() {
           ? <>
             <p className="text-body-secondary">
               Signed in as <strong className="text-primary">{discordTicket.discordUsername}</strong> on Discord.
-              Two things left before you have an empire.
+              One thing left before you have an empire.
             </p>
             <form className="d-grid gap-3 mt-4" onSubmit={finishDiscordSignUp}>
               <label className="field">
@@ -1830,13 +1824,7 @@ function App() {
                   What other players see, and what you would sign in as if you ever set a password.
                 </small>
               </label>
-              <label className="field">
-                Town
-                <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
-                  {cities.map(city => <option key={city} value={city}>{city}</option>)}
-                </select>
-                <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
-              </label>
+              <p className="text-body-secondary small mb-0">Everyone starts in New York. You can move later from the Travel panel.</p>
               {providers.betaKeyRequired && <label className="field">
                 Beta key
                 <input className="form-control tnum" name="betaKey" placeholder="SE-4K7XQ-9MTBH" required />
@@ -1924,13 +1912,7 @@ function App() {
                   to confirm it, and a note lands there if a way in ever changes.
                 </small>
               </label>}
-              {authMode === 'register' && <label className="field">
-                Town
-                <select className="form-select" name="city" defaultValue={cities[0] ?? ''}>
-                  {cities.map(city => <option key={city} value={city}>{city}</option>)}
-                </select>
-                <small className="form-text">Turf is contested inside a town rather than between them, so this is the ground you start out fighting for. Moving to another town later costs turns.</small>
-              </label>}
+              {authMode === 'register' && <p className="text-body-secondary small mb-0">Everyone starts in New York. You can move later from the Travel panel.</p>}
               {authMode === 'register' && providers.betaKeyRequired && <label className="field">
                 Beta key
                 <input className="form-control tnum" name="betaKey" placeholder="SE-4K7XQ-9MTBH" required />
@@ -9246,7 +9228,7 @@ function CombatHistoryPanel({ entries, currentPlayerId }: { entries: CombatLog[]
         const attacking = entry.attackerId === currentPlayerId
         const pending = entry.outcome === 'Pending'
         return <div className={`${attacking ? 'combat-entry attack' : 'combat-entry defense'}${pending ? ' pending' : ''}`} key={entry.id}>
-          <div><strong>{entry.methodLabel} / {entry.outcome}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
+          <div className="combat-entry-meta"><strong>{entry.methodLabel} / {entry.outcome}</strong><span>{new Date(entry.createdAtUtc).toLocaleString()}</span></div>
           <p>{entry.summary}</p>
           {/* Power is a raid's story. A strike never rolls one, so quoting 0-0 for one would be noise. */}
           <small>{entry.attackerName} vs {entry.defenderName} / {pending && entry.resolvesAtUtc

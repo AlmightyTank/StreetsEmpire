@@ -82,16 +82,6 @@ internal static class AuthEndpoints
             if (AccountSetup.LooksLikeAnAttemptAtEmail(username))
                 return Results.BadRequest(new { error = "Keep the @ out of your username - the email box is below it." });
 
-            // Registration used to ignore the city entirely, so every player defaulted to New York no
-            // matter what they picked. Now that ground is contested inside a town, that would have put
-            // everybody in one map and left the other four empty.
-            var opts0 = gameOptions.Value;
-            opts0.Territory.ApplyDefaultsWhereEmpty();
-            var cities = opts0.Territory.Cities();
-            var city = cities.FirstOrDefault(x => string.Equals(x, request.City?.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(request.City) && city is null)
-                return Results.BadRequest(new { error = $"Pick one of: {string.Join(", ", cities)}." });
-
             if (await db.Accounts.AnyAsync(x => x.Username == username, ct))
                 return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Username is already taken." });
             if (await db.Accounts.AnyAsync(x => x.Email == email, ct))
@@ -100,6 +90,7 @@ internal static class AuthEndpoints
                 return Results.Conflict(new { error = oneName ? AccountSetup.NameTaken : "Player name is already taken." });
 
             var opts = gameOptions.Value;
+            opts.Territory.ApplyDefaultsWhereEmpty();
             var isFirstAccount = !await db.Accounts.AnyAsync(ct);
             var account = new PlayerAccount { Username = username, IsAdmin = isFirstAccount };
             account.SetEmail(email);
@@ -107,7 +98,7 @@ internal static class AuthEndpoints
             var keyDecision = await betaKeys.RedeemForAccountAsync(request.BetaKey, account, isFirstAccount, opts, DateTime.UtcNow, ct);
             if (!keyDecision.Accepted)
                 return BetaKeyProblem(keyDecision);
-            var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
+            var (player, log) = AccountSetup.NewPlayer(account, playerName, opts.Territory.StartingCityOrFirst(), opts, pimps);
             // Their own keys to hand out, written in the same save as the account. Arriving and being
             // able to bring somebody with you are one event.
             await betaKeys.GrantToNewAccountAsync(account, opts, DateTime.UtcNow, ct);
@@ -200,7 +191,7 @@ internal static class AuthEndpoints
         // Three legs. /start sends the browser to Discord with a signed note saying where it came
         // from; /callback is where Discord sends it back and is the only leg that decides anything;
         // /complete finishes the half of a sign-up Discord cannot answer, which is what the player
-        // wants to be called and which town they are setting up in.
+        // wants to be called.
         //
         // The same callback serves signing in, signing up, and connecting Discord to an account that
         // already exists, because from Discord's side all three are the same round trip and the only
@@ -361,13 +352,6 @@ internal static class AuthEndpoints
             if (email is not null && !AccountSetup.LooksLikeAnEmail(email))
                 return Results.BadRequest(new { error = "That does not look like an email address." });
 
-            var opts = gameOptions.Value;
-            opts.Territory.ApplyDefaultsWhereEmpty();
-            var cities = opts.Territory.Cities();
-            var city = cities.FirstOrDefault(x => string.Equals(x, request.City?.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(request.City) && city is null)
-                return Results.BadRequest(new { error = $"Pick one of: {string.Join(", ", cities)}." });
-
             // Checked again rather than trusted from the callback: minutes have passed, and in those
             // minutes the same Discord account could have finished this form in another tab.
             if (await db.Accounts.AnyAsync(x => x.DiscordUserId == profile.Id, ct))
@@ -381,6 +365,8 @@ internal static class AuthEndpoints
 
             var isFirstAccount = !await db.Accounts.AnyAsync(ct);
             var nowUtc = DateTime.UtcNow;
+            var opts = gameOptions.Value;
+            opts.Territory.ApplyDefaultsWhereEmpty();
             var account = new PlayerAccount
             {
                 Username = username,
@@ -399,7 +385,7 @@ internal static class AuthEndpoints
             var keyDecision = await betaKeys.RedeemForAccountAsync(request.BetaKey, account, isFirstAccount, opts, nowUtc, ct);
             if (!keyDecision.Accepted)
                 return BetaKeyProblem(keyDecision);
-            var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
+            var (player, log) = AccountSetup.NewPlayer(account, playerName, opts.Territory.StartingCityOrFirst(), opts, pimps);
             DiscordLinkRewards.GrantOnce(account, player, nowUtc);
             await betaKeys.GrantToNewAccountAsync(account, opts, nowUtc, ct);
 

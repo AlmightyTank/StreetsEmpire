@@ -1594,7 +1594,7 @@ export type Account = {
   createdAtUtc: string
 }
 
-/** A Discord login that turned out to belong to nobody yet, waiting on a name and a town. */
+/** A Discord login that turned out to belong to nobody yet, waiting on a player name. */
 export type DiscordSignUpTicket = { suggestedUsername: string, discordUsername: string }
 
 /**
@@ -1619,10 +1619,10 @@ export const api = {
   betaKey: (code: string) => request<BetaKeyCheck>(`/api/auth/beta/check?code=${encodeURIComponent(code)}`),
   publicStats: () => request<PublicStats>('/api/public/stats'),
   /** One name: the server uses it for the sign-in name and the name on the leaderboard alike. */
-  register: (username: string, password: string, city: string, email?: string, betaKey?: string) =>
+  register: (username: string, password: string, email?: string, betaKey?: string) =>
     request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, city, email: email || null, betaKey: betaKey || null }),
+      body: JSON.stringify({ username, password, email: email || null, betaKey: betaKey || null }),
     }),
   /** `identifier` is a username or an email address; the server decides which by the @. */
   login: (identifier: string, password: string) =>
@@ -1775,10 +1775,10 @@ export const api = {
   discordTicket: () => request<DiscordSignUpTicket>('/api/auth/discord/ticket'),
   discardDiscordTicket: () => request('/api/auth/discord/ticket', { method: 'DELETE' }),
   /** `email` is optional and the only way a Discord-made account gets a second way back in. */
-  completeDiscordSignUp: (username: string, city: string, email?: string, betaKey?: string) =>
+  completeDiscordSignUp: (username: string, email?: string, betaKey?: string) =>
     request('/api/auth/discord/complete', {
       method: 'POST',
-      body: JSON.stringify({ username, city, email: email || null, betaKey: betaKey || null }),
+      body: JSON.stringify({ username, email: email || null, betaKey: betaKey || null }),
     }),
   dashboard: () => request<Dashboard>('/api/game/dashboard'),
   updates: () => request<GameUpdates>('/api/game/updates'),

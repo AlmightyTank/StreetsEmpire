@@ -3204,21 +3204,51 @@ static void ABetaKeyGatesSignupAndIsSpentWithTheAccount()
     world.Db.SaveChanges();
     AssertEqual(0, service.GrantToNewAccountAsync(bot, sharing, now, default).GetAwaiter().GetResult().Count);
 
-    // The gate arrived after people were already playing, so anybody holding nothing is issued a set.
+    // Somebody who predates the gate: the migration attached one key to them and nobody ever spent
+    // it, which is exactly the row that read "attached to a person, redeemed by nobody".
     var early = new PlayerAccount { Username = "early" };
     world.Db.Accounts.Add(early);
     world.Db.SaveChanges();
-    AssertEqual(0, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == early.Id));
+    var attached = new BetaKey
+    {
+        Code = "SEEARLYKEY1",
+        IssuedToAccountId = early.Id,
+        Label = "migration backfill",
+        MaxUses = 1,
+        CreatedAtUtc = now.AddDays(-2),
+    };
+    world.Db.BetaKeys.Add(attached);
+    world.Db.SaveChanges();
 
-    var backfilled = service.BackfillMissingAsync(sharing, now, default).GetAwaiter().GetResult();
-    AssertTrue(backfilled >= 1, $"the account holding none should be issued some ({backfilled} filled)");
-    AssertEqual(3, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == early.Id));
+    AssertTrue(service.EnsureAccountKeysAsync(sharing, now, default).GetAwaiter().GetResult() >= 1,
+        "an account whose only key is unspent is not settled");
 
-    // Safe on every boot: matched on having been issued none, not on having none left, so a second
-    // run tops nobody up and the bot is still left alone.
-    AssertEqual(0, service.BackfillMissingAsync(sharing, now, default).GetAwaiter().GetResult());
-    AssertEqual(3, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == invited.Id));
+    // That key is now theirs and used by them, rather than sitting available forever.
+    var entry = world.Db.BetaKeys.Single(x => x.Code == "SEEARLYKEY1");
+    AssertEqual(early.Id, entry.RedeemedByAccountId);
+    AssertEqual(1, entry.Uses);
+    // Dated when the key existed, so the board does not say the whole world joined during a restart.
+    AssertEqual(attached.CreatedAtUtc, entry.RedeemedAtUtc);
+
+    // And they hold a full hand on top of it. The first pass at this looked for accounts issued
+    // nothing at all, which skipped every player who predated the gate - they were passed over for
+    // holding the one key they could not use.
+    AssertEqual(3, world.Db.BetaKeys.Count(x =>
+        x.IssuedToAccountId == early.Id && x.RedeemedByAccountId == null));
+
+    // Safe on every boot: settled accounts are left alone and nobody is topped up.
+    AssertEqual(0, service.EnsureAccountKeysAsync(sharing, now, default).GetAwaiter().GetResult());
+    AssertEqual(4, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == early.Id));
     AssertEqual(0, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == bot.Id));
+
+    // Giving a key away does not earn a replacement, or the hand would refill itself for ever.
+    var spare = world.Db.BetaKeys.First(x => x.IssuedToAccountId == early.Id && x.RedeemedByAccountId == null);
+    spare.Uses = 1;
+    spare.RedeemedByAccountId = first.Id;
+    world.Db.SaveChanges();
+    service.EnsureAccountKeysAsync(sharing, now, default).GetAwaiter().GetResult();
+    AssertEqual(2, world.Db.BetaKeys.Count(x =>
+        x.IssuedToAccountId == early.Id && x.RedeemedByAccountId == null));
 }
 
 static void AChosenTitleLeadsAndSurvivesLosingIt()

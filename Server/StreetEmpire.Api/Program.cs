@@ -446,19 +446,19 @@ using (var startupScope = app.Services.CreateScope())
         app.Logger.LogWarning(ex, "Could not load stored settings; running on appsettings values.");
     }
 
-    // Every account that has never been issued keys of its own gets them now.
+    // Every account brought to what a member of a closed beta should hold: one key of their own that
+    // they have spent, and a hand of unspent ones to give away.
     //
     // The gate arrived after people were already playing, so the world it opened on was full of
-    // accounts holding nothing to hand out - and a beta nobody can invite anybody into is a beta that
-    // stops at whoever the admin knew. Matched on having been issued none rather than having none
-    // left, so it does not top somebody up every restart, and it is safe to run on every boot.
+    // accounts whose only key was one the migration attached and nobody ever used. Idempotent, so it
+    // is safe on every boot and does nothing at all once everyone is squared away.
     try
     {
         var startupKeys = startupScope.ServiceProvider.GetRequiredService<BetaKeys>();
         var startupOptions = startupScope.ServiceProvider.GetRequiredService<IOptions<GameOptions>>().Value;
-        var granted = await startupKeys.BackfillMissingAsync(startupOptions, DateTime.UtcNow, CancellationToken.None);
+        var granted = await startupKeys.EnsureAccountKeysAsync(startupOptions, DateTime.UtcNow, CancellationToken.None);
         if (granted > 0)
-            app.Logger.LogInformation("Issued beta keys to {Accounts} account(s) that had none.", granted);
+            app.Logger.LogInformation("Settled beta keys for {Accounts} account(s).", granted);
     }
     catch (Exception ex)
     {

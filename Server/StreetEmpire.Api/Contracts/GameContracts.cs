@@ -4,6 +4,34 @@ namespace StreetEmpire.Api.Contracts;
 
 /// <param name="District">Where to work. Null takes the neutral district.</param>
 public sealed record ScoutRequest(int Turns, bool AutoBuySupplies = false, string? District = null);
+
+/// <param name="HoeCutPercent">
+/// A cut to price instead of the saved one, so the dial can be moved before it is committed. Null
+/// prices the cut the player is actually on.
+/// </param>
+public sealed record StreetPreviewRequest(int Turns, string? District = null, int? HoeCutPercent = null);
+
+/// <summary>One end of the roll: the gross, who takes what out of it, and what is left.</summary>
+public sealed record ShiftMoneyResponse(long Gross, long CrewCut, long Dues, long TakeHome);
+
+/// <summary>
+/// A shift priced without being worked.
+///
+/// The money arrives as two ends rather than one number, because the take is a per-turn roll and an
+/// average is a figure half of all shifts come in under - which a player reads as being cheated. What
+/// is not rolled is exact.
+/// </summary>
+public sealed record StreetPreviewResponse(
+    int Turns,
+    string District,
+    int HoeCutPercent,
+    int DuesPercent,
+    int StreetBonusPercent,
+    ShiftMoneyResponse Low,
+    ShiftMoneyResponse High,
+    int CondomsBurned,
+    int BeerBurned,
+    double Heat);
 public sealed record ProduceRequest(string? Product, int Turns);
 public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record TravelRequest(string? City);

@@ -322,6 +322,52 @@ internal static class GameEndpoints
         }).RequireAuthorization();
 
 
+        // Prices a shift without working it, so the cut can be moved and read before any turns are
+        // spent on finding out. A read: it takes no turns, writes nothing, and deliberately does not
+        // advance the clock - a player dragging a slider should not be charging their own turn tick a
+        // dozen times a second.
+        app.MapPost("/api/game/street/preview", async (
+            StreetPreviewRequest request,
+            CurrentPlayerService current,
+            EconomyService economy,
+            TerritoryService territories,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            try
+            {
+                var projection = economy.ProjectShift(
+                    player,
+                    request.Turns,
+                    request.District,
+                    await territories.EffectsForAsync(player.Id, player.City, ct),
+                    await territories.GarrisonedPimpIdsAsync(player.Id, ct),
+                    request.HoeCutPercent);
+
+                return Results.Ok(new StreetPreviewResponse(
+                    projection.Turns,
+                    projection.District,
+                    projection.HoeCutPercent,
+                    projection.DuesPercent,
+                    projection.StreetBonusPercent,
+                    Money(projection.Low),
+                    Money(projection.High),
+                    projection.CondomsBurned,
+                    projection.BeerBurned,
+                    projection.Heat));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+
+            static ShiftMoneyResponse Money(ShiftMoney money)
+                => new(money.Gross, money.CrewCut, money.Dues, money.TakeHome);
+        }).RequireAuthorization();
+
+
         // Keep the 0.1.0 route as a compatibility alias while the UI moves to /street.
         app.MapPost("/api/game/scout", async (
             ScoutRequest request,

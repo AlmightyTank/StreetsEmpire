@@ -235,8 +235,11 @@ input:focus-visible, textarea:focus-visible {
 .app-main {
   width: min(100%, 1540px);
   // The bottom value clears the tab bar on a phone, so the last row of a page is
-  // never sitting underneath it.
-  padding: $spacer $spacer calc(78px + env(safe-area-inset-bottom));
+  // never sitting underneath it - and the chat dock on top of that, which sits
+  // between the two and was not being allowed for. The dock publishes its own
+  // height while it is docked, because it is a bar minimised and a panel open and
+  // a number typed in here would be wrong for one of them.
+  padding: $spacer $spacer calc(78px + var(--chat-dock-height, 0px) + env(safe-area-inset-bottom));
 
   @include media-breakpoint-up(md) {
     padding: $spacer * 1.5 $spacer * 1.5 $spacer * 3;

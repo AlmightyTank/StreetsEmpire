@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, StreetPreview, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -803,6 +803,33 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
   const max = board?.maxLength ?? 280
   const over = draft.length > max
 
+  /*
+    How much of the bottom of the screen this is sitting on, published for the page to pad itself by.
+
+    On a phone the dock spans the full width and pins itself just above the tab bar, so the last inch
+    of every page was underneath it and could not be scrolled into view - the tab bar was allowed for
+    in the page padding and this was not. Measured rather than written into the stylesheet, because
+    the dock is a bar when minimised and a panel when open, and a hardcoded number would be right for
+    one of those and wrong for the other.
+
+    Only while it is minimised. Open, it is a panel somebody is reading and will close, and padding
+    the page by the height of it would leave most of a screen of nothing under the last card.
+  */
+  const dock = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const node = dock.current
+    const clear = () => document.documentElement.style.removeProperty('--chat-dock-height')
+    if (!node || state !== 'minimised') { clear(); return clear }
+
+    const publish = () => document.documentElement.style.setProperty(
+      '--chat-dock-height',
+      `${Math.ceil(node.getBoundingClientRect().height)}px`)
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(node)
+    return () => { observer.disconnect(); clear() }
+  }, [state])
+
   const say = async () => {
     const body = draft.trim()
     if (!body || sending || channel === 'Direct') return
@@ -831,6 +858,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
   const totalUnread = unread + (list?.unread ?? 0)
 
   return <section
+    ref={dock}
     className={`chat-dock position-fixed d-grid border border-bottom-0 rounded-top-3 bg-body-secondary p-2 ${isOpen ? 'open gap-2' : ''}`}
     aria-label="Chat"
   >
@@ -2417,6 +2445,77 @@ function ThisSeasonTab({ ctx, season, now }: {
   </div>
 }
 
+/**
+ * What the shift in the boxes above would pay, before any of it is spent.
+ *
+ * The cut is this game's central dial and the only way to learn it was to work a shift and read the
+ * receipt - which costs turns, and turns are the one thing that does not come back before tomorrow.
+ * Here the dial moves and the numbers move with it at no charge.
+ *
+ * Quoted as a range because the take is a per-turn roll. An average would be a number half of all
+ * shifts come in under, and a player who reads an average and then earns less twice running has been
+ * taught the game cheats.
+ */
+function ShiftDryRun({ dashboard, turns, hoeCut, district }: {
+  dashboard: Dashboard
+  turns: number
+  hoeCut: number
+  district: string
+}) {
+  const [preview, setPreview] = useState<StreetPreview | null>(null)
+  const [failed, setFailed] = useState(false)
+  const planned = streetTurnCount(dashboard, turns)
+  const cut = Math.round(hoeCut)
+
+  // Debounced for the same reason the people search is: a slider being dragged is one request a
+  // frame, and none of the answers before the last one are ever read.
+  useEffect(() => {
+    if (planned < 1 || cut < 10 || cut > 80) { setPreview(null); return }
+    const timer = setTimeout(() => {
+      void (async () => {
+        try { setPreview(await api.previewStreet(planned, district || undefined, cut)); setFailed(false) }
+        catch { setFailed(true) }
+      })()
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [planned, cut, district])
+
+  if (planned < 1) return null
+  if (failed) return <p className="text-body-tertiary small mt-3 mb-0">
+    The dry run would not price that shift. The numbers below are still live.
+  </p>
+
+  // Held at the last good answer while a new one is in flight, rather than blanking. A panel that
+  // empties on every keystroke reads as broken, and the old number is nearly right anyway.
+  if (!preview) return null
+
+  const spread = (low: number, high: number) =>
+    low === high ? money.format(low) : `${money.format(low)} - ${money.format(high)}`
+
+  return <div className="d-grid gap-2 mt-3 border rounded bg-body-secondary p-3" data-area="dry-run">
+    <div className="d-flex justify-content-between align-items-baseline gap-2">
+      <strong className="text-body">If you worked it</strong>
+      <span className="eyebrow">{preview.turns} turn{preview.turns === 1 ? '' : 's'} at {preview.hoeCutPercent}% - costs nothing to look</span>
+    </div>
+    <div className="tnum d-grid gtc-fill-140 gap-2">
+      <AdminMetric label="You keep" value={spread(preview.low.takeHome, preview.high.takeHome)} sub="after every cut" />
+      <AdminMetric label="They take" value={spread(preview.low.crewCut, preview.high.crewCut)} sub={`the hoes' ${preview.hoeCutPercent}%`} />
+      {preview.duesPercent > 0 && <AdminMetric
+        label="Crew dues"
+        value={spread(preview.low.dues, preview.high.dues)}
+        sub={`${preview.duesPercent}% off the top`}
+      />}
+      <AdminMetric label="Shift grosses" value={spread(preview.low.gross, preview.high.gross)} sub="before anybody's cut" />
+    </div>
+    <small className="text-body-tertiary lh-sm">
+      Burns {number.format(preview.condomsBurned)} condoms and {number.format(preview.beerBurned)} beer, and
+      draws {heatAmount(preview.heat)} heat whether or not it turns anything up.
+      {preview.streetBonusPercent > 0 && ` Your hustlers are adding ${preview.streetBonusPercent}% to the take.`}
+      {' '}A range because every turn is a roll: that is the floor and the ceiling, not a guess.
+    </small>
+  </div>
+}
+
 /** <param name="you">Your player id. Rows are matched on it, never on a name two empires can share.</param> */
 function SeasonRaidBoard({ rows, you }: { rows: SeasonStanding[], you: string }) {
   const scored = rows.filter(row => row.raidScore > 0)
@@ -3040,6 +3139,9 @@ function StreetPage(ctx: PageContext) {
         )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</Button>
         <button className="btn btn-secondary" type="button" disabled={busy || maxStreetTurns < 1} onClick={() => setStreetTurns(clampedStreetTurns)}>Max</button>
       </div>
+      {/* Directly under the two dials it prices, so moving one and reading the other is a glance
+          rather than a scroll. */}
+      <ShiftDryRun dashboard={dashboard} turns={streetTurns} hoeCut={hoeCut} district={district} />
       <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>
         <input className="form-check-input flex-shrink-0 mt-1" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
         <span className="d-grid gap-1">

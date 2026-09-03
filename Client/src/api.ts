@@ -648,6 +648,33 @@ export type SeasonHonour = {
   endedAtUtc?: string | null
 }
 
+/** One end of the roll on a previewed shift. */
+export type ShiftMoney = {
+  gross: number
+  crewCut: number
+  dues: number
+  takeHome: number
+}
+
+/**
+ * A shift priced without being worked.
+ *
+ * Money arrives as two ends because the take is a per-turn roll; what is not rolled - supplies and
+ * heat - is exact.
+ */
+export type StreetPreview = {
+  turns: number
+  district: string
+  hoeCutPercent: number
+  duesPercent: number
+  streetBonusPercent: number
+  low: ShiftMoney
+  high: ShiftMoney
+  condomsBurned: number
+  beerBurned: number
+  heat: number
+}
+
 export type SeasonStanding = {
   /** Who the row is. Names change and repeat; this is what "is this me?" compares. */
   playerId: string
@@ -1918,6 +1945,11 @@ export const api = {
   workStreet: (turns: number, autoBuySupplies = false, district?: string) => request<ActionResult>('/api/game/street', {
     method: 'POST',
     body: JSON.stringify({ turns, autoBuySupplies, district }),
+  }),
+  /** Prices a shift without working it. Spends nothing, so the cut can be dragged. */
+  previewStreet: (turns: number, district?: string, hoeCutPercent?: number) => request<StreetPreview>('/api/game/street/preview', {
+    method: 'POST',
+    body: JSON.stringify({ turns, district, hoeCutPercent }),
   }),
   produce: (product: 'weed' | 'coke', turns: number) => request<ActionResult>('/api/game/production', {
     method: 'POST',

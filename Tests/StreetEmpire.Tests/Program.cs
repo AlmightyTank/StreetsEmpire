@@ -37,6 +37,7 @@ var tests = new (string Name, Action Test)[]
     ("hourly upkeep feeds every crew type", HourlyUpkeepFeedsEveryCrewType),
     ("street action returns deterministic tuned breakdown", StreetActionBreakdownIsDeterministic),
     ("street work stops at the storage supplied turn limit", StreetWorkStopsAtStorageSuppliedTurnLimit),
+    ("a previewed shift brackets the shift it previews", APreviewedShiftBracketsTheRealOne),
     ("production uses configured tables", ProductionUsesConfiguredTables),
     ("invalid product is a rule error", InvalidProductIsRuleError),
     ("crew report calculates operating requirements", CrewReportCalculatesRequirements),
@@ -816,6 +817,94 @@ static void StreetActionBreakdownIsDeterministic()
     AssertEqual(22L, Value<long>(breakdown, "playerProfit"));
     AssertEqual(4, Value<int>(breakdown, "condomsUsed"));
     AssertEqual(2, Value<int>(breakdown, "beerUsed"));
+}
+
+
+/// <summary>
+/// The preview is only worth anything if it is the same arithmetic.
+///
+/// It exists so a player can move the cut without spending turns to find out what it does, and a
+/// preview that disagreed with the shift would teach them something false - which is worse than
+/// teaching them nothing, because they would not go and check. So this works real shifts at both ends
+/// of the roll and asserts the quoted bounds actually contain them, and that the preview charges
+/// nothing on the way past.
+/// </summary>
+static void APreviewedShiftBracketsTheRealOne()
+{
+    // Every roll at the bottom of its range, then every roll at the top: the two shifts the quoted
+    // bounds are supposed to be.
+    var options = new GameOptions
+    {
+        MaxActionTurns = 20,
+        StreetAction = new StreetActionOptions
+        {
+            BaseGrossPerTurn = 35,
+            HoeGrossPerTurn = new RangeOptions(18, 30),
+            PimpGrossPerTurn = new RangeOptions(4, 10),
+            PimpRecruitChance = 0,
+            HoeRecruitChance = 0,
+            ThugRecruitChance = 0,
+            Finds = NoFinds()
+        },
+        Morale = new MoraleOptions { TurnsPerCondom = 12, TurnsPerBeer = 10, DesertionThreshold = 0, MaxDesertionChance = 0 }
+    };
+
+    Player Worker() => new()
+    {
+        City = "Atlanta",
+        Turns = 200,
+        Pimps = 2,
+        Hoes = 10,
+        Thugs = 4,
+        HoeCutPercent = 30,
+        Condoms = 500,
+        Beer = 500,
+        HoeHappiness = 80,
+        ThugHappiness = 80,
+        Hideout = new Hideout { Tier = 4, StorageLevel = 6 }
+    };
+
+    var previewed = CreateEconomy(options).ProjectShift(Worker(), 20);
+    AssertEqual(20, previewed.Turns);
+    AssertTrue(previewed.Low.Gross < previewed.High.Gross, "the two ends of the roll are not the same shift");
+
+    // The floor: a shift where every roll came in at the bottom should take home exactly the low quote.
+    var unlucky = Worker();
+    var worst = CreateEconomy(options, new MinimumRandom()).Scout(unlucky, 20);
+    var worstBreakdown = RequiredBreakdown(worst);
+    AssertEqual(previewed.Low.Gross, Value<long>(worstBreakdown, "gross"));
+    AssertEqual(previewed.Low.CrewCut, Value<long>(worstBreakdown, "crewPayout"));
+    AssertEqual(previewed.Low.TakeHome, Value<long>(worstBreakdown, "playerProfit"));
+
+    // The ceiling, the same way. Between them the quote is a bracket rather than a guess.
+    var lucky = Worker();
+    var best = RequiredBreakdown(CreateEconomy(options, new MaximumRandom()).Scout(lucky, 20));
+    AssertEqual(previewed.High.Gross, Value<long>(best, "gross"));
+    AssertEqual(previewed.High.TakeHome, Value<long>(best, "playerProfit"));
+
+    // And the money adds up the way the panel says it does, at both ends.
+    AssertEqual(previewed.Low.Gross, previewed.Low.CrewCut + previewed.Low.Dues + previewed.Low.TakeHome);
+    AssertEqual(previewed.High.Gross, previewed.High.CrewCut + previewed.High.Dues + previewed.High.TakeHome);
+
+    // What is not rolled is exact rather than bracketed: the same numbers the shift actually burns.
+    var supplied = Worker();
+    CreateEconomy(options, new MinimumRandom()).Scout(supplied, 20);
+    AssertEqual(500 - previewed.CondomsBurned, supplied.Condoms);
+    AssertEqual(500 - previewed.BeerBurned, supplied.Beer);
+    AssertEqual(previewed.Heat, Math.Round(supplied.Heat, 1));
+
+    // Moving the dial is the whole point, and it moves both halves in opposite directions.
+    var generous = CreateEconomy(options).ProjectShift(Worker(), 20, hoeCutPercent: 60);
+    AssertEqual(60, generous.HoeCutPercent);
+    AssertTrue(generous.Low.CrewCut > previewed.Low.CrewCut, "a bigger cut pays them more");
+    AssertTrue(generous.Low.TakeHome < previewed.Low.TakeHome, "and leaves you less");
+    AssertEqual(previewed.Low.Gross, generous.Low.Gross);
+
+    // Pricing a shift is a read. It costs nothing, which is the reason the dial can be dragged.
+    var untouched = Worker();
+    var before = (untouched.Turns, untouched.Cash, untouched.Condoms, untouched.Beer, untouched.Heat, untouched.Hoes);
+    CreateEconomy(options).ProjectShift(untouched, 20, hoeCutPercent: 80);
+    AssertEqual(before, (untouched.Turns, untouched.Cash, untouched.Condoms, untouched.Beer, untouched.Heat, untouched.Hoes));
 }
 
 static void StreetWorkStopsAtStorageSuppliedTurnLimit()
@@ -11754,6 +11843,16 @@ sealed class WalkingRandom : IGameRandom
 sealed class MinimumRandom : IGameRandom
 {
     public int NextInclusive(int min, int max) => min;
+    public double NextDouble() => 1;
+}
+
+/// <summary>
+/// The other end of every range, which nothing else here provides: the three doubles above all take
+/// the bottom of a roll, so a test wanting the best a shift can do had no way to ask for it.
+/// </summary>
+sealed class MaximumRandom : IGameRandom
+{
+    public int NextInclusive(int min, int max) => max;
     public double NextDouble() => 1;
 }
 

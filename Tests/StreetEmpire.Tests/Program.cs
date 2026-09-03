@@ -244,7 +244,7 @@ var tests = new (string Name, Action Test)[]
     ("the season date survives the config binder", TheSeasonDateSurvivesTheConfigBinder),
     ("the shipped season runs the window it was announced for", TheShippedSeasonRunsTheWindowItWasAnnouncedFor),
     ("turning seasons on does not roll a stale clock", TurningSeasonsOnDoesNotRollAStaleClock),
-    ("a head start is one season deep and never compounds", AHeadStartNeverCompounds),
+    ("a head start stacks across a run and empties the moment it breaks", AHeadStartStacksAcrossARun),
     ("the shelf remembers who won and where everybody else came", TheShelfRemembersEveryFinish),
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
@@ -5154,34 +5154,74 @@ static void TheSeasonIsWonByTheTakeAndNotByTheEmpire()
 }
 
 /// <summary>
-/// The failure mode every seasonal game has to avoid: winning one season being how you win the next.
-/// A head start is paid off the season just finished and nothing else, so it can never accumulate.
+/// The one thing in this game that compounds, and the thing that stops it running away.
+///
+/// A head start used to be paid off the season just finished and nothing else, on the grounds that
+/// winning a season by having won the one before it is the failure every seasonal game has to avoid.
+/// That is a real risk and this accepts it deliberately, because the game is meant to have highs and
+/// a run of good seasons is the biggest one it can offer: it gives the last fortnight of a season you
+/// have already won something to be about.
+///
+/// What holds it is the reset. The pile is a streak rather than a balance - one finish outside the
+/// ten does not trim it, it takes all of it, and eleventh costs exactly what last does.
 /// </summary>
-static void AHeadStartNeverCompounds()
+static void AHeadStartStacksAcrossARun()
 {
     using var world = NewCrewWorld();
     var options = world.Options;
     var seasons = CreateSeasons(world);
-    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
-
     var champion = world.Member("Champion", cash: 5_000_000);
     world.Db.SaveChanges();
 
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+    var length = TimeSpan.FromDays(options.Seasons.LengthDays);
+
+    // One good season is one prize.
     seasons.RollAsync(now, default).GetAwaiter().GetResult();
-    var afterOne = champion.Cash;
-    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart, afterOne);
+    AssertEqual(options.Seasons.ChampionHeadStart, champion.SeasonHeadStart);
+    AssertEqual(1, champion.SeasonTopTenStreak);
+    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart, champion.Cash);
 
-    // Wins again, from the same position. The head start is the same size, not twice the size.
-    champion.Cash = 5_000_000;
-    seasons.RollAsync(now.AddDays(options.Seasons.LengthDays), default).GetAwaiter().GetResult();
-    AssertEqual(afterOne, champion.Cash);
+    // Two is both of them, which is the part that used to be refused.
+    seasons.RollAsync(now + length, default).GetAwaiter().GetResult();
+    AssertEqual(options.Seasons.ChampionHeadStart * 2, champion.SeasonHeadStart);
+    AssertEqual(2, champion.SeasonTopTenStreak);
+    AssertEqual(options.StartingCash + options.Seasons.ChampionHeadStart * 2, champion.Cash);
 
-    // Two trophies, one leg up.
+    // Now a season they finish outside the ten: eleven rivals who all took something, against a
+    // champion who took nothing. The board is ranked by the take, so being rich does not save them.
+    var thirdOpened = now + length * 2;
+    for (var rival = 0; rival < 11; rival++)
+    {
+        var raider = world.Member($"Raider{rival}", cash: 1_000);
+        world.Db.SaveChanges();
+        RecordRaid(world, raider, champion, thirdOpened.AddDays(1), cash: 10_000 + rival, weed: 0, coke: 0);
+    }
+    world.Db.SaveChanges();
+
+    seasons.RollAsync(thirdOpened + length, default).GetAwaiter().GetResult();
+    // Emptied rather than reduced, and the streak with it.
+    AssertEqual(0L, champion.SeasonHeadStart);
+    AssertEqual(0, champion.SeasonTopTenStreak);
+    AssertEqual(options.StartingCash, champion.Cash);
+
+    // Everybody who did finish in the ten opened a pile of their own on the same roll.
+    var best = world.Db.Players.Single(x => x.Name == "Raider10");
+    AssertEqual(1, best.SeasonTopTenStreak);
+    AssertTrue(best.SeasonHeadStart > 0, "a first good season pays like a first good season");
+
+    // And the climb starts again from the bottom rather than from where it left off. The raids above
+    // belong to a season that has ended, and the board only counts what was taken in this one.
+    var fourthOpened = thirdOpened + length;
+    seasons.RollAsync(fourthOpened + length, default).GetAwaiter().GetResult();
+    AssertEqual(options.Seasons.ChampionHeadStart, champion.SeasonHeadStart);
+    AssertEqual(1, champion.SeasonTopTenStreak);
+
+    // Four seasons on the record whatever the pile says: the trophies are the half a reset cannot take.
     var honours = seasons.HonoursForAsync(champion.Id, default).GetAwaiter().GetResult();
-    AssertEqual(2, honours.Count);
-    AssertTrue(honours.All(x => x.Honour == SeasonHonours.Champion), "both wins are on the record");
+    AssertEqual(4, honours.Count);
 
-    // And a finish worth nothing is worth nothing: the ladder stops at the top ten.
+    // The ladder still stops at the top ten, which is what "outside it" means.
     AssertEqual(SeasonHonours.Champion, SeasonHonours.For(1));
     AssertEqual(SeasonHonours.TopThree, SeasonHonours.For(3));
     AssertEqual(SeasonHonours.TopTen, SeasonHonours.For(10));

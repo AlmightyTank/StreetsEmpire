@@ -280,6 +280,12 @@ public sealed record SeasonResponse(
     long ChampionHeadStart,
     long TopThreeHeadStart,
     long TopTenHeadStart,
+    /// <summary>
+    /// What this player has stacked up so far, and over how many seasons running. Zero for anybody
+    /// whose last season ended outside the top ten, which is most people.
+    /// </summary>
+    long YourHeadStart,
+    int YourTopTenStreak,
     /// <summary>Live table for this season, ranked by raid take.</summary>
     IReadOnlyList<SeasonStandingResponse> CurrentStandings,
     /// <summary>Every season this player has finished, newest first.</summary>

@@ -257,6 +257,35 @@ public sealed class Player
     public DateTime? WalkthroughSeenAtUtc { get; set; }
 
     /// <summary>
+    /// Opening cash the next season owes this player, built up across consecutive top-ten finishes.
+    ///
+    /// A head start used to be worth one season and never compounded, on the stated grounds that
+    /// winning a season by having won the one before it is the failure a seasonal game has to avoid.
+    /// It is deliberate that this now does compound: the game is meant to have high highs, and a run
+    /// of good seasons is the clearest one it can offer - the thing you are protecting when you play
+    /// the last week of a season you have already won.
+    ///
+    /// What keeps it from being a permanent aristocracy is that it is a streak and not a balance. One
+    /// season outside the top ten does not reduce it, it empties it, and the climb starts again from
+    /// the bottom.
+    ///
+    /// Money rather than a multiplier on the streak, because what each season adds depends on where
+    /// you came in it - a champion year and a tenth-place year are not worth the same, and totalling
+    /// the cash is the only version of this that keeps that true.
+    ///
+    /// A person and not an empire, so a roll does not take it. See <see cref="Support.StartingState"/>.
+    /// </summary>
+    public long SeasonHeadStart { get; set; }
+
+    /// <summary>
+    /// How many seasons running this player has finished in the top ten. Zero the moment they do not.
+    ///
+    /// Kept beside the money because it is the half worth reading: the cash says what the run is worth
+    /// and this says what the run is, which is the part somebody tells other people about.
+    /// </summary>
+    public int SeasonTopTenStreak { get; set; }
+
+    /// <summary>
     /// When this player last made an offering. Null means never. One column rather than a table of
     /// prayers because only the most recent one gates anything: what the gods asked for is worked out
     /// from the week rather than stored, so there is no history to keep.

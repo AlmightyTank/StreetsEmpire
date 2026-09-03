@@ -518,6 +518,8 @@ internal static class GameEndpoints
                 config.ChampionHeadStart,
                 config.TopThreeHeadStart,
                 config.TopTenHeadStart,
+                player.SeasonHeadStart,
+                player.SeasonTopTenStreak,
                 currentTable.Select(StandingFromLive).ToList(),
                 honours.Select(x => new SeasonHonourResponse(
                     x.Season.Number,

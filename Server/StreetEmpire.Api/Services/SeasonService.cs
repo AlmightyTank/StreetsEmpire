@@ -131,15 +131,42 @@ public sealed class SeasonService(
 
         await WipeTheWorldAsync(nowUtc, players, ct);
 
-        // Applied off the results just written rather than off anything stored on the player, which is
-        // what keeps a head start to one season. Winning twice running is worth two trophies and one
-        // leg up, never a compounding one.
-        var headStarts = results.ToDictionary(x => x.PlayerId, x => _options.Seasons.HeadStartFor(x.Honour));
+        // What this season alone was worth, read off the results just written.
+        var earned = results.ToDictionary(x => x.PlayerId, x => _options.Seasons.HeadStartFor(x.Honour));
         var next = Open(season.Number + 1, nowUtc);
 
         foreach (var player in players)
         {
-            StartingState.Apply(player, _options, nowUtc, headStarts.GetValueOrDefault(player.Id));
+            /*
+              A top-ten finish adds to the pile; anything less empties it.
+
+              This is the one place in the game that compounds, and it is meant to. A season used to
+              end and hand its winner a leg up worth an hour, which made the last fortnight of a season
+              you had already won worth nothing to play - there was no run to protect. Now there is:
+              the streak is the high, and the whole of it is on the table every season.
+
+              Emptied rather than reduced on a bad year, and emptied for eleventh place exactly as hard
+              as for last. That is what stops it becoming an aristocracy - the pile is only ever one
+              ordinary season away from nothing, and everyone who has one knows it.
+
+              Everybody in the world is in `players`, because the roll ranks the whole board. So a
+              player who spent the season doing nothing is not skipped here, they are reset - which is
+              what "miss a season and you lose it" has to mean in a world where standing still is
+              itself a finish outside the top ten.
+            */
+            var won = earned.GetValueOrDefault(player.Id);
+            if (won > 0)
+            {
+                player.SeasonHeadStart += won;
+                player.SeasonTopTenStreak++;
+            }
+            else
+            {
+                player.SeasonHeadStart = 0;
+                player.SeasonTopTenStreak = 0;
+            }
+
+            StartingState.Apply(player, _options, nowUtc, player.SeasonHeadStart);
             if (player.Hideout is not null)
                 StartingState.Apply(player.Hideout, nowUtc);
             // The named crew is rebuilt from the starting pimp count, so nobody carries a specialist
@@ -151,8 +178,9 @@ public sealed class SeasonService(
                 PlayerId = player.Id,
                 Action = "START",
                 Summary = $"{next.Name} opened. {player.Name} starts again in {player.City}"
-                    + (headStarts.GetValueOrDefault(player.Id) is var head && head > 0
-                        ? $", with {head:C0} on account of last season."
+                    + (player.SeasonHeadStart > 0
+                        ? $", with {player.SeasonHeadStart:C0} on account of {player.SeasonTopTenStreak:N0}"
+                          + $" season{(player.SeasonTopTenStreak == 1 ? string.Empty : "s")} running in the top ten."
                         : "."),
                 CashDelta = player.Cash,
                 PimpsDelta = player.Pimps,

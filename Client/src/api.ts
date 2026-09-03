@@ -631,6 +631,9 @@ export type Season = {
   championHeadStart: number
   topThreeHeadStart: number
   topTenHeadStart: number
+  /** What you have stacked across consecutive top-ten finishes, and how many that is. */
+  yourHeadStart: number
+  yourTopTenStreak: number
   currentStandings: SeasonStanding[]
   honours: SeasonHonour[]
   lastSeason: SeasonStanding[]

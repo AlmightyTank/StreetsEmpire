@@ -2456,10 +2456,23 @@ function ThisSeasonTab({ ctx, season, now }: {
         <StatusRow label="Champion" value={money.format(season.championHeadStart)} />
         <StatusRow label="Top three" value={money.format(season.topThreeHeadStart)} />
         <StatusRow label="Top ten" value={money.format(season.topTenHeadStart)} />
+        {/* The run itself, which is the part worth protecting and the reason to keep playing a season
+            you have already won. Only shown to somebody who has one - a zero here is noise. */}
+        {season.yourTopTenStreak > 0 && <div className="d-grid gap-1 mt-3 border border-primary rounded bg-body-tertiary px-3 py-2">
+          <span className="eyebrow text-primary">Your run</span>
+          <strong className="fs-5">{money.format(season.yourHeadStart)}</strong>
+          <small className="text-body-secondary lh-sm">
+            Stacked over {number.format(season.yourTopTenStreak)} season
+            {season.yourTopTenStreak === 1 ? '' : 's'} running in the top ten. Finish in the top ten
+            again and this season's prize is added to it. Finish outside it, even once, and all of it
+            goes.
+          </small>
+        </div>}
         <p className="text-body-tertiary small mt-3 mb-0">
-          Paid off this season alone and never stacked, because winning one season being how you win
-          the next is the one failure a seasonal game has to avoid. Against a Warehouse it is a
-          rounding error; through the first hour it is a real leg up.
+          These stack. Finish in the top ten and what you won is added to whatever your last run was
+          worth, season after season - and the whole pile is emptied the first time you finish outside
+          it, whether you came eleventh or last. A long run is the biggest prize in the game and it is
+          never more than one ordinary season from nothing.
         </p>
       </section>}
     </div>

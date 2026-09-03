@@ -710,8 +710,6 @@ internal static class AdminOpsEndpoints
                 return Results.BadRequest(new { error = "Max uses must be between 1 and 1,000." });
 
             var now = DateTime.UtcNow;
-            if (request.ExpiresAtUtc is { } expires && expires <= now)
-                return Results.BadRequest(new { error = "Expiration must be in the future." });
 
             PlayerAccount? issuedTo = null;
             if (request.IssuedToAccountId is { } issuedToAccountId)
@@ -723,7 +721,7 @@ internal static class AdminOpsEndpoints
                     return Results.NotFound(new { error = "That account does not exist." });
             }
 
-            var keys = await betaKeys.MintAsync(request.Count, request.IssuedToAccountId, label, maxUses, request.ExpiresAtUtc, ct);
+            var keys = await betaKeys.MintAsync(request.Count, request.IssuedToAccountId, label, maxUses, ct);
             foreach (var key in keys)
                 key.IssuedToAccount = issuedTo;
 

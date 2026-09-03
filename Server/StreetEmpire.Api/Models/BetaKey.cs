@@ -27,7 +27,14 @@ public sealed class BetaKey
     public PlayerAccount? RedeemedByAccount { get; set; }
     public DateTime? RedeemedAtUtc { get; set; }
 
-    public DateTime? ExpiresAtUtc { get; set; }
+    /// <summary>
+    /// Taken back, and when. The only thing that ever stops a key working besides being spent.
+    ///
+    /// There used to be an expiry beside this. It went because it answered a question nobody was
+    /// asking and quietly created one: a key handed to a friend who took a fortnight to look at it
+    /// would stop working on its own, with nothing done wrong by anybody and no way to tell which of
+    /// the two of them had got it wrong. A key lasts until it is used or taken away.
+    /// </summary>
     public DateTime? RevokedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 

@@ -15,11 +15,10 @@ internal static class BetaKeyMappers
             key.MaxUses,
             key.Uses,
             UsesLeft(key),
-            Status(key, nowUtc),
+            Status(key),
             key.RedeemedByAccount?.Player?.Id,
             key.RedeemedByAccount?.Player?.Name ?? key.RedeemedByAccount?.Username,
             key.RedeemedAtUtc,
-            key.ExpiresAtUtc,
             key.RevokedAtUtc,
             key.CreatedAtUtc);
 
@@ -32,7 +31,7 @@ internal static class BetaKeyMappers
             key.MaxUses,
             key.Uses,
             UsesLeft(key),
-            Status(key, nowUtc),
+            Status(key),
             key.IssuedToAccountId,
             key.IssuedToAccount?.Player?.Id,
             key.IssuedToAccount?.Player?.Name,
@@ -42,17 +41,19 @@ internal static class BetaKeyMappers
             key.RedeemedByAccount?.Player?.Name,
             key.RedeemedByAccount?.Username,
             key.RedeemedAtUtc,
-            key.ExpiresAtUtc,
             key.RevokedAtUtc,
             key.CreatedAtUtc);
 
     private static int UsesLeft(BetaKey key)
         => Math.Max(0, Math.Max(1, key.MaxUses) - key.Uses);
 
-    private static string Status(BetaKey key, DateTime nowUtc)
+    /// <summary>
+    /// Three states, and there is no fourth. A key is taken back, spent, or waiting - it does not go
+    /// off on its own while nobody is looking.
+    /// </summary>
+    private static string Status(BetaKey key)
     {
         if (key.RevokedAtUtc is not null) return "Revoked";
-        if (key.ExpiresAtUtc is { } expires && expires <= nowUtc) return "Expired";
         if (key.Uses >= Math.Max(1, key.MaxUses)) return "Used";
         return "Available";
     }

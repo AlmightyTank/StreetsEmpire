@@ -3137,7 +3137,9 @@ static void ABetaKeyIsReadTheWayDiscordHandsItAround()
     world.Db.BetaKeys.AddRange(
         new BetaKey { Code = "SEGOODKEY55", MaxUses = 1, CreatedAtUtc = now },
         new BetaKey { Code = "SEUSEDKEY55", MaxUses = 1, Uses = 1, CreatedAtUtc = now },
-        new BetaKey { Code = "SEOLDKEY555", MaxUses = 1, ExpiresAtUtc = now.AddMinutes(-1), CreatedAtUtc = now.AddDays(-2) },
+        // An old key that nobody has touched. There is no expiry any more, so age on its own means
+        // nothing: a key handed to somebody who takes a fortnight to look at it still works.
+        new BetaKey { Code = "SEOLDKEY555", MaxUses = 1, CreatedAtUtc = now.AddDays(-400) },
         new BetaKey { Code = "SEREVOKED55", MaxUses = 1, RevokedAtUtc = now.AddMinutes(-1), CreatedAtUtc = now.AddDays(-2) });
     world.Db.SaveChanges();
 
@@ -3146,8 +3148,8 @@ static void ABetaKeyIsReadTheWayDiscordHandsItAround()
         "a live key should validate");
     AssertEqual("That beta key has already been used.",
         service.CheckAsync("SE-USEDK-EY55", now, default).GetAwaiter().GetResult().Error);
-    AssertEqual("That beta key has expired.",
-        service.CheckAsync("SE-OLDKE-Y555", now, default).GetAwaiter().GetResult().Error);
+    AssertTrue(service.CheckAsync("SE-OLDKE-Y555", now, default).GetAwaiter().GetResult().Accepted,
+        "a key over a year old still works: only spending it or revoking it stops it");
     AssertEqual("That beta key has been revoked.",
         service.CheckAsync("SE-REVOK-ED55", now, default).GetAwaiter().GetResult().Error);
     AssertEqual("That beta key does not exist.",

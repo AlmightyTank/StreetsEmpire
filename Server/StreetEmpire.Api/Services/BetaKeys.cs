@@ -84,10 +84,7 @@ public sealed class BetaKeys(GameDbContext db)
         if (count <= 0 || account.IsBot)
             return [];
 
-        var expiry = options.Beta.KeyExpiryDays > 0
-            ? nowUtc.AddDays(options.Beta.KeyExpiryDays)
-            : (DateTime?)null;
-        return await MintAsync(count, account.Id, "Invite", maxUses: 1, expiry, cancellationToken);
+        return await MintAsync(count, account.Id, "Invite", maxUses: 1, cancellationToken);
     }
 
     /// <summary>
@@ -131,9 +128,6 @@ public sealed class BetaKeys(GameDbContext db)
                 .ToListAsync(cancellationToken))
             .ToHashSet();
 
-        var expiry = options.Beta.KeyExpiryDays > 0
-            ? nowUtc.AddDays(options.Beta.KeyExpiryDays)
-            : (DateTime?)null;
         var touched = 0;
 
         foreach (var account in accounts)
@@ -152,7 +146,7 @@ public sealed class BetaKeys(GameDbContext db)
                     .FirstOrDefault();
                 if (entry is null)
                 {
-                    entry = (await MintAsync(1, account.Id, "Beta member", maxUses: 1, null, cancellationToken))[0];
+                    entry = (await MintAsync(1, account.Id, "Beta member", maxUses: 1, cancellationToken))[0];
                     theirs.Add(entry);
                 }
 
@@ -175,7 +169,7 @@ public sealed class BetaKeys(GameDbContext db)
             var handed = theirs.Count(x => x.RedeemedByAccountId != account.Id);
             if (handed < share)
             {
-                await MintAsync(share - handed, account.Id, "Invite", maxUses: 1, expiry, cancellationToken);
+                await MintAsync(share - handed, account.Id, "Invite", maxUses: 1, cancellationToken);
                 changed = true;
             }
 
@@ -195,7 +189,6 @@ public sealed class BetaKeys(GameDbContext db)
         Guid? issuedToAccountId,
         string? label,
         int maxUses,
-        DateTime? expiresAtUtc,
         CancellationToken cancellationToken)
     {
         var keys = new List<BetaKey>(Math.Clamp(count, 1, 500));
@@ -208,7 +201,6 @@ public sealed class BetaKeys(GameDbContext db)
                 IssuedToAccountId = issuedToAccountId,
                 Label = string.IsNullOrWhiteSpace(label) ? null : label.Trim(),
                 MaxUses = Math.Max(1, maxUses),
-                ExpiresAtUtc = expiresAtUtc,
                 CreatedAtUtc = DateTime.UtcNow,
             };
             db.BetaKeys.Add(key);
@@ -235,8 +227,6 @@ public sealed class BetaKeys(GameDbContext db)
             return BetaKeyDecision.Refused("That beta key does not exist.");
         if (key.RevokedAtUtc is not null)
             return BetaKeyDecision.Refused("That beta key has been revoked.");
-        if (key.ExpiresAtUtc is { } expires && expires <= nowUtc)
-            return BetaKeyDecision.Refused("That beta key has expired.");
         if (key.Uses >= Math.Max(1, key.MaxUses))
             return BetaKeyDecision.Refused("That beta key has already been used.");
 

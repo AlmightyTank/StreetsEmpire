@@ -1515,11 +1515,10 @@ export type AccountInviteKey = {
   maxUses: number
   uses: number
   usesLeft: number
-  status: 'Available' | 'Used' | 'Expired' | 'Revoked'
+  status: 'Available' | 'Used' | 'Revoked'
   redeemedByPlayerId?: string | null
   redeemedByPlayerName?: string | null
   redeemedAtUtc?: string | null
-  expiresAtUtc?: string | null
   revokedAtUtc?: string | null
   createdAtUtc: string
 }
@@ -2050,7 +2049,7 @@ export type AdminBetaKey = {
   maxUses: number
   uses: number
   usesLeft: number
-  status: 'Available' | 'Used' | 'Expired' | 'Revoked'
+  status: 'Available' | 'Used' | 'Revoked'
   issuedToAccountId?: string | null
   issuedToPlayerId?: string | null
   issuedToPlayerName?: string | null
@@ -2060,18 +2059,17 @@ export type AdminBetaKey = {
   redeemedByPlayerName?: string | null
   redeemedByUsername?: string | null
   redeemedAtUtc?: string | null
-  expiresAtUtc?: string | null
   revokedAtUtc?: string | null
   createdAtUtc: string
 }
 
 export type AdminBetaKeys = { total: number, keys: AdminBetaKey[] }
 
+/** No expiry: a key lasts until it is spent or revoked. */
 export type AdminMintBetaKeys = {
   count: number
   label?: string | null
   maxUses?: number | null
-  expiresAtUtc?: string | null
   issuedToAccountId?: string | null
   reason?: string | null
 }

@@ -1772,17 +1772,18 @@ public sealed record AdminBetaKeyResponse(
     string? RedeemedByPlayerName,
     string? RedeemedByUsername,
     DateTime? RedeemedAtUtc,
-    DateTime? ExpiresAtUtc,
     DateTime? RevokedAtUtc,
     DateTime CreatedAtUtc);
 
 public sealed record AdminBetaKeysResponse(int Total, IReadOnlyList<AdminBetaKeyResponse> Keys);
 
+/// <summary>
+/// A batch to mint. No expiry: a key lasts until it is spent or revoked.
+/// </summary>
 public sealed record AdminMintBetaKeysRequest(
     int Count,
     string? Label,
     int? MaxUses,
-    DateTime? ExpiresAtUtc,
     Guid? IssuedToAccountId,
     string? Reason);
 

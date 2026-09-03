@@ -38,7 +38,6 @@ public sealed record AccountInviteKeyResponse(
     Guid? RedeemedByPlayerId,
     string? RedeemedByPlayerName,
     DateTime? RedeemedAtUtc,
-    DateTime? ExpiresAtUtc,
     DateTime? RevokedAtUtc,
     DateTime CreatedAtUtc);
 

@@ -289,8 +289,6 @@ public sealed class BetaOptions
     /// </summary>
     public int KeysPerPlayer { get; set; } = 3;
 
-    /// <summary>Zero means no automatic expiry.</summary>
-    public int KeyExpiryDays { get; set; }
 }
 
 /// <summary>

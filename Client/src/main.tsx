@@ -57,14 +57,13 @@ function compactDateTime(iso: string | null | undefined) {
   return iso ? new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Never'
 }
 
+/** Three states and no fourth: a key is waiting, spent, or taken back. It never goes off on its own. */
 function betaKeyStatusClass(status: AccountInviteKey['status'] | AdminBetaKey['status']) {
   return status === 'Available'
     ? 'text-bg-success'
     : status === 'Used'
       ? 'text-bg-primary'
-      : status === 'Expired'
-        ? 'text-bg-warning'
-        : 'text-bg-secondary'
+      : 'text-bg-secondary'
 }
 
 /*
@@ -5503,7 +5502,6 @@ function AdminKeysPanel({ busy }: { busy: boolean }) {
   const [label, setLabel] = useState('')
   const [count, setCount] = useState(10)
   const [maxUses, setMaxUses] = useState(1)
-  const [expiresAt, setExpiresAt] = useState('')
   const [reason, setReason] = useState('')
   const [minted, setMinted] = useState<AdminBetaKey[]>([])
   const [message, setMessage] = useState('')
@@ -5523,12 +5521,10 @@ function AdminKeysPanel({ busy }: { busy: boolean }) {
     event.preventDefault()
     setWorking(true); setError(''); setMessage('')
     try {
-      const expiresAtUtc = expiresAt ? new Date(expiresAt).toISOString() : null
       const created = await adminApi.mintBetaKeys({
         count,
         label: label.trim() || null,
         maxUses,
-        expiresAtUtc,
         reason: reason.trim() || null,
       })
       setMinted(created.keys)
@@ -5589,15 +5585,6 @@ function AdminKeysPanel({ busy }: { busy: boolean }) {
               max={1000}
               value={maxUses}
               onChange={event => setMaxUses(Math.max(1, Math.min(1000, Number(event.target.value) || 1)))}
-            />
-          </label>
-          <label className="field">
-            Expires
-            <input
-              className="form-control"
-              type="datetime-local"
-              value={expiresAt}
-              onChange={event => setExpiresAt(event.target.value)}
             />
           </label>
         </div>
@@ -5683,7 +5670,6 @@ function AdminKeysPanel({ busy }: { busy: boolean }) {
               <td className="small">
                 <span className="d-block">Made {compactDateTime(key.createdAtUtc)}</span>
                 <span className="d-block text-body-tertiary">Redeemed {compactDateTime(key.redeemedAtUtc)}</span>
-                {key.expiresAtUtc && <span className="d-block text-body-tertiary">Expires {compactDateTime(key.expiresAtUtc)}</span>}
               </td>
               <td className="text-end">
                 <div className="btn-group btn-group-sm">
@@ -9984,7 +9970,6 @@ function AccountInvitesPanel({ busy }: { busy: boolean }) {
             <td className="small">
               <span className="d-block">Made {compactDateTime(key.createdAtUtc)}</span>
               <span className="d-block text-body-tertiary">Redeemed {compactDateTime(key.redeemedAtUtc)}</span>
-              {key.expiresAtUtc && <span className="d-block text-body-tertiary">Expires {compactDateTime(key.expiresAtUtc)}</span>}
             </td>
             <td className="text-end">
               <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => void copy(key.displayCode, 'Invite copied.')}>

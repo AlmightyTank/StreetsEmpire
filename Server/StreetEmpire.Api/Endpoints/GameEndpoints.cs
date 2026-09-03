@@ -177,6 +177,7 @@ internal static class GameEndpoints
                 player.Id,
                 player.Name,
                 player.Account.IsAdmin,
+                player.WalkthroughSeenAtUtc is null,
                 player.City,
                 currentMarket,
                 cityMarkets,
@@ -322,49 +323,21 @@ internal static class GameEndpoints
         }).RequireAuthorization();
 
 
-        // Prices a shift without working it, so the cut can be moved and read before any turns are
-        // spent on finding out. A read: it takes no turns, writes nothing, and deliberately does not
-        // advance the clock - a player dragging a slider should not be charging their own turn tick a
-        // dozen times a second.
-        app.MapPost("/api/game/street/preview", async (
-            StreetPreviewRequest request,
+        // Both ends of the walkthrough's one piece of state. Finishing it and asking for it again are
+        // the same decision read in two directions, so they are one route rather than two that could
+        // disagree about what "seen" means.
+        app.MapPut("/api/game/walkthrough", async (
+            WalkthroughRequest request,
             CurrentPlayerService current,
-            EconomyService economy,
-            TerritoryService territories,
+            GameDbContext db,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
-            try
-            {
-                var projection = economy.ProjectShift(
-                    player,
-                    request.Turns,
-                    request.District,
-                    await territories.EffectsForAsync(player.Id, player.City, ct),
-                    await territories.GarrisonedPimpIdsAsync(player.Id, ct),
-                    request.HoeCutPercent);
-
-                return Results.Ok(new StreetPreviewResponse(
-                    projection.Turns,
-                    projection.District,
-                    projection.HoeCutPercent,
-                    projection.DuesPercent,
-                    projection.StreetBonusPercent,
-                    Money(projection.Low),
-                    Money(projection.High),
-                    projection.CondomsBurned,
-                    projection.BeerBurned,
-                    projection.Heat));
-            }
-            catch (GameRuleException ex)
-            {
-                return Results.BadRequest(new { error = ex.Message });
-            }
-
-            static ShiftMoneyResponse Money(ShiftMoney money)
-                => new(money.Gross, money.CrewCut, money.Dues, money.TakeHome);
+            player.WalkthroughSeenAtUtc = request.Seen ? DateTime.UtcNow : null;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { walkthroughDue = player.WalkthroughSeenAtUtc is null });
         }).RequireAuthorization();
 
 

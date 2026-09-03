@@ -403,6 +403,8 @@ export type Dashboard = {
   playerId: string
   name: string
   isAdmin: boolean
+  /** The opening walkthrough has not been finished yet, on this account rather than in this browser. */
+  walkthroughDue: boolean
   city: string
   currentMarket: CityMarket
   cityMarkets: CityMarket[]
@@ -646,33 +648,6 @@ export type SeasonHonour = {
   raidCokeTaken: number
   honour?: string | null
   endedAtUtc?: string | null
-}
-
-/** One end of the roll on a previewed shift. */
-export type ShiftMoney = {
-  gross: number
-  crewCut: number
-  dues: number
-  takeHome: number
-}
-
-/**
- * A shift priced without being worked.
- *
- * Money arrives as two ends because the take is a per-turn roll; what is not rolled - supplies and
- * heat - is exact.
- */
-export type StreetPreview = {
-  turns: number
-  district: string
-  hoeCutPercent: number
-  duesPercent: number
-  streetBonusPercent: number
-  low: ShiftMoney
-  high: ShiftMoney
-  condomsBurned: number
-  beerBurned: number
-  heat: number
 }
 
 export type SeasonStanding = {
@@ -1946,11 +1921,6 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ turns, autoBuySupplies, district }),
   }),
-  /** Prices a shift without working it. Spends nothing, so the cut can be dragged. */
-  previewStreet: (turns: number, district?: string, hoeCutPercent?: number) => request<StreetPreview>('/api/game/street/preview', {
-    method: 'POST',
-    body: JSON.stringify({ turns, district, hoeCutPercent }),
-  }),
   produce: (product: 'weed' | 'coke', turns: number) => request<ActionResult>('/api/game/production', {
     method: 'POST',
     body: JSON.stringify({ product, turns }),
@@ -2001,6 +1971,11 @@ export const api = {
   withdraw: (amount: number) => request<ActionResult>('/api/game/bank/withdraw', {
     method: 'POST',
     body: JSON.stringify({ amount }),
+  }),
+  /** Marks the opening walkthrough done, or false to put it back in front of the player. */
+  setWalkthroughSeen: (seen: boolean) => request<{ walkthroughDue: boolean }>('/api/game/walkthrough', {
+    method: 'PUT',
+    body: JSON.stringify({ seen }),
   }),
   setHoeCut: (hoeCutPercent: number) => request<ActionResult>('/api/game/crew/settings', {
     method: 'PUT',

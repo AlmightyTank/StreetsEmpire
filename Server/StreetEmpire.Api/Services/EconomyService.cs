@@ -402,87 +402,6 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// Where the crew is working. Null takes the neutral district, which is exactly the base numbers, so
     /// every caller written before there was anywhere to choose keeps working the shift it always did.
     /// </param>
-    /// <summary>
-    /// What a shift would do, without doing it.
-    ///
-    /// The one thing a new player cannot learn by reading is what the hoes' cut actually costs them,
-    /// because the only way to find out was to spend the turns and see - and turns are the one thing in
-    /// this game that does not come back before tomorrow. This runs the shift's arithmetic and applies
-    /// none of it, so the dial can be moved and read at no charge.
-    ///
-    /// Quoted as a range rather than an average on purpose. The take is a per-turn roll between two
-    /// bounds, and an average is a number the player will not see: half their shifts come in under it
-    /// and they will read that as being cheated. The bounds are honest and they are also exactly the
-    /// bounds, because within one shift the crew does not change - recruits land after the last turn is
-    /// counted, so this is not an estimate of the gross, it is its floor and its ceiling.
-    ///
-    /// Everything that is not rolled is reported exactly: what the shift burns in condoms and beer,
-    /// and the heat it draws whether or not it turns anything up.
-    /// </summary>
-    /// <param name="hoeCutPercent">
-    /// A cut to price instead of the one on the player. This is the whole point of the preview - the
-    /// dial has to be movable before it is saved, or the player is still learning it by spending.
-    /// </param>
-    public StreetShiftProjection ProjectShift(
-        Player player,
-        int turns,
-        string? district = null,
-        TerritoryEffects? territory = null,
-        IReadOnlyCollection<long>? awayPimpIds = null,
-        int? hoeCutPercent = null)
-    {
-        var street = _options.StreetAction;
-        var where = district is null
-            ? street.DefaultDistrict()
-            : street.District(district)
-              ?? throw new GameRuleException($"Work one of: {string.Join(", ", street.Districts.Select(x => x.Name))}.");
-
-        var planned = Math.Max(0, turns);
-        var cut = Math.Clamp(hoeCutPercent ?? player.HoeCutPercent, 0, 100);
-        var duesPercent = player.Alliance is { } crew ? Math.Clamp(crew.DuesPercent, 0, 100) : 0;
-        var streetBonusPercent = pimps.StreetBonusPercent(player, awayPimpIds ?? [])
-                                 + (territory?.StreetIncomePercent ?? 0);
-
-        // Both ends through the same arithmetic Scout uses, in the same order, rounding where it
-        // rounds: once on the whole shift rather than once a turn.
-        var low = TakeHomeFrom(PerTurnGross(player, street.HoeGrossPerTurn.Min, street.PimpGrossPerTurn.Min) * planned);
-        var high = TakeHomeFrom(PerTurnGross(player, street.HoeGrossPerTurn.Max, street.PimpGrossPerTurn.Max) * planned);
-
-        ShiftMoney TakeHomeFrom(long rolled)
-        {
-            var gross = (long)Math.Round(rolled * where.Scale(where.GrossPercent), MidpointRounding.AwayFromZero);
-            gross += (long)Math.Round(gross * (streetBonusPercent / 100.0), MidpointRounding.AwayFromZero);
-            var crewPayout = (long)Math.Round(gross * (cut / 100.0), MidpointRounding.AwayFromZero);
-            var dues = Math.Min(
-                (long)Math.Round(gross * (duesPercent / 100.0), MidpointRounding.AwayFromZero),
-                Math.Max(0, gross - crewPayout));
-            return new ShiftMoney(gross, crewPayout, dues, Math.Max(0, gross - crewPayout - dues));
-        }
-
-        var morale = _options.Morale;
-        return new StreetShiftProjection(
-            planned,
-            where.Key,
-            cut,
-            duesPercent,
-            streetBonusPercent,
-            low,
-            high,
-            RequiredUpkeep(player.Hoes, planned, morale.TurnsPerCondom),
-            RequiredUpkeep(player.Thugs, planned, morale.TurnsPerBeer),
-            Math.Round(
-                Math.Max(0, _options.Hideout.HeatPerStreetTurn) * planned
-                * _options.CityMarkets.HeatMultiplier(player.City)
-                * where.Scale(where.HeatPercent),
-                1));
-    }
-
-    /// <summary>One turn of gross at a named roll, before the district and before anybody's cut.</summary>
-    private long PerTurnGross(Player player, int hoeRoll, int pimpRoll)
-        => _options.StreetAction.BaseGrossPerTurn
-           + (long)player.Hoes * hoeRoll
-           + (long)player.Pimps * pimpRoll;
-
     public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null, string? district = null)
     {
         TravelGate.EnsureLanded(player);
@@ -2084,31 +2003,6 @@ public sealed record Restock(int Condoms, int Beer, long Cost)
         return string.Join(" and ", parts);
     }
 }
-
-/// <summary>
-/// What one shift would pay, at one end of the roll.
-///
-/// Four numbers rather than one because the two that go missing are the ones being taught: a player
-/// who only ever sees what landed in their pocket has no way to know the gross was half as much again
-/// and where the difference went.
-/// </summary>
-public sealed record ShiftMoney(long Gross, long CrewCut, long Dues, long TakeHome);
-
-/// <summary>
-/// A shift priced but not worked: the money at both ends of the roll, and everything that is not
-/// rolled reported exactly.
-/// </summary>
-public sealed record StreetShiftProjection(
-    int Turns,
-    string District,
-    int HoeCutPercent,
-    int DuesPercent,
-    int StreetBonusPercent,
-    ShiftMoney Low,
-    ShiftMoney High,
-    int CondomsBurned,
-    int BeerBurned,
-    double Heat);
 
 /// <summary>A player's position in the net worth order, without the rest of the player row.</summary>
 public sealed record PlayerStanding(long NetWorth, DateTime CreatedAtUtc);

@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, StreetPreview, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -428,8 +428,6 @@ function MobileNav({ pages, active, onPick, onLogout }: {
  * for. The tour drives the pages itself, because half of what a newcomer needs to learn is which tab a
  * thing lives on - being taken there is the lesson.
  */
-const tourSeenKey = 'street-empire.walkthrough.seen'
-
 /**
  * A half-finished Discord sign-up has to survive a reload, and a reload takes the query string with
  * it. This remembers that one is in flight; the identity behind it never leaves the server, so the
@@ -456,67 +454,84 @@ const discordOutcomes: Partial<Record<DiscordOutcome, { text: string, bad?: bool
 // A step is a page, a tab and a panel, which is the same address everything else navigates by. It was
 // a page and a target, and the target was looked up under a marker only the tour used - so the tour and
 // the guidance list were two vocabularies for one question, and only one of them was ever checked.
-const tourSteps: { page: AppPage, tab?: string, area: string, title: string, body: string }[] = [
-  {
-    page: 'overview',
-    area: 'status',
-    title: 'Your numbers',
-    body: 'Cash, turns, crew and heat. Turns are the real currency - almost everything worth doing spends '
-      + 'them, and they come back slowly on their own. Heat is how much attention you have drawn; let it '
-      + 'climb and the busts start.',
-  },
-  {
-    page: 'overview',
-    area: 'ladder',
-    title: 'What to do next',
-    body: 'The opening ladder, in order. Each rung says why it is worth doing, and clicking one takes you '
-      + 'to the page where it happens. If you ever lose the thread, come back here.',
-  },
+/*
+  A step is a page, a tab and a panel - the same address everything else navigates by - plus the thing
+  the player does there.
+
+  The six steps this replaces were a guided read: here is the status strip, here is the hideout, here
+  are other players. Nobody remembers a tour of panels. What a first session actually has to teach is
+  the loop, and the loop is four moves - see what a shift pays, work one, put the money somewhere it
+  cannot be taken, buy what the next one burns.
+
+  `done` is what makes a beat a beat rather than a caption. It reads the live dashboard, so the tick
+  appears because the player did the thing and not because they pressed Next. Next is never blocked on
+  it: somebody who already knows this game should be able to leave, and a tutorial that traps people
+  is worse than one nobody reads.
+*/
+type TourStep = {
+  page: AppPage
+  tab?: string
+  area: string
+  title: string
+  body: string
+  /** What doing it looks like from the outside, against the dashboard as it was when the step opened. */
+  done?: (now: Dashboard, before: Dashboard) => boolean
+  doing?: string
+}
+
+const tourSteps: TourStep[] = [
   {
     page: 'street',
     area: 'street-action',
     title: 'Working the streets',
-    body: 'Where turns become money. Your hoes earn, your thugs guard them, and you pick up new crew while '
-      + 'you are out. It costs supplies - condoms and beer - so a shift you cannot supply pays less and '
-      + 'sours the crew.',
+    body: 'Turns are the real currency here. Cash comes back with the next shift; turns come back at '
+      + 'twelve an hour, so a bank spent badly is tomorrow gone. Work twenty rather than the lot - '
+      + 'enough to see what a shift does, cheap enough to be wrong about. The cut beside it is what your '
+      + 'hoes keep before anything reaches you: raise it and they stay happy on less of your money, drop '
+      + 'it and the reverse. Thirty is the middle.',
+    doing: 'Work a shift',
+    done: (now, before) => now.turns < before.turns,
   },
   {
-    page: 'crew',
-    tab: 'hideout',
-    area: 'rooms',
-    title: 'The hideout is the engine',
-    body: 'Every room does one job: the store decides how big a crew you can feed, the labs make product '
-      + 'while you are away, the safe keeps cash out of a raider\'s hands. Nothing you buy here is lost - '
-      + 'a building counts towards your standing at every pound it cost.',
+    page: 'street',
+    area: 'bank',
+    title: 'Put it somewhere it cannot be taken',
+    body: 'Cash on hand is what a raider walks off with. Banked cash is not, and it still counts towards '
+      + 'your standing. This is the single cheapest habit in the game and the one nothing tells you about '
+      + 'until the night it costs you.',
+    doing: 'Bank what you just earned',
+    done: (now, before) => now.bankCash > before.bankCash,
   },
   {
-    page: 'market',
-    tab: 'flea',
-    area: 'flea',
-    title: 'Buying and selling',
-    body: 'Prices differ by town, so what is dear here is cheap somewhere else. This is also where you bank '
-      + 'cash and send crew on runs: money on hand is stolen in a raid and money in the bank is not. '
-      + 'The trip costs turns, so it is a move you make with a full safe rather than after every shift.',
-  },
-  {
-    page: 'recon',
-    tab: 'targets',
-    area: 'targets',
-    title: 'Other people',
-    body: 'You can look up any player and take what they have, and they can do the same to you. You are only '
-      + 'matched against people worth robbing and able to fight back, so nobody can farm a newcomer - and '
-      + 'your buildings are never part of what is on the table.',
+    page: 'street',
+    area: 'supplies',
+    title: 'Buy what the next one burns',
+    body: 'Your hoes work through condoms and your thugs drink; a shift you cannot supply pays the same '
+      + 'and sours the crew, and a sour crew starts walking out. You started with about one full shift '
+      + 'of both. That checkbox under the button buys the shortfall for you - that is what it is for.',
+    doing: 'Restock, or tick auto-buy',
+    done: (now, before) => now.condoms > before.condoms || now.beer > before.beer,
   },
 ]
 
-function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
+
+function Walkthrough({ active, stepIndex, dashboard, onPage, onStep, onClose }: {
   active: boolean
   stepIndex: number
+  dashboard: Dashboard
   onPage: GoTo
   onStep: (index: number) => void
   onClose: () => void
 }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
+  /*
+    The dashboard as it stood when this step opened, so "did they do it" is a comparison rather than a
+    threshold nobody could write. Banking is not "bank over a thousand", it is "there is more in there
+    than when I asked" - which works the same for somebody on their first shift and somebody who came
+    back to the walkthrough a month in.
+  */
+  const opened = useRef(dashboard)
+  useEffect(() => { opened.current = dashboard }, [stepIndex])
   // The card measures itself. The first version guessed 200px of height and placed the card against
   // that guess, which put it off the top of the screen the moment a target was tall - the opening
   // ladder is long enough that the step explaining it was the step you could not read.
@@ -579,6 +594,7 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
   if (!active || !step) return null
 
   const last = stepIndex === tourSteps.length - 1
+  const didIt = step?.done?.(dashboard, opened.current) ?? false
   const pad = 8
   const gap = pad + 10
   const edge = 12
@@ -631,6 +647,12 @@ function Walkthrough({ active, stepIndex, onPage, onStep, onClose }: {
       <span className="eyebrow text-body-tertiary">Step {stepIndex + 1} of {tourSteps.length}</span>
       <strong className="text-primary fs-5">{step.title}</strong>
       <p className="text-body-secondary small lh-base m-0">{step.body}</p>
+      {/* The thing to actually do, and a tick once the dashboard says it happened. Never a gate: the
+          Next button below stays live either way, because a walkthrough nobody can leave is worse
+          than one nobody reads. */}
+      {step.doing && <span className={`small fw-bold ${didIt ? 'text-success-emphasis' : 'text-primary'}`}>
+        {didIt ? '✓ ' : '→ '}{step.doing}
+      </span>}
       <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
         <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
           {last ? 'Done' : 'Skip'}
@@ -2037,8 +2059,9 @@ function App() {
   }
 
   // Waits for real data: a tour of empty panels teaches nothing, and the first dashboard is also the
-  // first moment the targets exist to be pointed at.
-  if (!tourOffered.current && dashboard && localStorage.getItem(tourSeenKey) === null) {
+  // first moment there is anything to point at. Whether it is due comes off the account rather than
+  // out of browser storage, so it runs once after the account is made rather than once per browser.
+  if (!tourOffered.current && dashboard?.walkthroughDue) {
     tourOffered.current = true
     queueMicrotask(() => setTourStep(0))
   }
@@ -2070,13 +2093,16 @@ function App() {
       onClose={() => setOpenProfileId(null)}
     />}
     <ChatWindows dashboard={dashboard} busy={busy} />
-    <Walkthrough
+    {dashboard && <Walkthrough
       active={tourStep !== null}
       stepIndex={tourStep ?? 0}
+      dashboard={dashboard}
       onPage={setActivePage}
       onStep={setTourStep}
-      onClose={() => { setTourStep(null); localStorage.setItem(tourSeenKey, '1') }}
-    />
+      // Written through rather than remembered locally, and the refresh is what stops it reappearing
+      // on the next dashboard poll - the flag it reads is on the row it just wrote.
+      onClose={() => { setTourStep(null); void act(() => api.setWalkthroughSeen(true)) }}
+    />}
     <MobileNav
       pages={visiblePages}
       active={activePage}
@@ -2445,77 +2471,6 @@ function ThisSeasonTab({ ctx, season, now }: {
   </div>
 }
 
-/**
- * What the shift in the boxes above would pay, before any of it is spent.
- *
- * The cut is this game's central dial and the only way to learn it was to work a shift and read the
- * receipt - which costs turns, and turns are the one thing that does not come back before tomorrow.
- * Here the dial moves and the numbers move with it at no charge.
- *
- * Quoted as a range because the take is a per-turn roll. An average would be a number half of all
- * shifts come in under, and a player who reads an average and then earns less twice running has been
- * taught the game cheats.
- */
-function ShiftDryRun({ dashboard, turns, hoeCut, district }: {
-  dashboard: Dashboard
-  turns: number
-  hoeCut: number
-  district: string
-}) {
-  const [preview, setPreview] = useState<StreetPreview | null>(null)
-  const [failed, setFailed] = useState(false)
-  const planned = streetTurnCount(dashboard, turns)
-  const cut = Math.round(hoeCut)
-
-  // Debounced for the same reason the people search is: a slider being dragged is one request a
-  // frame, and none of the answers before the last one are ever read.
-  useEffect(() => {
-    if (planned < 1 || cut < 10 || cut > 80) { setPreview(null); return }
-    const timer = setTimeout(() => {
-      void (async () => {
-        try { setPreview(await api.previewStreet(planned, district || undefined, cut)); setFailed(false) }
-        catch { setFailed(true) }
-      })()
-    }, 200)
-    return () => clearTimeout(timer)
-  }, [planned, cut, district])
-
-  if (planned < 1) return null
-  if (failed) return <p className="text-body-tertiary small mt-3 mb-0">
-    The dry run would not price that shift. The numbers below are still live.
-  </p>
-
-  // Held at the last good answer while a new one is in flight, rather than blanking. A panel that
-  // empties on every keystroke reads as broken, and the old number is nearly right anyway.
-  if (!preview) return null
-
-  const spread = (low: number, high: number) =>
-    low === high ? money.format(low) : `${money.format(low)} - ${money.format(high)}`
-
-  return <div className="d-grid gap-2 mt-3 border rounded bg-body-secondary p-3" data-area="dry-run">
-    <div className="d-flex justify-content-between align-items-baseline gap-2">
-      <strong className="text-body">If you worked it</strong>
-      <span className="eyebrow">{preview.turns} turn{preview.turns === 1 ? '' : 's'} at {preview.hoeCutPercent}% - costs nothing to look</span>
-    </div>
-    <div className="tnum d-grid gtc-fill-140 gap-2">
-      <AdminMetric label="You keep" value={spread(preview.low.takeHome, preview.high.takeHome)} sub="after every cut" />
-      <AdminMetric label="They take" value={spread(preview.low.crewCut, preview.high.crewCut)} sub={`the hoes' ${preview.hoeCutPercent}%`} />
-      {preview.duesPercent > 0 && <AdminMetric
-        label="Crew dues"
-        value={spread(preview.low.dues, preview.high.dues)}
-        sub={`${preview.duesPercent}% off the top`}
-      />}
-      <AdminMetric label="Shift grosses" value={spread(preview.low.gross, preview.high.gross)} sub="before anybody's cut" />
-    </div>
-    <small className="text-body-tertiary lh-sm">
-      Burns {number.format(preview.condomsBurned)} condoms and {number.format(preview.beerBurned)} beer, and
-      draws {heatAmount(preview.heat)} heat whether or not it turns anything up.
-      {preview.streetBonusPercent > 0 && ` Your hustlers are adding ${preview.streetBonusPercent}% to the take.`}
-      {' '}A range because every turn is a roll: that is the floor and the ceiling, not a guess.
-    </small>
-  </div>
-}
-
 /** <param name="you">Your player id. Rows are matched on it, never on a name two empires can share.</param> */
 function SeasonRaidBoard({ rows, you }: { rows: SeasonStanding[], you: string }) {
   const scored = rows.filter(row => row.raidScore > 0)
@@ -2776,7 +2731,7 @@ function OverviewPage(ctx: PageContext) {
       <SeasonPanel onPage={setActivePage} />
       <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
       <UpdatesPanel updates={dashboard.updates.updates} unread={dashboard.updates.unreadCount} busy={busy} act={act} onPage={setActivePage} />
-      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} onTour={ctx.openTour} />
+      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} />
 
       <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
     </div>
@@ -3139,9 +3094,6 @@ function StreetPage(ctx: PageContext) {
         )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</Button>
         <button className="btn btn-secondary" type="button" disabled={busy || maxStreetTurns < 1} onClick={() => setStreetTurns(clampedStreetTurns)}>Max</button>
       </div>
-      {/* Directly under the two dials it prices, so moving one and reading the other is a glance
-          rather than a scroll. */}
-      <ShiftDryRun dashboard={dashboard} turns={streetTurns} hoeCut={hoeCut} district={district} />
       <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>
         <input className="form-check-input flex-shrink-0 mt-1" type="checkbox" checked={autoBuySupplies} onChange={event => setAutoBuySupplies(event.target.checked)} />
         <span className="d-grid gap-1">
@@ -7388,10 +7340,9 @@ function NextMovePanel({ dashboard, onPage }: { dashboard: Dashboard, onPage: Go
  * Hidden once it is finished rather than kept forever: a checklist a veteran still has to scroll past
  * is clutter, and the whole point of it is to stop being needed.
  */
-function OpeningLadderPanel({ dashboard, onPage, onTour }: {
+function OpeningLadderPanel({ dashboard, onPage }: {
   dashboard: Dashboard
   onPage: GoTo
-  onTour: () => void
 }) {
   const guidance = dashboard.guidance
   if (!guidance || guidance.objectivesDone >= guidance.objectivesTotal) return null
@@ -7403,9 +7354,6 @@ function OpeningLadderPanel({ dashboard, onPage, onTour }: {
       <h2>Getting Started</h2>
       <div className="d-flex align-items-center gap-2">
         <span>{guidance.objectivesDone} of {guidance.objectivesTotal}</span>
-        {/* The walkthrough shows itself once. Anybody who skipped it, or who has come back after a
-            month away, needs a door back in that is not clearing their browser storage. */}
-        <button className="btn btn-secondary btn-sm" type="button" onClick={onTour}>Show me around</button>
       </div>
     </div>
     <div className="d-grid gap-1">
@@ -10113,12 +10061,39 @@ function AccountPage(ctx: PageContext) {
         <AccountDiscordPanel {...panel} />
       </>}
       {tab === 'invites' && <AccountInvitesPanel busy={busy} />}
-      {tab === 'display' && <AccountDisplayPanel />}
+      {tab === 'display' && <>
+        <AccountDisplayPanel />
+        <AccountWalkthroughPanel onTour={ctx.openTour} />
+      </>}
       {tab === 'privacy' && <AccountPrivacyPanel {...panel} />}
       {tab === 'alerts' && <AccountAlertsPanel {...panel} />}
       {tab === 'security' && <AccountSecurityPanel {...panel} onTab={setTab} />}
     </div>
   </div>
+}
+
+/**
+ * A door back into the walkthrough.
+ *
+ * It used to live on the Getting Started panel, which is the one place it was certain to be useless:
+ * that panel is on the Overview, it is aimed at somebody in their first week, and it disappears once
+ * the opening ladder is done. The player who actually wants this is the one who came back after a
+ * month and cannot remember what banking was for - and by then the button had gone.
+ *
+ * Settings, because that is where somebody looks for a thing they half remember switching off.
+ */
+function AccountWalkthroughPanel({ onTour }: { onTour: () => void }) {
+  return <section className="card p-3">
+    <div className="panel-title"><h2>Walkthrough</h2><span>The opening four moves</span></div>
+    <p className="text-body-secondary mt-3 mb-0">
+      The short tour a new account gets: pricing a shift before working it, working one, banking what
+      it paid, and buying what the next one burns. It runs once when the account is made. Nothing here
+      is spent by looking at it again.
+    </p>
+    <div className="d-flex mt-3">
+      <button className="btn btn-primary" type="button" onClick={onTour}>Run it again</button>
+    </div>
+  </section>
 }
 
 /** What the panels below all take. Bundled because every one of them takes all of it. */

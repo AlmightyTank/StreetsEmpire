@@ -244,6 +244,19 @@ public sealed class Player
     public DateTime? CombatAlertsSeenAtUtc { get; set; }
 
     /// <summary>
+    /// When this player finished, or dismissed, the opening walkthrough. Null means they have not.
+    ///
+    /// On the row rather than in browser storage, because "runs once, after the account is made" is a
+    /// fact about the person and not about the browser they happened to sign up in. Kept in local
+    /// storage it was neither: somebody who signed up on a phone got the whole thing again on their
+    /// laptop, and anybody who cleared their browser got it again on a fortnight-old empire.
+    ///
+    /// A timestamp rather than a flag for the reason every other watermark here is one - it costs the
+    /// same and it answers "when", which a bare true never can.
+    /// </summary>
+    public DateTime? WalkthroughSeenAtUtc { get; set; }
+
+    /// <summary>
     /// When this player last made an offering. Null means never. One column rather than a table of
     /// prayers because only the most recent one gates anything: what the gods asked for is worked out
     /// from the week rather than stored, so there is no history to keep.

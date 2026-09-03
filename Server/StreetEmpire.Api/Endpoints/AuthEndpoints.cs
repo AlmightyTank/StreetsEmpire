@@ -108,6 +108,9 @@ internal static class AuthEndpoints
             if (!keyDecision.Accepted)
                 return BetaKeyProblem(keyDecision);
             var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
+            // Their own keys to hand out, written in the same save as the account. Arriving and being
+            // able to bring somebody with you are one event.
+            await betaKeys.GrantToNewAccountAsync(account, opts, DateTime.UtcNow, ct);
 
             db.Accounts.Add(account);
             db.Players.Add(player);
@@ -398,6 +401,7 @@ internal static class AuthEndpoints
                 return BetaKeyProblem(keyDecision);
             var (player, log) = AccountSetup.NewPlayer(account, playerName, city ?? opts.Territory.StartingCityOrFirst(), opts, pimps);
             DiscordLinkRewards.GrantOnce(account, player, nowUtc);
+            await betaKeys.GrantToNewAccountAsync(account, opts, nowUtc, ct);
 
             db.Accounts.Add(account);
             db.Players.Add(player);

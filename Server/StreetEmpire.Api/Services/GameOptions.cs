@@ -272,13 +272,22 @@ public sealed class BetaOptions
 {
     /// <summary>
     /// When on, every new non-first-player account must spend a beta key on either sign-up door.
-    /// Left off by default so local development and the current test harness can still create players
-    /// without first minting invites.
+    ///
+    /// <b>The shipped configuration turns this on</b> - see appsettings.json. It is off in this default
+    /// so the test harness and a bare local run can still create players without first minting invites,
+    /// and that difference is deliberate: forgetting it means reading this line and believing the game
+    /// is open when it is not.
     /// </summary>
     public bool RequireKey { get; set; }
 
-    /// <summary>How many keys a migration/backfill or future grant gives a player by default.</summary>
-    public int KeysPerPlayer { get; set; } = 1;
+    /// <summary>
+    /// How many keys a player is handed when their account is made, to give to whoever they like.
+    ///
+    /// This is what makes the beta spread rather than stopping at whoever an admin minted for. A key
+    /// is owned by the person it was issued to and stays theirs to hand out; spending one to get in
+    /// does not use up the ones they were given to share.
+    /// </summary>
+    public int KeysPerPlayer { get; set; } = 3;
 
     /// <summary>Zero means no automatic expiry.</summary>
     public int KeyExpiryDays { get; set; }

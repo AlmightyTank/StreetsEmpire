@@ -445,6 +445,26 @@ using (var startupScope = app.Services.CreateScope())
         // A missing or unreadable settings row must not stop the game booting on appsettings alone.
         app.Logger.LogWarning(ex, "Could not load stored settings; running on appsettings values.");
     }
+
+    // Every account that has never been issued keys of its own gets them now.
+    //
+    // The gate arrived after people were already playing, so the world it opened on was full of
+    // accounts holding nothing to hand out - and a beta nobody can invite anybody into is a beta that
+    // stops at whoever the admin knew. Matched on having been issued none rather than having none
+    // left, so it does not top somebody up every restart, and it is safe to run on every boot.
+    try
+    {
+        var startupKeys = startupScope.ServiceProvider.GetRequiredService<BetaKeys>();
+        var startupOptions = startupScope.ServiceProvider.GetRequiredService<IOptions<GameOptions>>().Value;
+        var granted = await startupKeys.BackfillMissingAsync(startupOptions, DateTime.UtcNow, CancellationToken.None);
+        if (granted > 0)
+            app.Logger.LogInformation("Issued beta keys to {Accounts} account(s) that had none.", granted);
+    }
+    catch (Exception ex)
+    {
+        // Not fatal. Nobody is locked out by having no keys to give away, and an admin can mint them.
+        app.Logger.LogWarning(ex, "Could not issue beta keys to accounts that had none.");
+    }
 }
 
 // Anything that reaches here uncaught, outside development.

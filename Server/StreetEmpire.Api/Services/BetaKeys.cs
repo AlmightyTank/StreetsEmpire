@@ -61,6 +61,64 @@ public sealed class BetaKeys(GameDbContext db)
         return BetaKeyDecision.Allow(key);
     }
 
+    /// <summary>
+    /// Hands a newly made account its own keys to give away.
+    ///
+    /// Without this the beta cannot spread. Keys existed and could be spent, but nothing ever issued
+    /// any except an admin minting them by hand, so the invite chain was one link long: the people an
+    /// admin knew, and nobody they knew. A player owning keys is the whole mechanism - they decide who
+    /// gets in next.
+    ///
+    /// Separate from the key they spent getting in. Redeeming somebody else's invite does not touch
+    /// the ones handed out here, so arriving and being able to bring three people are the same event.
+    ///
+    /// Bots get none. They are not people and they have nobody to invite.
+    /// </summary>
+    public async Task<IReadOnlyList<BetaKey>> GrantToNewAccountAsync(
+        PlayerAccount account,
+        GameOptions options,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var count = Math.Max(0, options.Beta.KeysPerPlayer);
+        if (count <= 0 || account.IsBot)
+            return [];
+
+        var expiry = options.Beta.KeyExpiryDays > 0
+            ? nowUtc.AddDays(options.Beta.KeyExpiryDays)
+            : (DateTime?)null;
+        return await MintAsync(count, account.Id, "Invite", maxUses: 1, expiry, cancellationToken);
+    }
+
+    /// <summary>
+    /// Every account that has never been issued keys of its own, and the keys they should have had.
+    ///
+    /// The beta gate arrived after people were already playing, so the world it opened on was full of
+    /// accounts holding nothing to share - which is the same dead chain as above, just further along.
+    /// Matched on having been issued none at all rather than on having none left, so somebody who has
+    /// given all of theirs away is not quietly handed a fresh set every time the server restarts.
+    /// </summary>
+    public async Task<int> BackfillMissingAsync(
+        GameOptions options,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var count = Math.Max(0, options.Beta.KeysPerPlayer);
+        if (count <= 0)
+            return 0;
+
+        var missing = await db.Accounts
+            .Where(x => !x.IsBot && !db.BetaKeys.Any(key => key.IssuedToAccountId == x.Id))
+            .ToListAsync(cancellationToken);
+
+        foreach (var account in missing)
+            await GrantToNewAccountAsync(account, options, nowUtc, cancellationToken);
+
+        if (missing.Count > 0)
+            await db.SaveChangesAsync(cancellationToken);
+        return missing.Count;
+    }
+
     public async Task<IReadOnlyList<BetaKey>> MintAsync(
         int count,
         Guid? issuedToAccountId,

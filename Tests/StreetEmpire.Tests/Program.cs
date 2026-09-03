@@ -3187,6 +3187,38 @@ static void ABetaKeyGatesSignupAndIsSpentWithTheAccount()
     AssertEqual(invited.Id, stored.RedeemedByAccountId);
     AssertEqual(now, stored.RedeemedAtUtc);
     AssertEqual(1, stored.Version);
+
+    // Arriving hands them their own keys to give away, and spending somebody else's does not touch
+    // them. Without this the chain is one link long: the people an admin minted for, and nobody else.
+    var sharing = Resolve(new GameOptions { Beta = new BetaOptions { RequireKey = true, KeysPerPlayer = 3 } });
+    var granted = service.GrantToNewAccountAsync(invited, sharing, now, default).GetAwaiter().GetResult();
+    world.Db.SaveChanges();
+    AssertEqual(3, granted.Count);
+    AssertEqual(3, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == invited.Id));
+    AssertTrue(granted.All(x => x.Uses == 0), "the keys they were given to share are unspent");
+    AssertTrue(granted.All(x => x.Code != stored.Code), "and none of them is the one they came in on");
+
+    // Bots are not people and have nobody to invite.
+    var bot = new PlayerAccount { Username = "rival", IsBot = true };
+    world.Db.Accounts.Add(bot);
+    world.Db.SaveChanges();
+    AssertEqual(0, service.GrantToNewAccountAsync(bot, sharing, now, default).GetAwaiter().GetResult().Count);
+
+    // The gate arrived after people were already playing, so anybody holding nothing is issued a set.
+    var early = new PlayerAccount { Username = "early" };
+    world.Db.Accounts.Add(early);
+    world.Db.SaveChanges();
+    AssertEqual(0, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == early.Id));
+
+    var backfilled = service.BackfillMissingAsync(sharing, now, default).GetAwaiter().GetResult();
+    AssertTrue(backfilled >= 1, $"the account holding none should be issued some ({backfilled} filled)");
+    AssertEqual(3, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == early.Id));
+
+    // Safe on every boot: matched on having been issued none, not on having none left, so a second
+    // run tops nobody up and the bot is still left alone.
+    AssertEqual(0, service.BackfillMissingAsync(sharing, now, default).GetAwaiter().GetResult());
+    AssertEqual(3, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == invited.Id));
+    AssertEqual(0, world.Db.BetaKeys.Count(x => x.IssuedToAccountId == bot.Id));
 }
 
 static void AChosenTitleLeadsAndSurvivesLosingIt()

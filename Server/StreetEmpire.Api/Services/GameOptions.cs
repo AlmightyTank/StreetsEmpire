@@ -1912,9 +1912,21 @@ public sealed class ArrestOptions
 
     public int BailWindowHours { get; set; } = 6;
 
-    public long BailPerHoe { get; set; } = 900;
-    public long BailPerThug { get; set; } = 1_800;
-    public long BailPerPimp { get; set; } = 6_000;
+    /// <summary>
+    /// What a bond costs, per head.
+    ///
+    /// Priced when a shift was worth a great deal less than it is now. A sweep taking three hoes and a
+    /// named pimp came to under nine thousand, which a house big enough to be swept in the first place
+    /// earns back inside a single shift - so the decision the bail window exists to create, pay or
+    /// leave them, was not a decision at all. At these prices the same sweep costs about half a shift,
+    /// which is enough to be worth thinking about and not enough to end anybody.
+    ///
+    /// The pimp is the one that matters: he is a named person with loyalty, he is the one who talks if
+    /// you leave him, and he should be the reason you find the money.
+    /// </summary>
+    public long BailPerHoe { get; set; } = 3_000;
+    public long BailPerThug { get; set; } = 6_000;
+    public long BailPerPimp { get; set; } = 25_000;
 
     /// <summary>
     /// What leaving people inside costs the ones who are still out. Capped, because the hiring floor
@@ -2418,10 +2430,27 @@ public sealed class CombatOptions
     public double MoraleBreakThreshold { get; set; } = 5;
     public int DefenderProtectionMinutes { get; set; } = 60;
     public double PowerRandomnessPercent { get; set; } = 0.15;
-    public double MinCashLootPercent { get; set; } = 0.05;
-    public double MaxCashLootPercent { get; set; } = 0.20;
-    public double MinProductLootPercent { get; set; } = 0.05;
-    public double MaxProductLootPercent { get; set; } = 0.15;
+    /// <summary>
+    /// What a won raid carries off, as a share of what the loser had on them.
+    ///
+    /// A fifth of the cash at the very best was a raid the loser could shrug at - by the size of house
+    /// that can mount one, it was a fraction of a single shift, so being raided cost less than not
+    /// working for an hour and there was nothing to be afraid of. At the top of this range a raid takes
+    /// more than half of what somebody was carrying, which is the point: it should be the worst thing
+    /// that happens to you in a day.
+    ///
+    /// Cash comes off what is on hand and never out of the bank, so none of this touches savings. It
+    /// makes banking the answer instead - the habit the game has been trying to teach all along, and
+    /// now the one that decides whether a raid ruins an evening or barely registers. Product has no
+    /// bank, which is why the ceiling matters more there: the only defence is not sitting on a pile.
+    ///
+    /// The repeat decay below is what keeps this from becoming a way to farm one person - the same
+    /// target pays less every time, down to a tenth.
+    /// </summary>
+    public double MinCashLootPercent { get; set; } = 0.15;
+    public double MaxCashLootPercent { get; set; } = 0.55;
+    public double MinProductLootPercent { get; set; } = 0.15;
+    public double MaxProductLootPercent { get; set; } = 0.55;
     public double WinnerCrewLossPercent { get; set; } = 0.03;
     public double LoserCrewLossPercent { get; set; } = 0.10;
     public double WeaponLossPercent { get; set; } = 0.08;

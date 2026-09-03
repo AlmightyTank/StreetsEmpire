@@ -103,6 +103,7 @@ var tests = new (string Name, Action Test)[]
     ("every test written is a test that runs", EveryTestWrittenIsATestThatRuns),
     ("every hideout upgrade in the shipped tables can be paid for", EveryHideoutUpgradeIsReachable),
     ("labs produce while away, bounded by storage and the offline ceiling", LabsProduceWhileAway),
+    ("a lab can be switched off, and a big one sells what it makes", LabSwitchesStopAndSell),
     ("labs start their clock when built rather than backdating", LabsStartTheirClockWhenBuilt),
     ("world news keeps fights and drops routine noise", WorldNewsKeepsFightsAndDropsNoise),
     ("morale trend reports direction and admits when it cannot", MoraleTrendReportsDirection),
@@ -5694,6 +5695,73 @@ static void LabsProduceWhileAway()
     var full = hideouts.AccrueLabs(player, start.AddDays(8));
     AssertEqual(1, full.Weed);
     AssertEqual(100, player.Weed);
+}
+
+/// <summary>
+/// The two switches on a lab, and the reason either exists.
+///
+/// Production stopped being free the day a held pile started drawing the law and a raid started
+/// carrying off half of it. Off is the blunt answer and selling is the better one: cash draws no
+/// attention and can be banked out of a raider's reach, which product never can.
+///
+/// The part worth holding down is that off hours are gone rather than owed. Held in credit they would
+/// pay out in a lump the moment the lab came back on, and switching off would cost nothing at all -
+/// which would make the whole feature free, and a decision that costs nothing is not one.
+/// </summary>
+static void LabSwitchesStopAndSell()
+{
+    var options = Resolve(null);
+    options.Hideout.MaxOfflineProductionHours = 12;
+    options.Hideout.MinLabLevelForAutoSell = 3;
+    var hideouts = CreateHideouts(options);
+    var start = new DateTime(2026, 8, 13, 0, 0, 0, DateTimeKind.Utc);
+
+    Player Grower(int level = 1) => new()
+    {
+        City = "Atlanta",
+        Hideout = new Hideout { StorageLevel = 2, WeedLabLevel = level, LabsCollectedAtUtc = start }
+    };
+
+    // Off makes nothing, and says so rather than reporting a yield of zero as if nothing had happened.
+    var stopped = Grower();
+    stopped.Hideout!.WeedLabRunning = false;
+    var idle = hideouts.AccrueLabs(stopped, start.AddHours(3));
+    AssertEqual(0, idle.Weed);
+    AssertEqual(0, stopped.Weed);
+    AssertTrue(idle.ClockMoved, "the clock still runs while the lab does not");
+
+    // And those hours are gone. Switching back on pays for the hours since, not for the ones missed.
+    stopped.Hideout.WeedLabRunning = true;
+    AssertEqual(2, hideouts.AccrueLabs(stopped, start.AddHours(4)).Weed);
+
+    // A lab too small to have a buyer shelves what it makes however the switch is set.
+    var small = Grower();
+    small.Hideout!.WeedLabAutoSell = true;
+    AssertTrue(!hideouts.SellsItsOwn(small.Hideout, "weed"), "a level 1 lab has nobody to sell to");
+    var shelved = hideouts.AccrueLabs(small, start.AddHours(3));
+    AssertEqual(6, shelved.Weed);
+    AssertEqual(0L, shelved.Earned);
+
+    // A big one sells it instead: nothing on the shelf, cash in hand, at the price of the town it is in.
+    var operation = Grower(3);
+    operation.Hideout!.WeedLabAutoSell = true;
+    AssertTrue(hideouts.SellsItsOwn(operation.Hideout, "weed"), "a level 3 lab sells its own");
+    var perHour = hideouts.PassivePerHour(operation.Hideout, "weed");
+    var sold = hideouts.AccrueLabs(operation, start.AddHours(3));
+    AssertEqual(0, sold.Weed);
+    AssertEqual(0, operation.Weed);
+    AssertEqual(perHour * 3, sold.WeedSold);
+    AssertEqual(sold.Earned, operation.Cash);
+    AssertTrue(operation.Cash > 0, "and it is worth something");
+    AssertTrue(sold.Describe().Contains("sold"), $"the notice says it sold: {sold.Describe()}");
+
+    // A full store is no reason for a selling lab to stop, which is most of what the upgrade buys.
+    var packed = Grower(3);
+    packed.Hideout!.WeedLabAutoSell = true;
+    packed.Weed = hideouts.CapacityFor(packed.Hideout).MaxWeed;
+    var stillSelling = hideouts.AccrueLabs(packed, start.AddHours(3));
+    AssertEqual(perHour * 3, stillSelling.WeedSold);
+    AssertTrue(stillSelling.Earned > 0, "a full shelf does not stop a lab that sells");
 }
 
 static void LabsStartTheirClockWhenBuilt()

@@ -1056,6 +1056,15 @@ public sealed class HideoutOptions
     /// </summary>
     public int MaxOfflineProductionHours { get; set; } = 12;
 
+    /// <summary>
+    /// The lab level at which it will move its own output instead of shelving it.
+    ///
+    /// Gated rather than free because selling without you is a real convenience: it turns the one
+    /// asset a raid can always take into the one it can never touch. A first-rung lab is a grow in a
+    /// cupboard and it has nobody to sell to; by the third it is an operation with a buyer.
+    /// </summary>
+    public int MinLabLevelForAutoSell { get; set; } = 3;
+
     public void ApplyDefaultsWhereEmpty()
     {
         // Each tier's crew caps are what the storage level it unlocks is sized against, so a full-length

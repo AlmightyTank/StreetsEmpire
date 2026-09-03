@@ -69,12 +69,31 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             return LabYield.None with { ClockMoved = true };
 
         var capacity = CapacityFor(hideout);
-        var weed = Produce(player.Weed, capacity.MaxWeed, PassivePerHour(hideout, "weed") * chargedHours);
-        var coke = Produce(player.Coke, capacity.MaxCoke, PassivePerHour(hideout, "coke") * chargedHours);
+        // A lab that has been switched off makes nothing, and the hours it was off are gone rather
+        // than owed. Held in credit they would pay out in a lump the moment it came back on, which
+        // would make switching off free and the switch pointless.
+        var weedMade = hideout.WeedLabRunning
+            ? PassivePerHour(hideout, "weed") * chargedHours
+            : 0;
+        var cokeMade = hideout.CokeLabRunning
+            ? PassivePerHour(hideout, "coke") * chargedHours
+            : 0;
+
+        // Sold before the store is consulted, so a full shelf is no reason for a selling lab to stop:
+        // that is most of what the upgrade buys. What is shelved is still capped by the room.
+        var weedSold = SellsItsOwn(hideout, "weed") ? weedMade : 0;
+        var cokeSold = SellsItsOwn(hideout, "coke") ? cokeMade : 0;
+        var earned = (long)weedSold * ProductPrice(player.City, "weed")
+                     + (long)cokeSold * ProductPrice(player.City, "coke");
+        player.Cash += earned;
+
+        var weed = Produce(player.Weed, capacity.MaxWeed, weedMade - weedSold);
+        var coke = Produce(player.Coke, capacity.MaxCoke, cokeMade - cokeSold);
         player.Weed += weed;
+        // Fresh off the bench and uncut, like anything else a lab makes.
         player.AddCoke(coke, 1);
 
-        return new LabYield(weed, coke, chargedHours, hours > chargedHours, true);
+        return new LabYield(weed, coke, weedSold, cokeSold, earned, chargedHours, hours > chargedHours, true);
     }
 
     /// <summary>
@@ -270,6 +289,31 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     }
 
     /// <summary>What a lab makes per hour on its own, before storage limits.</summary>
+    /// <summary>
+    /// Whether this lab is set to move its own output, and is big enough to be allowed to.
+    ///
+    /// Both halves every time it is asked, rather than trusting the switch on its own: a player who
+    /// set it at level three and was then knocked back down - a season roll, a lab sold - would
+    /// otherwise still be selling from a cupboard.
+    /// </summary>
+    public bool SellsItsOwn(Hideout? hideout, string product)
+    {
+        if (hideout is null) return false;
+        var (on, level) = product == "coke"
+            ? (hideout.CokeLabAutoSell, hideout.CokeLabLevel)
+            : (hideout.WeedLabAutoSell, hideout.WeedLabLevel);
+        return on && level >= Math.Max(1, _options.Hideout.MinLabLevelForAutoSell);
+    }
+
+    /// <summary>
+    /// What a unit fetches in this town. The same figure the counter quotes, read from the same place,
+    /// so a lab never sells at a price nobody could have got standing there themselves.
+    /// </summary>
+    private int ProductPrice(string? city, string product)
+        => product == "coke"
+            ? _options.CityMarkets.ProductPrice(city, "coke", _options.CokeSellPrice)
+            : _options.CityMarkets.ProductPrice(city, "weed", _options.WeedSellPrice);
+
     public int PassivePerHour(Hideout? hideout, string product)
     {
         var (levels, level) = EffectiveLabFor(hideout, product);
@@ -856,11 +900,21 @@ public sealed record NextRoomUpgrade(
 /// True when the lab clock itself was written, which happens even on a run that produced nothing.
 /// The caller has to save in that case or the same hours are paid for twice.
 /// </param>
-public sealed record LabYield(int Weed, int Coke, int Hours, bool HitOfflineCeiling, bool ClockMoved)
+/// <param name="Weed">What was shelved, which is what was made less anything sold on the spot.</param>
+/// <param name="WeedSold">What went straight out of the door, for somebody whose lab moves its own.</param>
+public sealed record LabYield(
+    int Weed,
+    int Coke,
+    int WeedSold,
+    int CokeSold,
+    long Earned,
+    int Hours,
+    bool HitOfflineCeiling,
+    bool ClockMoved)
 {
-    public static readonly LabYield None = new(0, 0, 0, false, false);
+    public static readonly LabYield None = new(0, 0, 0, 0, 0, 0, false, false);
 
-    public bool Any => Weed > 0 || Coke > 0;
+    public bool Any => Weed > 0 || Coke > 0 || WeedSold > 0 || CokeSold > 0;
 
     /// <summary>A sentence for the dashboard, or empty when the labs made nothing worth mentioning.</summary>
     public string Describe()
@@ -871,8 +925,19 @@ public sealed record LabYield(int Weed, int Coke, int Hours, bool HitOfflineCeil
         var made = new List<string>();
         if (Weed > 0) made.Add($"{Weed:N0} weed");
         if (Coke > 0) made.Add($"{Coke:N0} coke");
+        // Said as a separate clause rather than folded into the total, because a player who set a lab
+        // to sell wants to know it did - and a player who did not needs to notice that it is.
+        var sold = new List<string>();
+        if (WeedSold > 0) sold.Add($"{WeedSold:N0} weed");
+        if (CokeSold > 0) sold.Add($"{CokeSold:N0} coke");
+
+        var shelved = made.Count > 0 ? $"Your labs made {string.Join(" and ", made)} while you were away." : string.Empty;
+        var moved = sold.Count > 0
+            ? $"{(shelved.Length > 0 ? " They also sold" : "Your labs sold")} {string.Join(" and ", sold)}"
+              + $" as it was made, for {Earned:C0}."
+            : string.Empty;
         var ceiling = HitOfflineCeiling ? $" They only stack up {Hours} hour(s) of work, so the rest of your time away was idle." : string.Empty;
-        return $"Your labs made {string.Join(" and ", made)} while you were away.{ceiling}";
+        return $"{shelved}{moved}{ceiling}".TrimStart();
     }
 }
 

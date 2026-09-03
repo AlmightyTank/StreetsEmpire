@@ -105,6 +105,11 @@ internal static class StartingState
         hideout.RepairingRoom = null;
         hideout.RepairCompletesAtUtc = null;
         hideout.LabsCollectedAtUtc = null;
+        // The switches go back to how a new house arrives, along with the labs they were switching.
+        hideout.WeedLabRunning = true;
+        hideout.CokeLabRunning = true;
+        hideout.WeedLabAutoSell = false;
+        hideout.CokeLabAutoSell = false;
         hideout.CreatedAtUtc = nowUtc;
     }
 }

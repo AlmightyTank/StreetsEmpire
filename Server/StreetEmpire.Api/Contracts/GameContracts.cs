@@ -11,6 +11,14 @@ public sealed record ScoutRequest(int Turns, bool AutoBuySupplies = false, strin
 /// </param>
 public sealed record WalkthroughRequest(bool Seen);
 
+/// <param name="Product">"weed" or "coke".</param>
+/// <param name="Running">Whether the lab makes anything at all.</param>
+/// <param name="AutoSell">
+/// Whether it sells what it makes rather than shelving it. Refused below the lab level that unlocks
+/// it, rather than accepted and quietly ignored.
+/// </param>
+public sealed record LabSettingsRequest(string? Product, bool Running, bool AutoSell);
+
 public sealed record ProduceRequest(string? Product, int Turns);
 public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record TravelRequest(string? City);
@@ -1317,6 +1325,13 @@ public sealed record HideoutResponse(
     int CokeLabYieldBonusPercent,
     int WeedLabPassivePerHour,
     int CokeLabPassivePerHour,
+    /// <summary>Whether each lab is switched on, and whether it is selling what it makes.</summary>
+    bool WeedLabRunning,
+    bool CokeLabRunning,
+    bool WeedLabAutoSell,
+    bool CokeLabAutoSell,
+    /// <summary>The lab level at which selling its own output becomes available.</summary>
+    int MinLabLevelForAutoSell,
     int MaxOfflineProductionHours,
     int IntelligenceLevel,
     int ConcurrentRunCap,

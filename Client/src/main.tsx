@@ -3362,7 +3362,17 @@ function HideoutPage(ctx: PageContext) {
           damage={broken('weedlab')}
           repairing={repairing}
           onRepair={() => repair('weedlab')}
-        />
+        >
+          <LabSwitches
+            product="weed"
+            level={hideout.weedLabLevel}
+            running={hideout.weedLabRunning}
+            autoSell={hideout.weedLabAutoSell}
+            minSellLevel={hideout.minLabLevelForAutoSell}
+            busy={busy}
+            act={act}
+          />
+        </RoomRow>
         <RoomRow
           name="Coke Lab"
           level={hideout.cokeLabLevel}
@@ -3376,7 +3386,17 @@ function HideoutPage(ctx: PageContext) {
           damage={broken('cokelab')}
           repairing={repairing}
           onRepair={() => repair('cokelab')}
-        />
+        >
+          <LabSwitches
+            product="coke"
+            level={hideout.cokeLabLevel}
+            running={hideout.cokeLabRunning}
+            autoSell={hideout.cokeLabAutoSell}
+            minSellLevel={hideout.minLabLevelForAutoSell}
+            busy={busy}
+            act={act}
+          />
+        </RoomRow>
         {workshop && <RoomRow
           name="Workshop"
           level={workshop.level}
@@ -4119,7 +4139,57 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
  * buy. While it is down the row says what has stopped, what it costs to undo, and nothing else - the
  * upgrade button is not an option here, because the server will not sell a level on top of a wreck.
  */
-function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair }: {
+/**
+ * The two things you can tell a lab: whether to run, and what to do with what it makes.
+ *
+ * Production stopped being free the day holding stock started drawing the law and a raid started
+ * taking half of it. There are nights when the right move is to stop making the stuff - you are
+ * Hunted, the pile is why, and a lab quietly topping it up every hour is working against you.
+ *
+ * Selling is the other answer to the same problem: cash draws no attention at all and can be banked
+ * out of a raider's reach, which product never can. It costs the spread, since it takes the local
+ * price the hour it is made rather than whatever it would fetch somewhere worth carrying it to.
+ */
+function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, act }: {
+  product: 'weed' | 'coke'
+  level: number
+  running: boolean
+  autoSell: boolean
+  minSellLevel: number
+  busy: boolean
+  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+}) {
+  if (level <= 0) return null
+  const canSell = level >= minSellLevel
+
+  return <div className="d-flex flex-wrap align-items-center gap-2 mt-1">
+    <Button
+      className={`btn btn-sm ${running ? 'btn-secondary' : 'btn-primary'}`}
+      blocked={busy && BUSY}
+      onClick={() => void act(() => api.setLab(product, !running, autoSell))}
+    >{running ? 'Switch off' : 'Switch on'}</Button>
+    <Button
+      className={`btn btn-sm ${autoSell ? 'btn-primary' : 'btn-secondary'}`}
+      blocked={firstReason(
+        busy && BUSY,
+        !running && 'A lab that is switched off has nothing to sell.',
+        !canSell && `Selling its own output needs level ${minSellLevel}. This one is level ${level}.`,
+      )}
+      onClick={() => void act(() => api.setLab(product, running, !autoSell))}
+    >{autoSell ? 'Selling output' : 'Sell output'}</Button>
+    <small className="text-body-tertiary">
+      {!running
+        ? 'Off. It makes nothing, and the hours it is off are gone rather than owed.'
+        : autoSell
+          ? 'Sold at this town’s price as it is made, so nothing sits drawing heat.'
+          : canSell
+            ? 'Shelved, where it draws the law and a raid can take it.'
+            : `Shelved. Level ${minSellLevel} can sell it instead.`}
+    </small>
+  </div>
+}
+
+function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair, children }: {
   name: string
   level: number
   detail: string
@@ -4130,6 +4200,8 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage,
   damage?: HideoutDamage | null
   repairing?: HideoutRepair | null
   onRepair?: () => void
+  /** Controls belonging to this room, under its copy. Only the labs have any. */
+  children?: React.ReactNode
 }) {
   const tierLocked = upgrade?.tierLocked ?? false
   const workshopLocked = upgrade?.workshopLocked ?? false
@@ -4156,6 +4228,9 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage,
           ? `Pays for itself in ${upgrade.paybackDays} days. A trophy more than an investment.`
           : `Pays for itself in ${upgrade.paybackDays} days.`}
       </small>}
+      {/* Withheld while the room is down, because a switch on a wrecked lab is a control over
+          nothing and the only move that room has is the repair button opposite. */}
+      {!damage && children}
     </div>
     {/* The damage row carries the level off the deeds, which is the one a wrecked room has to show.
         Several rows read their level off what the room can currently do, and that is zero while it is

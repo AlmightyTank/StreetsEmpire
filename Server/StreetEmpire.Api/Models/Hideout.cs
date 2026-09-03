@@ -86,6 +86,36 @@ public sealed class Hideout
     /// </summary>
     public DateTime? LabsCollectedAtUtc { get; set; }
 
+    /// <summary>
+    /// Whether each lab is actually running. On by default, because a lab you paid for should work.
+    ///
+    /// A switch exists because production is not free any more. Every unit sitting in the store draws
+    /// the law - coke hardest of anything in the game - and a raid now carries off up to half of it.
+    /// So there are nights when the right move is to stop making the stuff: you are Hunted, the pile
+    /// is the reason, and the lab quietly topping it back up every hour is working against you.
+    ///
+    /// Turning one off is not the same as not owning it. The clock still runs, the hours still pass,
+    /// and nothing is held in credit to be paid out when it comes back on - an off lab makes nothing,
+    /// exactly like a wrecked one, which is what stops this being a way to bank idle hours.
+    /// </summary>
+    public bool WeedLabRunning { get; set; } = true;
+    public bool CokeLabRunning { get; set; } = true;
+
+    /// <summary>
+    /// Whether a running lab sells what it makes rather than storing it, at the price of the town you
+    /// are standing in.
+    ///
+    /// The answer for somebody who wants the income without the pile: cash draws no attention at all,
+    /// and it can be banked out of a raider's reach, which product never can. It costs the spread -
+    /// you take the local price the hour it is made rather than carrying it somewhere it is worth
+    /// more - and that is the trade the switch is offering.
+    ///
+    /// Behind a lab upgrade, because a lab that moves its own output is running a bigger operation
+    /// than one that fills a shelf.
+    /// </summary>
+    public bool WeedLabAutoSell { get; set; }
+    public bool CokeLabAutoSell { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     /// <summary>The level on the deeds: what was bought, whether or not it is standing today.</summary>

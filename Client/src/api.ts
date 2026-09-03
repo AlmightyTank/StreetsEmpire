@@ -255,6 +255,12 @@ export type Hideout = {
   weedLabYieldBonusPercent: number
   cokeLabYieldBonusPercent: number
   weedLabPassivePerHour: number
+  weedLabRunning: boolean
+  cokeLabRunning: boolean
+  weedLabAutoSell: boolean
+  cokeLabAutoSell: boolean
+  /** The lab level at which selling its own output becomes available. */
+  minLabLevelForAutoSell: number
   cokeLabPassivePerHour: number
   maxOfflineProductionHours: number
   heat: number
@@ -1976,6 +1982,11 @@ export const api = {
     body: JSON.stringify({ amount }),
   }),
   /** Marks the opening walkthrough done, or false to put it back in front of the player. */
+  /** Switches one lab on or off, and whether it sells what it makes. */
+  setLab: (product: 'weed' | 'coke', running: boolean, autoSell: boolean) => request<ActionResult>('/api/game/hideout/lab', {
+    method: 'PUT',
+    body: JSON.stringify({ product, running, autoSell }),
+  }),
   setWalkthroughSeen: (seen: boolean) => request<{ walkthroughDue: boolean }>('/api/game/walkthrough', {
     method: 'PUT',
     body: JSON.stringify({ seen }),

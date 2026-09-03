@@ -933,6 +933,56 @@ internal static class GameEndpoints
             }
         }).RequireAuthorization();
 
+        // Both switches on one lab, in one call, because they are one decision: what this room is for
+        // tonight. Two routes would let a client set "off and selling", which is not a state.
+        app.MapPut("/api/game/hideout/lab", async (
+            LabSettingsRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            HideoutService hideouts,
+            IOptionsSnapshot<GameOptions> gameOptions,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+            if (player.Hideout is null) return Results.BadRequest(new { error = "You have no hideout." });
+
+            var product = (request.Product ?? string.Empty).Trim().ToLowerInvariant();
+            if (product is not ("weed" or "coke"))
+                return Results.BadRequest(new { error = "Weed or coke." });
+
+            var minLevel = Math.Max(1, gameOptions.Value.Hideout.MinLabLevelForAutoSell);
+            var level = product == "coke" ? player.Hideout.CokeLabLevel : player.Hideout.WeedLabLevel;
+            if (level <= 0)
+                return Results.BadRequest(new { error = $"You have no {product} lab to switch." });
+            // Refused rather than silently ignored: a switch that reports on and does nothing is worse
+            // than one that will not move.
+            if (request.AutoSell && level < minLevel)
+                return Results.BadRequest(new
+                {
+                    error = $"Selling its own output needs a level {minLevel:N0} {product} lab. Yours is level {level:N0}."
+                });
+
+            if (product == "coke")
+            {
+                player.Hideout.CokeLabRunning = request.Running;
+                player.Hideout.CokeLabAutoSell = request.Running && request.AutoSell;
+            }
+            else
+            {
+                player.Hideout.WeedLabRunning = request.Running;
+                player.Hideout.WeedLabAutoSell = request.Running && request.AutoSell;
+            }
+
+            await db.SaveChangesAsync(ct);
+            var selling = hideouts.SellsItsOwn(player.Hideout, product);
+            return Results.Ok(new ActionResultResponse(
+                request.Running
+                    ? $"The {product} lab is running{(selling ? " and selling what it makes." : ".")}"
+                    : $"The {product} lab is switched off. It makes nothing until you turn it back on.",
+                player.Turns));
+        }).RequireAuthorization();
+
         app.MapPost("/api/game/hideout/repair", async (
             HideoutRepairRequest request,
             CurrentPlayerService current,

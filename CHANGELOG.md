@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.3.0
+
+### Changed
+- **A raid is worth being afraid of.** The odds per point of heat double and the ceiling goes to a coin
+  flip, so a Hunted house is tonight's problem rather than one to outrun - at a hundred heat it was
+  about one hour in six, which is long enough that the sensible play was to ignore the number and keep
+  working. **What they take is rolled now rather than fixed.** One roll for the whole house, skewed
+  upward, so the band decides how prepared they came through the door and the roll decides how much of
+  the place they actually turned over: a good night takes a little less than the band's share and a bad
+  one takes considerably more. At **Hunted** the top of that range is everything you were holding. The
+  baseline share and the fine per unit both rise; forty a unit had made the court an afterthought and
+  left cheap volume near enough free to sit on. The status note quotes the range before it is paid.
+- **A sweep leaves a file open on the house.** An arrest used to make a house *cooler* - the crew heat
+  of the people taken walked out with them - so the worst night the law could give you also lowered
+  your odds of the next one. It now costs heat: a flat charge for being on a report at all, a share per
+  head taken, and more again for a named pimp, who is the one who knows the addresses. Earned heat, so
+  it decays like everything else you did, and laying low stays the answer to it.
+- **Standing crew upkeep is half what working costs.** Passive upkeep charged an hour as though it were
+  a turn of street work, so an hour asleep cost a crew exactly what an hour on the corner did - which
+  made every night away a reason not to log off. The standing charge has rates of its own now. A street
+  shift burns what it always burned, and the storage ladder sized against that burn does not move when
+  the standing charge is tuned.
+
+### Fixed
+- **A season row is matched by who you are rather than by what you are called.** The "You" tile and the
+  board's own "this row is me" stripe both compared a display name, so an invisible difference - a case
+  change, a trailing space, a rename landing between two fetches - took you off a board you were top
+  of, and reported you off the board and ninth at once. The main leaderboard and the world news feed
+  had the same comparison with an id sitting unused in the payload. The tile also stops mixing two
+  ladders: a raid rank over a net worth rank read as a contradiction the moment either was missing.
+- **A street shift is gated on drink somebody can actually pour.** Counting the moonshine shelf
+  alongside the beer shelf authorised shifts nobody could supply: there is no moonshine at the counter,
+  so an empty still is not drink and no amount of cash makes it so before the shift. Beer capacity
+  still counts in full, because auto-buy fills it. The supplies card learns the other half of the same
+  rule - moonshine already distilled does cover part of the need - so the card and the button can no
+  longer disagree about whether a shift is supplied. The storage upgrade the report names is picked on
+  beer alone for the same reason: a room that only clears the bar by counting its empty still is a room
+  you buy and are still short in.
+
 ## 0.2.7
 
 ### Added

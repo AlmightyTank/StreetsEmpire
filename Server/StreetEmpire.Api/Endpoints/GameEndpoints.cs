@@ -184,7 +184,7 @@ internal static class GameEndpoints
                 travel,
                 player.Cash,
                 player.BankCash,
-                opts.Bank.TripTurnCost,
+                economy.BankTripTurnCost(player, now),
                 // Only sent while it is still standing. A window that has already closed is not a fact
                 // about the player any more, and the panel would have to do the comparison anyway.
                 player.LastBankedAtUtc?.AddMinutes(Math.Max(0, opts.Bank.TripGraceMinutes)) is { } freeUntil

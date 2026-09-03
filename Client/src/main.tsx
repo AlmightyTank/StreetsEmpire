@@ -10395,7 +10395,7 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
           </Button>
         </form>
 
-        <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={uploadAvatar}>
+        <form className="avatar-form d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={uploadAvatar}>
           <div className="d-flex align-items-center gap-3 min-w-0">
             <PlayerAvatar name={account.playerName} username={account.username} avatarUrl={account.customAvatarUrl} size={56} />
             <div className="min-w-0">
@@ -10408,7 +10408,7 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
             <input className="form-control" name="avatar" type="file" accept="image/png,image/jpeg,image/gif,image/webp" />
             <small className="form-text">PNG, JPG, GIF, or WebP. 1 MB max.</small>
           </label>
-          <div className="d-flex flex-wrap gap-2">
+          <div className="avatar-actions d-flex flex-wrap gap-2">
             <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Upload and Use'}</Button>
             <Button
               className="btn btn-secondary"
@@ -10791,7 +10791,7 @@ function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
               </small>
             </div>
           </div>
-          <div className="d-flex flex-wrap gap-2">
+          <div className="avatar-actions d-flex flex-wrap gap-2">
             <Button
               className="btn btn-secondary"
               type="button"

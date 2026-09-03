@@ -1750,28 +1750,59 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             throw new GameRuleException($"That is {turns:N0} turns and you have {player.Turns:N0}.");
     }
 
+    public int BankTripTurnCost(Player player, DateTime nowUtc)
+        => BankTripTurnCost(player, _options.Bank, nowUtc);
+
+    internal static int BankTripTurnCost(Player player, BankOptions bank, DateTime nowUtc)
+    {
+        var baseCost = Math.Max(0, bank.TripTurnCost);
+        if (baseCost == 0) return 0;
+
+        var visits = PaidTripsInCurrentWindow(player, bank, nowUtc);
+        var doubled = baseCost;
+        for (var i = 0; i < visits && doubled < int.MaxValue / 2; i++)
+            doubled *= 2;
+
+        return Math.Min(Math.Max(baseCost, bank.MaxTripTurnCost), doubled);
+    }
+
     /// <summary>
     /// Charges a trip to the bank, unless the player is still at the counter from the last one, and
     /// returns what it cost so the caller can log and report it.
     ///
-    /// Only a paid trip writes the stamp. Refreshing it on the free moves inside the window would let
-    /// anyone willing to move money every few minutes hold one payment open forever, which is the
-    /// difference between a grace window and no charge at all.
+    /// Only a paid trip writes the grace stamp or advances the day count. Refreshing either on the
+    /// free moves inside the window would let typo fixes become a way around the fare ladder.
     /// </summary>
     private int ChargeBankTrip(Player player, DateTime nowUtc)
     {
         var bank = _options.Bank;
-        var cost = Math.Max(0, bank.TripTurnCost);
-        if (cost == 0) return 0;
-        if (player.LastBankedAtUtc is { } last
-            && last.AddMinutes(Math.Max(0, bank.TripGraceMinutes)) > nowUtc)
-            return 0;
+        if (IsStillAtBank(player, bank, nowUtc)) return 0;
 
+        var cost = BankTripTurnCost(player, bank, nowUtc);
+        if (cost == 0) return 0;
         ValidateTurns(player, cost, _options.MaxActionTurns, "A trip to the bank");
         player.Turns -= cost;
         player.LastBankedAtUtc = nowUtc;
+        if (player.BankTripWindowStartedAtUtc is not { } started
+            || started.AddHours(Math.Max(1, bank.TripWindowHours)) <= nowUtc)
+        {
+            player.BankTripWindowStartedAtUtc = nowUtc;
+            player.BankTripsInWindow = 0;
+        }
+
+        player.BankTripsInWindow += 1;
         return cost;
     }
+
+    private static bool IsStillAtBank(Player player, BankOptions bank, DateTime nowUtc)
+        => player.LastBankedAtUtc is { } last
+           && last.AddMinutes(Math.Max(0, bank.TripGraceMinutes)) > nowUtc;
+
+    private static int PaidTripsInCurrentWindow(Player player, BankOptions bank, DateTime nowUtc)
+        => player.BankTripWindowStartedAtUtc is { } started
+           && started.AddHours(Math.Max(1, bank.TripWindowHours)) > nowUtc
+            ? Math.Max(0, player.BankTripsInWindow)
+            : 0;
 
     /// <summary>
     /// Names a free trip and says nothing about a charged one. The turn counter already reports what

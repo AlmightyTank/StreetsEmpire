@@ -1860,6 +1860,17 @@ public sealed class BankOptions
     /// free banking for anyone willing to move money every few minutes.
     /// </summary>
     public int TripGraceMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// How long a paid counter streak stays warm before the fare drops back to the base trip price.
+    /// </summary>
+    public int TripWindowHours { get; set; } = 24;
+
+    /// <summary>
+    /// The highest fare the counter will ask for, however many times the player comes back in the
+    /// current pricing day.
+    /// </summary>
+    public int MaxTripTurnCost { get; set; } = 10;
 }
 
 /// <summary>

@@ -347,6 +347,19 @@ input:focus-visible, textarea:focus-visible {
   min-width: 0;
 }
 
+.avatar-form {
+  align-content: start;
+}
+
+.avatar-actions {
+  align-items: center;
+
+  .btn {
+    align-self: center;
+    white-space: normal;
+  }
+}
+
 .session-row {
   grid-template-columns: minmax(0, 1fr) auto;
 

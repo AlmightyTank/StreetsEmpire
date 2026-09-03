@@ -137,7 +137,7 @@ public sealed class AllianceService(
         => db.ActionLogs.Add(new GameActionLog
         {
             PlayerId = recipientId,
-            Action = "CREW",
+            Action = "CREWNOTICE",
             Summary = summary,
             CreatedAtUtc = nowUtc,
         });

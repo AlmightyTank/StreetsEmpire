@@ -63,6 +63,7 @@ var tests = new (string Name, Action Test)[]
     ("a trip to the bank costs turns", ATripToTheBankCostsTurns),
     ("a second move on the same trip is free", ASecondMoveOnTheSameTripIsFree),
     ("the free bank window does not slide", TheFreeBankWindowDoesNotSlide),
+    ("bank trips double inside one day and cap at ten turns", BankTripsDoubleInsideOneDayAndCapAtTenTurns),
     ("a bank trip you cannot afford moves no money", ABankTripYouCannotAffordMovesNoMoney),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
@@ -1704,6 +1705,8 @@ static void ATripToTheBankCostsTurns()
     AssertEqual(18, player.Turns);
     AssertEqual(2, Value<int>(RequiredBreakdown(result), "turnsSpent"));
     AssertEqual(now, player.LastBankedAtUtc);
+    AssertEqual(now, player.BankTripWindowStartedAtUtc);
+    AssertEqual(1, player.BankTripsInWindow);
 }
 
 /// <summary>
@@ -1727,6 +1730,7 @@ static void ASecondMoveOnTheSameTripIsFree()
     AssertTrue(Value<bool>(RequiredBreakdown(result), "freeTrip"), "a move inside the window is a free one");
     AssertTrue(result.Summary.Contains("still at the bank"), "the summary should say why it was free");
     AssertEqual(now, player.LastBankedAtUtc);
+    AssertEqual(1, player.BankTripsInWindow);
 }
 
 /// <summary>
@@ -1750,10 +1754,50 @@ static void TheFreeBankWindowDoesNotSlide()
     AssertEqual(now, player.LastBankedAtUtc);
 
     // Six minutes after the trip that was paid for, which is outside it. Were the stamp sliding, this
-    // would sit four minutes after the free move and still be free.
+    // would sit four minutes after the free move and still be free. It is also now the second paid
+    // visit in the pricing day, so the fare has doubled.
     service.Deposit(player, 1_000, now.AddMinutes(6));
-    AssertEqual(16, player.Turns);
+    AssertEqual(14, player.Turns);
     AssertEqual(now.AddMinutes(6), player.LastBankedAtUtc);
+    AssertEqual(now, player.BankTripWindowStartedAtUtc);
+    AssertEqual(2, player.BankTripsInWindow);
+}
+
+static void BankTripsDoubleInsideOneDayAndCapAtTenTurns()
+{
+    var service = CreateEconomy(new GameOptions { Bank = new BankOptions { TripTurnCost = 2, TripGraceMinutes = 5, TripWindowHours = 24, MaxTripTurnCost = 10 } });
+    var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+    var player = new Player { Cash = 20_000, Turns = 60, Hideout = new Hideout() };
+
+    AssertEqual(2, service.BankTripTurnCost(player, now));
+    service.Deposit(player, 1_000, now);
+    AssertEqual(58, player.Turns);
+    AssertEqual(4, service.BankTripTurnCost(player, now.AddMinutes(1)));
+
+    var second = service.Deposit(player, 1_000, now.AddMinutes(6));
+    AssertEqual(54, player.Turns);
+    AssertEqual(4, Value<int>(RequiredBreakdown(second), "turnsSpent"));
+
+    var third = service.Deposit(player, 1_000, now.AddMinutes(12));
+    AssertEqual(46, player.Turns);
+    AssertEqual(8, Value<int>(RequiredBreakdown(third), "turnsSpent"));
+
+    var fourth = service.Deposit(player, 1_000, now.AddMinutes(18));
+    AssertEqual(36, player.Turns);
+    AssertEqual(10, Value<int>(RequiredBreakdown(fourth), "turnsSpent"));
+
+    var fifth = service.Deposit(player, 1_000, now.AddMinutes(24));
+    AssertEqual(26, player.Turns);
+    AssertEqual(10, Value<int>(RequiredBreakdown(fifth), "turnsSpent"));
+    AssertEqual(now, player.BankTripWindowStartedAtUtc);
+    AssertEqual(5, player.BankTripsInWindow);
+    AssertEqual(10, service.BankTripTurnCost(player, now.AddHours(23)));
+
+    var reset = service.Deposit(player, 1_000, now.AddHours(24).AddMinutes(1));
+    AssertEqual(24, player.Turns);
+    AssertEqual(2, Value<int>(RequiredBreakdown(reset), "turnsSpent"));
+    AssertEqual(now.AddHours(24).AddMinutes(1), player.BankTripWindowStartedAtUtc);
+    AssertEqual(1, player.BankTripsInWindow);
 }
 
 static void ABankTripYouCannotAffordMovesNoMoney()
@@ -3021,14 +3065,20 @@ static void EveryAlertKindAnswersToASwitch()
     // never reaches the bell in the first place. SALE in particular was already being written to the
     // seller with a comment saying it happens to them, and was still landing in their activity list.
     AssertTrue(DefenceAlerts.IsNotification("SALE", "Somebody bought your coke."), "a sale is news to the seller");
-    AssertTrue(DefenceAlerts.IsNotification("CREW", "Your allies are being raided."), "an assist call is news");
+    var assist = "Defender is under attack and your crews have a pact. Send thugs or guns from the alliance board.";
+    AssertTrue(DefenceAlerts.IsNotification("CREWNOTICE", assist), "an assist call is news");
+    AssertTrue(DefenceAlerts.IsNotification("CREW", assist), "legacy assist-call rows are still news");
+    AssertTrue(!DefenceAlerts.IsNotification("CREW", "Hired 12 thugs for $18,000."), "hiring crew is an action, not an ally alert");
     AssertTrue(!DefenceAlerts.IsNotification("MARKET", "You listed 10 coke."), "listing something is an action");
 
     // And the classifier turns them into alerts rather than dropping them, which is a separate step from
     // being a notification row and was where a kind could previously be lost in silence.
     var now = DateTime.UtcNow;
     AssertTrue(DefenceAlerts.ToAlert(1, "SALE", "sold", now, null) is { Kind: "sale" }, "SALE should reach the bell");
-    AssertTrue(DefenceAlerts.ToAlert(2, "CREW", "help", now, null) is { Kind: "crew" }, "CREW should reach the bell");
+    AssertTrue(DefenceAlerts.ToAlert(2, "CREWNOTICE", assist, now, null) is { Kind: "crew", Headline: "Your allies need help" },
+        "assist calls should reach the bell under the ally-help title");
+    AssertTrue(DefenceAlerts.ToAlert(3, "CREW", "Hired 12 thugs for $18,000.", now, null) is null,
+        "ordinary crew actions should never reach the bell");
 
     // Ground, which now has three separate things to say and had two of them filed under the word that
     // means the worst one. Buying an upgrade for a corner you hold was landing in the bell as "You lost
@@ -8704,6 +8754,8 @@ static void DefenceAlertsCountUnread()
     {
         new GameActionLog { Action = "LAB", Summary = "made weed" },
         new GameActionLog { Action = "GROUND", Summary = "X took Y from you." },
+        new GameActionLog { Action = "CREW", Summary = "Hired 12 thugs for $18,000." },
+        new GameActionLog { Action = "CREWNOTICE", Summary = "Defender is under attack and your crews have a pact. Send thugs or guns from the alliance board." },
         new GameActionLog { Action = "TERRITORY", Summary = "Took over Y." },
         new GameActionLog { Action = "STREET", Summary = "worked" }
     };
@@ -8711,7 +8763,7 @@ static void DefenceAlertsCountUnread()
     var isAction = DefenceAlerts.IsActionRow.Compile();
     foreach (var row in rows)
         AssertTrue(isNotification(row) != isAction(row), $"every row is one or the other, never both: {row.Action}");
-    AssertEqual(2, rows.Count(isNotification));
+    AssertEqual(3, rows.Count(isNotification));
 }
 
 // The balance target, stated as a test so retuning cannot quietly break it: a defender holds at equal

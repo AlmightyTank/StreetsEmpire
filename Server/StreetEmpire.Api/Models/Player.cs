@@ -24,6 +24,20 @@ public sealed class Player
     /// </summary>
     public DateTime? LastBankedAtUtc { get; set; }
 
+    /// <summary>
+    /// Start of the current counter-pricing day. Null means the next paid visit starts a new one.
+    ///
+    /// The grace window says whether this physical trip is still open; this says what the next new
+    /// trip costs. Keeping them separate lets typo fixes stay free without letting them reset the day.
+    /// </summary>
+    public DateTime? BankTripWindowStartedAtUtc { get; set; }
+
+    /// <summary>
+    /// Paid counter visits taken in the current pricing day. Free moves inside a paid visit do not
+    /// touch this, because they are the same visit rather than another turn of the ladder.
+    /// </summary>
+    public int BankTripsInWindow { get; set; }
+
     // Turn bank
     public int Turns { get; set; }
     public DateTime LastTurnUpdateUtc { get; set; } = DateTime.UtcNow;

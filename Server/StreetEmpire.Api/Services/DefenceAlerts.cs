@@ -156,12 +156,46 @@ public static class DefenceAlerts
             // own comment where it is written - but it was never in this list, so it sat in the seller's
             // activity looking like something they did while they were asleep.
             "SALE" => new AlertResponse($"log-{logId}", "sale", "Something of yours sold", summary, "good", unread, createdAtUtc),
-            // Raised by a crew you have a pact with, at the moment they are being raided. Worth waking
-            // somebody for: an assist call nobody sees is a call that expires unanswered.
-            "CREW" => new AlertResponse($"log-{logId}", "crew", "Your allies need help", summary, "bad", unread, createdAtUtc),
+            "CREWNOTICE" => CrewNotice(logId, summary, unread, createdAtUtc),
+            // Legacy rows from before passive crew notices got their own action. Ordinary hire, fire
+            // and crew-setting rows were also CREW, so only the known notice wording is allowed here.
+            "CREW" when IsCrewNoticeSummary(summary) => CrewNotice(logId, summary, unread, createdAtUtc),
             _ => null
         };
     }
+
+    private static AlertResponse CrewNotice(long logId, string summary, bool unread, DateTime createdAtUtc)
+    {
+        var (headline, tone) = summary switch
+        {
+            var text when text.Contains(" is under attack and your crews have a pact.", StringComparison.Ordinal)
+                => ("Your allies need help", "bad"),
+            var text when text.Contains(" sent you ", StringComparison.Ordinal)
+                => ("Crew sent goods", "good"),
+            var text when text.Contains(" invited you to join.", StringComparison.Ordinal)
+                => ("Crew invite", "good"),
+            var text when text.Contains(" declared war on ", StringComparison.Ordinal)
+                => ("Crew war declared", "bad"),
+            var text when text.Contains(" fought to ", StringComparison.Ordinal)
+                => ("Crew war settled", "good"),
+            var text when text.Contains(" did enough to call it a war.", StringComparison.Ordinal)
+                => ("Crew war settled", "good"),
+            var text when text.Contains(" beat ", StringComparison.Ordinal)
+                => ("Crew war settled", "bad"),
+            _ => ("Crew business needs eyes", "bad")
+        };
+
+        return new AlertResponse($"log-{logId}", "crew", headline, summary, tone, unread, createdAtUtc);
+    }
+
+    private static bool IsCrewNoticeSummary(string summary)
+        => summary.Contains(" is under attack and your crews have a pact.", StringComparison.Ordinal)
+           || summary.Contains(" sent you ", StringComparison.Ordinal)
+           || summary.Contains(" invited you to join.", StringComparison.Ordinal)
+           || summary.Contains(" declared war on ", StringComparison.Ordinal)
+           || summary.Contains(" fought to ", StringComparison.Ordinal)
+           || summary.Contains(" did enough to call it a war.", StringComparison.Ordinal)
+           || summary.Contains(" beat ", StringComparison.Ordinal);
 
     /// <summary>
     /// The one definition of which log rows are notifications rather than actions.
@@ -191,10 +225,20 @@ public static class DefenceAlerts
                // The arrest itself is reported in the shift that caused it, which is activity. This is
                // the deadline running out while nobody was looking, which is the definition above.
                || log.Action == "ARREST"
-               // Written to the seller by the buyer's request, and to a crew by their ally's attacker.
-               // Neither player was here when it happened, which is the whole definition above.
+               // Written to the seller by the buyer's request.
                || log.Action == "SALE"
-               || log.Action == "CREW";
+               // New passive crew notices use their own action. The CREW half is legacy: before this,
+               // hires, fires and crew settings used the same action, so the known notice wording is
+               // the only safe way to tell old passive rows from a player's own crew activity.
+               || log.Action == "CREWNOTICE"
+               || (log.Action == "CREW"
+                   && (log.Summary.Contains(" is under attack and your crews have a pact.")
+                       || log.Summary.Contains(" sent you ")
+                       || log.Summary.Contains(" invited you to join.")
+                       || log.Summary.Contains(" declared war on ")
+                       || log.Summary.Contains(" fought to ")
+                       || log.Summary.Contains(" did enough to call it a war.")
+                       || log.Summary.Contains(" beat ")));
 
     /// <summary>The same rule negated, for the activity list. Derived so the two cannot disagree.</summary>
     public static Expression<Func<GameActionLog, bool>> IsActionRow { get; } =

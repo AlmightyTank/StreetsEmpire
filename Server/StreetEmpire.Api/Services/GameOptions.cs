@@ -2006,18 +2006,25 @@ public sealed class CasinoOptions
                     MinCasinoRepLevel = 4,
                     MinNetWorth = 2_500_000,
                     JackpotSeed = 5_000_000,
-                    // 96.5% back and almost three spins in four pay nothing at all. No pair pays below
+                    // 96.2% back and almost three spins in four pay nothing at all. No pair pays below
                     // a Seven, so anything that lands here is a triple and is worth having: this is the
                     // room where the money is in the tail rather than in the grind.
+                    //
+                    // The paytable stops at 500x rather than reaching for a headline number. The top
+                    // symbol is one in a million on a lane, so it barely shows up in what the room
+                    // feels like - dropping it from 2,650x cost eight percent of the volatility and
+                    // nothing else, and took the largest thing this machine can hand over from
+                    // $265m to $50m. The progressive is uncapped and wants all five lanes; that is
+                    // where a moonshot belongs.
                     Symbols =
                     [
                         new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 34, PairMultiplier = 0, TripleMultiplier = 9 },
                         new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 25, PairMultiplier = 0, TripleMultiplier = 16 },
                         new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 17, PairMultiplier = 0, TripleMultiplier = 31 },
                         new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 12, PairMultiplier = 0, TripleMultiplier = 60 },
-                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 7, PairMultiplier = 0, TripleMultiplier = 196 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 7, PairMultiplier = 0, TripleMultiplier = 193 },
                         new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 3, TripleMultiplier = 470 },
-                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 8, TripleMultiplier = 2_650 }
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 8, TripleMultiplier = 500 }
                     ]
                 }
             ];

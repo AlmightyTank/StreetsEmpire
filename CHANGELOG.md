@@ -51,9 +51,15 @@
   The rooms differ on two axes at once and both rise as you climb. **Volatility**, from a grinder that
   pays something on seven spins in ten to a room where almost three in four pay nothing at all and the
   money is entirely in the tail - and **the return itself**, because a real floor holds most on its
-  cheapest machines and least in the high-limit room. Sidewalk returns 92.5% at a top of 220x, Neon
-  94.3% at 590x, Kingpin 95.3% at 1,250x, The Vault 96.2% at 2,650x. Climbing the ladder buys better
+  cheapest machines and least in the high-limit room. Sidewalk returns 92.4% at a top of 220x, Neon
+  94.6% at 590x, Kingpin 95.6% at 1,250x, The Vault 95.9% at 500x. Climbing the ladder buys better
   odds as well as bigger numbers, which is most of what standing is for.
+
+  The Vault's paytable deliberately stops at 500x rather than reaching for a headline multiplier. Its
+  top symbol is one in a million on a lane, so it barely shows up in what the room feels like: the
+  73% of spins that pay nothing come from having no pair pays below a Seven, not from the size of the
+  top prize. The uncapped progressive, which wants all five lanes, is where this room's moonshot
+  belongs.
 
   Each machine publishes what it returns and what it pays, because none of that is guessable once the
   rooms stop matching and a player owed better odds for climbing should be able to see that they got

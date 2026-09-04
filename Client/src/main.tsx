@@ -289,6 +289,47 @@ function spinVerdict(transaction: CasinoTransaction) {
  * centres - index plus a half - against a 3x3 viewBox covering everything, which is only the same
  * thing if a cell is all symbol, and every cell carries a label under its symbol.
  */
+/**
+ * Counts a payout up from nothing instead of printing it.
+ *
+ * A machine that states the number has finished with you; one that counts it out is still paying. The
+ * count is only worth anything if it takes longer for more money, so the length scales with how many
+ * times the stake came back - a double is over almost at once, a thirty-to-one hangs about - on a
+ * square root, so a thousand-to-one is not a thousand times slower.
+ *
+ * Eased out rather than linear, so it slows into the figure instead of stopping dead on it.
+ */
+function useCountUp(target: number, stake: number, token: number) {
+  const [value, setValue] = useState(target)
+
+  useEffect(() => {
+    // Somebody who has asked the game to stop moving gets the number, not the performance.
+    const reduced = document.documentElement.getAttribute('data-motion') === 'reduced'
+    if (reduced || target <= 0) {
+      setValue(target)
+      return
+    }
+
+    const ratio = stake > 0 ? target / stake : 1
+    const duration = Math.min(2600, 420 + Math.sqrt(Math.max(1, ratio)) * 340)
+    let frame = 0
+    const started = window.performance.now()
+    const step = (now: number) => {
+      const through = Math.min(1, (now - started) / duration)
+      setValue(Math.round(target * (1 - Math.pow(1 - through, 3))))
+      if (through < 1) frame = window.requestAnimationFrame(step)
+    }
+
+    setValue(0)
+    frame = window.requestAnimationFrame(step)
+    return () => window.cancelAnimationFrame(frame)
+    // The token is the spin's own id: two spins that pay the same amount are still two spins, and the
+    // second one has to count out as well as the first.
+  }, [target, stake, token])
+
+  return value
+}
+
 function slotPaylinePoints(cells: number[]) {
   return cells.map(cell => `${cell % slotColumns},${Math.floor(cell / slotColumns)}`).join(' ')
 }
@@ -3346,6 +3387,19 @@ function CasinoPage(ctx: PageContext) {
     if (paylines !== lineCount) setPaylines(lineCount)
   }, [active?.key, bet, clampedBet, paylines, lineCount])
 
+  // Held back until the reels are down: the receipt is the verdict, and the count is the receipt
+  // being read out. While the machine is still turning there is nothing to read.
+  const settledSpin = spinning ? null : lastSpin
+  const countedPayout = useCountUp(
+    settledSpin?.transaction.payoutAmount ?? 0,
+    settledSpin?.transaction.betAmount ?? 0,
+    settledSpin?.transaction.id ?? 0)
+  // The net is derived from the counted payout rather than animated separately, so the two figures
+  // cannot disagree on the way past and both land together.
+  const countedNet = settledSpin
+    ? countedPayout - (settledSpin.transaction.isFreeSpin ? 0 : settledSpin.transaction.betAmount)
+    : 0
+
   const runSpin = async () => {
     if (!active || spinning) return
     const started = window.performance.now()
@@ -3601,10 +3655,10 @@ function CasinoPage(ctx: PageContext) {
       {lastSpin && verdict && !spinning && <div className={`border rounded p-3 mt-3 ${verdict.edge}`}>
         <div className="d-flex justify-content-between gap-3 align-items-baseline">
           <strong>{verdict.label}</strong>
-          <span className={`tnum ${verdict.tone}`}>{signedMoney(lastSpin.transaction.netResult)}</span>
+          <span className={`tnum ${verdict.tone}`}>{signedMoney(countedNet)}</span>
         </div>
         <small className="text-body-tertiary">
-          {lastSpin.wasFreeSpin ? 'On the house' : `Bet ${money.format(lastSpin.transaction.betAmount)}`}. Won {money.format(lastSpin.transaction.payoutAmount)}.
+          {lastSpin.wasFreeSpin ? 'On the house' : `Bet ${money.format(lastSpin.transaction.betAmount)}`}. Won {money.format(countedPayout)}.
           {lastSpin.freeSpinsAwarded > 0 && ` The house owes you ${lastSpin.freeSpinsAwarded} free spins.`}
           {lastSpin.transaction.jackpotAmount > 0 && ` ${money.format(lastSpin.transaction.jackpotAmount)} of it was the progressive.`}
           {lastSpin.turnsSpent > 0 && ` ${lastSpin.turnsSpent} turn${lastSpin.turnsSpent === 1 ? '' : 's'}.`}

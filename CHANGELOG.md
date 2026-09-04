@@ -40,6 +40,12 @@
   them.
 
 ### Changed
+- **A win is counted out rather than printed.** The payout climbs from nothing to what it landed on,
+  and the net climbs with it because it is derived from the same figure rather than animated
+  separately - so the two cannot disagree on the way past and both arrive together. How long it takes
+  scales with how many times the stake came back, on a square root, so a double is over almost at once
+  and a thirty-to-one hangs about without a thousand-to-one taking all day. It eases into the number
+  instead of stopping dead on it. Reduced motion gets the figure and not the performance.
 - **The machine holds its breath.** When the reels already down leave a run alive and the one still
   turning could pay properly, it hangs on for an extra nine tenths of a second and turns harder inside
   a warmer edge while it does. That is the entire reason a slot stops its reels in order, and stopping

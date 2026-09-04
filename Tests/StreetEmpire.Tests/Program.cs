@@ -2123,7 +2123,7 @@ static void CasinoSlotsEarnStandingAndUnlockMachines()
     {
         Casino = new CasinoOptions
         {
-            RepPerDollarWagered = 0.1,
+            RepPerMaxBetSpin = 10,
             Levels =
             [
                 new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
@@ -2143,7 +2143,7 @@ static void CasinoSlotsEarnStandingAndUnlockMachines()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ZeroRandom());
 
     var before = casino.BoardAsync(player, default).GetAwaiter().GetResult();
@@ -2151,13 +2151,23 @@ static void CasinoSlotsEarnStandingAndUnlockMachines()
     AssertEqual(0, before.Reputation.Rep);
     AssertEqual("Walk-In", before.Reputation.LevelName);
 
-    var spin = casino.SpinSlotsAsync(player, "open", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    // A third of the ticket - three lanes of nine - is worth a third of the standing, and not enough
+    // to open anything.
+    var partial = casino.SpinSlotsAsync(player, "open", 100, 3, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(3, partial.RepEarned);
+    AssertTrue(casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single(x => x.Key == "back").Locked,
+        "a third of a ticket should not open the back room");
+
+    // The whole ticket is worth the whole of it.
+    player.CasinoRep = 0;
+    var spin = casino.SpinSlotsAsync(player, "open", 100, 9, DateTime.UtcNow, default).GetAwaiter().GetResult();
     var after = casino.BoardAsync(player, default).GetAwaiter().GetResult();
 
     AssertEqual(10, spin.RepEarned);
     AssertEqual(10d, player.CasinoRep);
     AssertEqual("Regular", after.Reputation.LevelName);
-    AssertTrue(!after.SlotMachines.Single(x => x.Key == "back").Locked, "wagered cash should open the next room");
+    AssertEqual(10d, after.Reputation.RepPerFullTicket);
+    AssertTrue(!after.SlotMachines.Single(x => x.Key == "back").Locked, "a full ticket should open the next room");
 }
 
 static void CasinoStandingResetsWithTheSeason()

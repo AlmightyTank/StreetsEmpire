@@ -57,6 +57,89 @@ function signedMoney(value: number) {
 function slotGlyph(symbol: string) {
   const name = symbol.toLowerCase()
 
+  // -- Neon Fortune ---------------------------------------------------------------------------------
+  if (name.includes('cherry')) return <>
+    <circle cx="8" cy="17" r="4.1" />
+    <circle cx="17.1" cy="18.4" r="3.4" />
+    <path d="M8 12.6c1.1-5 4.2-8 9.2-9.4M17.1 14.7c-1-3.9 0-6.9 2.1-9.4"
+      fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+  </>
+
+  if (name.includes('bell')) return <>
+    <path d="M12 2.6c.9 0 1.6.7 1.6 1.6v.6a6.6 6.6 0 0 1 4.5 6.3v3.9l1.7 2.2a.8.8 0 0 1-.6 1.3H4.8a.8.8 0 0 1-.6-1.3l1.7-2.2v-3.9a6.6 6.6 0 0 1 4.5-6.3v-.6c0-.9.7-1.6 1.6-1.6z" />
+    <circle cx="12" cy="20.5" r="1.9" />
+  </>
+
+  if (name.includes('champagne')) return <path d="M3.4 3.6h17.2l-7.4 8.6v5.9h4.3v2.3H6.5v-2.3h4.3v-5.9z" />
+
+  if (name.includes('dice')) return <>
+    <rect x="3.4" y="3.4" width="17.2" height="17.2" rx="3.4" fill="none" stroke="currentColor" strokeWidth="2.2" />
+    <circle cx="8.4" cy="8.4" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="15.6" cy="15.6" r="1.7" />
+  </>
+
+  if (name.includes('diamond')) return <path d="M12 2.4l9.2 9.6-9.2 9.6L2.8 12z" />
+
+  // -- Kingpin --------------------------------------------------------------------------------------
+  if (name.includes('chip')) return <>
+    <circle cx="12" cy="12" r="8.9" fill="none" stroke="currentColor" strokeWidth="2.4" />
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="M12 2.4v3.2M12 18.4v3.2M2.4 12h3.2M18.4 12h3.2"
+      stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </>
+
+  if (name.includes('whiskey')) return <>
+    <path d="M5.2 3.6h13.6l-1.4 15.6a1.7 1.7 0 0 1-1.7 1.5H8.3a1.7 1.7 0 0 1-1.7-1.5z"
+      fill="none" stroke="currentColor" strokeWidth="2.2" />
+    <path d="M6.6 11.4h10.8l-.7 7.9a.6.6 0 0 1-.6.5H7.9a.6.6 0 0 1-.6-.5z" />
+  </>
+
+  if (name.includes('cigar')) return <>
+    <rect x="1.8" y="12.2" width="17.4" height="4.6" rx="2.3" transform="rotate(-20 10.5 14.5)" />
+    <circle cx="20.3" cy="8.2" r="2.1" />
+  </>
+
+  if (name.includes('watch')) return <>
+    <circle cx="12" cy="14.2" r="7.2" fill="none" stroke="currentColor" strokeWidth="2.2" />
+    <path d="M12 10.4v4l2.7 1.7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <rect x="10.4" y="3.4" width="3.2" height="2.6" rx=".8" />
+    <circle cx="12" cy="2.4" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.7" />
+  </>
+
+  if (name.includes('ring')) return <>
+    <circle cx="12" cy="15.4" r="6.1" fill="none" stroke="currentColor" strokeWidth="2.4" />
+    <path d="M12 2.2l3.5 4.3-3.5 3.5-3.5-3.5z" />
+  </>
+
+  // -- The Vault ------------------------------------------------------------------------------------
+  if (name.includes('ledger')) return <>
+    <path d="M5 4.6a1.8 1.8 0 0 1 1.8-1.8h12.6v18.4H6.8A1.8 1.8 0 0 1 5 19.4z"
+      fill="none" stroke="currentColor" strokeWidth="2.2" />
+    <path d="M9.2 2.8v18.4" fill="none" stroke="currentColor" strokeWidth="2.2" />
+  </>
+
+  // Before the Vault itself: the Vault room's key is called a Vault Key, and it would
+  // otherwise be drawn as a safe.
+  if (name.includes('key')) return <>
+    <circle cx="7.6" cy="7.9" r="4.6" fill="none" stroke="currentColor" strokeWidth="2.4" />
+    <path d="M10.8 11.2l9.4 9.4M16.6 17l2.3-2.3M13.7 14.1l2.3-2.3"
+      fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </>
+
+  if (name.includes('bar')) return <>
+    <path d="M7 8.4l1.5-2.6h7l1.5 2.6z" />
+    <path d="M6.2 10h11.6l3.2 8.4H3z" />
+  </>
+
+  if (name.includes('spade')) return <path d="M12 2.4S3.6 8.8 3.6 13.2a4.3 4.3 0 0 0 7 3.4l-1.5 5h5.8l-1.5-5a4.3 4.3 0 0 0 7-3.4C20.4 8.8 12 2.4 12 2.4z" />
+
+  if (name.includes('skull')) return <>
+    <path d="M12 2.8c-4.9 0-8.3 3.3-8.3 7.9 0 2.6 1.2 4.5 2.8 5.7v2.9a1.7 1.7 0 0 0 1.7 1.7h7.6a1.7 1.7 0 0 0 1.7-1.7v-2.9c1.6-1.2 2.8-3.1 2.8-5.7 0-4.6-3.4-7.9-8.3-7.9z"
+      fill="none" stroke="currentColor" strokeWidth="2.1" />
+    <circle cx="8.9" cy="10.6" r="1.9" /><circle cx="15.1" cy="10.6" r="1.9" />
+    <path d="M10.2 18.2v2.8M13.8 18.2v2.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+  </>
+
+  // -- Sidewalk Slots, and the two faces every room shares ------------------------------------------
   if (name.includes('cash')) return <>
     <rect x="2.5" y="15" width="19" height="4.6" rx="1.3" />
     <rect x="1.5" y="9.4" width="21" height="4.6" rx="1.3" />
@@ -107,24 +190,29 @@ function SlotGlyph({ symbol, className }: { symbol: string, className?: string }
   </svg>
 }
 
-const slotIdleSymbols = ['Cash Stack', 'Gold Chain', 'Seven', 'Low-Rider', 'Crown']
-const slotSpinSymbols = ['Cash Stack', 'Gold Chain', 'Pistol', 'Luxury Rider', 'Crown', 'Seven', 'Vault']
 const slotSpinDurationMs = 950
 const slotColumns = 5
 const slotRows = 3
 const slotGridSize = slotColumns * slotRows
 
-function slotReelSymbols(reel: number) {
-  return Array.from({ length: 12 }, (_, index) => slotSpinSymbols[(index + reel * 2) % slotSpinSymbols.length])
+/**
+ * What a reel shows while it is turning, and what the grid shows before it ever has.
+ *
+ * Both take the faces of the machine being played rather than one set for the whole floor, because
+ * the rooms no longer share a reel: a Vault that idled on Low-Riders would be showing symbols that
+ * are not on it and cannot come up.
+ */
+function slotReelSymbols(reel: number, faces: string[]) {
+  return Array.from({ length: 12 }, (_, index) => faces[(index + reel * 2) % faces.length])
 }
 
-function slotGridSymbols(symbols?: string[]) {
-  const base = symbols && symbols.length >= slotGridSize ? symbols.slice(0, slotGridSize) : slotIdleSymbols
+function slotGridSymbols(faces: string[], symbols?: string[]) {
+  const base = symbols && symbols.length >= slotGridSize ? symbols.slice(0, slotGridSize) : faces
   return Array.from({ length: slotGridSize }, (_, index) => base[index % base.length])
 }
 
-function slotGridText(symbols: string[]) {
-  const grid = slotGridSymbols(symbols)
+function slotGridText(faces: string[], symbols: string[]) {
+  const grid = slotGridSymbols(faces, symbols)
   return Array.from({ length: slotRows }, (_, row) =>
     grid.slice(row * slotColumns, row * slotColumns + slotColumns).join(' / ')).join(' | ')
 }
@@ -3267,6 +3355,8 @@ function CasinoPage(ctx: PageContext) {
     : []
   const winningCells = new Set(winningLines.flatMap(line => line.cells))
   const verdict = lastSpin ? spinVerdict(lastSpin.transaction) : null
+  // Richest first off the paytable, so an idle reel shows the room's own faces.
+  const activeFaces = active.paytable.map(pay => pay.label)
 
   return <div className="d-grid gtc-1 gtc-xl-split-135 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
@@ -3326,8 +3416,8 @@ function CasinoPage(ctx: PageContext) {
         </small>
       </details>
       <div className="slot-reels d-grid gap-2 my-3" aria-label="Slot reels">
-        {slotGridSymbols(lastSpin?.symbols).map((symbol, index) => {
-          const reelSymbols = spinning ? slotReelSymbols(index) : [symbol]
+        {slotGridSymbols(activeFaces, lastSpin?.symbols).map((symbol, index) => {
+          const reelSymbols = spinning ? slotReelSymbols(index, activeFaces) : [symbol]
           return <div
             className={`slot-reel d-grid border rounded bg-body-tertiary ${spinning ? 'is-spinning' : ''} ${winningCells.has(index) ? 'is-winning' : ''}`}
             aria-label={spinning ? `Slot ${index + 1} spinning` : `Slot ${index + 1}: ${symbol}`}
@@ -3475,7 +3565,7 @@ function CasinoPage(ctx: PageContext) {
                   <td>{entry.machineName}{entry.jackpotAmount > 0
                     ? <span className="badge text-bg-warning ms-2">Pot</span>
                     : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}</td>
-                  <td>{slotGridText(entry.symbols)}</td>
+                  <td>{slotGridText(activeFaces, entry.symbols)}</td>
                   <td>{entry.winningPaylines}/{entry.paylines}</td>
                   <td>{money.format(entry.betAmount)}</td>
                   <td>{money.format(entry.payoutAmount)}</td>

@@ -150,7 +150,7 @@ public sealed class CasinoService(
         var repBefore = player.CasinoRep;
         player.Turns -= turnCost;
         player.Cash -= totalBet;
-        player.CasinoRep = Math.Max(0, player.CasinoRep + totalBet * Math.Max(0, config.RepPerDollarWagered));
+        player.CasinoRep = Math.Max(0, player.CasinoRep + RepFor(machine, totalBet));
         var compsBefore = player.CasinoComps;
         player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
 
@@ -451,6 +451,17 @@ public sealed class CasinoService(
                 Math.Max(0, x.QuadMultiplier),
                 Math.Max(0, x.QuintMultiplier)));
 
+    /// <summary>The full ticket: every lane on this machine, each at its top stake.</summary>
+    private static long FullTicket(SlotMachineOptions machine)
+        => Math.Max(1, machine.MaxBet) * SlotPaylines.Length;
+
+    /// <summary>
+    /// What a stake is worth in standing: its share of this machine's full ticket, times what a full
+    /// ticket is worth. A quarter of the ticket earns a quarter of the standing.
+    /// </summary>
+    private double RepFor(SlotMachineOptions machine, long totalBet)
+        => Math.Max(0, _options.Casino.RepPerMaxBetSpin) * totalBet / FullTicket(machine);
+
     private long SeedFor(SlotMachineOptions machine) => Math.Max(0, machine.JackpotSeed);
 
     private long ContributionFrom(long wagered)
@@ -579,9 +590,7 @@ public sealed class CasinoService(
             : ceiling <= floor
                 ? 0
                 : (int)Math.Clamp(Math.Floor((player.CasinoRep - floor) * 100 / (ceiling - floor)), 0, 100);
-        var dollarsPerRep = config.RepPerDollarWagered <= 0
-            ? 0
-            : Math.Max(1, (int)Math.Ceiling(1 / config.RepPerDollarWagered));
+        var perTicket = Math.Round(Math.Max(0, config.RepPerMaxBetSpin), 2);
 
         return new CasinoRepResponse(
             (int)Math.Floor(player.CasinoRep),
@@ -592,7 +601,7 @@ public sealed class CasinoService(
             next?.Rep,
             next is null ? 0 : Math.Max(0, next.Rep - (int)Math.Floor(player.CasinoRep)),
             progress,
-            dollarsPerRep);
+            perTicket);
     }
 
     /// <summary>Whether a lane paid the best this machine's paytable has in it.</summary>

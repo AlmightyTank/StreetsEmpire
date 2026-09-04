@@ -52,7 +52,8 @@ export type CasinoReputation = {
   nextLevelRep?: number | null
   repToNextLevel: number
   progressPercent: number
-  dollarsWageredPerRep: number
+  /** Standing earned by a spin that buys every lane at the machine's top stake. */
+  repPerFullTicket: number
 }
 
 export type CasinoStats = {

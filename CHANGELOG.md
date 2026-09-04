@@ -40,6 +40,15 @@
   them.
 
 ### Changed
+- **Every room has its own faces.** The four machines already ran their own weights and their own
+  pays, but they all showed the same seven symbols, so the thing a player actually looks at was
+  identical in every room. They share Sevens and the Vault at the top now - the constants of a slot
+  floor, and the pot is keyed on the Vault - and nothing below it. Neon Fortune runs a Cherry, a Bell,
+  Champagne, Dice and a Diamond; Kingpin a Casino Chip, Whiskey, a Cigar, a Pocket Watch and a Signet
+  Ring; The Vault a Ledger, a Vault Key, a Gold Bar, an Ace of Spades and a Skull. Swapping the faces
+  moved no number on any card, because the weights and the pays are what the maths is made of. The
+  reels idle and spin on the faces of the machine you are stood at, so a Vault never shows a
+  Low-Rider it could not land.
 - **Five columns, three rows, nine lanes.** The floor was three by three with five lanes across it. It
   is fifteen cells now and a lane runs the full width, so what a lane pays is the run it opens with
   from the left: two, three, four or five of the same face. Left-anchored, because that is how a reel
@@ -88,6 +97,14 @@
   Each machine publishes what it returns and what it pays, because none of that is guessable once the
   rooms stop matching and a player owed better odds for climbing should be able to see that they got
   them.
+- **Standing is earned by the ticket rather than by the dollar.** A full ticket - every lane at the
+  machine's top stake - is worth five standing, and a smaller stake earns its share of that. It used
+  to be a rate per dollar wagered, which made standing a measure of how rich somebody already was: the
+  Vault takes stakes a thousand times the Sidewalk's, so one pull there was worth a thousand Sidewalk
+  pulls and anybody who could afford the top room climbed the whole ladder in about eleven spins.
+  Standing is meant to say how you play, and the rooms are already gated on net worth for the other
+  half of it. Because a pull costs one turn whatever it stakes, the full ticket is now much the
+  fastest way to earn standing per turn - which is the part that is actually scarce.
 - **A pull costs a turn.** The casino was the only thing in the game that charged nothing but money,
   which made it the one activity that never competed with any other: there was no hour of the day when
   spinning was the wrong thing to be doing. An evening at a real floor costs you the evening.

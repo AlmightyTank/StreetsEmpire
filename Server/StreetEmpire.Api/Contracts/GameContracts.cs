@@ -176,7 +176,8 @@ public sealed record CasinoRepResponse(
     int? NextLevelRep,
     int RepToNextLevel,
     int ProgressPercent,
-    int DollarsWageredPerRep);
+    /// <summary>Standing earned by a spin that buys every lane at the machine's top stake.</summary>
+    double RepPerFullTicket);
 
 public sealed record CasinoStatsResponse(
     int Spins,

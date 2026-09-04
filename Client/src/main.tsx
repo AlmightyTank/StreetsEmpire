@@ -204,6 +204,26 @@ const slotReelStopMs = 380
 const slotReelStopRampMs = 60
 
 /**
+ * How much longer a reel hangs when the ones already down have left a run alive.
+ *
+ * This is the whole reason a slot machine stops its reels in order. Three of a kind already showing
+ * with two reels to go means the next one decides whether this is a small win or a large one, and a
+ * machine that dropped it on the same beat as every other reel would be throwing that away.
+ */
+const slotAnticipateMs = 900
+
+/**
+ * What the next reel has to be worth before the machine holds for it, counted in whole tickets.
+ *
+ * Run length alone is the wrong test. Three of a kind is live on 36% of nine-lane spins - a machine
+ * pausing on a third of them is not pausing - and most of those are three of the commonest face,
+ * where a fourth adds very little. What matters is whether the reel still turning could pay
+ * something: this holds when landing one more would return at least four times the whole stake,
+ * which is true of almost any four-of-a-kind going to five and only of the better faces going to four.
+ */
+const slotAnticipateTickets = 4
+
+/**
  * The same landing for somebody who has asked the game to stop moving.
  *
  * Under reduced motion the reel strip does not animate at all, so every one of those milliseconds is
@@ -213,8 +233,8 @@ const slotReelStopRampMs = 60
 function slotReelTiming() {
   const reduced = document.documentElement.getAttribute('data-motion') === 'reduced'
   return reduced
-    ? { hold: 120, gap: 60, ramp: 0 }
-    : { hold: slotSpinDurationMs, gap: slotReelStopMs, ramp: slotReelStopRampMs }
+    ? { hold: 120, gap: 60, ramp: 0, anticipate: 0 }
+    : { hold: slotSpinDurationMs, gap: slotReelStopMs, ramp: slotReelStopRampMs, anticipate: slotAnticipateMs }
 }
 const slotColumns = 5
 const slotRows = 3
@@ -3290,6 +3310,8 @@ function CasinoPage(ctx: PageContext) {
   // picture appearing rather than as a machine landing, and the column that has not stopped yet is
   // the only reason to keep watching - so this is a count rather than a flag.
   const [stoppedColumns, setStoppedColumns] = useState(slotColumns)
+  // Set while the reels still turning are the ones a live run is waiting on.
+  const [anticipating, setAnticipating] = useState(false)
   const spinning = stoppedColumns < slotColumns
   const [compNote, setCompNote] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -3340,6 +3362,7 @@ function CasinoPage(ctx: PageContext) {
       // The cage refused it. Put the reels back rather than leaving them turning on a spin that
       // never happened.
       setStoppedColumns(slotColumns)
+      setAnticipating(false)
       return
     }
 
@@ -3351,13 +3374,39 @@ function CasinoPage(ctx: PageContext) {
     // that was just taken has gone back to its seed with somebody's name against it.
     setBoard(settled.board)
 
+    // Whether the reels already down have left a run that the next one could still extend. Read off
+    // the grid that has landed rather than off the result, because that is all the player can see.
+    const grid = slotGridSymbols(activeFaces, settled.transaction.symbols)
+    // Off the board that came back with the spin rather than the one in state: this runs before the
+    // render that would have narrowed the other one, and they say the same thing anyway.
+    const lanes = settled.board.paylines.slice(0, settled.transaction.paylines)
+    // What each face pays for a run of a given length, off the machine's own card.
+    const pays = new Map(active.paytable.map(pay => [pay.label, [0, 0, pay.pair, pay.triple, pay.quad, pay.quint]]))
+    const ticket = settled.transaction.betAmount
+    const perLane = ticket / Math.max(1, settled.transaction.paylines)
+
+    // Is any lane still live, and is the reel it is waiting on worth holding for? A run that broke
+    // short of the reels already down is decided and there is nothing left to wait on.
+    const worthHolding = (columns: number) => lanes.some(lane => {
+      let run = 1
+      while (run < columns && grid[lane.cells[run]] === grid[lane.cells[0]]) run++
+      if (run !== columns || columns >= slotColumns) return false
+      const next = pays.get(grid[lane.cells[0]])?.[columns + 1] ?? 0
+      return next * perLane >= ticket * slotAnticipateTickets
+    })
+
     const timing = slotReelTiming()
     const spun = window.performance.now() - started
     if (spun < timing.hold) await wait(timing.hold - spun)
     for (let column = 1; column <= slotColumns; column++) {
       setStoppedColumns(column)
-      if (column < slotColumns) await wait(timing.gap + (column - 1) * timing.ramp)
+      if (column >= slotColumns) break
+
+      const held = timing.anticipate > 0 && worthHolding(column)
+      setAnticipating(held)
+      await wait(timing.gap + (column - 1) * timing.ramp + (held ? timing.anticipate : 0))
     }
+    setAnticipating(false)
     await refresh()
   }
 
@@ -3464,7 +3513,7 @@ function CasinoPage(ctx: PageContext) {
           const turning = index % slotColumns >= stoppedColumns
           const reelSymbols = turning ? slotReelSymbols(index, activeFaces) : [symbol]
           return <div
-            className={`slot-reel d-grid border rounded bg-body-tertiary ${turning ? 'is-spinning' : ''} ${winningCells.has(index) ? 'is-winning' : ''}`}
+            className={`slot-reel d-grid border rounded bg-body-tertiary ${turning ? 'is-spinning' : ''} ${turning && anticipating ? 'is-anticipating' : ''} ${winningCells.has(index) ? 'is-winning' : ''}`}
             aria-label={turning ? `Reel ${index % slotColumns + 1} spinning` : `Slot ${index + 1}: ${symbol}`}
             key={`${active.key}-${index}`}
           >

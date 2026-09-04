@@ -40,6 +40,17 @@
   them.
 
 ### Changed
+- **The machine holds its breath.** When the reels already down leave a run alive and the one still
+  turning could pay properly, it hangs on for an extra nine tenths of a second and turns harder inside
+  a warmer edge while it does. That is the entire reason a slot stops its reels in order, and stopping
+  them on the same beat every time threw it away.
+
+  What triggers it is the money rather than the run. Three of a kind is still live on 36% of nine-lane
+  spins, and a machine pausing on a third of them is not pausing - most of those are three of the
+  commonest face, where a fourth adds almost nothing. It holds when landing one more would pay back at
+  least four times the whole stake, which covers nearly any four-of-a-kind reaching for five and only
+  the better faces reaching for four. That lands on about one spin in five: 7% before the fourth reel
+  and 12% before the fifth. Reduced motion skips the hold along with the rest of the timing.
 - **A win is lit across what actually matched.** A lane that paid on two of a kind lit all five of its
   cells and drew a line the full width of the grid, which says a five of a kind landed. With runs of
   two to five being the whole mechanic, that was the board reporting the wrong win: a pair and a

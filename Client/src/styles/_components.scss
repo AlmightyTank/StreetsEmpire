@@ -1178,6 +1178,15 @@ input:focus-visible, textarea:focus-visible {
     border-color: rgba($gold, .45) !important;
   }
 
+  // A reel the machine is waiting on. It turns harder and sits inside a warmer edge, so the reason
+  // it has not dropped yet is visible rather than just felt as a pause.
+  &.is-anticipating {
+    border-color: rgba($gold, .8) !important;
+    box-shadow: inset 0 0 0 1px rgba($gold, .3), 0 0 1rem rgba($gold, .28);
+
+    .slot-reel-strip { animation-duration: 260ms !important; }
+  }
+
   &.is-winning {
     border-color: rgba($gold, .78) !important;
     background: rgba($gold, .1) !important;

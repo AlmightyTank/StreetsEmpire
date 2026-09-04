@@ -71,8 +71,14 @@
   pays something on seven spins in ten to a room where almost three in four pay nothing at all and the
   money is entirely in the tail - and **the return itself**, because a real floor holds most on its
   cheapest machines and least in the high-limit room. Sidewalk returns 92.5% at a top of 2,760x, Neon
-  94.5% at 3,550x, Kingpin 95.5% at 3,810x, The Vault 96.5% at 2,200x. Climbing the ladder buys better
+  94.5% at 3,550x, Kingpin 95.5% at 4,760x, The Vault 96.5% at 2,200x. Climbing the ladder buys better
   odds as well as bigger numbers, which is most of what standing is for.
+
+  Kingpin's card climbs more steeply than Neon's rather than copying it. It carries rarer top faces
+  than the room below, so an identical ladder meant meeting the big pays less often without them being
+  any bigger - which left the dearer machine the flatter of the two. Less on the common faces and more
+  on the rare ones fixes it at the same return, and volatility across the floor now rises the whole
+  way up: 1.86, 2.53, 2.92, 3.16.
 
   The Vault's five-of-a-kind stops at 2,200x rather than following its own curve up. On five reels the
   top symbol lands five times in about one spin in ten billion, so the number is a card rather than a

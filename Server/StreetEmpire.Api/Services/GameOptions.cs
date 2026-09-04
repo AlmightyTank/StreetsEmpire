@@ -1987,13 +1987,13 @@ public sealed class CasinoOptions
                     // 95.5% back. Pairs are worth almost nothing here; the money is in the triples.
                     Symbols =
                     [
-                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 30, PairMultiplier = 0, TripleMultiplier = 6, QuadMultiplier = 20, QuintMultiplier = 59 },
-                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 0, TripleMultiplier = 10, QuadMultiplier = 34, QuintMultiplier = 100 },
-                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 19, PairMultiplier = 0, TripleMultiplier = 16, QuadMultiplier = 47, QuintMultiplier = 170 },
-                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 0, TripleMultiplier = 27, QuadMultiplier = 93, QuintMultiplier = 280 },
-                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 0, TripleMultiplier = 50, QuadMultiplier = 175, QuintMultiplier = 530 },
-                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 5, PairMultiplier = 0, TripleMultiplier = 115, QuadMultiplier = 395, QuintMultiplier = 1190 },
-                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 365, QuadMultiplier = 1270, QuintMultiplier = 3810 }
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 30, PairMultiplier = 0, TripleMultiplier = 4, QuadMultiplier = 14, QuintMultiplier = 42 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 0, TripleMultiplier = 9, QuadMultiplier = 31, QuintMultiplier = 92 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 19, PairMultiplier = 0, TripleMultiplier = 19, QuadMultiplier = 66, QuintMultiplier = 205 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 0, TripleMultiplier = 43, QuadMultiplier = 150, QuintMultiplier = 445 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 0, TripleMultiplier = 94, QuadMultiplier = 330, QuintMultiplier = 980 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 5, PairMultiplier = 0, TripleMultiplier = 205, QuadMultiplier = 720, QuintMultiplier = 2160 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 455, QuadMultiplier = 1590, QuintMultiplier = 4760 }
                     ]
                 },
                 new SlotMachineOptions

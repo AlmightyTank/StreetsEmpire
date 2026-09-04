@@ -40,16 +40,71 @@ function signedMoney(value: number) {
   return `${value >= 0 ? '+' : '-'}${money.format(Math.abs(value))}`
 }
 
-function slotIcon(symbol: string) {
+/**
+ * The faces on a reel, drawn rather than abbreviated.
+ *
+ * They used to be two-letter codes - LR for the Low-Rider, CH for the Gold Chain, K for the Crew
+ * Crown - which is a legend a player has to learn before the machine means anything, and the reel is
+ * the one part of a slot machine that has to be readable at a glance. It also made the paytable read
+ * "LR Low-Rider", teaching the legend in the one place the full name was already printed.
+ *
+ * Matched on the label rather than the key because that is what both callers are holding, and loosely
+ * because the idle animation runs its own names past this that the server never sends.
+ *
+ * Solid shapes in one colour. A face is about forty pixels across inside a gold disc, and anything
+ * finer than this is gone at that size.
+ */
+function slotGlyph(symbol: string) {
   const name = symbol.toLowerCase()
-  if (name.includes('cash')) return '$'
-  if (name.includes('chain')) return 'CH'
-  if (name.includes('pistol')) return 'P'
-  if (name.includes('rider')) return 'LR'
-  if (name.includes('crown')) return 'K'
-  if (name.includes('seven')) return '7'
-  if (name.includes('vault')) return 'V'
-  return '?'
+
+  if (name.includes('cash')) return <>
+    <rect x="2.5" y="15" width="19" height="4.6" rx="1.3" />
+    <rect x="1.5" y="9.4" width="21" height="4.6" rx="1.3" />
+    <rect x="4" y="3.8" width="16" height="4.6" rx="1.3" />
+  </>
+
+  if (name.includes('chain')) return <g fill="none" stroke="currentColor" strokeWidth="2.6">
+    <ellipse cx="8.6" cy="15.4" rx="3.6" ry="5.6" transform="rotate(-45 8.6 15.4)" />
+    <ellipse cx="15.4" cy="8.6" rx="3.6" ry="5.6" transform="rotate(-45 15.4 8.6)" />
+  </g>
+
+  // Three shapes rather than one outline: a receiver, a barrel off its front, and a grip hung from
+  // the back of it. Drawn as one path this came out a T - a bar of even weight with a grip under the
+  // middle of it - and what makes the shape read as a gun is the grip being at one end and the barrel
+  // running out of the other.
+  if (name.includes('pistol')) return <>
+    <rect x="2.6" y="5.2" width="10.8" height="6.4" rx="1" />
+    <rect x="12.4" y="6.6" width="9" height="3.6" rx="1" />
+    <path d="M2.8 10.6h5.6L6.6 20.4H2z" />
+  </>
+
+  if (name.includes('rider')) return <>
+    <path d="M2 15.2c0-.6.4-1.1 1-1.2l2.3-.4 2.5-3.3c.4-.5 1-.8 1.7-.8h5.6c.7 0 1.3.3 1.7.8l2.4 3.4 1.3.3c.6.1 1 .6 1 1.2v1.6c0 .5-.3.8-.8.8H2.8c-.5 0-.8-.3-.8-.8z" />
+    <circle cx="7" cy="17.8" r="2.3" />
+    <circle cx="17" cy="17.8" r="2.3" />
+  </>
+
+  if (name.includes('crown')) return <path d="M2.6 7.4l3.7 3.8L12 4.4l5.7 6.8 3.7-3.8-1.9 10.2c-.1.6-.7 1.1-1.3 1.1H5.8c-.6 0-1.2-.5-1.3-1.1z" />
+
+  if (name.includes('seven')) return <path d="M5.6 4.2h12.8v3.3L11.4 19.8H6.7L13.8 8H5.6z" />
+
+  if (name.includes('vault')) return <>
+    <rect x="2.6" y="3.4" width="18.8" height="17.2" rx="2.6" fill="none" stroke="currentColor" strokeWidth="2.3" />
+    <circle cx="12" cy="12" r="3.9" fill="none" stroke="currentColor" strokeWidth="2.3" />
+    <path d="M12 5.6v1.7M12 16.7v1.7M5.6 12h1.7M16.7 12h1.7" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+  </>
+
+  return <circle cx="12" cy="12" r="5.5" />
+}
+
+/**
+ * Always hidden from a screen reader. Both callers print the symbol's name in text beside it, so
+ * announcing it here would say everything twice.
+ */
+function SlotGlyph({ symbol, className }: { symbol: string, className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    {slotGlyph(symbol)}
+  </svg>
 }
 
 const slotIdleSymbols = ['Cash Stack', 'Gold Chain', 'Seven']
@@ -3250,7 +3305,7 @@ function CasinoPage(ctx: PageContext) {
             <thead><tr><th>Symbol</th><th className="text-end">Two</th><th className="text-end">Three</th></tr></thead>
             <tbody>
               {active.paytable.map(pay => <tr key={pay.label}>
-                <td>{slotIcon(pay.label)} {pay.label}</td>
+                <td><SlotGlyph symbol={pay.label} className="slot-pay-glyph" /> {pay.label}</td>
                 <td className="text-end tnum">{pay.pair > 0 ? `${pay.pair}x` : '-'}</td>
                 <td className="text-end tnum">{pay.triple}x</td>
               </tr>)}
@@ -3276,7 +3331,7 @@ function CasinoPage(ctx: PageContext) {
               >
                 {reelSymbols.map((reelSymbol, reelIndex) =>
                   <div className="slot-reel-face" key={`${reelSymbol}-${reelIndex}`}>
-                    <span>{slotIcon(reelSymbol)}</span>
+                    <span><SlotGlyph symbol={reelSymbol} /></span>
                   </div>)}
               </div>
             </div>

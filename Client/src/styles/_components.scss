@@ -1239,8 +1239,24 @@ input:focus-visible, textarea:focus-visible {
     border-radius: 50%;
     background: rgba($gold, .16);
     color: $gold;
-    font-weight: $font-weight-bolder;
   }
+
+  // Short of the disc's edge on purpose: a glyph that fills its circle reads as a
+  // button rather than as something sitting on a reel.
+  svg {
+    inline-size: 58%;
+    block-size: 58%;
+  }
+}
+
+// The same face at text size, so the paytable teaches the reel rather than
+// restating the name it is printed next to.
+.slot-pay-glyph {
+  inline-size: 1.15em;
+  block-size: 1.15em;
+  vertical-align: -.2em;
+  margin-inline-end: .35rem;
+  color: $gold;
 }
 
 .slot-reel-label {

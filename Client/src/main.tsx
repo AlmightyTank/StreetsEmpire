@@ -90,8 +90,16 @@ function spinVerdict(transaction: CasinoTransaction) {
   return { label: 'No hit', tone: 'text-body-secondary', edge: 'border-secondary' }
 }
 
+/**
+ * Where a winning line runs, in the overlay's own coordinates.
+ *
+ * The overlay is inset to span symbol-centre to symbol-centre rather than covering the whole grid, so
+ * against its 2x2 viewBox a cell's column and row index *are* its coordinates. It used to emit cell
+ * centres - index plus a half - against a 3x3 viewBox covering everything, which is only the same
+ * thing if a cell is all symbol, and every cell carries a label under its symbol.
+ */
 function slotPaylinePoints(cells: number[]) {
-  return cells.map(cell => `${cell % 3 + 0.5},${Math.floor(cell / 3) + 0.5}`).join(' ')
+  return cells.map(cell => `${cell % 3},${Math.floor(cell / 3)}`).join(' ')
 }
 
 function wait(ms: number) {
@@ -3239,7 +3247,7 @@ function CasinoPage(ctx: PageContext) {
             <strong className="slot-reel-label">{spinning ? 'Spinning' : symbol}</strong>
           </div>
         })}
-        {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox="0 0 3 3" preserveAspectRatio="none" aria-hidden="true">
+        {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox="0 0 2 2" preserveAspectRatio="none" aria-hidden="true">
           {winningLines.map(line => <polyline className="slot-payline-hit" points={slotPaylinePoints(line.cells)} key={line.index} />)}
         </svg>}
       </div>

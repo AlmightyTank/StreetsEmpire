@@ -1148,10 +1148,18 @@ input:focus-visible, textarea:focus-visible {
 .slot-reels {
   position: relative;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  justify-self: center;
+  // margin rather than justify-self: the card these sit in is a flex container,
+  // and justify-self does nothing to a flex item. It computed to "center" and
+  // was quietly ignored, so a 360px machine sat flush left in an 814px card with
+  // 437px of nothing beside it. An auto margin centres under flex and block both.
+  margin-inline: auto;
   width: 100%;
   max-inline-size: 360px;
   --slot-face-size: clamp(34px, 7vw, 48px);
+  // Both have to be known numbers for the payline overlay below to place itself,
+  // and --slot-gap has to agree with the gap-2 utility the markup sets.
+  --slot-gap: #{$spacer * .5};
+  --slot-label-block: 1.3125rem;
 }
 
 .slot-reel {
@@ -1237,13 +1245,34 @@ input:focus-visible, textarea:focus-visible {
 
 .slot-reel-label {
   font-size: .86rem;
+  // Pinned rather than left to the font's own metrics, because the payline
+  // overlay measures itself against this and a label that is 21px on one machine
+  // and 23px on another would move the lines off the symbols by the difference.
+  line-height: var(--slot-label-block);
+  block-size: var(--slot-label-block);
   text-align: center;
   padding-inline: .25rem;
 }
 
+// A winning line should run through the middle of the symbols it is drawing a
+// line through. This used to be stretched over the whole grid against a synthetic
+// 3x3 viewBox, which put each endpoint at the centre of a *cell* - and a cell is
+// a symbol with a label underneath it, so its centre sits below the symbol's by
+// half the label. The row gaps then skewed the top and bottom rows a further
+// third of a gap apart in opposite directions. Measured: 13px low on the top row,
+// 10px on the middle, 8px on the bottom.
+//
+// So the box is inset to span exactly symbol-centre to symbol-centre instead.
+// That makes an endpoint 0, half or all of the box in each axis, which is what
+// slotPaylinePoints now emits against a 2x2 viewBox, and it puts the geometry in
+// one place rather than splitting it between a stylesheet and a coordinate
+// function that each assumed the other was right.
 .slot-payline-overlay {
   position: absolute;
-  inset: 0;
+  inset-inline: calc((100% - var(--slot-gap) * 2) / 6);
+  inset-block:
+    calc((100% - var(--slot-gap) * 2) / 6 - var(--slot-label-block) / 2)
+    calc((100% - var(--slot-gap) * 2) / 6 + var(--slot-label-block) / 2);
   z-index: 4;
   pointer-events: none;
   overflow: visible;

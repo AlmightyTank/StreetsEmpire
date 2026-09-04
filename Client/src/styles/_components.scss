@@ -1124,7 +1124,24 @@ input:focus-visible, textarea:focus-visible {
 // A tile in a picker: a district to work, a way to attack. Five of them rather
 // than a dropdown, because each carries its own copy and that copy is the whole
 // reason the choice exists.
-.tile { cursor: pointer; }
+// A tile is a plain <button>, and picking one swaps bg-body-tertiary for .active
+// - which is a state, not a colour. With no background utility left on it the
+// element falls back to the user agent's own button face, which under a dark
+// colour-scheme is a mid grey: $ink-faint detail on that measured 1.29:1, so the
+// selected machine on the casino floor was the one tile nobody could read.
+//
+// Same trap the rail and the admin strip are dug out of further down, and the
+// same answer: .active decides that a thing is chosen, it does not decide what
+// chosen looks like, so the tile says so itself and never leaves the background
+// to the browser. $surface rather than something lighter because $ink-faint is
+// documented at 4.54:1 on exactly that, and the gold border is already carrying
+// the selection - a chosen tile does not need to shout twice.
+.tile {
+  cursor: pointer;
+  background-color: $surface-deep;
+
+  &.active { background-color: $surface; }
+}
 
 // Three fixed reels, because slot labels change length every pull and the
 // machine should feel solid instead of resizing under the player's hand.

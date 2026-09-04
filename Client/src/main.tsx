@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, SlotSpin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, SlotSpin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -69,6 +69,25 @@ function slotGridSymbols(symbols?: string[]) {
 function slotGridText(symbols: string[]) {
   const grid = slotGridSymbols(symbols)
   return [0, 3, 6].map(start => grid.slice(start, start + 3).join(' / ')).join(' | ')
+}
+
+/**
+ * What a pull is called, and the colour it is said in.
+ *
+ * The name used to be decided by the net alone, so a spin that paid a lane and still came back under
+ * the stake was announced as "No hit" while the reels were drawing a line through the winners. That
+ * is the most common non-losing result on five lanes by a distance - paying out less than the stake
+ * is most of what a slot machine does - so it is the one that most needed a word of its own.
+ */
+function spinVerdict(transaction: CasinoTransaction) {
+  if (transaction.jackpotAmount > 0) return { label: 'The pot', tone: 'text-warning', edge: 'border-warning casino-jackpot' }
+  if (transaction.jackpot) return { label: 'Top award', tone: 'text-warning', edge: 'border-warning casino-jackpot' }
+  if (transaction.netResult > 0) return { label: 'Paid out', tone: 'text-success', edge: 'border-success' }
+  if (transaction.netResult === 0) return { label: 'Broke even', tone: 'text-body-secondary', edge: 'border-secondary' }
+  // Paid something, still down on the pull. The reels are highlighting a winning lane while this says
+  // so, which is the whole reason it is not called a miss.
+  if (transaction.payoutAmount > 0) return { label: 'Short', tone: 'text-body-secondary', edge: 'border-secondary' }
+  return { label: 'No hit', tone: 'text-body-secondary', edge: 'border-secondary' }
 }
 
 function slotPaylinePoints(cells: number[]) {
@@ -3164,6 +3183,7 @@ function CasinoPage(ctx: PageContext) {
     ? board.paylines.filter(line => lastSpin.transaction.winningPaylineIndexes.includes(line.index))
     : []
   const winningCells = new Set(winningLines.flatMap(line => line.cells))
+  const verdict = lastSpin ? spinVerdict(lastSpin.transaction) : null
 
   return <div className="d-grid gtc-1 gtc-xl-split-135 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
@@ -3262,16 +3282,10 @@ function CasinoPage(ctx: PageContext) {
           Spin {money.format(totalBet)}{board.spinTurnCost > 0 && ` / ${board.spinTurnCost}t`}
         </Button>
       </div>
-      {lastSpin && <div className={`border rounded p-3 mt-3 ${lastSpin.transaction.jackpotAmount > 0 || lastSpin.transaction.jackpot ? 'border-warning casino-jackpot' : lastSpin.transaction.netResult >= 0 ? 'border-success' : 'border-secondary'}`}>
+      {lastSpin && verdict && <div className={`border rounded p-3 mt-3 ${verdict.edge}`}>
         <div className="d-flex justify-content-between gap-3 align-items-baseline">
-          <strong>
-            {lastSpin.transaction.jackpotAmount > 0
-              ? 'The pot'
-              : lastSpin.transaction.jackpot ? 'Top award' : lastSpin.transaction.netResult >= 0 ? 'Paid out' : 'No hit'}
-          </strong>
-          <span className={`tnum ${lastSpin.transaction.jackpotAmount > 0 || lastSpin.transaction.jackpot ? 'text-warning' : lastSpin.transaction.netResult >= 0 ? 'text-success' : 'text-body-secondary'}`}>
-            {signedMoney(lastSpin.transaction.netResult)}
-          </span>
+          <strong>{verdict.label}</strong>
+          <span className={`tnum ${verdict.tone}`}>{signedMoney(lastSpin.transaction.netResult)}</span>
         </div>
         <small className="text-body-tertiary">
           Bet {money.format(lastSpin.transaction.betAmount)}. Won {money.format(lastSpin.transaction.payoutAmount)}.

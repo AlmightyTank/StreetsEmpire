@@ -137,10 +137,12 @@ public sealed class CasinoService(
         var compsBefore = player.CasinoComps;
         player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
 
-        var reel = ReelStrip(config);
+        var reel = ReelStrip(config.SymbolsFor(machine));
         var symbols = Enumerable.Range(0, 9).Select(_ => DrawSymbol(reel)).ToArray();
-        var result = ScorePaylines(symbols, paylines, bet, machine.MaxWinMultiplier);
-        var payout = Math.Min(result.Payout, totalBet * machine.MaxWinMultiplier);
+        // No ceiling. The machine's own paytable is the ceiling now, and a second one over the top of
+        // it could only ever pay a player less than the reel in front of them says they won.
+        var result = ScorePaylines(symbols, paylines, bet);
+        var payout = result.Payout;
 
         // The pot is not part of the paytable and so is not held to the paytable's ceiling. Capping it
         // would make the Sidewalk's meter an advertisement for money that machine cannot hand over.
@@ -230,11 +232,16 @@ public sealed class CasinoService(
     }
 
     public CasinoTransactionResponse ToResponse(CasinoTransaction transaction)
-        => ToResponse(transaction, SymbolIndex());
+        => ToResponse(transaction, SymbolIndexes());
 
-    private CasinoTransactionResponse ToResponse(CasinoTransaction transaction, IReadOnlyDictionary<string, SlotSymbolOptions> index)
+    private CasinoTransactionResponse ToResponse(
+        CasinoTransaction transaction,
+        IReadOnlyDictionary<string, Dictionary<string, SlotSymbolOptions>> indexes)
     {
         var machine = _options.Casino.Machine(transaction.MachineKey);
+        // Against the reel of the machine it was played on. The rooms carry different paytables now,
+        // so a key read against the wrong one is a label that was never on that grid.
+        var index = indexes.GetValueOrDefault(transaction.MachineKey) ?? FloorIndex();
         var symbols = SymbolOptionsFrom(transaction.Outcome, index).ToList();
         return new CasinoTransactionResponse(
             transaction.Id,
@@ -248,7 +255,7 @@ public sealed class CasinoService(
             transaction.NetResult,
             symbols.Select(x => x.Label).ToList(),
             WinningPaylineIndexesFrom(transaction, symbols).ToList(),
-            IsTopAward(transaction, symbols, machine),
+            machine is not null && IsTopAward(transaction, symbols, TopMultiplier(machine)),
             transaction.JackpotAmount,
             transaction.CreatedAtUtc);
     }
@@ -264,8 +271,8 @@ public sealed class CasinoService(
 
         // Built once for the page rather than once per row. The ledger is eight rows deep and this was
         // eight rebuilds of the same dictionary.
-        var index = SymbolIndex();
-        return rows.Select(row => ToResponse(row, index)).ToList();
+        var indexes = SymbolIndexes();
+        return rows.Select(row => ToResponse(row, indexes)).ToList();
     }
 
     /// <summary>The last few pots that went, which is the floor's own news and belongs to everybody.</summary>
@@ -334,7 +341,7 @@ public sealed class CasinoService(
         var jackpot = _options.Casino.Jackpot;
         return new CasinoJackpotRulesResponse(
             jackpot.Enabled,
-            JackpotSymbol()?.Label ?? jackpot.Symbol,
+            JackpotSymbol(null)?.Label ?? jackpot.Symbol,
             Math.Max(1, jackpot.SymbolsRequired),
             jackpot.RequireAllPaylines,
             Math.Max(0, jackpot.ContributionPercent));
@@ -350,8 +357,9 @@ public sealed class CasinoService(
                 machine.Blurb,
                 machine.MinBet,
                 machine.MaxBet,
-                machine.MaxWinMultiplier,
-                machine.MaxBet * machine.MaxWinMultiplier,
+                machine.MaxBet * TopMultiplier(machine),
+                ReturnPercentFor(machine),
+                Paytable(machine).ToList(),
                 pots.GetValueOrDefault(machine.Key, SeedFor(machine)),
                 SlotPaylines.Length,
                 Math.Max(1, machine.MinCasinoRepLevel),
@@ -374,6 +382,51 @@ public sealed class CasinoService(
             : $"{machine.Name} opens at {machine.MinNetWorth:C0} net worth. You are at {worth:C0}.";
     }
 
+    /// <summary>The best a lane can pay on this machine, which is the top of its own paytable.</summary>
+    private int TopMultiplier(SlotMachineOptions machine)
+        => _options.Casino.SymbolsFor(machine)
+            .Select(x => Math.Max(0, x.TripleMultiplier))
+            .DefaultIfEmpty(0)
+            .Max();
+
+    /// <summary>
+    /// What a machine hands back over a long enough evening, worked out from its own reel rather than
+    /// measured or guessed.
+    ///
+    /// A lane pays when its first two cells match: the third decides triple or pair. So the return is
+    /// the chance of each of those times what each pays, summed over the reel, and it is exact.
+    ///
+    /// Published because the rooms no longer return the same thing. The floor holds most on the
+    /// cheapest machine and least in the high-limit room, the way a real one does, and a player owed
+    /// better odds for climbing should be able to see that they got them.
+    /// </summary>
+    private double ReturnPercentFor(SlotMachineOptions machine)
+    {
+        var symbols = _options.Casino.SymbolsFor(machine).Where(x => x.Weight > 0).ToList();
+        var total = symbols.Sum(x => Math.Max(0, x.Weight));
+        if (total <= 0) return 0;
+
+        var expected = 0d;
+        foreach (var symbol in symbols)
+        {
+            var p = (double)Math.Max(0, symbol.Weight) / total;
+            expected += p * p * p * Math.Max(0, symbol.TripleMultiplier)
+                        + p * p * (1 - p) * Math.Max(0, symbol.PairMultiplier);
+        }
+
+        return Math.Round(expected * 100, 1);
+    }
+
+    /// <summary>The machine's card, richest symbol first, which is the order a paytable is read in.</summary>
+    private IEnumerable<SlotSymbolPayResponse> Paytable(SlotMachineOptions machine)
+        => _options.Casino.SymbolsFor(machine)
+            .Where(x => x.Weight > 0)
+            .OrderByDescending(x => Math.Max(0, x.TripleMultiplier))
+            .Select(x => new SlotSymbolPayResponse(
+                x.Label,
+                Math.Max(0, x.PairMultiplier),
+                Math.Max(0, x.TripleMultiplier)));
+
     private long SeedFor(SlotMachineOptions machine) => Math.Max(0, machine.JackpotSeed);
 
     private long ContributionFrom(long wagered)
@@ -382,9 +435,16 @@ public sealed class CasinoService(
         return percent <= 0 || wagered <= 0 ? 0 : (long)Math.Floor(wagered * percent / 100);
     }
 
-    private SlotSymbolOptions? JackpotSymbol()
-        => _options.Casino.SlotSymbols.FirstOrDefault(x =>
+    /// <summary>
+    /// The symbol that takes the pot on a given machine. Looked up on that machine's own reel, because
+    /// a room whose reel does not carry it cannot drop a pot however the floor is configured.
+    /// </summary>
+    private SlotSymbolOptions? JackpotSymbol(SlotMachineOptions? machine)
+    {
+        var reel = machine is null ? _options.Casino.SlotSymbols : _options.Casino.SymbolsFor(machine);
+        return reel.FirstOrDefault(x =>
             string.Equals(x.Key, _options.Casino.Jackpot.Symbol, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>
     /// Whether this grid takes the pot: enough of the jackpot symbol anywhere on the nine cells, with
@@ -400,7 +460,7 @@ public sealed class CasinoService(
         if (!jackpot.Enabled || SeedFor(machine) <= 0) return false;
         if (jackpot.RequireAllPaylines && paylines < SlotPaylines.Length) return false;
 
-        var target = JackpotSymbol();
+        var target = JackpotSymbol(machine);
         if (target is null) return false;
 
         var landed = symbols.Count(x => string.Equals(x.Key, target.Key, StringComparison.OrdinalIgnoreCase));
@@ -411,9 +471,9 @@ public sealed class CasinoService(
     /// The reel, resolved once per spin instead of once per cell. Nine cells meant nine passes over
     /// the symbol list and nine re-additions of the same weights.
     /// </summary>
-    private static ReelStripOptions ReelStrip(CasinoOptions config)
+    private static ReelStripOptions ReelStrip(IReadOnlyList<SlotSymbolOptions> reel)
     {
-        var symbols = config.SlotSymbols.Where(x => x.Weight > 0).ToList();
+        var symbols = reel.Where(x => x.Weight > 0).ToList();
         if (symbols.Count == 0)
             throw new GameRuleException("The slot reels have no symbols.");
 
@@ -448,7 +508,7 @@ public sealed class CasinoService(
             : Math.Max(0, left.PairMultiplier);
     }
 
-    private static SlotScore ScorePaylines(IReadOnlyList<SlotSymbolOptions> symbols, int paylines, long bet, int maxWinMultiplier)
+    private static SlotScore ScorePaylines(IReadOnlyList<SlotSymbolOptions> symbols, int paylines, long bet)
     {
         var payout = 0L;
         var winningPaylines = 0;
@@ -458,7 +518,7 @@ public sealed class CasinoService(
             if (multiplier <= 0) continue;
 
             winningPaylines++;
-            payout += bet * Math.Min(multiplier, Math.Max(0, maxWinMultiplier));
+            payout += bet * multiplier;
         }
 
         return new SlotScore(payout, winningPaylines);
@@ -502,18 +562,25 @@ public sealed class CasinoService(
             dollarsPerRep);
     }
 
-    /// <summary>Whether a lane paid this machine's ceiling, which is the top the paytable can go.</summary>
-    private static bool IsTopAward(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols, SlotMachineOptions? machine)
+    /// <summary>Whether a lane paid the best this machine's paytable has in it.</summary>
+    private static bool IsTopAward(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols, int topMultiplier)
     {
-        if (machine is null || machine.MaxWinMultiplier <= 0) return false;
-        if (symbols.Count < 9) return false;
+        if (topMultiplier <= 0 || symbols.Count < 9) return false;
 
         return SlotPaylines
             .Take(Math.Clamp(transaction.Paylines, 1, SlotPaylines.Length))
-            .Any(line => PayoutMultiplier(line.Cells.Select(cell => symbols[cell]).ToArray()) >= machine.MaxWinMultiplier);
+            .Any(line => PayoutMultiplier(line.Cells.Select(cell => symbols[cell]).ToArray()) >= topMultiplier);
     }
 
-    private Dictionary<string, SlotSymbolOptions> SymbolIndex()
+    /// <summary>One key-to-symbol lookup per machine, built once for a whole page of ledger rows.</summary>
+    private Dictionary<string, Dictionary<string, SlotSymbolOptions>> SymbolIndexes()
+        => _options.Casino.SlotMachines.ToDictionary(
+            machine => machine.Key,
+            machine => _options.Casino.SymbolsFor(machine).ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The floor's shared reel, for a row naming a machine that is no longer on the floor.</summary>
+    private Dictionary<string, SlotSymbolOptions> FloorIndex()
         => _options.Casino.SlotSymbols.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
 
     private static IEnumerable<SlotSymbolOptions> SymbolOptionsFrom(string outcome, IReadOnlyDictionary<string, SlotSymbolOptions> index)

@@ -143,20 +143,29 @@ public sealed record SlotPaylineResponse(
 /// prize somebody could actually be paid.
 /// </param>
 /// <param name="Progressive">What the machine's pot stands at right now, seed included.</param>
+/// <param name="ReturnPercent">
+/// What this machine hands back over a long enough evening, worked out from its own reel. Published
+/// because the rooms no longer return the same thing: the floor holds most on the cheapest machine and
+/// least in the high-limit room, and a player owed better odds for climbing should be able to see it.
+/// </param>
+/// <param name="Paytable">What each symbol pays here, richest first.</param>
 public sealed record SlotMachineResponse(
     string Key,
     string Name,
     string Blurb,
     long MinBet,
     long MaxBet,
-    int MaxWinMultiplier,
     long TopAward,
+    double ReturnPercent,
+    IReadOnlyList<SlotSymbolPayResponse> Paytable,
     long Progressive,
     int MaxPaylines,
     int MinRepLevel,
     string? MinRepLevelName,
     bool Locked,
     string? LockedReason);
+
+public sealed record SlotSymbolPayResponse(string Label, int Pair, int Triple);
 
 public sealed record CasinoRepResponse(
     int Rep,

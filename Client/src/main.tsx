@@ -3240,8 +3240,27 @@ function CasinoPage(ctx: PageContext) {
         {board.jackpotRules.enabled && active.progressive > 0 &&
           <span className="badge text-bg-warning casino-meter">Pot {money.format(active.progressive)}</span>}
         <span className="badge text-bg-primary">Top award {money.format(active.topAward)}</span>
+        <span className="badge text-bg-secondary">Returns {active.returnPercent}%</span>
         {active.minRepLevel > 1 && <span className="badge text-bg-secondary">{active.minRepLevelName} floor</span>}
       </div>
+      <details className="mt-2">
+        <summary className="text-body-secondary">What {active.name} pays</summary>
+        <div className="table-responsive mt-2">
+          <table className="table table-sm game-table align-middle mb-0">
+            <thead><tr><th>Symbol</th><th className="text-end">Two</th><th className="text-end">Three</th></tr></thead>
+            <tbody>
+              {active.paytable.map(pay => <tr key={pay.label}>
+                <td>{slotIcon(pay.label)} {pay.label}</td>
+                <td className="text-end tnum">{pay.pair > 0 ? `${pay.pair}x` : '-'}</td>
+                <td className="text-end tnum">{pay.triple}x</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <small className="text-body-tertiary">
+          A lane pays when its first two cells match. Every machine on the floor runs its own reel.
+        </small>
+      </details>
       <div className="slot-reels d-grid gap-2 my-3" aria-label="Slot reels">
         {slotGridSymbols(lastSpin?.symbols).map((symbol, index) => {
           const reelSymbols = spinning ? slotReelSymbols(index) : [symbol]
@@ -3450,6 +3469,9 @@ function CasinoMachineTile({ machine, active, bet, busy, onPick }: {
     <strong className="text-body">{machine.name}</strong>
     <small className="text-body-tertiary small">
       {money.format(machine.minBet)}-{money.format(machine.maxBet)} / pot {money.format(machine.progressive)}
+    </small>
+    <small className="text-body-tertiary small">
+      Returns {machine.returnPercent}% / tops out at {money.format(machine.topAward)}
     </small>
     {machine.locked
       ? <small className="text-warning small">{machine.lockedReason}</small>

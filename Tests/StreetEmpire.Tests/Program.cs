@@ -67,7 +67,8 @@ var tests = new (string Name, Action Test)[]
     ("a bank trip you cannot afford moves no money", ABankTripYouCannotAffordMovesNoMoney),
     ("casino slots spend cash and write a transaction", CasinoSlotsSpendCashAndWriteTransaction),
     ("casino slots enforce machine limits", CasinoSlotsEnforceMachineLimits),
-    ("casino slots cap jackpot payouts by machine", CasinoSlotsCapJackpotPayoutsByMachine),
+    ("a machine pays the top of its own paytable", CasinoSlotsPayTheTopOfTheirOwnPaytable),
+    ("each machine turns its own reel", EachMachineTurnsItsOwnReel),
     ("casino slots draw a nine cell board and pay lanes", CasinoSlotsDrawNineCellsAndPayLanes),
     ("casino slots pay only left to right matches", CasinoSlotsPayOnlyLeftToRightMatches),
     ("casino slots earn floor standing and unlock machines", CasinoSlotsEarnStandingAndUnlockMachines),
@@ -1837,7 +1838,7 @@ static void CasinoSlotsSpendCashAndWriteTransaction()
         {
             SlotMachines =
             [
-                new SlotMachineOptions { Key = "test", Name = "Test Slots", MinBet = 100, MaxBet = 500, MaxWinMultiplier = 10 }
+                new SlotMachineOptions { Key = "test", Name = "Test Slots", MinBet = 100, MaxBet = 500 }
             ],
             SlotSymbols =
             [
@@ -1881,7 +1882,7 @@ static void CasinoSlotsEnforceMachineLimits()
         {
             SlotMachines =
             [
-                new SlotMachineOptions { Key = "vip", Name = "VIP Slots", MinBet = 100, MaxBet = 1_000, MaxWinMultiplier = 10, MinNetWorth = 50_000 }
+                new SlotMachineOptions { Key = "vip", Name = "VIP Slots", MinBet = 100, MaxBet = 1_000, MinNetWorth = 50_000 }
             ],
             SlotSymbols =
             [
@@ -1906,33 +1907,135 @@ static void CasinoSlotsEnforceMachineLimits()
     AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 100, 6, DateTime.UtcNow, default).GetAwaiter().GetResult(), "too many lanes are bought");
 }
 
-static void CasinoSlotsCapJackpotPayoutsByMachine()
+/// <summary>
+/// A machine pays what its own paytable says, all of it.
+///
+/// This used to assert the opposite. Every machine shared one reel and was told apart by a ceiling on
+/// what a lane could pay, which cannot make a machine pay differently - only less. On the Sidewalk it
+/// flattened a Crew Crown at one in a thousand, a Seven at one in three thousand and a Vault at one in
+/// a million into the same fifty times the lane, so landing the rarest symbol on the reel felt exactly
+/// like landing the fifth rarest. The ceiling is gone and the paytable is the ceiling.
+/// </summary>
+static void CasinoSlotsPayTheTopOfTheirOwnPaytable()
 {
     var options = Resolve(new GameOptions
     {
         Casino = new CasinoOptions
         {
+            SpinTurnCost = 0,
             SlotMachines =
             [
-                new SlotMachineOptions { Key = "cap", Name = "Cap Slots", MinBet = 100, MaxBet = 500, MaxWinMultiplier = 50 }
-            ],
-            SlotSymbols =
+                new SlotMachineOptions
+                {
+                    Key = "deep",
+                    Name = "Deep Slots",
+                    MinBet = 100,
+                    MaxBet = 500,
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "crown", Label = "Crown", Weight = 8, PairMultiplier = 4, TripleMultiplier = 48 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 8, TripleMultiplier = 80 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 15, TripleMultiplier = 220 }
+                    ]
+                }
+            ]
+        }
+    });
+
+    // Three rungs of the same paytable, each landed in turn. A ceiling anywhere below 220 would have
+    // paid two of these three the same number.
+    var landed = new List<long>();
+    foreach (var roll in new[] { 0.0, 0.7, 0.99 })
+    {
+        using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 10, Hideout = new Hideout() };
+        var spin = CreateCasino(db, options, new ScriptedRandom(roll))
+            .SpinSlotsAsync(player, "deep", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        landed.Add(spin.Transaction.PayoutAmount);
+    }
+
+    AssertEqual(4_800L, landed[0]);
+    AssertEqual(8_000L, landed[1]);
+    AssertEqual(22_000L, landed[2]);
+
+    // And the board advertises the top of the paytable rather than a ceiling over it.
+    using var boardDb = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var reader = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var machine = CreateCasino(boardDb, options).BoardAsync(reader, default).GetAwaiter().GetResult().SlotMachines.Single();
+    AssertEqual(110_000L, machine.TopAward);
+    AssertEqual("Vault", machine.Paytable[0].Label);
+    AssertEqual(220, machine.Paytable[0].Triple);
+}
+
+/// <summary>
+/// Two machines, the same symbol keys, different money against them - and a third that names no reel
+/// of its own and falls back to the floor's.
+///
+/// The fallback matters as much as the difference: a machine only has to say what makes it unusual,
+/// so the shared list stays the default rather than something every room has to restate.
+/// </summary>
+static void EachMachineTurnsItsOwnReel()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "Floor A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 7 }],
+            SlotMachines =
             [
-                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 10, TripleMultiplier = 500 }
+                new SlotMachineOptions
+                {
+                    Key = "cheap",
+                    Name = "Cheap Slots",
+                    MinBet = 100,
+                    MaxBet = 100,
+                    Symbols = [new SlotSymbolOptions { Key = "a", Label = "Cheap A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 3 }]
+                },
+                new SlotMachineOptions
+                {
+                    Key = "rich",
+                    Name = "Rich Slots",
+                    MinBet = 100,
+                    MaxBet = 100,
+                    Symbols = [new SlotSymbolOptions { Key = "a", Label = "Rich A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 40 }]
+                },
+                new SlotMachineOptions { Key = "plain", Name = "Plain Slots", MinBet = 100, MaxBet = 100 }
             ]
         }
     });
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 20, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ZeroRandom());
 
-    var transaction = casino.SpinSlotsAsync(player, "cap", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult().Transaction;
+    var cheap = casino.SpinSlotsAsync(player, "cheap", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var rich = casino.SpinSlotsAsync(player, "rich", 100, 1, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
+    var plain = casino.SpinSlotsAsync(player, "plain", 100, 1, DateTime.UtcNow.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
 
-    AssertEqual(5_900L, player.Cash);
-    AssertEqual(5_000L, transaction.PayoutAmount);
-    AssertEqual(4_900L, transaction.NetResult);
+    AssertEqual(300L, cheap.Transaction.PayoutAmount);
+    AssertEqual(4_000L, rich.Transaction.PayoutAmount);
+    AssertEqual(700L, plain.Transaction.PayoutAmount);
+
+    // The ledger reads each row against the reel it was played on, so the same stored key is three
+    // different labels depending on which room it was spun in.
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual("Plain Slots", board.Recent[0].MachineName);
+    AssertEqual("Floor A", board.Recent[0].Symbols[0]);
+    AssertEqual("Rich A", board.Recent[1].Symbols[0]);
+    AssertEqual("Cheap A", board.Recent[2].Symbols[0]);
+
+    // And each machine reports its own return, worked out from its own reel.
+    var machines = board.SlotMachines.ToDictionary(x => x.Key);
+    AssertTrue(machines["rich"].ReturnPercent > machines["cheap"].ReturnPercent, "the richer paytable should return more");
+    AssertEqual(4_000L, machines["rich"].TopAward);
+    AssertEqual(300L, machines["cheap"].TopAward);
 }
 
 static void CasinoSlotsDrawNineCellsAndPayLanes()
@@ -1943,7 +2046,7 @@ static void CasinoSlotsDrawNineCellsAndPayLanes()
         {
             SlotMachines =
             [
-                new SlotMachineOptions { Key = "lanes", Name = "Lane Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 50 }
+                new SlotMachineOptions { Key = "lanes", Name = "Lane Slots", MinBet = 10, MaxBet = 100 }
             ],
             SlotSymbols =
             [
@@ -1983,7 +2086,7 @@ static void CasinoSlotsPayOnlyLeftToRightMatches()
         {
             SlotMachines =
             [
-                new SlotMachineOptions { Key = "left", Name = "Left Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 50 }
+                new SlotMachineOptions { Key = "left", Name = "Left Slots", MinBet = 10, MaxBet = 100 }
             ],
             SlotSymbols =
             [
@@ -2028,8 +2131,8 @@ static void CasinoSlotsEarnStandingAndUnlockMachines()
             ],
             SlotMachines =
             [
-                new SlotMachineOptions { Key = "open", Name = "Open Slots", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10 },
-                new SlotMachineOptions { Key = "back", Name = "Back Room", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10, MinCasinoRepLevel = 2 }
+                new SlotMachineOptions { Key = "open", Name = "Open Slots", MinBet = 100, MaxBet = 100 },
+                new SlotMachineOptions { Key = "back", Name = "Back Room", MinBet = 100, MaxBet = 100, MinCasinoRepLevel = 2 }
             ],
             SlotSymbols =
             [
@@ -2108,7 +2211,7 @@ static void CompsAreRatedOnTheWager()
         {
             SpinTurnCost = 0,
             CompsPerDollarWagered = 0.1,
-            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100 }],
             SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }]
         }
     });
@@ -2127,7 +2230,7 @@ static void CompsAreRatedOnTheWager()
         {
             SpinTurnCost = 0,
             CompsPerDollarWagered = 0.1,
-            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100 }],
             SlotSymbols =
             [
                 new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 },
@@ -2260,7 +2363,7 @@ static GameOptions CompOptions()
                 new CompRewardOptions { Key = "room", Name = "A room upstairs", Cost = 500, Turns = 25 },
                 new CompRewardOptions { Key = "backroom", Name = "The back room", Cost = 2_000, Turns = 25, Cash = 750, Heat = 12, MinCasinoRepLevel = 2 }
             ],
-            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any Slots", MinBet = 10, MaxBet = 100 }],
             SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
         }
     };
@@ -2281,7 +2384,7 @@ static void CasinoSlotsCostTurns()
         Casino = new CasinoOptions
         {
             SpinTurnCost = 3,
-            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100 }],
             SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
         }
     });
@@ -2312,7 +2415,7 @@ static void CasinoSlotsCostTurns()
         Casino = new CasinoOptions
         {
             SpinTurnCost = 0,
-            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100 }],
             SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
         }
     }), new ZeroRandom());
@@ -2363,10 +2466,10 @@ static void CasinoProgressivePaysThePot()
     AssertEqual("pot", drop.MachineKey);
     AssertEqual(spin.Transaction.Id, drop.CasinoTransactionId);
 
-    // The pot is not held to the paytable's ceiling. This machine cannot pay more than twice a stake
-    // out of its paytable, and the pot pays more than that - capping it would have the meter
-    // advertising money the machine could not hand over.
-    AssertTrue(spin.Transaction.PayoutAmount > spin.Transaction.BetAmount * 2, "the pot pays past the machine's top multiplier");
+    // Every symbol on this machine pays nothing, so the paytable cannot have contributed a penny and
+    // the whole payout is the pot - which is the only way to be sure the figure came from the meter.
+    AssertEqual(spin.Transaction.JackpotAmount, spin.Transaction.PayoutAmount);
+    AssertTrue(spin.Transaction.PayoutAmount > spin.Transaction.BetAmount, "the pot pays more than the stake that fed it");
 }
 
 /// <summary>
@@ -2454,7 +2557,7 @@ static GameOptions ProgressiveOptions()
                 SymbolsRequired = 3,
                 RequireAllPaylines = true
             },
-            SlotMachines = [new SlotMachineOptions { Key = "pot", Name = "Pot Slots", MinBet = 10, MaxBet = 1_000, MaxWinMultiplier = 2, JackpotSeed = 1_000 }],
+            SlotMachines = [new SlotMachineOptions { Key = "pot", Name = "Pot Slots", MinBet = 10, MaxBet = 1_000, JackpotSeed = 1_000 }],
             SlotSymbols =
             [
                 // Both pay nothing, so the only money moving in these tests is the pot.

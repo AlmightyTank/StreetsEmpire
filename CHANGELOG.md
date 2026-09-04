@@ -40,6 +40,24 @@
   them.
 
 ### Changed
+- **Every machine turns its own reel.** The four rooms shared one paytable and were told apart by a
+  ceiling on what a lane could pay, which cannot make a machine pay differently - only less. It
+  flattened the top of the cheap rooms into a single number: on the Sidewalk a Crew Crown at one in a
+  thousand, a Seven at one in three thousand and a Vault at one in a million all paid exactly fifty
+  times the lane, so landing the rarest symbol on the reel felt like landing the fifth rarest. The
+  ceiling is gone and the paytable is the ceiling. Each machine now carries its own weights and pays,
+  and a machine that names none falls back to the floor's shared reel.
+
+  The rooms differ on two axes at once and both rise as you climb. **Volatility**, from a grinder that
+  pays something on seven spins in ten to a room where almost three in four pay nothing at all and the
+  money is entirely in the tail - and **the return itself**, because a real floor holds most on its
+  cheapest machines and least in the high-limit room. Sidewalk returns 92.5% at a top of 220x, Neon
+  94.3% at 590x, Kingpin 95.3% at 1,250x, The Vault 96.2% at 2,650x. Climbing the ladder buys better
+  odds as well as bigger numbers, which is most of what standing is for.
+
+  Each machine publishes what it returns and what it pays, because none of that is guessable once the
+  rooms stop matching and a player owed better odds for climbing should be able to see that they got
+  them.
 - **A pull costs a turn.** The casino was the only thing in the game that charged nothing but money,
   which made it the one activity that never competed with any other: there was no hour of the day when
   spinning was the wrong thing to be doing. An evening at a real floor costs you the evening.

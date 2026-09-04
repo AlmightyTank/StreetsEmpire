@@ -14,9 +14,12 @@ export type CasinoMachine = {
   blurb: string
   minBet: number
   maxBet: number
-  maxWinMultiplier: number
   /** The most the paytable can pay on one lane at this machine's top stake. */
   topAward: number
+  /** What this machine hands back over a long enough evening, worked out from its own reel. */
+  returnPercent: number
+  /** What each symbol pays here, richest first. */
+  paytable: SlotSymbolPay[]
   /** What the machine's progressive stands at right now, seed included. */
   progressive: number
   maxPaylines: number
@@ -24,6 +27,12 @@ export type CasinoMachine = {
   minRepLevelName?: string | null
   locked: boolean
   lockedReason?: string | null
+}
+
+export type SlotSymbolPay = {
+  label: string
+  pair: number
+  triple: number
 }
 
 export type SlotPayline = {

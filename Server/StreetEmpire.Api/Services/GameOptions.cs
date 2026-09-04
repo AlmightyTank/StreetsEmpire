@@ -1914,6 +1914,10 @@ public sealed class CasinoOptions
     public List<SlotMachineOptions> SlotMachines { get; set; } = [];
     public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
 
+    /// <summary>The reel a machine actually turns: its own if it has one, the floor's otherwise.</summary>
+    public IReadOnlyList<SlotSymbolOptions> SymbolsFor(SlotMachineOptions machine)
+        => machine.Symbols.Count > 0 ? machine.Symbols : SlotSymbols;
+
     public SlotMachineOptions? Machine(string? key)
         => SlotMachines.FirstOrDefault(x => string.Equals(x.Key, key?.Trim().ToLowerInvariant(), StringComparison.Ordinal));
 
@@ -1923,6 +1927,11 @@ public sealed class CasinoOptions
         {
             SlotMachines =
             [
+                // The four rooms differ on two axes at once, and both are deliberate. Volatility rises
+                // as you climb - the Sidewalk pays small and often, the Vault pays almost never and
+                // then pays enormously - and so does the return, because a real floor holds most on
+                // its cheapest machines and least in the high-limit room. Climbing the ladder buys
+                // better odds as well as bigger numbers, which is most of what standing is for.
                 new SlotMachineOptions
                 {
                     Key = "sidewalk",
@@ -1930,8 +1939,18 @@ public sealed class CasinoOptions
                     Blurb = "Cheap pulls under bad neon. Small bets, fast trouble.",
                     MinBet = 10,
                     MaxBet = 100,
-                    MaxWinMultiplier = 50,
-                    JackpotSeed = 5_000
+                    JackpotSeed = 5_000,
+                    // 92.5% back, and something lands on about seven spins in ten.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 32, PairMultiplier = 3, TripleMultiplier = 5 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 3, TripleMultiplier = 9 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 2, TripleMultiplier = 14 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 3, TripleMultiplier = 23 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 4, TripleMultiplier = 48 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 8, TripleMultiplier = 80 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 15, TripleMultiplier = 220 }
+                    ]
                 },
                 new SlotMachineOptions
                 {
@@ -1940,10 +1959,20 @@ public sealed class CasinoOptions
                     Blurb = "A louder room with heavier bills moving through it.",
                     MinBet = 100,
                     MaxBet = 1_000,
-                    MaxWinMultiplier = 100,
                     MinCasinoRepLevel = 2,
                     MinNetWorth = 50_000,
-                    JackpotSeed = 50_000
+                    JackpotSeed = 50_000,
+                    // 94.4% back. The middle of the floor, and the curve the whole casino used to run.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 28, PairMultiplier = 2, TripleMultiplier = 8 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 22, PairMultiplier = 2, TripleMultiplier = 12 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 2, TripleMultiplier = 18 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 14, PairMultiplier = 3, TripleMultiplier = 30 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 10, PairMultiplier = 4, TripleMultiplier = 49 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 8, TripleMultiplier = 110 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 20, TripleMultiplier = 590 }
+                    ]
                 },
                 new SlotMachineOptions
                 {
@@ -1952,10 +1981,20 @@ public sealed class CasinoOptions
                     Blurb = "The table boss watches every pull.",
                     MinBet = 1_000,
                     MaxBet = 10_000,
-                    MaxWinMultiplier = 250,
                     MinCasinoRepLevel = 3,
                     MinNetWorth = 500_000,
-                    JackpotSeed = 500_000
+                    JackpotSeed = 500_000,
+                    // 95.5% back. Pairs are worth almost nothing here; the money is in the triples.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 30, PairMultiplier = 1, TripleMultiplier = 9 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 1, TripleMultiplier = 14 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 19, PairMultiplier = 1, TripleMultiplier = 23 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 2, TripleMultiplier = 42 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 3, TripleMultiplier = 87 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 5, PairMultiplier = 5, TripleMultiplier = 210 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 12, TripleMultiplier = 1_250 }
+                    ]
                 },
                 new SlotMachineOptions
                 {
@@ -1964,10 +2003,22 @@ public sealed class CasinoOptions
                     Blurb = "A private cage for people with more cash than caution.",
                     MinBet = 10_000,
                     MaxBet = 100_000,
-                    MaxWinMultiplier = 500,
                     MinCasinoRepLevel = 4,
                     MinNetWorth = 2_500_000,
-                    JackpotSeed = 5_000_000
+                    JackpotSeed = 5_000_000,
+                    // 96.5% back and almost three spins in four pay nothing at all. No pair pays below
+                    // a Seven, so anything that lands here is a triple and is worth having: this is the
+                    // room where the money is in the tail rather than in the grind.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 34, PairMultiplier = 0, TripleMultiplier = 9 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 25, PairMultiplier = 0, TripleMultiplier = 16 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 17, PairMultiplier = 0, TripleMultiplier = 31 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 12, PairMultiplier = 0, TripleMultiplier = 60 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 7, PairMultiplier = 0, TripleMultiplier = 196 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 3, TripleMultiplier = 470 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 8, TripleMultiplier = 2_650 }
+                    ]
                 }
             ];
         }
@@ -2107,7 +2158,20 @@ public sealed class SlotMachineOptions
     public string Blurb { get; set; } = string.Empty;
     public long MinBet { get; set; } = 1;
     public long MaxBet { get; set; } = 100;
-    public int MaxWinMultiplier { get; set; } = 50;
+
+    /// <summary>
+    /// This machine's own reel and paytable. Empty falls back to the floor's shared list, so a machine
+    /// only has to say what makes it different.
+    ///
+    /// There used to be one list for the whole floor and a MaxWinMultiplier per machine to tell the
+    /// rooms apart, which does not work: a ceiling cannot make a machine pay differently, only less.
+    /// It flattened the top of the cheap rooms into a single number - on the Sidewalk a Crew Crown at
+    /// one in a thousand, a Seven at one in three thousand and a Vault at one in a million all paid
+    /// exactly fifty times the lane, so the rarest symbol on the reel felt like the fifth rarest. A
+    /// machine that is meant to pay differently needs its own paytable, which is this.
+    /// </summary>
+    public List<SlotSymbolOptions> Symbols { get; set; } = [];
+
     public int MinCasinoRepLevel { get; set; } = 1;
     public long MinNetWorth { get; set; }
 

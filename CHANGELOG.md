@@ -40,6 +40,25 @@
   them.
 
 ### Changed
+- **Five columns, three rows, nine lanes.** The floor was three by three with five lanes across it. It
+  is fifteen cells now and a lane runs the full width, so what a lane pays is the run it opens with
+  from the left: two, three, four or five of the same face. Left-anchored, because that is how a reel
+  is read - three of something on the last three columns is not a win, and paying it would roughly
+  double how often every lane hits. The nine lanes are sold in the order they are legible: the three
+  straight rows, then the two full-height chevrons, then four shallower shapes, so a player buying
+  four lanes gets the four clearest ones.
+
+  Every paytable was re-solved for it, because a five-reel game is not a three-reel one with more
+  cells. The return has to come from three-of-a-kind, which is far rarer than a pair was, so the
+  middle of every card rises and the top of it rises further. Two-of-a-kind now pays on the Sidewalk
+  and almost nowhere else: on a common symbol one unit of it is worth several percent of a machine's
+  whole return, so it is a structural choice about how often a lane does anything rather than a number
+  to tune with. It is what makes the Sidewalk a grinder at 34% dead spins against the Vault at 72%.
+
+  The pot asks for four of the symbol rather than three. Fifteen cells make three of anything five
+  times as likely as nine cells did - about one spin in two thousand four hundred, which is a pot that
+  drops before it has grown. Four is about one in eighty thousand, which is a month between drops and
+  a pot worth taking.
 - **Every machine turns its own reel.** The four rooms shared one paytable and were told apart by a
   ceiling on what a lane could pay, which cannot make a machine pay differently - only less. It
   flattened the top of the cheap rooms into a single number: on the Sidewalk a Crew Crown at one in a
@@ -51,15 +70,14 @@
   The rooms differ on two axes at once and both rise as you climb. **Volatility**, from a grinder that
   pays something on seven spins in ten to a room where almost three in four pay nothing at all and the
   money is entirely in the tail - and **the return itself**, because a real floor holds most on its
-  cheapest machines and least in the high-limit room. Sidewalk returns 92.4% at a top of 220x, Neon
-  94.6% at 590x, Kingpin 95.6% at 1,250x, The Vault 95.9% at 500x. Climbing the ladder buys better
+  cheapest machines and least in the high-limit room. Sidewalk returns 92.5% at a top of 2,760x, Neon
+  94.5% at 3,550x, Kingpin 95.5% at 3,810x, The Vault 96.5% at 2,200x. Climbing the ladder buys better
   odds as well as bigger numbers, which is most of what standing is for.
 
-  The Vault's paytable deliberately stops at 500x rather than reaching for a headline multiplier. Its
-  top symbol is one in a million on a lane, so it barely shows up in what the room feels like: the
-  73% of spins that pay nothing come from having no pair pays below a Seven, not from the size of the
-  top prize. The uncapped progressive, which wants all five lanes, is where this room's moonshot
-  belongs.
+  The Vault's five-of-a-kind stops at 2,200x rather than following its own curve up. On five reels the
+  top symbol lands five times in about one spin in ten billion, so the number is a card rather than a
+  prize, and letting it run would have advertised a ceiling nobody could ever be paid. The uncapped
+  progressive, which wants every lane, is where this room's moonshot belongs.
 
   Each machine publishes what it returns and what it pays, because none of that is guessable once the
   rooms stop matching and a player owed better odds for climbing should be able to see that they got

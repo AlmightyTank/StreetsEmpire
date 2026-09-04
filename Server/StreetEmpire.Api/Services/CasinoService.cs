@@ -14,13 +14,30 @@ public sealed class CasinoService(
 {
     internal const string SlotsGame = "slots";
 
+    /// <summary>Five columns by three rows, so a cell is row * Columns + column.</summary>
+    private const int Columns = 5;
+    private const int Rows = 3;
+    private const int Cells = Columns * Rows;
+
+    /// <summary>
+    /// The nine lanes, in the order a floor sells them: the three straight rows first, then the two
+    /// full-height chevrons, then the four shallower shapes. A player buying four lanes should be
+    /// getting the four most legible ones.
+    ///
+    /// Every lane steps one column at a time and never jumps more than one row between columns, so a
+    /// line drawn through one reads as a path rather than as a scatter.
+    /// </summary>
     private static readonly SlotPaylineResponse[] SlotPaylines =
     [
-        new(1, "Top", [0, 1, 2]),
-        new(2, "Middle", [3, 4, 5]),
-        new(3, "Bottom", [6, 7, 8]),
-        new(4, "Down diagonal", [0, 4, 8]),
-        new(5, "Up diagonal", [6, 4, 2])
+        new(1, "Middle", [5, 6, 7, 8, 9]),
+        new(2, "Top", [0, 1, 2, 3, 4]),
+        new(3, "Bottom", [10, 11, 12, 13, 14]),
+        new(4, "Down chevron", [0, 6, 12, 8, 4]),
+        new(5, "Up chevron", [10, 6, 2, 8, 14]),
+        new(6, "Top fall", [0, 1, 7, 13, 14]),
+        new(7, "Bottom climb", [10, 11, 7, 3, 4]),
+        new(8, "Low dip", [5, 11, 12, 13, 9]),
+        new(9, "High rise", [5, 1, 2, 3, 9])
     ];
 
     private readonly GameOptions _options = options.Value;
@@ -138,7 +155,7 @@ public sealed class CasinoService(
         player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
 
         var reel = ReelStrip(config.SymbolsFor(machine));
-        var symbols = Enumerable.Range(0, 9).Select(_ => DrawSymbol(reel)).ToArray();
+        var symbols = Enumerable.Range(0, Cells).Select(_ => DrawSymbol(reel)).ToArray();
         // No ceiling. The machine's own paytable is the ceiling now, and a second one over the top of
         // it could only ever pay a player less than the reel in front of them says they won.
         var result = ScorePaylines(symbols, paylines, bet);
@@ -385,7 +402,7 @@ public sealed class CasinoService(
     /// <summary>The best a lane can pay on this machine, which is the top of its own paytable.</summary>
     private int TopMultiplier(SlotMachineOptions machine)
         => _options.Casino.SymbolsFor(machine)
-            .Select(x => Math.Max(0, x.TripleMultiplier))
+            .Select(x => Math.Max(0, x.QuintMultiplier))
             .DefaultIfEmpty(0)
             .Max();
 
@@ -406,12 +423,17 @@ public sealed class CasinoService(
         var total = symbols.Sum(x => Math.Max(0, x.Weight));
         if (total <= 0) return 0;
 
+        // A run of exactly k happens when the first k columns match and the next one does not, which is
+        // p^k(1-p); a run of all five is p^5 with nothing after it to break the run.
         var expected = 0d;
         foreach (var symbol in symbols)
         {
             var p = (double)Math.Max(0, symbol.Weight) / total;
-            expected += p * p * p * Math.Max(0, symbol.TripleMultiplier)
-                        + p * p * (1 - p) * Math.Max(0, symbol.PairMultiplier);
+            for (var run = 2; run <= Columns; run++)
+            {
+                var chance = run == Columns ? Math.Pow(p, Columns) : Math.Pow(p, run) * (1 - p);
+                expected += chance * symbol.PayFor(run);
+            }
         }
 
         return Math.Round(expected * 100, 1);
@@ -421,11 +443,13 @@ public sealed class CasinoService(
     private IEnumerable<SlotSymbolPayResponse> Paytable(SlotMachineOptions machine)
         => _options.Casino.SymbolsFor(machine)
             .Where(x => x.Weight > 0)
-            .OrderByDescending(x => Math.Max(0, x.TripleMultiplier))
+            .OrderByDescending(x => Math.Max(0, x.QuintMultiplier))
             .Select(x => new SlotSymbolPayResponse(
                 x.Label,
                 Math.Max(0, x.PairMultiplier),
-                Math.Max(0, x.TripleMultiplier)));
+                Math.Max(0, x.TripleMultiplier),
+                Math.Max(0, x.QuadMultiplier),
+                Math.Max(0, x.QuintMultiplier)));
 
     private long SeedFor(SlotMachineOptions machine) => Math.Max(0, machine.JackpotSeed);
 
@@ -494,18 +518,25 @@ public sealed class CasinoService(
         return reel.Symbols[^1];
     }
 
-    private static int PayoutMultiplier(IReadOnlyList<SlotSymbolOptions> symbols)
+    /// <summary>
+    /// What a lane pays, read from the left.
+    ///
+    /// The run is however many of the opening symbol the lane starts with, and the symbol's own card
+    /// says what a run that long is worth. Left-anchored because that is how a reel is read: three of
+    /// something on the last three columns is not a win, and paying it would roughly double how often
+    /// every lane hits.
+    /// </summary>
+    private static int PayoutMultiplier(IReadOnlyList<SlotSymbolOptions> line)
     {
-        if (symbols.Count < 3)
+        if (line.Count == 0)
             return 0;
 
-        var left = symbols[0];
-        if (!string.Equals(left.Key, symbols[1].Key, StringComparison.OrdinalIgnoreCase))
-            return 0;
+        var left = line[0];
+        var run = 1;
+        while (run < line.Count && string.Equals(line[run].Key, left.Key, StringComparison.OrdinalIgnoreCase))
+            run++;
 
-        return string.Equals(left.Key, symbols[2].Key, StringComparison.OrdinalIgnoreCase)
-            ? Math.Max(0, left.TripleMultiplier)
-            : Math.Max(0, left.PairMultiplier);
+        return left.PayFor(run);
     }
 
     private static SlotScore ScorePaylines(IReadOnlyList<SlotSymbolOptions> symbols, int paylines, long bet)
@@ -526,7 +557,9 @@ public sealed class CasinoService(
 
     private static IEnumerable<int> WinningPaylineIndexesFrom(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols)
     {
-        if (symbols.Count < 9)
+        // A row written before the floor widened holds nine symbols, not fifteen, and every lane here
+        // reaches past the ninth. It keeps its grid and its money; it just cannot draw its lines.
+        if (symbols.Count < Cells)
             yield break;
 
         foreach (var line in SlotPaylines.Take(Math.Clamp(transaction.Paylines, 1, SlotPaylines.Length)))
@@ -565,7 +598,7 @@ public sealed class CasinoService(
     /// <summary>Whether a lane paid the best this machine's paytable has in it.</summary>
     private static bool IsTopAward(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols, int topMultiplier)
     {
-        if (topMultiplier <= 0 || symbols.Count < 9) return false;
+        if (topMultiplier <= 0 || symbols.Count < Cells) return false;
 
         return SlotPaylines
             .Take(Math.Clamp(transaction.Paylines, 1, SlotPaylines.Length))

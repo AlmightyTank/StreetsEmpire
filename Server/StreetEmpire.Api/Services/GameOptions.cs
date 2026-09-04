@@ -1943,13 +1943,13 @@ public sealed class CasinoOptions
                     // 92.5% back, and something lands on about seven spins in ten.
                     Symbols =
                     [
-                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 32, PairMultiplier = 3, TripleMultiplier = 5 },
-                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 3, TripleMultiplier = 9 },
-                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 2, TripleMultiplier = 14 },
-                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 3, TripleMultiplier = 23 },
-                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 4, TripleMultiplier = 48 },
-                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 8, TripleMultiplier = 80 },
-                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 15, TripleMultiplier = 220 }
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 32, PairMultiplier = 1, TripleMultiplier = 5, QuadMultiplier = 17, QuintMultiplier = 43 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 1, TripleMultiplier = 8, QuadMultiplier = 27, QuintMultiplier = 69 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 0, TripleMultiplier = 14, QuadMultiplier = 37, QuintMultiplier = 120 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 0, TripleMultiplier = 23, QuadMultiplier = 80, QuintMultiplier = 205 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 0, TripleMultiplier = 44, QuadMultiplier = 150, QuintMultiplier = 390 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 0, TripleMultiplier = 98, QuadMultiplier = 330, QuintMultiplier = 860 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 315, QuadMultiplier = 1060, QuintMultiplier = 2760 }
                     ]
                 },
                 new SlotMachineOptions
@@ -1965,13 +1965,13 @@ public sealed class CasinoOptions
                     // 94.4% back. The middle of the floor, and the curve the whole casino used to run.
                     Symbols =
                     [
-                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 28, PairMultiplier = 2, TripleMultiplier = 8 },
-                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 22, PairMultiplier = 2, TripleMultiplier = 12 },
-                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 2, TripleMultiplier = 18 },
-                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 14, PairMultiplier = 3, TripleMultiplier = 30 },
-                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 10, PairMultiplier = 4, TripleMultiplier = 49 },
-                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 8, TripleMultiplier = 110 },
-                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 20, TripleMultiplier = 590 }
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 28, PairMultiplier = 1, TripleMultiplier = 6, QuadMultiplier = 21, QuintMultiplier = 59 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 22, PairMultiplier = 0, TripleMultiplier = 10, QuadMultiplier = 35, QuintMultiplier = 99 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 0, TripleMultiplier = 18, QuadMultiplier = 65, QuintMultiplier = 170 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 14, PairMultiplier = 0, TripleMultiplier = 28, QuadMultiplier = 95, QuintMultiplier = 265 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 10, PairMultiplier = 0, TripleMultiplier = 52, QuadMultiplier = 175, QuintMultiplier = 495 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 0, TripleMultiplier = 115, QuadMultiplier = 385, QuintMultiplier = 1080 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 375, QuadMultiplier = 1270, QuintMultiplier = 3550 }
                     ]
                 },
                 new SlotMachineOptions
@@ -1987,13 +1987,13 @@ public sealed class CasinoOptions
                     // 95.5% back. Pairs are worth almost nothing here; the money is in the triples.
                     Symbols =
                     [
-                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 30, PairMultiplier = 1, TripleMultiplier = 9 },
-                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 1, TripleMultiplier = 14 },
-                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 19, PairMultiplier = 1, TripleMultiplier = 23 },
-                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 2, TripleMultiplier = 42 },
-                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 3, TripleMultiplier = 87 },
-                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 5, PairMultiplier = 5, TripleMultiplier = 210 },
-                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 12, TripleMultiplier = 1_250 }
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 30, PairMultiplier = 0, TripleMultiplier = 6, QuadMultiplier = 20, QuintMultiplier = 59 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 0, TripleMultiplier = 10, QuadMultiplier = 34, QuintMultiplier = 100 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 19, PairMultiplier = 0, TripleMultiplier = 16, QuadMultiplier = 47, QuintMultiplier = 170 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 0, TripleMultiplier = 27, QuadMultiplier = 93, QuintMultiplier = 280 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 0, TripleMultiplier = 50, QuadMultiplier = 175, QuintMultiplier = 530 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 5, PairMultiplier = 0, TripleMultiplier = 115, QuadMultiplier = 395, QuintMultiplier = 1190 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 365, QuadMultiplier = 1270, QuintMultiplier = 3810 }
                     ]
                 },
                 new SlotMachineOptions
@@ -2018,13 +2018,13 @@ public sealed class CasinoOptions
                     // where a moonshot belongs.
                     Symbols =
                     [
-                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 34, PairMultiplier = 0, TripleMultiplier = 9 },
-                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 25, PairMultiplier = 0, TripleMultiplier = 16 },
-                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 17, PairMultiplier = 0, TripleMultiplier = 31 },
-                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 12, PairMultiplier = 0, TripleMultiplier = 60 },
-                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 7, PairMultiplier = 0, TripleMultiplier = 193 },
-                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 3, TripleMultiplier = 470 },
-                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 8, TripleMultiplier = 500 }
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 26, PairMultiplier = 0, TripleMultiplier = 6, QuadMultiplier = 21, QuintMultiplier = 66 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 22, PairMultiplier = 0, TripleMultiplier = 11, QuadMultiplier = 38, QuintMultiplier = 120 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 0, TripleMultiplier = 18, QuadMultiplier = 52, QuintMultiplier = 210 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 15, PairMultiplier = 0, TripleMultiplier = 32, QuadMultiplier = 115, QuintMultiplier = 365 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 11, PairMultiplier = 0, TripleMultiplier = 62, QuadMultiplier = 225, QuintMultiplier = 710 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 0, TripleMultiplier = 145, QuadMultiplier = 520, QuintMultiplier = 1650 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 475, QuadMultiplier = 1720, QuintMultiplier = 2200 }
                     ]
                 }
             ];
@@ -2220,7 +2220,7 @@ public sealed class CasinoJackpotOptions
     /// Three anywhere on the grid is about one spin in twelve thousand, which is rare enough to be an
     /// event and common enough to be a real one.
     /// </summary>
-    public int SymbolsRequired { get; set; } = 3;
+    public int SymbolsRequired { get; set; } = 4;
 
     /// <summary>
     /// Whether the pot only pays when every lane is bought. It does, the way it does on a real floor:
@@ -2230,6 +2230,14 @@ public sealed class CasinoJackpotOptions
     public bool RequireAllPaylines { get; set; } = true;
 }
 
+/// <summary>
+/// One face on a reel, and what a run of it pays.
+///
+/// A lane is read from the left: however many of the same symbol it opens with is the run, and the run
+/// decides which of these is paid. Two of a kind pays on almost nothing - it is worth several percent
+/// of a machine's whole return on a common symbol, so it is a structural choice about how often a lane
+/// does anything rather than a number to tune with.
+/// </summary>
 public sealed class SlotSymbolOptions
 {
     public string Key { get; set; } = string.Empty;
@@ -2237,6 +2245,18 @@ public sealed class SlotSymbolOptions
     public int Weight { get; set; } = 1;
     public int PairMultiplier { get; set; }
     public int TripleMultiplier { get; set; }
+    public int QuadMultiplier { get; set; }
+    public int QuintMultiplier { get; set; }
+
+    /// <summary>What a run of this length pays, or nothing if it is too short to pay at all.</summary>
+    public int PayFor(int run) => run switch
+    {
+        2 => Math.Max(0, PairMultiplier),
+        3 => Math.Max(0, TripleMultiplier),
+        4 => Math.Max(0, QuadMultiplier),
+        >= 5 => Math.Max(0, QuintMultiplier),
+        _ => 0
+    };
 }
 
 /// <summary>

@@ -165,7 +165,7 @@ public sealed record SlotMachineResponse(
     bool Locked,
     string? LockedReason);
 
-public sealed record SlotSymbolPayResponse(string Label, int Pair, int Triple);
+public sealed record SlotSymbolPayResponse(string Label, int Pair, int Triple, int Quad, int Quint);
 
 public sealed record CasinoRepResponse(
     int Rep,

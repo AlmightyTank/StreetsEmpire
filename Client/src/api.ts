@@ -33,6 +33,8 @@ export type SlotSymbolPay = {
   label: string
   pair: number
   triple: number
+  quad: number
+  quint: number
 }
 
 export type SlotPayline = {

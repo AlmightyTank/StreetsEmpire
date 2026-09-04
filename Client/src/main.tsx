@@ -107,10 +107,12 @@ function SlotGlyph({ symbol, className }: { symbol: string, className?: string }
   </svg>
 }
 
-const slotIdleSymbols = ['Cash Stack', 'Gold Chain', 'Seven']
+const slotIdleSymbols = ['Cash Stack', 'Gold Chain', 'Seven', 'Low-Rider', 'Crown']
 const slotSpinSymbols = ['Cash Stack', 'Gold Chain', 'Pistol', 'Luxury Rider', 'Crown', 'Seven', 'Vault']
 const slotSpinDurationMs = 950
-const slotGridSize = 9
+const slotColumns = 5
+const slotRows = 3
+const slotGridSize = slotColumns * slotRows
 
 function slotReelSymbols(reel: number) {
   return Array.from({ length: 12 }, (_, index) => slotSpinSymbols[(index + reel * 2) % slotSpinSymbols.length])
@@ -123,7 +125,8 @@ function slotGridSymbols(symbols?: string[]) {
 
 function slotGridText(symbols: string[]) {
   const grid = slotGridSymbols(symbols)
-  return [0, 3, 6].map(start => grid.slice(start, start + 3).join(' / ')).join(' | ')
+  return Array.from({ length: slotRows }, (_, row) =>
+    grid.slice(row * slotColumns, row * slotColumns + slotColumns).join(' / ')).join(' | ')
 }
 
 /**
@@ -154,7 +157,7 @@ function spinVerdict(transaction: CasinoTransaction) {
  * thing if a cell is all symbol, and every cell carries a label under its symbol.
  */
 function slotPaylinePoints(cells: number[]) {
-  return cells.map(cell => `${cell % 3},${Math.floor(cell / 3)}`).join(' ')
+  return cells.map(cell => `${cell % slotColumns},${Math.floor(cell / slotColumns)}`).join(' ')
 }
 
 function wait(ms: number) {
@@ -3302,18 +3305,24 @@ function CasinoPage(ctx: PageContext) {
         <summary className="text-body-secondary">What {active.name} pays</summary>
         <div className="table-responsive mt-2">
           <table className="table table-sm game-table align-middle mb-0">
-            <thead><tr><th>Symbol</th><th className="text-end">Two</th><th className="text-end">Three</th></tr></thead>
+            <thead><tr>
+              <th>Symbol</th>
+              <th className="text-end">Two</th><th className="text-end">Three</th>
+              <th className="text-end">Four</th><th className="text-end">Five</th>
+            </tr></thead>
             <tbody>
               {active.paytable.map(pay => <tr key={pay.label}>
                 <td><SlotGlyph symbol={pay.label} className="slot-pay-glyph" /> {pay.label}</td>
                 <td className="text-end tnum">{pay.pair > 0 ? `${pay.pair}x` : '-'}</td>
-                <td className="text-end tnum">{pay.triple}x</td>
+                <td className="text-end tnum">{pay.triple > 0 ? `${pay.triple}x` : '-'}</td>
+                <td className="text-end tnum">{pay.quad > 0 ? `${pay.quad}x` : '-'}</td>
+                <td className="text-end tnum">{pay.quint}x</td>
               </tr>)}
             </tbody>
           </table>
         </div>
         <small className="text-body-tertiary">
-          A lane pays when its first two cells match. Every machine on the floor runs its own reel.
+          A lane pays on the run it opens with, counted from the left. Every machine runs its own reel.
         </small>
       </details>
       <div className="slot-reels d-grid gap-2 my-3" aria-label="Slot reels">
@@ -3338,7 +3347,7 @@ function CasinoPage(ctx: PageContext) {
             <strong className="slot-reel-label">{spinning ? 'Spinning' : symbol}</strong>
           </div>
         })}
-        {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox="0 0 2 2" preserveAspectRatio="none" aria-hidden="true">
+        {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox={`0 0 ${slotColumns - 1} ${slotRows - 1}`} preserveAspectRatio="none" aria-hidden="true">
           {winningLines.map(line => <polyline className="slot-payline-hit" points={slotPaylinePoints(line.cells)} key={line.index} />)}
         </svg>}
       </div>

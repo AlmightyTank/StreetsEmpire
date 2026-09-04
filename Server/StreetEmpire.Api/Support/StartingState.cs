@@ -57,6 +57,9 @@ internal static class StartingState
         // season with the rifle counter already unlocked - which is the one thing a season is for.
         player.StoreRep = 0;
         player.CasinoRep = 0;
+        // The cage settles up at the end of a season whether you collected or not. Carrying a balance
+        // across would be last season's play buying this season's turns.
+        player.CasinoComps = 0;
         player.StoreInvestmentReadyAtUtc = null;
         // The hand itself goes with the book, which the roll empties. This is only the clock that
         // decides what looking again costs, and it has to open at free like everybody else's.

@@ -25,6 +25,8 @@ public sealed record TravelRequest(string? City);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
 public sealed record BankRequest(long Amount);
 public sealed record SlotSpinRequest(string? MachineKey, long Bet, int Paylines = 1);
+
+public sealed record ClaimCompRequest(string? RewardKey);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
 public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);
@@ -92,7 +94,27 @@ public sealed record CasinoBoardResponse(
     IReadOnlyList<CasinoTransactionResponse> Recent,
     CasinoJackpotRulesResponse JackpotRules,
     IReadOnlyList<CasinoJackpotDropResponse> RecentJackpots,
-    int SpinTurnCost);
+    int SpinTurnCost,
+    CasinoCompsResponse Comps);
+
+/// <param name="DollarsWageredPerComp">What a dollar of comps costs in play, for the card to say so.</param>
+public sealed record CasinoCompsResponse(
+    long Balance,
+    int DollarsWageredPerComp,
+    IReadOnlyList<CompRewardResponse> Rewards);
+
+public sealed record CompRewardResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    long Cost,
+    int Turns,
+    long Cash,
+    double Heat,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
 
 /// <summary>What the floor has to say about how the pot is won, so the rule is on the machine.</summary>
 public sealed record CasinoJackpotRulesResponse(
@@ -177,8 +199,19 @@ public sealed record SlotSpinResponse(
     int Turns,
     int TurnsSpent,
     int RepEarned,
+    int CompsEarned,
     CasinoRepResponse Reputation,
     CasinoStatsResponse Stats,
+    CasinoBoardResponse Board);
+
+public sealed record ClaimCompResponse(
+    string Summary,
+    int TurnsGranted,
+    long CashPaid,
+    double HeatCleared,
+    long Turns,
+    long Cash,
+    double Heat,
     CasinoBoardResponse Board);
 
 public sealed record StoreSellRequest(string? ItemKey, int Quantity);

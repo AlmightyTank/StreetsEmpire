@@ -19,6 +19,20 @@
   so the house holds the same share either way; it is only given back in one lump instead of a hundred
   small ones. A pot that drops resets to the machine's seed, and the wager that won it does not feed
   the next one.
+- **The cage owes you for playing.** Every pull is rated whether it lands or not, at a hundredth of the
+  stake, and the comps that come off it are held in dollars because every one of them buys something
+  with a price. Standing and comps do separate jobs and both have to be satisfied: standing decides
+  what the cage will do for you, comps pay for it. A rank that could be spent would make standing a
+  currency, and a balance that opened rooms would let one big night buy the whole ladder. On the menu:
+  a room upstairs for turns at Walk-In, the cage settling up in cash at Regular, a word with the law
+  that takes heat off the file at High Roller, and the suite for a House Name. Every reward is turns,
+  cash and heat in some combination, so the menu is configuration rather than code.
+
+  This is what a pull costing a turn needs to be fair. Slots are negative expectation at every stake by
+  design - a turn on the street grosses far more than a turn at a machine is worth in expectation - so
+  the reason to play cannot be the money, and until now a losing night gave back nothing at all. It is
+  also the half of the island the floor was still missing: news left the casino and nothing came back.
+  Turns, cash and heat all land outside it.
 - **A dropped pot is news whatever it is worth.** It reaches the world feed on its own account rather
   than by clearing the cash swing that makes an ordinary win newsworthy - the pot on the cheapest
   machine is the smallest on the floor and still the story of the night, because everybody who played

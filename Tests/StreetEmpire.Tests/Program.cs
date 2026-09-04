@@ -76,6 +76,10 @@ var tests = new (string Name, Action Test)[]
     ("a progressive grows on every wager and pays out whole", CasinoProgressivePaysThePot),
     ("a progressive needs every lane bought", CasinoProgressiveNeedsEveryLane),
     ("a dropped pot starts again from the seed", CasinoProgressiveResetsToSeed),
+    ("comps are rated on the wager, win or lose", CompsAreRatedOnTheWager),
+    ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
+    ("a claimed comp hands over turns, cash and quiet", ACompHandsOverWhatItPromises),
+    ("comps reset with the season", CompsResetWithTheSeason),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -2088,6 +2092,180 @@ static void CasinoStandingResetsWithTheSeason()
     AssertEqual(0, world.Db.CasinoTransactions.Count());
     AssertEqual(0, world.Db.CasinoJackpotDrops.Count());
 }
+
+/// <summary>
+/// Comps are earned for playing rather than for losing.
+///
+/// Rating the loss would pay nothing for a night that went well, which reads as the house punishing a
+/// winner, and it would leave a player who broke even holding nothing to show for an evening. Rating
+/// the wager is what gives every night a floor.
+/// </summary>
+static void CompsAreRatedOnTheWager()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            CompsPerDollarWagered = 0.1,
+            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+
+    // The same stake on a machine that always pays and one that never does.
+    var winner = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 10, Hideout = new Hideout() };
+    var loser = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 10, Hideout = new Hideout() };
+
+    var paying = CreateCasino(db, options, new ZeroRandom()).SpinSlotsAsync(winner, "rated", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var cold = CreateCasino(db, Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            CompsPerDollarWagered = 0.1,
+            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }
+            ]
+        }
+    }), new ScriptedRandom(0.0, 0.9)).SpinSlotsAsync(loser, "rated", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+
+    AssertTrue(paying.Transaction.NetResult > 0, "the first player should have won on this machine");
+    AssertTrue(cold.Transaction.NetResult < 0, "the second player should have lost on this machine");
+
+    // Same stake, same comps, opposite results.
+    AssertEqual(10, paying.CompsEarned);
+    AssertEqual(10, cold.CompsEarned);
+    AssertEqual(10d, winner.CasinoComps);
+    AssertEqual(10d, loser.CasinoComps);
+}
+
+/// <summary>
+/// Standing says what the cage will do for you and comps pay for it. Both have to be true at once,
+/// because either one alone collapses the ladder: a rank you could spend would make standing a
+/// currency, and a balance that opened rooms would let one big night buy the whole menu.
+/// </summary>
+static void CompsAreGatedByStandingAndPaidFor()
+{
+    var options = CompOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 0, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    // Holding the price but standing at the door.
+    player.CasinoComps = 50_000;
+    player.CasinoRep = 0;
+    AssertRuleError(() => casino.ClaimComp(player, "backroom"), "a walk-in claims a reward held for regulars");
+
+    var walkIn = casino.BoardAsync(player, default).GetAwaiter().GetResult().Comps;
+    AssertEqual(50_000L, walkIn.Balance);
+    AssertTrue(walkIn.Rewards.Single(x => x.Key == "backroom").Locked, "the board should show it shut too");
+    AssertTrue(!walkIn.Rewards.Single(x => x.Key == "room").Locked, "and the open one open");
+
+    // Standing, but nothing to pay with.
+    player.CasinoRep = 500;
+    player.CasinoComps = 10;
+    AssertRuleError(() => casino.ClaimComp(player, "backroom"), "a regular claims a reward they cannot afford");
+    AssertRuleError(() => casino.ClaimComp(player, "nothing-like-this"), "a reward that does not exist is claimed");
+
+    // The cage never goes below nothing, however the menu is priced.
+    player.CasinoComps = 600;
+    casino.ClaimComp(player, "room");
+    AssertEqual(100d, player.CasinoComps);
+}
+
+static void ACompHandsOverWhatItPromises()
+{
+    var options = CompOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player
+    {
+        Id = Guid.NewGuid(),
+        Cash = 1_000,
+        Turns = 5,
+        Heat = 30,
+        CasinoRep = 500,
+        CasinoComps = 5_000,
+        Hideout = new Hideout()
+    };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var claim = casino.ClaimComp(player, "backroom");
+
+    AssertEqual(25, claim.TurnsGranted);
+    AssertEqual(750L, claim.CashPaid);
+    AssertEqual(12d, claim.HeatCleared);
+    AssertEqual(30, player.Turns);
+    AssertEqual(1_750L, player.Cash);
+    AssertEqual(18d, player.Heat);
+    AssertEqual(3_000d, player.CasinoComps);
+
+    // Heat stops at nothing rather than going negative and buying immunity to the next raid.
+    player.Heat = 4;
+    player.CasinoComps = 5_000;
+    player.Turns = 0;
+    casino.ClaimComp(player, "backroom");
+    AssertEqual(0d, player.Heat);
+
+    // A full turn bank refuses the room rather than charging for turns it cannot hand over.
+    player.CasinoComps = 5_000;
+    player.Turns = Resolve(options).MaxTurnsFor(player);
+    AssertRuleError(() => casino.ClaimComp(player, "room"), "a comped room is claimed with a full turn bank");
+    AssertEqual(5_000d, player.CasinoComps);
+}
+
+static void CompsResetWithTheSeason()
+{
+    using var world = NewCrewWorld();
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 9, 4, 3, 0, 0, DateTimeKind.Utc);
+    var player = world.Member("Whale", cash: 500_000);
+    player.CasinoComps = 40_000;
+    world.Db.SaveChanges();
+
+    seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+
+    AssertEqual(0d, player.CasinoComps);
+}
+
+/// <summary>
+/// A menu of two: one anybody can take, and one the back room keeps for regulars that pays in all
+/// three currencies at once so the claim path is exercised whole.
+/// </summary>
+static GameOptions CompOptions()
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            CompsPerDollarWagered = 0.01,
+            Levels =
+            [
+                new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
+                new CasinoRepLevelOptions { Level = 2, Name = "Regular", Rep = 100 }
+            ],
+            CompRewards =
+            [
+                new CompRewardOptions { Key = "room", Name = "A room upstairs", Cost = 500, Turns = 25 },
+                new CompRewardOptions { Key = "backroom", Name = "The back room", Cost = 2_000, Turns = 25, Cash = 750, Heat = 12, MinCasinoRepLevel = 2 }
+            ],
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
+        }
+    };
+
+
 
 /// <summary>
 /// A pull costs turns, and running out of them stops the night.

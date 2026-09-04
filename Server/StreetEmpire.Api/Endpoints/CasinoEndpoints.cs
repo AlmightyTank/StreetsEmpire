@@ -62,9 +62,50 @@ internal static class CasinoEndpoints
                     player.Turns,
                     spin.TurnsSpent,
                     spin.RepEarned,
+                    spin.CompsEarned,
                     board.Reputation,
                     board.Stats,
                     board));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+        app.MapPost("/api/game/casino/comps/claim", async (
+            ClaimCompRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            CasinoService casino,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            // Advanced first so a comped room lands on top of whatever the clock had already given
+            // back. Granting turns against a stale bank would either overshoot the cap or quietly
+            // hand back fewer than the menu promised.
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var claim = casino.ClaimComp(player, request.RewardKey);
+                // No turns spent: this is the house paying out, and the reward itself is often turns.
+                AddLog(db, player, before, "COMP", 0, claim.Summary, now);
+                await db.SaveChangesAsync(ct);
+
+                return Results.Ok(new ClaimCompResponse(
+                    claim.Summary,
+                    claim.TurnsGranted,
+                    claim.CashPaid,
+                    claim.HeatCleared,
+                    player.Turns,
+                    player.Cash,
+                    Math.Round(player.Heat, 1),
+                    await casino.BoardAsync(player, ct)));
             }
             catch (GameRuleException ex)
             {

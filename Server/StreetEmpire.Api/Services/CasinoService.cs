@@ -36,7 +36,56 @@ public sealed class CasinoService(
             (await RecentAsync(player.Id, _options.Casino.HistoryDepth, ct)).ToList(),
             JackpotRules(),
             (await RecentJackpotsAsync(ct)).ToList(),
-            Math.Max(0, _options.Casino.SpinTurnCost));
+            Math.Max(0, _options.Casino.SpinTurnCost),
+            CompsFor(player));
+    }
+
+    /// <summary>
+    /// Takes something off the cage in exchange for comps.
+    ///
+    /// The reward is a row of configuration rather than a branch, so everything on the menu is turns,
+    /// cash and heat in some combination and this reads the same for all of them.
+    /// </summary>
+    public CompClaim ClaimComp(Player player, string? rewardKey)
+    {
+        TravelGate.EnsureLanded(player);
+        var config = _options.Casino;
+        if (!config.Enabled)
+            throw new GameRuleException("The casino cage is closed right now.");
+
+        var reward = config.Reward(rewardKey)
+            ?? throw new GameRuleException("The cage does not do that.");
+
+        var locked = CompLockedReason(player, reward);
+        if (locked is not null)
+            throw new GameRuleException(locked);
+
+        var turnCap = _options.MaxTurnsFor(player);
+        var turns = Math.Max(0, reward.Turns);
+        // Refused rather than trimmed. Handing back four turns of a comped room because the bank was
+        // nearly full, and charging the whole price for them, is the cage taking a night's play for
+        // something the player did not get.
+        if (turns > 0 && player.Turns >= turnCap)
+            throw new GameRuleException($"Your turn bank is full at {turnCap:N0}. {reward.Name} would be wasted.");
+
+        var cash = Math.Max(0, reward.Cash);
+        var heatBefore = player.Heat;
+        var granted = turns > 0 ? (int)Math.Min(turns, turnCap - player.Turns) : 0;
+
+        player.CasinoComps = Math.Max(0, player.CasinoComps - reward.Cost);
+        player.Turns += granted;
+        player.Cash += cash;
+        player.Heat = Math.Max(0, player.Heat - Math.Max(0, reward.Heat));
+        var heatCleared = Math.Round(heatBefore - player.Heat, 1);
+
+        var parts = new List<string>();
+        if (granted > 0) parts.Add($"{granted:N0} turns");
+        if (cash > 0) parts.Add($"{cash:C0}");
+        if (heatCleared > 0) parts.Add($"{heatCleared:N1} heat off the file");
+        var took = parts.Count == 0 ? "nothing anybody could point at" : string.Join(", ", parts);
+
+        return new CompClaim(reward, granted, cash, heatCleared,
+            $"Took {reward.Name} off the cage for {reward.Cost:C0} in comps: {took}.");
     }
 
     /// <summary>
@@ -85,6 +134,8 @@ public sealed class CasinoService(
         player.Turns -= turnCost;
         player.Cash -= totalBet;
         player.CasinoRep = Math.Max(0, player.CasinoRep + totalBet * Math.Max(0, config.RepPerDollarWagered));
+        var compsBefore = player.CasinoComps;
+        player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
 
         var reel = ReelStrip(config);
         var symbols = Enumerable.Range(0, 9).Select(_ => DrawSymbol(reel)).ToArray();
@@ -127,6 +178,7 @@ public sealed class CasinoService(
         return new CasinoSpin(
             transaction,
             Math.Max(0, (int)Math.Floor(player.CasinoRep) - (int)Math.Floor(repBefore)),
+            Math.Max(0, (int)Math.Floor(player.CasinoComps) - (int)Math.Floor(compsBefore)),
             turnCost,
             jackpot);
     }
@@ -232,6 +284,49 @@ public sealed class CasinoService(
             x.PlayerName,
             x.Amount,
             x.WonAtUtc)).ToList();
+    }
+
+    private CasinoCompsResponse CompsFor(Player player)
+    {
+        var config = _options.Casino;
+        var perComp = config.CompsPerDollarWagered <= 0
+            ? 0
+            : Math.Max(1, (int)Math.Ceiling(1 / config.CompsPerDollarWagered));
+
+        return new CasinoCompsResponse(
+            (long)Math.Floor(player.CasinoComps),
+            perComp,
+            config.CompRewards.Select(reward =>
+            {
+                var locked = CompLockedReason(player, reward);
+                return new CompRewardResponse(
+                    reward.Key,
+                    reward.Name,
+                    reward.Blurb,
+                    reward.Cost,
+                    Math.Max(0, reward.Turns),
+                    Math.Max(0, reward.Cash),
+                    Math.Max(0, reward.Heat),
+                    Math.Max(1, reward.MinCasinoRepLevel),
+                    reward.MinCasinoRepLevel > 1 ? config.LevelName(reward.MinCasinoRepLevel) : null,
+                    locked is not null,
+                    locked);
+            }).ToList());
+    }
+
+    /// <summary>
+    /// Why the cage will not do this one, or null if it will. Standing is reported before price,
+    /// because a room that is not open to you yet is a different answer from one you cannot afford.
+    /// </summary>
+    private string? CompLockedReason(Player player, CompRewardOptions reward)
+    {
+        var required = Math.Max(1, reward.MinCasinoRepLevel);
+        if (CasinoRep.LevelOf(player, _options) < required)
+            return $"{reward.Name} is for {_options.Casino.LevelName(required)} and above.";
+
+        return player.CasinoComps >= reward.Cost
+            ? null
+            : $"{reward.Cost:C0} in comps. You are holding {(long)Math.Floor(player.CasinoComps):C0}.";
     }
 
     private CasinoJackpotRulesResponse JackpotRules()
@@ -429,7 +524,9 @@ public sealed class CasinoService(
     }
 }
 
-public sealed record CasinoSpin(CasinoTransaction Transaction, int RepEarned, int TurnsSpent, long JackpotWon);
+public sealed record CasinoSpin(CasinoTransaction Transaction, int RepEarned, int CompsEarned, int TurnsSpent, long JackpotWon);
+
+public sealed record CompClaim(CompRewardOptions Reward, int TurnsGranted, long CashPaid, double HeatCleared, string Summary);
 
 internal sealed record SlotScore(long Payout, int WinningPaylines);
 

@@ -161,6 +161,21 @@ public sealed class Player
     public double CasinoRep { get; set; }
 
     /// <summary>
+    /// What the cage owes this player back, in dollars of comps.
+    ///
+    /// Separate from standing on purpose, because the two answer different questions and a real floor
+    /// keeps them apart for the same reason: standing is who you are to the house and decides which
+    /// room will take your money, while comps are what the house owes you for having played and are
+    /// spent down to nothing every time you collect. One is a rank and the other is a balance, so a
+    /// player can be a House Name with nothing to claim, or a Walk-In holding a night's worth.
+    ///
+    /// Held in dollars rather than in points because every one of them is redeemed for something with
+    /// a price, and a currency that has to be mentally converted before it means anything is a
+    /// currency nobody spends.
+    /// </summary>
+    public double CasinoComps { get; set; }
+
+    /// <summary>
     /// When the counter will take another investment. Null means now.
     ///
     /// One clock across every favour rather than one per favour, because what is being modelled is the

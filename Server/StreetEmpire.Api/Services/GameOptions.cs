@@ -1895,6 +1895,20 @@ public sealed class CasinoOptions
     /// </summary>
     public int SpinTurnCost { get; set; } = 1;
 
+    /// <summary>
+    /// Dollars of comps earned per dollar wagered.
+    ///
+    /// On the wager rather than on the loss, the way a real floor rates play. Earning on losses alone
+    /// would pay nothing for the nights that go well and read as the house punishing a winner, and it
+    /// would make the rebate the only thing on offer. Rating the wager gives every night a floor by
+    /// itself: a player who leaves with nothing still leaves holding something.
+    ///
+    /// At a hundredth of the stake this returns roughly a fifth of what the house expects to hold,
+    /// which is about what a real players' club gives back.
+    /// </summary>
+    public double CompsPerDollarWagered { get; set; } = 0.01;
+
+    public List<CompRewardOptions> CompRewards { get; set; } = [];
     public CasinoJackpotOptions Jackpot { get; set; } = new();
     public List<CasinoRepLevelOptions> Levels { get; set; } = [];
     public List<SlotMachineOptions> SlotMachines { get; set; } = [];
@@ -1969,6 +1983,50 @@ public sealed class CasinoOptions
             ];
         }
 
+        if (CompRewards.Count == 0)
+        {
+            CompRewards =
+            [
+                new CompRewardOptions
+                {
+                    Key = "room",
+                    Name = "A room upstairs",
+                    Blurb = "The house keeps one for people who play. Sleep it off and start again.",
+                    Cost = 500,
+                    Turns = 25
+                },
+                new CompRewardOptions
+                {
+                    Key = "cage",
+                    Name = "The cage settles up",
+                    Blurb = "Walk to the window and take what you are owed in cash.",
+                    Cost = 1_000,
+                    Cash = 1_000,
+                    MinCasinoRepLevel = 2
+                },
+                new CompRewardOptions
+                {
+                    Key = "word",
+                    Name = "A word with the law",
+                    Blurb = "Somebody the house knows makes a call, and a file gets thinner.",
+                    Cost = 2_500,
+                    Heat = 20,
+                    MinCasinoRepLevel = 3
+                },
+                new CompRewardOptions
+                {
+                    Key = "suite",
+                    Name = "The suite, and a car home",
+                    Blurb = "The floor manager stops calling you sir and starts using your name.",
+                    Cost = 10_000,
+                    Turns = 100,
+                    Cash = 5_000,
+                    Heat = 40,
+                    MinCasinoRepLevel = 4
+                }
+            ];
+        }
+
         if (SlotSymbols.Count == 0)
         {
             SlotSymbols =
@@ -1996,8 +2054,43 @@ public sealed class CasinoOptions
     public CasinoRepLevelOptions? Level(int level)
         => Levels.FirstOrDefault(x => x.Level == level);
 
+    public CompRewardOptions? Reward(string? key)
+        => CompRewards.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+
     public string LevelName(int level)
         => Level(level)?.Name ?? $"level {level}";
+}
+
+/// <summary>
+/// One thing the cage will do for you, and what it costs in comps.
+///
+/// Every reward is the same shape - some turns, some cash, some heat taken off - so the menu is
+/// configuration rather than code, and a new one is a row in appsettings rather than a new branch in
+/// the claim path. A reward may grant any combination, including all three.
+///
+/// Standing gates the menu and comps pay for it. That is how a real floor works and it is also the
+/// only arrangement in which both numbers matter: a rank that could be spent would make standing a
+/// currency, and a balance that opened rooms would let one big night buy the whole ladder.
+/// </summary>
+public sealed class CompRewardOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+
+    /// <summary>Dollars of comps it costs to claim.</summary>
+    public long Cost { get; set; }
+
+    /// <summary>Turns handed back, up to whatever the player's hideout will hold.</summary>
+    public int Turns { get; set; }
+
+    /// <summary>Cash paid at the window.</summary>
+    public long Cash { get; set; }
+
+    /// <summary>Points of heat taken off the file.</summary>
+    public double Heat { get; set; }
+
+    public int MinCasinoRepLevel { get; set; } = 1;
 }
 
 public sealed class CasinoRepLevelOptions

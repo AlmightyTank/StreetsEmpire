@@ -95,6 +95,39 @@ export type CasinoBoard = {
   jackpotRules: CasinoJackpotRules
   recentJackpots: CasinoJackpotDrop[]
   spinTurnCost: number
+  comps: CasinoComps
+}
+
+export type CasinoComps = {
+  balance: number
+  /** What a dollar of comps costs in play. */
+  dollarsWageredPerComp: number
+  rewards: CompReward[]
+}
+
+export type CompReward = {
+  key: string
+  name: string
+  blurb: string
+  cost: number
+  turns: number
+  cash: number
+  heat: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type ClaimedComp = {
+  summary: string
+  turnsGranted: number
+  cashPaid: number
+  heatCleared: number
+  turns: number
+  cash: number
+  heat: number
+  board: CasinoBoard
 }
 
 export type SlotSpin = {
@@ -105,6 +138,7 @@ export type SlotSpin = {
   turns: number
   turnsSpent: number
   repEarned: number
+  compsEarned: number
   reputation: CasinoReputation
   stats: CasinoStats
   /** The whole floor as it stands after the spin, so the meters move without a second fetch. */
@@ -2084,6 +2118,10 @@ export const api = {
     body: JSON.stringify({ amount }),
   }),
   casino: () => request<CasinoBoard>('/api/game/casino'),
+  claimComp: (rewardKey: string) => request<ClaimedComp>('/api/game/casino/comps/claim', {
+    method: 'POST',
+    body: JSON.stringify({ rewardKey }),
+  }),
   spinSlots: (machineKey: string, bet: number, paylines: number) => request<SlotSpin>('/api/game/casino/slots/spin', {
     method: 'POST',
     body: JSON.stringify({ machineKey, bet, paylines }),

@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, SlotSpin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, SlotSpin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3116,6 +3116,7 @@ function CasinoPage(ctx: PageContext) {
   const [paylines, setPaylines] = useState(1)
   const [lastSpin, setLastSpin] = useState<SlotSpin | null>(null)
   const [spinning, setSpinning] = useState(false)
+  const [compNote, setCompNote] = useState('')
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
@@ -3170,6 +3171,22 @@ function CasinoPage(ctx: PageContext) {
     setLastSpin(settled)
     // The whole floor comes back with the spin. It has to: the pot on every machine moved, and the one
     // that was just taken has gone back to its seed with somebody's name against it.
+    setBoard(settled.board)
+    await refresh()
+  }
+
+  const claimComp = async (rewardKey: string) => {
+    let claimed: ClaimedComp | null = null
+    await act(async () => {
+      const result = await api.claimComp(rewardKey)
+      claimed = result
+      return result
+    })
+    // Same reason the spin path asserts: the assignment happens inside the callback handed to act,
+    // which TypeScript's flow analysis does not follow.
+    const settled = claimed as ClaimedComp | null
+    if (!settled) return
+    setCompNote(settled.summary)
     setBoard(settled.board)
     await refresh()
   }
@@ -3321,6 +3338,26 @@ function CasinoPage(ctx: PageContext) {
       </div>
     </section>
 
+    <section className="card p-3 gcol-full">
+      <div className="panel-title">
+        <h2>The Cage</h2>
+        <span>{money.format(board.comps.balance)} in comps</span>
+      </div>
+      <p className="text-body-secondary">
+        Every pull is rated whether it lands or not - {money.format(board.comps.dollarsWageredPerComp)} through a
+        machine is a dollar back on the books. Standing says what the cage will do for you; comps pay for it.
+      </p>
+      <div className="d-grid gtc-fill-220 gap-2">
+        {board.comps.rewards.map(reward => <CompRewardTile
+          reward={reward}
+          busy={busy || spinning}
+          onClaim={() => void claimComp(reward.key)}
+          key={reward.key}
+        />)}
+      </div>
+      {compNote && <p className="text-body-tertiary mb-0 mt-3">{compNote}</p>}
+    </section>
+
     <section className="card p-3">
       <div className="panel-title"><h2>Casino Stats</h2><span>{number.format(board.stats.spins)} spins</span></div>
       <div className="d-grid gtc-2 gap-2">
@@ -3369,6 +3406,30 @@ function CasinoPage(ctx: PageContext) {
             </table>
           </div>}
     </section>
+  </div>
+}
+
+function CompRewardTile({ reward, busy, onClaim }: {
+  reward: CompReward
+  busy: boolean
+  onClaim: () => void
+}) {
+  const gives = [
+    reward.turns > 0 && `${number.format(reward.turns)} turns`,
+    reward.cash > 0 && money.format(reward.cash),
+    reward.heat > 0 && `${number.format(reward.heat)} heat off`,
+  ].filter(Boolean).join(' / ')
+
+  return <div className={`d-grid gap-1 border rounded p-2 ${reward.locked ? 'bg-body-tertiary opacity-75' : 'bg-body-tertiary border-primary'}`}>
+    <div className="d-flex justify-content-between gap-2 align-items-baseline">
+      <strong className="text-body">{reward.name}</strong>
+      <span className="tnum text-warning small">{money.format(reward.cost)}</span>
+    </div>
+    <small className="text-body-tertiary small">{reward.blurb}</small>
+    <small className="text-primary small">{gives}</small>
+    {reward.locked
+      ? <small className="text-warning small">{reward.lockedReason}</small>
+      : <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={onClaim}>Take it</button>}
   </div>
 }
 

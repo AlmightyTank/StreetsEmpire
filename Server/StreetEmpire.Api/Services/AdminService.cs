@@ -44,7 +44,8 @@ public sealed class AdminService(
         // purchase that took the money and not the rep has no other answer, and the fractions rep
         // accrues in are not something anybody is going to type into an admin form.
         ["rep"] = new(p => (long)Math.Floor(p.StoreRep), (p, v) => p.StoreRep = v, int.MaxValue),
-        ["casinoRep"] = new(p => (long)Math.Floor(p.CasinoRep), (p, v) => p.CasinoRep = v, int.MaxValue)
+        ["casinoRep"] = new(p => (long)Math.Floor(p.CasinoRep), (p, v) => p.CasinoRep = v, int.MaxValue),
+        ["casinoComps"] = new(p => (long)Math.Floor(p.CasinoComps), (p, v) => p.CasinoComps = v, int.MaxValue)
     };
 
     public static IReadOnlyCollection<string> AdjustableResources => Resources.Keys.ToList();

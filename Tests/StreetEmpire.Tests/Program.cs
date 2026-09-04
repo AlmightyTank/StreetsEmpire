@@ -65,6 +65,13 @@ var tests = new (string Name, Action Test)[]
     ("the free bank window does not slide", TheFreeBankWindowDoesNotSlide),
     ("bank trips double inside one day and cap at ten turns", BankTripsDoubleInsideOneDayAndCapAtTenTurns),
     ("a bank trip you cannot afford moves no money", ABankTripYouCannotAffordMovesNoMoney),
+    ("casino slots spend cash and write a transaction", CasinoSlotsSpendCashAndWriteTransaction),
+    ("casino slots enforce machine limits", CasinoSlotsEnforceMachineLimits),
+    ("casino slots cap jackpot payouts by machine", CasinoSlotsCapJackpotPayoutsByMachine),
+    ("casino slots draw a nine cell board and pay lanes", CasinoSlotsDrawNineCellsAndPayLanes),
+    ("casino slots pay only left to right matches", CasinoSlotsPayOnlyLeftToRightMatches),
+    ("casino slots earn floor standing and unlock machines", CasinoSlotsEarnStandingAndUnlockMachines),
+    ("casino standing resets with the season", CasinoStandingResetsWithTheSeason),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -1812,6 +1819,260 @@ static void ABankTripYouCannotAffordMovesNoMoney()
     AssertEqual(0L, player.BankCash);
     AssertEqual(1, player.Turns);
     AssertTrue(player.LastBankedAtUtc is null, "a refused trip should not open the free window");
+}
+
+static void CasinoSlotsSpendCashAndWriteTransaction()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "test", Name = "Test Slots", MinBet = 100, MaxBet = 500, MaxWinMultiplier = 10 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 },
+                new SlotSymbolOptions { Key = "c", Label = "C", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ScriptedRandom(0.0, 0.4, 0.8));
+    var now = new DateTime(2026, 9, 3, 4, 30, 0, DateTimeKind.Utc);
+
+    var spin = casino.SpinSlots(player, "test", 100, 1, now);
+    var transaction = spin.Transaction;
+    db.SaveChanges();
+    var stats = casino.StatsAsync(player.Id, default).GetAwaiter().GetResult();
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+
+    AssertEqual(900L, player.Cash);
+    AssertEqual(100L, transaction.BetAmount);
+    AssertEqual(0L, transaction.PayoutAmount);
+    AssertEqual(-100L, transaction.NetResult);
+    AssertEqual(1, transaction.Paylines);
+    AssertEqual(0, transaction.WinningPaylines);
+    AssertEqual("a,b,c,c,c,c,c,c,c", transaction.Outcome);
+    AssertEqual(1, stats.Spins);
+    AssertEqual(100L, stats.Wagered);
+    AssertEqual(-100L, stats.Net);
+    AssertEqual(1, board.Recent.Count);
+}
+
+static void CasinoSlotsEnforceMachineLimits()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "vip", Name = "VIP Slots", MinBet = 100, MaxBet = 1_000, MaxWinMultiplier = 10, MinNetWorth = 50_000 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    AssertRuleError(() => casino.SpinSlots(player, "vip", 100, 1, DateTime.UtcNow), "a player below the machine's net worth gate spins it");
+
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertTrue(board.SlotMachines.Single().Locked, "the board should show the machine as locked too");
+
+    player.Cash = 60_000;
+    AssertRuleError(() => casino.SpinSlots(player, "vip", 50, 1, DateTime.UtcNow), "a bet below the table minimum is placed");
+    AssertRuleError(() => casino.SpinSlots(player, "vip", 1_500, 1, DateTime.UtcNow), "a bet above the table maximum is placed");
+    AssertRuleError(() => casino.SpinSlots(player, "vip", 100, 6, DateTime.UtcNow), "too many lanes are bought");
+}
+
+static void CasinoSlotsCapJackpotPayoutsByMachine()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "cap", Name = "Cap Slots", MinBet = 100, MaxBet = 500, MaxWinMultiplier = 50 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 10, TripleMultiplier = 500 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var transaction = casino.SpinSlots(player, "cap", 100, 1, DateTime.UtcNow).Transaction;
+
+    AssertEqual(5_900L, player.Cash);
+    AssertEqual(5_000L, transaction.PayoutAmount);
+    AssertEqual(4_900L, transaction.NetResult);
+}
+
+static void CasinoSlotsDrawNineCellsAndPayLanes()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "lanes", Name = "Lane Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 50 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 3 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 0, TripleMultiplier = 4 },
+                new SlotSymbolOptions { Key = "c", Label = "C", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ScriptedRandom(
+        0.0, 0.0, 0.0,
+        0.4, 0.8, 0.4,
+        0.8, 0.8, 0.8));
+
+    var spin = casino.SpinSlots(player, "lanes", 10, 5, DateTime.UtcNow);
+    var response = casino.ToResponse(spin.Transaction);
+
+    AssertEqual(9, response.Symbols.Count);
+    AssertEqual(5, spin.Transaction.Paylines);
+    AssertEqual(2, spin.Transaction.WinningPaylines);
+    AssertEqual(50L, spin.Transaction.BetAmount);
+    AssertEqual(80L, spin.Transaction.PayoutAmount);
+    AssertEqual(30L, spin.Transaction.NetResult);
+    AssertEqual(1_030L, player.Cash);
+    AssertEqual("1,3", string.Join(",", response.WinningPaylineIndexes));
+}
+
+static void CasinoSlotsPayOnlyLeftToRightMatches()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "left", Name = "Left Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 50 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 5, TripleMultiplier = 20 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 5, TripleMultiplier = 20 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var scatteredPlayer = new Player { Id = Guid.NewGuid(), Cash = 1_000, City = "Detroit" };
+    var adjacentPlayer = new Player { Id = Guid.NewGuid(), Cash = 1_000, City = "Detroit" };
+
+    var scattered = CreateCasino(db, options, new ScriptedRandom(0.0, 0.75, 0.0))
+        .SpinSlots(scatteredPlayer, "left", 10, 1, DateTime.UtcNow)
+        .Transaction;
+    var adjacent = CreateCasino(db, options, new ScriptedRandom(0.0, 0.0, 0.75))
+        .SpinSlots(adjacentPlayer, "left", 10, 1, DateTime.UtcNow)
+        .Transaction;
+
+    AssertEqual(0L, scattered.PayoutAmount);
+    AssertEqual(-10L, scattered.NetResult);
+    AssertEqual(50L, adjacent.PayoutAmount);
+    AssertEqual(40L, adjacent.NetResult);
+
+    AssertEqual(0, CreateCasino(db, options).ToResponse(scattered).WinningPaylineIndexes.Count);
+    AssertEqual("1", string.Join(",", CreateCasino(db, options).ToResponse(adjacent).WinningPaylineIndexes));
+}
+
+static void CasinoSlotsEarnStandingAndUnlockMachines()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            RepPerDollarWagered = 0.1,
+            Levels =
+            [
+                new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
+                new CasinoRepLevelOptions { Level = 2, Name = "Regular", Rep = 10 }
+            ],
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "open", Name = "Open Slots", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10 },
+                new SlotMachineOptions { Key = "back", Name = "Back Room", MinBet = 100, MaxBet = 100, MaxWinMultiplier = 10, MinCasinoRepLevel = 2 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var before = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertTrue(before.SlotMachines.Single(x => x.Key == "back").Locked, "the back room starts shut");
+    AssertEqual(0, before.Reputation.Rep);
+    AssertEqual("Walk-In", before.Reputation.LevelName);
+
+    var spin = casino.SpinSlots(player, "open", 100, 1, DateTime.UtcNow);
+    var after = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+
+    AssertEqual(10, spin.RepEarned);
+    AssertEqual(10d, player.CasinoRep);
+    AssertEqual("Regular", after.Reputation.LevelName);
+    AssertTrue(!after.SlotMachines.Single(x => x.Key == "back").Locked, "wagered cash should open the next room");
+}
+
+static void CasinoStandingResetsWithTheSeason()
+{
+    using var world = NewCrewWorld();
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 9, 3, 4, 45, 0, DateTimeKind.Utc);
+    var player = world.Member("Lucky", cash: 500_000);
+    player.CasinoRep = 1_234;
+    world.Db.CasinoTransactions.Add(new CasinoTransaction
+    {
+        PlayerId = player.Id,
+        MachineKey = "sidewalk",
+        BetAmount = 100,
+        PayoutAmount = 0,
+        NetResult = -100,
+        Outcome = "cash,chain,seven",
+        CreatedAtUtc = now
+    });
+    world.Db.SaveChanges();
+
+    seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+
+    AssertEqual(0d, player.CasinoRep);
+    AssertEqual(0, world.Db.CasinoTransactions.Count());
 }
 
 /// <summary>
@@ -11637,6 +11898,12 @@ static EconomyService CreateEconomy(GameOptions? options = null, IGameRandom? ra
         new PimpRoster(Snapshot(resolved), new MinimumRandom()));
 }
 
+static CasinoService CreateCasino(GameDbContext db, GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new CasinoService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
+}
+
 /// <summary>
 /// Built without a database on purpose. The methods under test here decide what held ground is worth
 /// and how much of it a tier may run, and neither reads a row: the caller hands them the ground.
@@ -11673,6 +11940,7 @@ static GameOptions Resolve(GameOptions? options)
     resolved.Territory.ApplyDefaultsWhereEmpty();
     resolved.CityMarkets.ApplyDefaultsWhereEmpty(resolved.Territory.Cities());
     resolved.Store.ApplyDefaultsWhereEmpty();
+    resolved.Casino.ApplyDefaultsWhereEmpty();
     return resolved;
 }
 

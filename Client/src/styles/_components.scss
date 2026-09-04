@@ -1126,6 +1126,163 @@ input:focus-visible, textarea:focus-visible {
 // reason the choice exists.
 .tile { cursor: pointer; }
 
+// Three fixed reels, because slot labels change length every pull and the
+// machine should feel solid instead of resizing under the player's hand.
+.slot-reels {
+  position: relative;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-self: center;
+  width: 100%;
+  max-inline-size: 360px;
+  --slot-face-size: clamp(34px, 7vw, 48px);
+}
+
+.slot-reel {
+  position: relative;
+  z-index: 1;
+  min-height: 92px;
+  aspect-ratio: 1 / 1;
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
+  align-items: center;
+  overflow: hidden;
+  padding: $spacer * .5;
+
+  &.is-spinning {
+    border-color: rgba($gold, .45) !important;
+  }
+
+  &.is-winning {
+    border-color: rgba($gold, .78) !important;
+    background: rgba($gold, .1) !important;
+    box-shadow: inset 0 0 0 1px rgba($gold, .18), 0 0 .75rem rgba($gold, .16);
+  }
+}
+
+.slot-reel-window {
+  position: relative;
+  display: grid;
+  inline-size: var(--slot-face-size);
+  block-size: var(--slot-face-size);
+  overflow: hidden;
+  border: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
+  border-radius: 50%;
+  background: rgba($gold, .08);
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    z-index: 1;
+    block-size: 34%;
+    pointer-events: none;
+  }
+
+  &::before {
+    inset-block-start: 0;
+    background: linear-gradient(to bottom, var(--#{$prefix}body-bg), rgba($black, 0));
+  }
+
+  &::after {
+    inset-block-end: 0;
+    background: linear-gradient(to top, var(--#{$prefix}body-bg), rgba($black, 0));
+  }
+}
+
+.slot-reel-strip {
+  display: grid;
+  transform: translateY(0);
+}
+
+.slot-reel.is-spinning .slot-reel-strip {
+  animation-name: slot-reel-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.slot-reel-face {
+  display: grid;
+  place-items: center;
+  min-block-size: var(--slot-face-size);
+
+  span {
+    display: grid;
+    place-items: center;
+    inline-size: min(44px, calc(var(--slot-face-size) - 8px));
+    block-size: min(44px, calc(var(--slot-face-size) - 8px));
+    border-radius: 50%;
+    background: rgba($gold, .16);
+    color: $gold;
+    font-weight: $font-weight-bolder;
+  }
+}
+
+.slot-reel-label {
+  font-size: .86rem;
+  text-align: center;
+  padding-inline: .25rem;
+}
+
+.slot-payline-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.slot-payline-hit {
+  fill: none;
+  stroke: $gold;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: .08;
+  filter: drop-shadow(0 0 .14rem rgba($gold, .72));
+  animation: slot-payline-hit 720ms ease-out both;
+}
+
+@keyframes slot-reel-spin {
+  to { transform: translateY(calc(var(--slot-face-size) * -7)); }
+}
+
+@keyframes slot-payline-hit {
+  0% {
+    opacity: 0;
+    stroke-width: .02;
+  }
+  40% {
+    opacity: 1;
+    stroke-width: .12;
+  }
+  100% {
+    opacity: 1;
+    stroke-width: .08;
+  }
+}
+
+[data-motion="reduced"] .slot-reel.is-spinning .slot-reel-strip {
+  animation: none;
+}
+
+[data-motion="reduced"] .slot-payline-hit {
+  animation: none;
+}
+
+.casino-jackpot {
+  background: rgba($gold, .08);
+  animation: casino-jackpot-pulse 900ms ease-out 1;
+}
+
+@keyframes casino-jackpot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba($gold, .45); }
+  100% { box-shadow: 0 0 0 .8rem rgba($gold, 0); }
+}
+
+[data-motion="reduced"] .casino-jackpot {
+  animation: none;
+}
+
 // The opening ladder. A tick column, then the rung.
 .ladder-row {
   grid-template-columns: 20px 1fr;

@@ -8,6 +8,80 @@ export type Activity = {
   createdAtUtc: string
 }
 
+export type CasinoMachine = {
+  key: string
+  name: string
+  blurb: string
+  minBet: number
+  maxBet: number
+  maxWinMultiplier: number
+  jackpot: number
+  maxPaylines: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type SlotPayline = {
+  index: number
+  name: string
+  cells: number[]
+}
+
+export type CasinoReputation = {
+  rep: number
+  level: number
+  levelName: string
+  nextLevel?: number | null
+  nextLevelName?: string | null
+  nextLevelRep?: number | null
+  repToNextLevel: number
+  progressPercent: number
+  dollarsWageredPerRep: number
+}
+
+export type CasinoStats = {
+  spins: number
+  wagered: number
+  won: number
+  net: number
+}
+
+export type CasinoTransaction = {
+  id: number
+  gameType: string
+  machineKey: string
+  machineName: string
+  paylines: number
+  winningPaylines: number
+  betAmount: number
+  payoutAmount: number
+  netResult: number
+  symbols: string[]
+  winningPaylineIndexes: number[]
+  jackpot: boolean
+  createdAtUtc: string
+}
+
+export type CasinoBoard = {
+  slotMachines: CasinoMachine[]
+  paylines: SlotPayline[]
+  reputation: CasinoReputation
+  stats: CasinoStats
+  recent: CasinoTransaction[]
+}
+
+export type SlotSpin = {
+  transaction: CasinoTransaction
+  symbols: string[]
+  cash: number
+  bankCash: number
+  repEarned: number
+  reputation: CasinoReputation
+  stats: CasinoStats
+}
+
 export type StoreItem = {
   key: string
   name: string
@@ -1979,6 +2053,11 @@ export const api = {
   withdraw: (amount: number) => request<ActionResult>('/api/game/bank/withdraw', {
     method: 'POST',
     body: JSON.stringify({ amount }),
+  }),
+  casino: () => request<CasinoBoard>('/api/game/casino'),
+  spinSlots: (machineKey: string, bet: number, paylines: number) => request<SlotSpin>('/api/game/casino/slots/spin', {
+    method: 'POST',
+    body: JSON.stringify({ machineKey, bet, paylines }),
   }),
   /** Marks the opening walkthrough done, or false to put it back in front of the player. */
   /** Switches one lab on or off, and whether it sells what it makes. */

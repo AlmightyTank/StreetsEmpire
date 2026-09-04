@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, SlotSpin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -35,6 +35,49 @@ window.bootstrap = bootstrap
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('en-US')
+
+function signedMoney(value: number) {
+  return `${value >= 0 ? '+' : '-'}${money.format(Math.abs(value))}`
+}
+
+function slotIcon(symbol: string) {
+  const name = symbol.toLowerCase()
+  if (name.includes('cash')) return '$'
+  if (name.includes('chain')) return 'CH'
+  if (name.includes('pistol')) return 'P'
+  if (name.includes('rider')) return 'LR'
+  if (name.includes('crown')) return 'K'
+  if (name.includes('seven')) return '7'
+  if (name.includes('vault')) return 'V'
+  return '?'
+}
+
+const slotIdleSymbols = ['Cash Stack', 'Gold Chain', 'Seven']
+const slotSpinSymbols = ['Cash Stack', 'Gold Chain', 'Pistol', 'Luxury Rider', 'Crown', 'Seven', 'Vault']
+const slotSpinDurationMs = 950
+const slotGridSize = 9
+
+function slotReelSymbols(reel: number) {
+  return Array.from({ length: 12 }, (_, index) => slotSpinSymbols[(index + reel * 2) % slotSpinSymbols.length])
+}
+
+function slotGridSymbols(symbols?: string[]) {
+  const base = symbols && symbols.length >= slotGridSize ? symbols.slice(0, slotGridSize) : slotIdleSymbols
+  return Array.from({ length: slotGridSize }, (_, index) => base[index % base.length])
+}
+
+function slotGridText(symbols: string[]) {
+  const grid = slotGridSymbols(symbols)
+  return [0, 3, 6].map(start => grid.slice(start, start + 3).join(' / ')).join(' | ')
+}
+
+function slotPaylinePoints(cells: number[]) {
+  return cells.map(cell => `${cell % 3 + 0.5},${Math.floor(cell / 3) + 0.5}`).join(' ')
+}
+
+function wait(ms: number) {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
 
 async function copyToClipboard(value: string) {
   if (navigator.clipboard) {
@@ -234,7 +277,7 @@ function LandingView({ stats }: { stats: PublicStats | null }) {
   </section>
 }
 
-type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'seasons' | 'updates' | 'alliance' | 'account' | 'admin'
+type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'casino' | 'recon' | 'seasons' | 'updates' | 'alliance' | 'account' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
 // unlike the old self-only cheats these work on anybody and leave a record with a reason.
@@ -267,6 +310,7 @@ const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }
   street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
   crew: { label: 'Crew', short: 'CR', kicker: 'Morale, rooms and craft' },
   market: { label: 'Business', short: 'BZ', kicker: 'Shop, market and runs' },
+  casino: { label: 'Casino', short: 'CA', kicker: 'Slots and house money' },
   recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
   seasons: { label: 'Seasons', short: 'SN', kicker: 'The clock and the record' },
   updates: { label: 'Updates', short: 'UP', kicker: 'Patch notes and events' },
@@ -321,6 +365,7 @@ function flowTarget(name: string): { page: AppPage, tab?: string, area?: string 
   if (name === 'market') return { page: 'market', tab: 'trade' }
   if (name === 'flea') return { page: 'market', tab: 'flea' }
   if (name === 'mules') return { page: 'market', tab: 'routes' }
+  if (name === 'casino') return { page: 'casino' }
 
   if (name === 'street') return { page: 'street', area: 'street-action' }
   if (name === 'supplies') return { page: 'street', area: 'supplies' }
@@ -2220,6 +2265,7 @@ function renderPage(page: AppPage, ctx: PageContext) {
     case 'street': return <StreetPage {...ctx} />
     case 'crew': return <CrewPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
+    case 'casino': return <CasinoPage {...ctx} />
     case 'recon': return <CombatPage {...ctx} />
     case 'seasons': return <SeasonsPage {...ctx} />
     case 'updates': return <UpdatesPage {...ctx} />
@@ -2718,6 +2764,7 @@ function OverviewPage(ctx: PageContext) {
           <button className="btn btn-primary" onClick={() => setActivePage('street')}>Work Streets</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('crew')}>Manage Crew</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('market')}>Open Business</button>
+          <button className="btn btn-secondary" onClick={() => setActivePage('casino')}>Hit Casino</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('recon')}>Raids & Map</button>
         </div>
       </section>
@@ -3032,6 +3079,272 @@ function updateSeverityClass(severity: GameAnnouncement['severity']) {
       : severity === 'Maintenance'
         ? 'text-bg-danger'
         : 'text-bg-light border'
+}
+
+function CasinoPage(ctx: PageContext) {
+  const { dashboard, busy, refresh, act } = ctx
+  const [board, setBoard] = useState<CasinoBoard | null>(null)
+  const [activeKey, setActiveKey] = useState('')
+  const [bet, setBet] = useState(10)
+  const [paylines, setPaylines] = useState(1)
+  const [lastSpin, setLastSpin] = useState<SlotSpin | null>(null)
+  const [spinning, setSpinning] = useState(false)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let live = true
+    void api.casino()
+      .then(next => {
+        if (!live) return
+        setBoard(next)
+        const firstOpen = next.slotMachines.find(machine => !machine.locked) ?? next.slotMachines[0]
+        if (firstOpen) {
+          setActiveKey(firstOpen.key)
+          setBet(firstOpen.minBet)
+        }
+        setLoadError('')
+      })
+      .catch(error => { if (live) setLoadError((error as Error).message) })
+    return () => { live = false }
+  }, [dashboard.playerId])
+
+  const active = board?.slotMachines.find(machine => machine.key === activeKey)
+    ?? board?.slotMachines.find(machine => !machine.locked)
+    ?? board?.slotMachines[0]
+  const lineLimit = active ? Math.max(1, Math.min(active.maxPaylines, board?.paylines.length ?? active.maxPaylines)) : 1
+  const lineCount = Math.min(Math.max(paylines, 1), lineLimit)
+  const clampedBet = active ? Math.min(Math.max(bet, active.minBet), active.maxBet) : bet
+  const totalBet = clampedBet * lineCount
+
+  useEffect(() => {
+    if (active && bet !== clampedBet) setBet(clampedBet)
+    if (paylines !== lineCount) setPaylines(lineCount)
+  }, [active?.key, bet, clampedBet, paylines, lineCount])
+
+  const runSpin = async () => {
+    if (!active || spinning) return
+    const started = window.performance.now()
+    let spin: SlotSpin | null = null
+    setSpinning(true)
+    try {
+      await act(async () => {
+        spin = await api.spinSlots(active.key, clampedBet, lineCount)
+        return spin
+      })
+      const remaining = slotSpinDurationMs - (window.performance.now() - started)
+      if (remaining > 0) await wait(remaining)
+    } finally {
+      setSpinning(false)
+    }
+    if (!spin) return
+    setLastSpin(spin)
+    setBoard(current => current
+      ? {
+          ...current,
+          reputation: spin!.reputation,
+          stats: spin!.stats,
+          recent: [spin!.transaction, ...current.recent.filter(entry => entry.id !== spin!.transaction.id)].slice(0, 8),
+        }
+      : current)
+    await refresh()
+  }
+
+  if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Casino Floor</h2><span>Closed</span></div><p>{loadError}</p></section>
+  if (!board || !active) return <section className="card p-3"><div className="panel-title"><h2>Casino Floor</h2><span>Loading</span></div><p>The cage is counting chips.</p></section>
+
+  const bestJackpot = board.slotMachines.reduce((best, machine) => Math.max(best, machine.jackpot), 0)
+  const spinBlocked = firstReason(
+    spinning && 'The reels are still turning.',
+    busy && BUSY,
+    active.locked && (active.lockedReason ?? 'That machine is locked.'),
+    clampedBet < active.minBet && `${active.name} starts at ${money.format(active.minBet)}.`,
+    clampedBet > active.maxBet && `${active.name} tops out at ${money.format(active.maxBet)}.`,
+    dashboard.cash < totalBet && `You are carrying ${money.format(dashboard.cash)}.`,
+  )
+  const winningLines = !spinning && lastSpin
+    ? board.paylines.filter(line => lastSpin.transaction.winningPaylineIndexes.includes(line.index))
+    : []
+  const winningCells = new Set(winningLines.flatMap(line => line.cells))
+
+  return <div className="d-grid gtc-1 gtc-xl-split-135 gap-3 align-items-start">
+    <section className="card p-3 gcol-full">
+      <div className="panel-title"><h2>Casino Floor</h2><span>{dashboard.city}</span></div>
+      <div className="d-grid gtc-fill-180 gap-2 mt-3">
+        {board.slotMachines.map(machine => <CasinoMachineTile
+          machine={machine}
+          active={machine.key === active.key}
+          bet={bet}
+          busy={busy}
+          onPick={() => {
+            setActiveKey(machine.key)
+            setBet(Math.min(Math.max(bet, machine.minBet), machine.maxBet))
+          }}
+          key={machine.key}
+        />)}
+      </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>{active.name}</h2><span>{money.format(active.minBet)} min</span></div>
+      <p>{active.blurb}</p>
+      <div className="d-flex flex-wrap gap-2 align-items-center">
+        <span className="badge text-bg-primary">Jackpot {money.format(active.jackpot)}</span>
+        {active.minRepLevel > 1 && <span className="badge text-bg-secondary">{active.minRepLevelName} floor</span>}
+      </div>
+      <div className="slot-reels d-grid gap-2 my-3" aria-label="Slot reels">
+        {slotGridSymbols(lastSpin?.symbols).map((symbol, index) => {
+          const reelSymbols = spinning ? slotReelSymbols(index) : [symbol]
+          return <div
+            className={`slot-reel d-grid border rounded bg-body-tertiary ${spinning ? 'is-spinning' : ''} ${winningCells.has(index) ? 'is-winning' : ''}`}
+            aria-label={spinning ? `Slot ${index + 1} spinning` : `Slot ${index + 1}: ${symbol}`}
+            key={`${active.key}-${index}`}
+          >
+            <div className="slot-reel-window" aria-hidden="true">
+              <div
+                className="slot-reel-strip"
+                style={{ animationDelay: `${index * -130}ms`, animationDuration: `${520 + index * 80}ms` }}
+              >
+                {reelSymbols.map((reelSymbol, reelIndex) =>
+                  <div className="slot-reel-face" key={`${reelSymbol}-${reelIndex}`}>
+                    <span>{slotIcon(reelSymbol)}</span>
+                  </div>)}
+              </div>
+            </div>
+            <strong className="slot-reel-label">{spinning ? 'Spinning' : symbol}</strong>
+          </div>
+        })}
+        {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox="0 0 3 3" preserveAspectRatio="none" aria-hidden="true">
+          {winningLines.map(line => <polyline className="slot-payline-hit" points={slotPaylinePoints(line.cells)} key={line.index} />)}
+        </svg>}
+      </div>
+      <div className="control-block mb-3">
+        <div className="d-flex justify-content-between gap-3 align-items-baseline">
+          <strong>Lanes</strong>
+          <small className="text-body-tertiary">{money.format(clampedBet)} each, {money.format(totalBet)} total</small>
+        </div>
+        <div className="btn-group w-100" role="group" aria-label="Paylines">
+          {Array.from({ length: lineLimit }, (_, index) => index + 1).map(count =>
+            <button
+              className={`btn ${lineCount === count ? 'btn-primary' : 'btn-secondary'}`}
+              type="button"
+              disabled={busy || spinning}
+              onClick={() => setPaylines(count)}
+              key={count}
+            >
+              {count}
+            </button>)}
+        </div>
+        <small className="text-body-tertiary">
+          {board.paylines.slice(0, lineCount).map(line => line.name).join(', ')}
+        </small>
+      </div>
+      <div className="control-row">
+        <label className="field">Bet / lane
+          <input
+            className="form-control"
+            type="number"
+            min={active.minBet}
+            max={active.maxBet}
+            step={active.minBet}
+            value={bet}
+            onChange={event => setBet(Number(event.target.value))}
+          />
+        </label>
+        <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(active.minBet)}>Min</button>
+        <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(Math.min(active.maxBet, Math.floor(dashboard.cash / lineCount)))}>Max</button>
+        <Button className="btn btn-primary" blocked={spinBlocked} onClick={() => void runSpin()}>
+          Spin {money.format(totalBet)}
+        </Button>
+      </div>
+      {lastSpin && <div className={`border rounded p-3 mt-3 ${lastSpin.transaction.jackpot ? 'border-warning casino-jackpot' : lastSpin.transaction.netResult >= 0 ? 'border-success' : 'border-secondary'}`}>
+        <div className="d-flex justify-content-between gap-3 align-items-baseline">
+          <strong>{lastSpin.transaction.jackpot ? 'Jackpot' : lastSpin.transaction.netResult >= 0 ? 'Paid out' : 'No hit'}</strong>
+          <span className={`tnum ${lastSpin.transaction.jackpot ? 'text-warning' : lastSpin.transaction.netResult >= 0 ? 'text-success' : 'text-body-secondary'}`}>
+            {signedMoney(lastSpin.transaction.netResult)}
+          </span>
+        </div>
+        <small className="text-body-tertiary">
+          Bet {money.format(lastSpin.transaction.betAmount)}. Won {money.format(lastSpin.transaction.payoutAmount)}.
+          {lastSpin.repEarned > 0 && ` +${number.format(lastSpin.repEarned)} casino rep.`}
+        </small>
+      </div>}
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Floor Standing</h2><span>{board.reputation.levelName}</span></div>
+      <div className="d-grid gap-2">
+        <div className="d-flex justify-content-between align-items-baseline gap-3">
+          <strong>{number.format(board.reputation.rep)} rep</strong>
+          <small className="text-body-tertiary">
+            {board.reputation.nextLevelName
+              ? `${number.format(board.reputation.repToNextLevel)} to ${board.reputation.nextLevelName}`
+              : 'Top of the floor'}
+          </small>
+        </div>
+        <div className="progress" role="progressbar" aria-label="Casino standing" aria-valuenow={board.reputation.progressPercent} aria-valuemin={0} aria-valuemax={100}>
+          <div className="progress-bar bg-primary" style={{ width: `${Math.max(2, board.reputation.progressPercent)}%` }} />
+        </div>
+      </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Casino Stats</h2><span>{number.format(board.stats.spins)} spins</span></div>
+      <div className="d-grid gtc-2 gap-2">
+        <AdminMetric label="Wagered" value={money.format(board.stats.wagered)} />
+        <AdminMetric label="Returned" value={money.format(board.stats.won)} />
+        <AdminMetric label="Net" value={signedMoney(board.stats.net)} />
+        <AdminMetric label="Best jackpot" value={money.format(bestJackpot)} />
+      </div>
+    </section>
+
+    <section className="card p-3 gcol-full">
+      <div className="panel-title"><h2>Casino Ledger</h2><span>Recent pulls</span></div>
+      {board.recent.length === 0
+        ? <p className="text-body-tertiary mb-0">No spins yet.</p>
+        : <div className="table-responsive">
+            <table className="table table-sm game-table align-middle mb-0">
+              <thead><tr><th>Machine</th><th>Grid</th><th>Lines</th><th>Bet</th><th>Payout</th><th>Net</th><th>When</th></tr></thead>
+              <tbody>
+                {board.recent.map(entry => <tr key={entry.id}>
+                  <td>{entry.machineName}{entry.jackpot && <span className="badge text-bg-warning ms-2">Jackpot</span>}</td>
+                  <td>{slotGridText(entry.symbols)}</td>
+                  <td>{entry.winningPaylines}/{entry.paylines}</td>
+                  <td>{money.format(entry.betAmount)}</td>
+                  <td>{money.format(entry.payoutAmount)}</td>
+                  <td className={entry.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(entry.netResult)}</td>
+                  <td>{new Date(entry.createdAtUtc).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>}
+    </section>
+  </div>
+}
+
+function CasinoMachineTile({ machine, active, bet, busy, onPick }: {
+  machine: CasinoMachine
+  active: boolean
+  bet: number
+  busy: boolean
+  onPick: () => void
+}) {
+  return <button
+    className={`tile d-grid gap-1 text-start border rounded p-2 ${active ? 'active border-primary' : 'bg-body-tertiary'} ${machine.locked ? 'opacity-75' : ''}`}
+    type="button"
+    disabled={busy}
+    title={machine.lockedReason ?? machine.blurb}
+    onClick={onPick}
+  >
+    <strong className="text-body">{machine.name}</strong>
+    <small className="text-body-tertiary small">
+      {money.format(machine.minBet)}-{money.format(machine.maxBet)} / jackpot {money.format(machine.jackpot)}
+    </small>
+    {machine.locked
+      ? <small className="text-warning small">{machine.lockedReason}</small>
+      : <small className="text-primary small">
+          {machine.minRepLevel > 1 ? `${machine.minRepLevelName} floor / ` : ''}Current pull {money.format(Math.min(Math.max(bet, machine.minBet), machine.maxBet))}
+        </small>}
+  </button>
 }
 
 function StreetPage(ctx: PageContext) {

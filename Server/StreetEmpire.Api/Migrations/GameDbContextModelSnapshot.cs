@@ -518,6 +518,61 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("BetaKeys");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.CasinoTransaction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BetAmount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GameType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("MachineKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<long>("NetResult")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<int>("Paylines")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<long>("PayoutAmount")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("WinningPaylines")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId", "CreatedAtUtc");
+
+                    b.HasIndex("GameType", "MachineKey", "CreatedAtUtc");
+
+                    b.ToTable("CasinoTransactions");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>
                 {
                     b.Property<long>("Id")
@@ -1739,6 +1794,9 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<long>("Cash")
                         .HasColumnType("bigint");
 
+                    b.Property<double>("CasinoRep")
+                        .HasColumnType("double precision");
+
                     b.Property<DateTime?>("CatchUpSeenAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2768,6 +2826,17 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Author");
 
                     b.Navigation("Conversation");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.CasinoTransaction", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.CombatLog", b =>

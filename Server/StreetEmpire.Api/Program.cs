@@ -52,6 +52,7 @@ builder.Services.AddOptions<GameOptions>().PostConfigure<GameOptionOverrides>((o
     options.Territory.ApplyDefaultsWhereEmpty();
     options.CityMarkets.ApplyDefaultsWhereEmpty(options.Territory.Cities());
     options.Store.ApplyDefaultsWhereEmpty();
+    options.Casino.ApplyDefaultsWhereEmpty();
 });
 builder.Services.Configure<BotAutomationOptions>(builder.Configuration.GetSection("Bots"));
 builder.Services.AddDbContext<GameDbContext>(options =>
@@ -70,6 +71,7 @@ builder.Services.AddScoped<ArrestService>();
 builder.Services.AddScoped<GuidanceService>();
 builder.Services.AddScoped<TraderJobService>();
 builder.Services.AddScoped<TraderShelfService>();
+builder.Services.AddScoped<CasinoService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 // Singleton for the same reason the standings gate is: it exists to stop every request in a busy
@@ -591,6 +593,7 @@ app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();
 app.MapMuleEndpoints();
 app.MapArrestEndpoints();
+app.MapCasinoEndpoints();
 app.MapTraderJobEndpoints();
 app.MapChatEndpoints();
 app.MapAdminPlayerEndpoints();

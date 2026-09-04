@@ -24,6 +24,7 @@ public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record TravelRequest(string? City);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
 public sealed record BankRequest(long Amount);
+public sealed record SlotSpinRequest(string? MachineKey, long Bet, int Paylines = 1);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
 public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);
@@ -82,6 +83,73 @@ public sealed record AttackMethodResponse(
     int TurnCost,
     string Description,
     string? BlockedReason);
+
+public sealed record CasinoBoardResponse(
+    IReadOnlyList<SlotMachineResponse> SlotMachines,
+    IReadOnlyList<SlotPaylineResponse> Paylines,
+    CasinoRepResponse Reputation,
+    CasinoStatsResponse Stats,
+    IReadOnlyList<CasinoTransactionResponse> Recent);
+
+public sealed record SlotPaylineResponse(
+    int Index,
+    string Name,
+    IReadOnlyList<int> Cells);
+
+public sealed record SlotMachineResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    long MinBet,
+    long MaxBet,
+    int MaxWinMultiplier,
+    long Jackpot,
+    int MaxPaylines,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record CasinoRepResponse(
+    int Rep,
+    int Level,
+    string LevelName,
+    int? NextLevel,
+    string? NextLevelName,
+    int? NextLevelRep,
+    int RepToNextLevel,
+    int ProgressPercent,
+    int DollarsWageredPerRep);
+
+public sealed record CasinoStatsResponse(
+    int Spins,
+    long Wagered,
+    long Won,
+    long Net);
+
+public sealed record CasinoTransactionResponse(
+    long Id,
+    string GameType,
+    string MachineKey,
+    string MachineName,
+    int Paylines,
+    int WinningPaylines,
+    long BetAmount,
+    long PayoutAmount,
+    long NetResult,
+    IReadOnlyList<string> Symbols,
+    IReadOnlyList<int> WinningPaylineIndexes,
+    bool Jackpot,
+    DateTime CreatedAtUtc);
+
+public sealed record SlotSpinResponse(
+    CasinoTransactionResponse Transaction,
+    IReadOnlyList<string> Symbols,
+    long Cash,
+    long BankCash,
+    int RepEarned,
+    CasinoRepResponse Reputation,
+    CasinoStatsResponse Stats);
 
 public sealed record StoreSellRequest(string? ItemKey, int Quantity);
 

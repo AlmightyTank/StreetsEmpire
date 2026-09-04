@@ -151,6 +151,16 @@ public sealed class Player
     public double StoreRep { get; set; }
 
     /// <summary>
+    /// Standing on the casino floor, earned by putting cash through the slots.
+    ///
+    /// It is separate from store standing because the two rooms remember different things: the counter
+    /// trusts steady trade, while the casino trusts action. A player who gambles heavily should be
+    /// known by the cage without making the gun dealer any friendlier, and a trader with a clean store
+    /// record should not walk straight into the private machines.
+    /// </summary>
+    public double CasinoRep { get; set; }
+
+    /// <summary>
     /// When the counter will take another investment. Null means now.
     ///
     /// One clock across every favour rather than one per favour, because what is being modelled is the

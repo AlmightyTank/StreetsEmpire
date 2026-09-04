@@ -262,6 +262,7 @@ public sealed class GameOptions
     public CityMarketOptions CityMarkets { get; set; } = new();
     public MuleOptions Mules { get; set; } = new();
     public BankOptions Bank { get; set; } = new();
+    public CasinoOptions Casino { get; set; } = new();
     public ArrestOptions Arrests { get; set; } = new();
     public SeasonOptions Seasons { get; set; } = new();
     public StoreOptions Store { get; set; } = new();
@@ -1871,6 +1872,145 @@ public sealed class BankOptions
     /// current pricing day.
     /// </summary>
     public int MaxTripTurnCost { get; set; } = 10;
+}
+
+/// <summary>
+/// The playable casino inside the Casino District.
+///
+/// Cash goes in and out of the player's hand for now. That keeps chips from becoming a second bank:
+/// money carried into the district is still money somebody can take if the player gets careless.
+/// </summary>
+public sealed class CasinoOptions
+{
+    public bool Enabled { get; set; } = true;
+    public int HistoryDepth { get; set; } = 8;
+    public double RepPerDollarWagered { get; set; } = 0.005;
+    public List<CasinoRepLevelOptions> Levels { get; set; } = [];
+    public List<SlotMachineOptions> SlotMachines { get; set; } = [];
+    public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
+
+    public SlotMachineOptions? Machine(string? key)
+        => SlotMachines.FirstOrDefault(x => string.Equals(x.Key, key?.Trim().ToLowerInvariant(), StringComparison.Ordinal));
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (SlotMachines.Count == 0)
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions
+                {
+                    Key = "sidewalk",
+                    Name = "Sidewalk Slots",
+                    Blurb = "Cheap pulls under bad neon. Small bets, fast trouble.",
+                    MinBet = 10,
+                    MaxBet = 100,
+                    MaxWinMultiplier = 50
+                },
+                new SlotMachineOptions
+                {
+                    Key = "neon",
+                    Name = "Neon Fortune",
+                    Blurb = "A louder room with heavier bills moving through it.",
+                    MinBet = 100,
+                    MaxBet = 1_000,
+                    MaxWinMultiplier = 100,
+                    MinCasinoRepLevel = 2,
+                    MinNetWorth = 50_000
+                },
+                new SlotMachineOptions
+                {
+                    Key = "kingpin",
+                    Name = "Kingpin",
+                    Blurb = "The table boss watches every pull.",
+                    MinBet = 1_000,
+                    MaxBet = 10_000,
+                    MaxWinMultiplier = 250,
+                    MinCasinoRepLevel = 3,
+                    MinNetWorth = 500_000
+                },
+                new SlotMachineOptions
+                {
+                    Key = "vault",
+                    Name = "The Vault",
+                    Blurb = "A private cage for people with more cash than caution.",
+                    MinBet = 10_000,
+                    MaxBet = 100_000,
+                    MaxWinMultiplier = 500,
+                    MinCasinoRepLevel = 4,
+                    MinNetWorth = 2_500_000
+                }
+            ];
+        }
+
+        if (Levels.Count == 0)
+        {
+            Levels =
+            [
+                new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
+                new CasinoRepLevelOptions { Level = 2, Name = "Regular", Rep = 100 },
+                new CasinoRepLevelOptions { Level = 3, Name = "High Roller", Rep = 1_000 },
+                new CasinoRepLevelOptions { Level = 4, Name = "House Name", Rep = 5_000 }
+            ];
+        }
+
+        if (SlotSymbols.Count == 0)
+        {
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 28, PairMultiplier = 2, TripleMultiplier = 8 },
+                new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 22, PairMultiplier = 2, TripleMultiplier = 12 },
+                new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 2, TripleMultiplier = 18 },
+                new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 14, PairMultiplier = 3, TripleMultiplier = 30 },
+                new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 10, PairMultiplier = 4, TripleMultiplier = 55 },
+                new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 8, TripleMultiplier = 100 },
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 20, TripleMultiplier = 500 }
+            ];
+        }
+    }
+
+    public IReadOnlyList<CasinoRepLevelOptions> Ladder()
+        => Levels.OrderBy(x => x.Rep).ThenBy(x => x.Level).ToList();
+
+    public CasinoRepLevelOptions? LevelFor(double rep)
+        => Ladder().LastOrDefault(x => rep >= x.Rep);
+
+    public CasinoRepLevelOptions? NextLevelAfter(double rep)
+        => Ladder().FirstOrDefault(x => rep < x.Rep);
+
+    public CasinoRepLevelOptions? Level(int level)
+        => Levels.FirstOrDefault(x => x.Level == level);
+
+    public string LevelName(int level)
+        => Level(level)?.Name ?? $"level {level}";
+}
+
+public sealed class CasinoRepLevelOptions
+{
+    public int Level { get; set; } = 1;
+    public string Name { get; set; } = string.Empty;
+    public int Rep { get; set; }
+}
+
+public sealed class SlotMachineOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+    public long MinBet { get; set; } = 1;
+    public long MaxBet { get; set; } = 100;
+    public int MaxWinMultiplier { get; set; } = 50;
+    public int MinCasinoRepLevel { get; set; } = 1;
+    public long MinNetWorth { get; set; }
+}
+
+public sealed class SlotSymbolOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Weight { get; set; } = 1;
+    public int PairMultiplier { get; set; }
+    public int TripleMultiplier { get; set; }
 }
 
 /// <summary>

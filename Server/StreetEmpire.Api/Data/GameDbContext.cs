@@ -43,6 +43,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CustomTitle> CustomTitles => Set<CustomTitle>();
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<SeasonResult> SeasonResults => Set<SeasonResult>();
+    public DbSet<CasinoTransaction> CasinoTransactions => Set<CasinoTransaction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -255,6 +256,21 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .OnDelete(DeleteBehavior.Cascade);
             // A result outlives the account it belongs to being deleted only if the row itself goes
             // with it: an honours table full of players nobody can look up is worse than a shorter one.
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CasinoTransaction>(entity =>
+        {
+            // The casino page reads one player's newest rows, and tuning reads the game/machine shape.
+            entity.HasIndex(x => new { x.PlayerId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.GameType, x.MachineKey, x.CreatedAtUtc });
+            entity.Property(x => x.GameType).HasMaxLength(16);
+            entity.Property(x => x.MachineKey).HasMaxLength(32);
+            entity.Property(x => x.Paylines).HasDefaultValue(1);
+            entity.Property(x => x.Outcome).HasMaxLength(240);
             entity.HasOne(x => x.Player)
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)

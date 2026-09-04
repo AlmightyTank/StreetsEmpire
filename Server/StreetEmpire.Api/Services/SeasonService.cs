@@ -438,6 +438,7 @@ public sealed class SeasonService(
         db.MarketListings.RemoveRange(await db.MarketListings.ToListAsync(ct));
         db.MuleRuns.RemoveRange(await db.MuleRuns.ToListAsync(ct));
         db.WorkshopCrafts.RemoveRange(await db.WorkshopCrafts.ToListAsync(ct));
+        db.CasinoTransactions.RemoveRange(await db.CasinoTransactions.ToListAsync(ct));
         // The town's book, and with it every hand dealt out of it. Standing resets with the empire, so
         // a job left standing would be paying last season's rep into this one.
         db.TraderJobs.RemoveRange(await db.TraderJobs.ToListAsync(ct));

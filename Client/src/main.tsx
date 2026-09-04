@@ -190,7 +190,10 @@ function SlotGlyph({ symbol, className }: { symbol: string, className?: string }
   </svg>
 }
 
-const slotSpinDurationMs = 950
+/** How long every reel turns before the first of them is allowed to stop. */
+const slotSpinDurationMs = 620
+/** And the gap between each reel stopping and the next, left to right. */
+const slotReelStopMs = 190
 const slotColumns = 5
 const slotRows = 3
 const slotGridSize = slotColumns * slotRows
@@ -3261,7 +3264,11 @@ function CasinoPage(ctx: PageContext) {
   const [bet, setBet] = useState(10)
   const [paylines, setPaylines] = useState(1)
   const [lastSpin, setLastSpin] = useState<SlotSpin | null>(null)
-  const [spinning, setSpinning] = useState(false)
+  // How many columns have come to rest, left to right. Reels that all stop together read as a
+  // picture appearing rather than as a machine landing, and the column that has not stopped yet is
+  // the only reason to keep watching - so this is a count rather than a flag.
+  const [stoppedColumns, setStoppedColumns] = useState(slotColumns)
+  const spinning = stoppedColumns < slotColumns
   const [compNote, setCompNote] = useState('')
   const [loadError, setLoadError] = useState('')
 
@@ -3299,25 +3306,35 @@ function CasinoPage(ctx: PageContext) {
     if (!active || spinning) return
     const started = window.performance.now()
     let spin: SlotSpin | null = null
-    setSpinning(true)
-    try {
-      await act(async () => {
-        spin = await api.spinSlots(active.key, clampedBet, lineCount)
-        return spin
-      })
-      const remaining = slotSpinDurationMs - (window.performance.now() - started)
-      if (remaining > 0) await wait(remaining)
-    } finally {
-      setSpinning(false)
-    }
+    setStoppedColumns(0)
+    await act(async () => {
+      spin = await api.spinSlots(active.key, clampedBet, lineCount)
+      return spin
+    })
     // Asserted because the assignment happens inside the callback handed to act, which TypeScript's
     // flow analysis does not follow - without this it still reads the variable as its initialiser.
     const settled = spin as SlotSpin | null
-    if (!settled) return
+    if (!settled) {
+      // The cage refused it. Put the reels back rather than leaving them turning on a spin that
+      // never happened.
+      setStoppedColumns(slotColumns)
+      return
+    }
+
+    // The result is known now, and the board takes it immediately: a column that has stopped has to
+    // be showing what it actually landed on. What is still held back is everything that reads as the
+    // verdict - the winning lines, the lit cells, the receipt - all of which wait on the last reel.
     setLastSpin(settled)
     // The whole floor comes back with the spin. It has to: the pot on every machine moved, and the one
     // that was just taken has gone back to its seed with somebody's name against it.
     setBoard(settled.board)
+
+    const spun = window.performance.now() - started
+    if (spun < slotSpinDurationMs) await wait(slotSpinDurationMs - spun)
+    for (let column = 1; column <= slotColumns; column++) {
+      setStoppedColumns(column)
+      if (column < slotColumns) await wait(slotReelStopMs)
+    }
     await refresh()
   }
 
@@ -3417,16 +3434,24 @@ function CasinoPage(ctx: PageContext) {
       </details>
       <div className="slot-reels d-grid gap-2 my-3" aria-label="Slot reels">
         {slotGridSymbols(activeFaces, lastSpin?.symbols).map((symbol, index) => {
-          const reelSymbols = spinning ? slotReelSymbols(index, activeFaces) : [symbol]
+          // A cell belongs to the column it sits in, and its column stops on its own.
+          const turning = index % slotColumns >= stoppedColumns
+          const reelSymbols = turning ? slotReelSymbols(index, activeFaces) : [symbol]
           return <div
-            className={`slot-reel d-grid border rounded bg-body-tertiary ${spinning ? 'is-spinning' : ''} ${winningCells.has(index) ? 'is-winning' : ''}`}
-            aria-label={spinning ? `Slot ${index + 1} spinning` : `Slot ${index + 1}: ${symbol}`}
+            className={`slot-reel d-grid border rounded bg-body-tertiary ${turning ? 'is-spinning' : ''} ${winningCells.has(index) ? 'is-winning' : ''}`}
+            aria-label={turning ? `Reel ${index % slotColumns + 1} spinning` : `Slot ${index + 1}: ${symbol}`}
             key={`${active.key}-${index}`}
           >
             <div className="slot-reel-window" aria-hidden="true">
               <div
                 className="slot-reel-strip"
-                style={{ animationDelay: `${index * -130}ms`, animationDuration: `${520 + index * 80}ms` }}
+                // Timed off the column rather than the cell, so the three cells of a reel turn as one
+                // piece of machinery instead of three loose tiles. Each reel out to the right is a
+                // little slower than the one before it, which is the same order they come to rest in.
+                style={{
+                  animationDelay: `${(index % slotColumns) * -130}ms`,
+                  animationDuration: `${520 + (index % slotColumns) * 90}ms`,
+                }}
               >
                 {reelSymbols.map((reelSymbol, reelIndex) =>
                   <div className="slot-reel-face" key={`${reelSymbol}-${reelIndex}`}>
@@ -3434,7 +3459,7 @@ function CasinoPage(ctx: PageContext) {
                   </div>)}
               </div>
             </div>
-            <strong className="slot-reel-label">{spinning ? 'Spinning' : symbol}</strong>
+            <strong className="slot-reel-label">{turning ? 'Spinning' : symbol}</strong>
           </div>
         })}
         {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox={`0 0 ${slotColumns - 1} ${slotRows - 1}`} preserveAspectRatio="none" aria-hidden="true">
@@ -3480,7 +3505,7 @@ function CasinoPage(ctx: PageContext) {
           Spin {money.format(totalBet)}{board.spinTurnCost > 0 && ` / ${board.spinTurnCost}t`}
         </Button>
       </div>
-      {lastSpin && verdict && <div className={`border rounded p-3 mt-3 ${verdict.edge}`}>
+      {lastSpin && verdict && !spinning && <div className={`border rounded p-3 mt-3 ${verdict.edge}`}>
         <div className="d-flex justify-content-between gap-3 align-items-baseline">
           <strong>{verdict.label}</strong>
           <span className={`tnum ${verdict.tone}`}>{signedMoney(lastSpin.transaction.netResult)}</span>

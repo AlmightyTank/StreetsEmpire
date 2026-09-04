@@ -40,6 +40,13 @@
   them.
 
 ### Changed
+- **The reels stop one at a time.** They all stopped together, which reads as a picture appearing
+  rather than as a machine landing - and it threw the result away, because the only reason to keep
+  watching a slot machine is the reel that has not stopped yet. They drop left to right now, about a
+  fifth of a second apart, and each reel to the right turns a little slower than the one before it.
+  Everything that reads as the verdict waits for the last of them: the winning lines, the lit cells
+  and the receipt all hold until the fifth reel is down, so nothing tells you how it went while a reel
+  can still change it.
 - **Every room has its own faces.** The four machines already ran their own weights and their own
   pays, but they all showed the same seven symbols, so the thing a player actually looks at was
   identical in every room. They share Sevens and the Vault at the top now - the constants of a slot

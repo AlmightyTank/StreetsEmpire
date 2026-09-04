@@ -438,6 +438,10 @@ public sealed class SeasonService(
         db.MarketListings.RemoveRange(await db.MarketListings.ToListAsync(ct));
         db.MuleRuns.RemoveRange(await db.MuleRuns.ToListAsync(ct));
         db.WorkshopCrafts.RemoveRange(await db.WorkshopCrafts.ToListAsync(ct));
+        // Drops before the wagers that fed them: the pot is derived from the ledger, so clearing the
+        // ledger while leaving a drop behind would leave every machine reading its bare seed with a
+        // winner's name still on it from a world that no longer exists.
+        db.CasinoJackpotDrops.RemoveRange(await db.CasinoJackpotDrops.ToListAsync(ct));
         db.CasinoTransactions.RemoveRange(await db.CasinoTransactions.ToListAsync(ct));
         // The town's book, and with it every hand dealt out of it. Standing resets with the empire, so
         // a job left standing would be paying last season's rep into this one.

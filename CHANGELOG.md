@@ -2,7 +2,37 @@
 
 ## 0.3.0
 
+### Added
+- **The Casino District is a floor you can play.** Four slot machines, a nine cell grid of weighted
+  symbols and five paylines bought one at a time. Pays read left to right - the first two cells of a
+  lane have to match before the third decides between a pair and a triple - and the paytable returns
+  92.4% on the Sidewalk and 94.7% in the rooms above it, which is about what a real floor holds. Bets
+  come from cash on hand and winnings go back to it, so chips are not a second bank: money carried into
+  the district is money somebody can still take off you. Standing is earned per dollar wagered rather
+  than per spin, and it gates the rooms - the Vault wants House Name and two and a half million in net
+  worth before it will take a bet. Both the ledger and your standing reset with the season.
+- **Every machine keeps a progressive pot.** A percent of each stake played on a machine feeds its
+  meter, and the whole thing goes to whoever lands three Vaults anywhere on the grid with all five
+  lanes bought - about one spin in twelve thousand. The pot is the one award on the floor not held to
+  the machine's top multiplier, because a meter capped at the paytable would be advertising money the
+  machine could not hand over. The slice comes out of what the paytable would otherwise have returned,
+  so the house holds the same share either way; it is only given back in one lump instead of a hundred
+  small ones. A pot that drops resets to the machine's seed, and the wager that won it does not feed
+  the next one.
+- **A dropped pot is news whatever it is worth.** It reaches the world feed on its own account rather
+  than by clearing the cash swing that makes an ordinary win newsworthy - the pot on the cheapest
+  machine is the smallest on the floor and still the story of the night, because everybody who played
+  that machine paid for it. The floor also keeps its own record of the last few that went and who took
+  them.
+
 ### Changed
+- **A pull costs a turn.** The casino was the only thing in the game that charged nothing but money,
+  which made it the one activity that never competed with any other: there was no hour of the day when
+  spinning was the wrong thing to be doing. An evening at a real floor costs you the evening.
+- **A machine advertises a prize somebody could be paid.** The figure on the tile was the top
+  multiplier times the maximum stake times every lane, which is a number requiring all nine cells to
+  land on the rarest symbol on the reel - about one spin in a quintillion. Tiles now quote the live pot
+  and the largest single lane the paytable can pay.
 - **A raid is worth being afraid of.** The odds per point of heat double and the ceiling goes to a coin
   flip, so a Hunted house is tonight's problem rather than one to outrun - at a hundred heat it was
   about one hour in six, which is long enough that the sensible play was to ignore the number and keep

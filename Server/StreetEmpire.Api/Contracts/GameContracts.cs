@@ -89,13 +89,38 @@ public sealed record CasinoBoardResponse(
     IReadOnlyList<SlotPaylineResponse> Paylines,
     CasinoRepResponse Reputation,
     CasinoStatsResponse Stats,
-    IReadOnlyList<CasinoTransactionResponse> Recent);
+    IReadOnlyList<CasinoTransactionResponse> Recent,
+    CasinoJackpotRulesResponse JackpotRules,
+    IReadOnlyList<CasinoJackpotDropResponse> RecentJackpots,
+    int SpinTurnCost);
+
+/// <summary>What the floor has to say about how the pot is won, so the rule is on the machine.</summary>
+public sealed record CasinoJackpotRulesResponse(
+    bool Enabled,
+    string SymbolLabel,
+    int SymbolsRequired,
+    bool RequireAllPaylines,
+    double ContributionPercent);
+
+public sealed record CasinoJackpotDropResponse(
+    string MachineKey,
+    string MachineName,
+    string PlayerName,
+    long Amount,
+    DateTime WonAtUtc);
 
 public sealed record SlotPaylineResponse(
     int Index,
     string Name,
     IReadOnlyList<int> Cells);
 
+/// <param name="TopAward">
+/// The largest the paytable can pay on one lane at this machine's maximum stake. It used to be
+/// advertised as that figure multiplied by every lane, which is a number requiring all nine cells to
+/// come up on the rarest symbol on the reel - about one spin in a quintillion. A board should quote a
+/// prize somebody could actually be paid.
+/// </param>
+/// <param name="Progressive">What the machine's pot stands at right now, seed included.</param>
 public sealed record SlotMachineResponse(
     string Key,
     string Name,
@@ -103,7 +128,8 @@ public sealed record SlotMachineResponse(
     long MinBet,
     long MaxBet,
     int MaxWinMultiplier,
-    long Jackpot,
+    long TopAward,
+    long Progressive,
     int MaxPaylines,
     int MinRepLevel,
     string? MinRepLevelName,
@@ -140,6 +166,7 @@ public sealed record CasinoTransactionResponse(
     IReadOnlyList<string> Symbols,
     IReadOnlyList<int> WinningPaylineIndexes,
     bool Jackpot,
+    long JackpotAmount,
     DateTime CreatedAtUtc);
 
 public sealed record SlotSpinResponse(
@@ -147,9 +174,12 @@ public sealed record SlotSpinResponse(
     IReadOnlyList<string> Symbols,
     long Cash,
     long BankCash,
+    int Turns,
+    int TurnsSpent,
     int RepEarned,
     CasinoRepResponse Reputation,
-    CasinoStatsResponse Stats);
+    CasinoStatsResponse Stats,
+    CasinoBoardResponse Board);
 
 public sealed record StoreSellRequest(string? ItemKey, int Quantity);
 

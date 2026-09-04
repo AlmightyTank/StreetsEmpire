@@ -44,6 +44,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<SeasonResult> SeasonResults => Set<SeasonResult>();
     public DbSet<CasinoTransaction> CasinoTransactions => Set<CasinoTransaction>();
+    public DbSet<CasinoJackpotDrop> CasinoJackpotDrops => Set<CasinoJackpotDrop>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -274,6 +275,24 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasOne(x => x.Player)
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CasinoJackpotDrop>(entity =>
+        {
+            // Every read of this table asks one machine for its newest drop, because that is the line
+            // the running total is measured from.
+            entity.HasIndex(x => new { x.MachineKey, x.WonAtUtc });
+            entity.Property(x => x.MachineKey).HasMaxLength(32);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // The ledger row outlives nothing the drop needs, but a drop without its spin is a payout
+            // with no account of what won it, so the two go together.
+            entity.HasOne(x => x.Transaction)
+                .WithMany()
+                .HasForeignKey(x => x.CasinoTransactionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

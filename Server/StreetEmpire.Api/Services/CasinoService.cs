@@ -12,6 +12,8 @@ public sealed class CasinoService(
     IGameRandom random,
     EconomyService economy)
 {
+    internal const string SlotsGame = "slots";
+
     private static readonly SlotPaylineResponse[] SlotPaylines =
     [
         new(1, "Top", [0, 1, 2]),
@@ -24,14 +26,27 @@ public sealed class CasinoService(
     private readonly GameOptions _options = options.Value;
 
     public async Task<CasinoBoardResponse> BoardAsync(Player player, CancellationToken ct)
-        => new(
-            MachinesFor(player).ToList(),
+    {
+        var pots = await PotsAsync(ct);
+        return new CasinoBoardResponse(
+            MachinesFor(player, pots).ToList(),
             SlotPaylines,
             ReputationFor(player),
             await StatsAsync(player.Id, ct),
-            (await RecentAsync(player.Id, _options.Casino.HistoryDepth, ct)).ToList());
+            (await RecentAsync(player.Id, _options.Casino.HistoryDepth, ct)).ToList(),
+            JackpotRules(),
+            (await RecentJackpotsAsync(ct)).ToList(),
+            Math.Max(0, _options.Casino.SpinTurnCost));
+    }
 
-    public CasinoSpin SpinSlots(Player player, string? machineKey, long bet, int paylines, DateTime nowUtc)
+    /// <summary>
+    /// One pull: turns, stake, reels, paytable, and the pot if the grid says so.
+    ///
+    /// Async because the pot is not a number anybody stores. It is the machine's seed plus a slice of
+    /// every wager taken on it since the last time somebody walked off with it, and answering that
+    /// means asking the ledger.
+    /// </summary>
+    public async Task<CasinoSpin> SpinSlotsAsync(Player player, string? machineKey, long bet, int paylines, DateTime nowUtc, CancellationToken ct)
     {
         TravelGate.EnsureLanded(player);
         var config = _options.Casino;
@@ -51,33 +66,69 @@ public sealed class CasinoService(
         if (bet > long.MaxValue / paylines)
             throw new GameRuleException("That spin is too large for the cage to write down.");
 
+        // Turns before money, because being out of turns is the answer to the whole request and there
+        // is no sense taking a stake off somebody to tell them so.
+        var turnCost = Math.Max(0, config.SpinTurnCost);
+        if (turnCost > 0 && player.Turns < turnCost)
+            throw new GameRuleException($"A pull is {turnCost:N0} turn(s) and you have {player.Turns:N0}.");
+
         var totalBet = bet * paylines;
         if (player.Cash < totalBet)
             throw new GameRuleException($"You are carrying {player.Cash:C0}.");
 
+        // Read before the stake is taken and before the reels turn, so the figure the pot pays is the
+        // one that was standing on the machine when the button went down - this spin's own slice
+        // included, the way a real meter ticks up as you play it.
+        var pot = await PotAsync(machine, ct) + ContributionFrom(totalBet);
+
         var repBefore = player.CasinoRep;
+        player.Turns -= turnCost;
         player.Cash -= totalBet;
         player.CasinoRep = Math.Max(0, player.CasinoRep + totalBet * Math.Max(0, config.RepPerDollarWagered));
-        var symbols = Enumerable.Range(0, 9).Select(_ => DrawSymbol(config)).ToArray();
+
+        var reel = ReelStrip(config);
+        var symbols = Enumerable.Range(0, 9).Select(_ => DrawSymbol(reel)).ToArray();
         var result = ScorePaylines(symbols, paylines, bet, machine.MaxWinMultiplier);
         var payout = Math.Min(result.Payout, totalBet * machine.MaxWinMultiplier);
-        player.Cash += payout;
+
+        // The pot is not part of the paytable and so is not held to the paytable's ceiling. Capping it
+        // would make the Sidewalk's meter an advertisement for money that machine cannot hand over.
+        var jackpot = WinsJackpot(symbols, paylines, machine) ? pot : 0;
+        player.Cash += payout + jackpot;
 
         var transaction = new CasinoTransaction
         {
             PlayerId = player.Id,
-            GameType = "slots",
+            GameType = SlotsGame,
             MachineKey = machine.Key,
             Paylines = paylines,
             WinningPaylines = result.WinningPaylines,
             BetAmount = totalBet,
-            PayoutAmount = payout,
-            NetResult = payout - totalBet,
+            PayoutAmount = payout + jackpot,
+            NetResult = payout + jackpot - totalBet,
+            JackpotAmount = jackpot,
             Outcome = string.Join(",", symbols.Select(x => x.Key)),
             CreatedAtUtc = nowUtc
         };
         db.CasinoTransactions.Add(transaction);
-        return new CasinoSpin(transaction, Math.Max(0, (int)Math.Floor(player.CasinoRep) - (int)Math.Floor(repBefore)));
+
+        if (jackpot > 0)
+        {
+            db.CasinoJackpotDrops.Add(new CasinoJackpotDrop
+            {
+                MachineKey = machine.Key,
+                PlayerId = player.Id,
+                Amount = jackpot,
+                Transaction = transaction,
+                WonAtUtc = nowUtc
+            });
+        }
+
+        return new CasinoSpin(
+            transaction,
+            Math.Max(0, (int)Math.Floor(player.CasinoRep) - (int)Math.Floor(repBefore)),
+            turnCost,
+            jackpot);
     }
 
     public async Task<CasinoStatsResponse> StatsAsync(Guid playerId, CancellationToken ct)
@@ -94,9 +145,45 @@ public sealed class CasinoService(
         return stats ?? new CasinoStatsResponse(0, 0, 0, 0);
     }
 
+    /// <summary>
+    /// Every machine's pot in one question.
+    ///
+    /// "No drop on this machine happened at or after this row" is the same statement as "this row is
+    /// part of the current pot", and it is one that the database can answer for every machine at once
+    /// rather than one round trip per machine on the floor.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, long>> PotsAsync(CancellationToken ct)
+    {
+        var wagered = await db.CasinoTransactions.AsNoTracking()
+            .Where(x => x.GameType == SlotsGame)
+            .Where(x => !db.CasinoJackpotDrops.Any(drop => drop.MachineKey == x.MachineKey && drop.WonAtUtc >= x.CreatedAtUtc))
+            .GroupBy(x => x.MachineKey)
+            .Select(g => new { Machine = g.Key, Total = g.Sum(x => x.BetAmount) })
+            .ToListAsync(ct);
+
+        var contributions = wagered.ToDictionary(x => x.Machine, x => ContributionFrom(x.Total), StringComparer.OrdinalIgnoreCase);
+        return _options.Casino.SlotMachines.ToDictionary(
+            machine => machine.Key,
+            machine => SeedFor(machine) + contributions.GetValueOrDefault(machine.Key),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<long> PotAsync(SlotMachineOptions machine, CancellationToken ct)
+    {
+        var wagered = await db.CasinoTransactions.AsNoTracking()
+            .Where(x => x.GameType == SlotsGame && x.MachineKey == machine.Key)
+            .Where(x => !db.CasinoJackpotDrops.Any(drop => drop.MachineKey == machine.Key && drop.WonAtUtc >= x.CreatedAtUtc))
+            .SumAsync(x => (long?)x.BetAmount, ct) ?? 0;
+        return SeedFor(machine) + ContributionFrom(wagered);
+    }
+
     public CasinoTransactionResponse ToResponse(CasinoTransaction transaction)
+        => ToResponse(transaction, SymbolIndex());
+
+    private CasinoTransactionResponse ToResponse(CasinoTransaction transaction, IReadOnlyDictionary<string, SlotSymbolOptions> index)
     {
         var machine = _options.Casino.Machine(transaction.MachineKey);
+        var symbols = SymbolOptionsFrom(transaction.Outcome, index).ToList();
         return new CasinoTransactionResponse(
             transaction.Id,
             transaction.GameType,
@@ -107,9 +194,10 @@ public sealed class CasinoService(
             transaction.BetAmount,
             transaction.PayoutAmount,
             transaction.NetResult,
-            SymbolsFrom(transaction.Outcome).ToList(),
-            WinningPaylineIndexesFrom(transaction).ToList(),
-            IsJackpot(transaction, machine),
+            symbols.Select(x => x.Label).ToList(),
+            WinningPaylineIndexesFrom(transaction, symbols).ToList(),
+            IsTopAward(transaction, symbols, machine),
+            transaction.JackpotAmount,
             transaction.CreatedAtUtc);
     }
 
@@ -121,10 +209,43 @@ public sealed class CasinoService(
             .ThenByDescending(x => x.Id)
             .Take(Math.Clamp(take, 1, 50))
             .ToListAsync(ct);
-        return rows.Select(ToResponse).ToList();
+
+        // Built once for the page rather than once per row. The ledger is eight rows deep and this was
+        // eight rebuilds of the same dictionary.
+        var index = SymbolIndex();
+        return rows.Select(row => ToResponse(row, index)).ToList();
     }
 
-    private IEnumerable<SlotMachineResponse> MachinesFor(Player player)
+    /// <summary>The last few pots that went, which is the floor's own news and belongs to everybody.</summary>
+    private async Task<IReadOnlyList<CasinoJackpotDropResponse>> RecentJackpotsAsync(CancellationToken ct)
+    {
+        var rows = await db.CasinoJackpotDrops.AsNoTracking()
+            .OrderByDescending(x => x.WonAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(5)
+            .Select(x => new { x.MachineKey, x.Amount, x.WonAtUtc, PlayerName = x.Player.Name })
+            .ToListAsync(ct);
+
+        return rows.Select(x => new CasinoJackpotDropResponse(
+            x.MachineKey,
+            _options.Casino.Machine(x.MachineKey)?.Name ?? x.MachineKey,
+            x.PlayerName,
+            x.Amount,
+            x.WonAtUtc)).ToList();
+    }
+
+    private CasinoJackpotRulesResponse JackpotRules()
+    {
+        var jackpot = _options.Casino.Jackpot;
+        return new CasinoJackpotRulesResponse(
+            jackpot.Enabled,
+            JackpotSymbol()?.Label ?? jackpot.Symbol,
+            Math.Max(1, jackpot.SymbolsRequired),
+            jackpot.RequireAllPaylines,
+            Math.Max(0, jackpot.ContributionPercent));
+    }
+
+    private IEnumerable<SlotMachineResponse> MachinesFor(Player player, IReadOnlyDictionary<string, long> pots)
         => _options.Casino.SlotMachines.Select(machine =>
         {
             var locked = LockedReason(player, machine);
@@ -135,7 +256,8 @@ public sealed class CasinoService(
                 machine.MinBet,
                 machine.MaxBet,
                 machine.MaxWinMultiplier,
-                machine.MaxBet * SlotPaylines.Length * machine.MaxWinMultiplier,
+                machine.MaxBet * machine.MaxWinMultiplier,
+                pots.GetValueOrDefault(machine.Key, SeedFor(machine)),
                 SlotPaylines.Length,
                 Math.Max(1, machine.MinCasinoRepLevel),
                 machine.MinCasinoRepLevel > 1 ? _options.Casino.LevelName(machine.MinCasinoRepLevel) : null,
@@ -157,23 +279,64 @@ public sealed class CasinoService(
             : $"{machine.Name} opens at {machine.MinNetWorth:C0} net worth. You are at {worth:C0}.";
     }
 
-    private SlotSymbolOptions DrawSymbol(CasinoOptions config)
+    private long SeedFor(SlotMachineOptions machine) => Math.Max(0, machine.JackpotSeed);
+
+    private long ContributionFrom(long wagered)
+    {
+        var percent = Math.Max(0, _options.Casino.Jackpot.ContributionPercent);
+        return percent <= 0 || wagered <= 0 ? 0 : (long)Math.Floor(wagered * percent / 100);
+    }
+
+    private SlotSymbolOptions? JackpotSymbol()
+        => _options.Casino.SlotSymbols.FirstOrDefault(x =>
+            string.Equals(x.Key, _options.Casino.Jackpot.Symbol, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether this grid takes the pot: enough of the jackpot symbol anywhere on the nine cells, with
+    /// every lane bought if the floor says so.
+    ///
+    /// Counted across the whole grid rather than read along a lane on purpose. Three of the rarest
+    /// symbol in a row is a one in a million spin, and a pot nobody in a world this size will ever
+    /// collect is a decoration. Three of them anywhere is roughly one spin in twelve thousand.
+    /// </summary>
+    private bool WinsJackpot(IReadOnlyList<SlotSymbolOptions> symbols, int paylines, SlotMachineOptions machine)
+    {
+        var jackpot = _options.Casino.Jackpot;
+        if (!jackpot.Enabled || SeedFor(machine) <= 0) return false;
+        if (jackpot.RequireAllPaylines && paylines < SlotPaylines.Length) return false;
+
+        var target = JackpotSymbol();
+        if (target is null) return false;
+
+        var landed = symbols.Count(x => string.Equals(x.Key, target.Key, StringComparison.OrdinalIgnoreCase));
+        return landed >= Math.Max(1, jackpot.SymbolsRequired);
+    }
+
+    /// <summary>
+    /// The reel, resolved once per spin instead of once per cell. Nine cells meant nine passes over
+    /// the symbol list and nine re-additions of the same weights.
+    /// </summary>
+    private static ReelStripOptions ReelStrip(CasinoOptions config)
     {
         var symbols = config.SlotSymbols.Where(x => x.Weight > 0).ToList();
         if (symbols.Count == 0)
             throw new GameRuleException("The slot reels have no symbols.");
 
-        var total = symbols.Sum(x => Math.Max(0, x.Weight));
-        var roll = random.NextDouble() * total;
+        return new ReelStripOptions(symbols, symbols.Sum(x => Math.Max(0, x.Weight)));
+    }
+
+    private SlotSymbolOptions DrawSymbol(ReelStripOptions reel)
+    {
+        var roll = random.NextDouble() * reel.TotalWeight;
         var running = 0;
-        foreach (var symbol in symbols)
+        foreach (var symbol in reel.Symbols)
         {
             running += Math.Max(0, symbol.Weight);
             if (roll < running)
                 return symbol;
         }
 
-        return symbols[^1];
+        return reel.Symbols[^1];
     }
 
     private static int PayoutMultiplier(IReadOnlyList<SlotSymbolOptions> symbols)
@@ -206,9 +369,8 @@ public sealed class CasinoService(
         return new SlotScore(payout, winningPaylines);
     }
 
-    private IEnumerable<int> WinningPaylineIndexesFrom(CasinoTransaction transaction)
+    private static IEnumerable<int> WinningPaylineIndexesFrom(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols)
     {
-        var symbols = SymbolOptionsFrom(transaction.Outcome).ToList();
         if (symbols.Count < 9)
             yield break;
 
@@ -245,11 +407,10 @@ public sealed class CasinoService(
             dollarsPerRep);
     }
 
-    private bool IsJackpot(CasinoTransaction transaction, SlotMachineOptions? machine)
+    /// <summary>Whether a lane paid this machine's ceiling, which is the top the paytable can go.</summary>
+    private static bool IsTopAward(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols, SlotMachineOptions? machine)
     {
         if (machine is null || machine.MaxWinMultiplier <= 0) return false;
-
-        var symbols = SymbolOptionsFrom(transaction.Outcome).ToList();
         if (symbols.Count < 9) return false;
 
         return SlotPaylines
@@ -257,25 +418,22 @@ public sealed class CasinoService(
             .Any(line => PayoutMultiplier(line.Cells.Select(cell => symbols[cell]).ToArray()) >= machine.MaxWinMultiplier);
     }
 
-    private IEnumerable<string> SymbolsFrom(string outcome)
-    {
-        var labels = _options.Casino.SlotSymbols.ToDictionary(x => x.Key, x => x.Label);
-        foreach (var key in outcome.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            yield return labels.TryGetValue(key, out var label) ? label : key;
-    }
+    private Dictionary<string, SlotSymbolOptions> SymbolIndex()
+        => _options.Casino.SlotSymbols.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
 
-    private IEnumerable<SlotSymbolOptions> SymbolOptionsFrom(string outcome)
+    private static IEnumerable<SlotSymbolOptions> SymbolOptionsFrom(string outcome, IReadOnlyDictionary<string, SlotSymbolOptions> index)
     {
-        var symbols = _options.Casino.SlotSymbols.ToDictionary(x => x.Key, StringComparer.OrdinalIgnoreCase);
         foreach (var key in outcome.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            if (symbols.TryGetValue(key, out var symbol))
+            if (index.TryGetValue(key, out var symbol))
                 yield return symbol;
     }
 }
 
-public sealed record CasinoSpin(CasinoTransaction Transaction, int RepEarned);
+public sealed record CasinoSpin(CasinoTransaction Transaction, int RepEarned, int TurnsSpent, long JackpotWon);
 
 internal sealed record SlotScore(long Payout, int WinningPaylines);
+
+internal sealed record ReelStripOptions(IReadOnlyList<SlotSymbolOptions> Symbols, int TotalWeight);
 
 public static class CasinoRep
 {

@@ -1885,6 +1885,17 @@ public sealed class CasinoOptions
     public bool Enabled { get; set; } = true;
     public int HistoryDepth { get; set; } = 8;
     public double RepPerDollarWagered { get; set; } = 0.005;
+
+    /// <summary>
+    /// What a pull costs in turns.
+    ///
+    /// It used to cost none, which made the casino the only thing in the game that did not compete
+    /// with anything else you could be doing. A floor you can work for ever between street shifts is
+    /// not a floor, it is a button, and an evening at a real one costs you the evening.
+    /// </summary>
+    public int SpinTurnCost { get; set; } = 1;
+
+    public CasinoJackpotOptions Jackpot { get; set; } = new();
     public List<CasinoRepLevelOptions> Levels { get; set; } = [];
     public List<SlotMachineOptions> SlotMachines { get; set; } = [];
     public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
@@ -1905,7 +1916,8 @@ public sealed class CasinoOptions
                     Blurb = "Cheap pulls under bad neon. Small bets, fast trouble.",
                     MinBet = 10,
                     MaxBet = 100,
-                    MaxWinMultiplier = 50
+                    MaxWinMultiplier = 50,
+                    JackpotSeed = 5_000
                 },
                 new SlotMachineOptions
                 {
@@ -1916,7 +1928,8 @@ public sealed class CasinoOptions
                     MaxBet = 1_000,
                     MaxWinMultiplier = 100,
                     MinCasinoRepLevel = 2,
-                    MinNetWorth = 50_000
+                    MinNetWorth = 50_000,
+                    JackpotSeed = 50_000
                 },
                 new SlotMachineOptions
                 {
@@ -1927,7 +1940,8 @@ public sealed class CasinoOptions
                     MaxBet = 10_000,
                     MaxWinMultiplier = 250,
                     MinCasinoRepLevel = 3,
-                    MinNetWorth = 500_000
+                    MinNetWorth = 500_000,
+                    JackpotSeed = 500_000
                 },
                 new SlotMachineOptions
                 {
@@ -1938,7 +1952,8 @@ public sealed class CasinoOptions
                     MaxBet = 100_000,
                     MaxWinMultiplier = 500,
                     MinCasinoRepLevel = 4,
-                    MinNetWorth = 2_500_000
+                    MinNetWorth = 2_500_000,
+                    JackpotSeed = 5_000_000
                 }
             ];
         }
@@ -2002,6 +2017,53 @@ public sealed class SlotMachineOptions
     public int MaxWinMultiplier { get; set; } = 50;
     public int MinCasinoRepLevel { get; set; } = 1;
     public long MinNetWorth { get; set; }
+
+    /// <summary>
+    /// What this machine's progressive resets to after somebody takes it, and therefore the least it
+    /// can ever be worth. Set per machine rather than once for the floor because the rooms are three
+    /// orders of magnitude apart in stake: a seed worth chasing on the Sidewalk is a rounding error
+    /// in the Vault, and one worth chasing in the Vault would be the only thing anybody ever played.
+    /// </summary>
+    public long JackpotSeed { get; set; }
+}
+
+/// <summary>
+/// The progressive: a slice off every wager on a machine, pooled until one player takes the lot.
+///
+/// It is deliberately not part of the paytable. The paytable is capped per machine so a cheap room
+/// cannot pay a rich room's top award, and a pot that respected that cap would not be a pot. This is
+/// the one award on the floor that pays whatever it has grown to.
+/// </summary>
+public sealed class CasinoJackpotOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// The share of every wager that feeds the pot, as a percentage. It comes out of the return the
+    /// paytable would otherwise have paid and goes back to the floor in one lump, so the money the
+    /// house holds does not move - only how lumpy the giving back is.
+    /// </summary>
+    public double ContributionPercent { get; set; } = 1.0;
+
+    /// <summary>Which symbol counts towards the pot. Matched against the symbol keys on the reels.</summary>
+    public string Symbol { get; set; } = "vault";
+
+    /// <summary>
+    /// How many of that symbol have to land anywhere on the nine cells.
+    ///
+    /// Anywhere, rather than on a lane, and counted rather than lined up: three Vaults on a payline is
+    /// one spin in a million, which at the size of this world is a pot nobody would ever collect.
+    /// Three anywhere on the grid is about one spin in twelve thousand, which is rare enough to be an
+    /// event and common enough to be a real one.
+    /// </summary>
+    public int SymbolsRequired { get; set; } = 3;
+
+    /// <summary>
+    /// Whether the pot only pays when every lane is bought. It does, the way it does on a real floor:
+    /// a progressive fed by everybody's money and collectable on the minimum stake is a pot the
+    /// cheapest possible spin is the correct way to chase.
+    /// </summary>
+    public bool RequireAllPaylines { get; set; } = true;
 }
 
 public sealed class SlotSymbolOptions

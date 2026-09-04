@@ -3136,27 +3136,26 @@ function CasinoPage(ctx: PageContext) {
     } finally {
       setSpinning(false)
     }
-    if (!spin) return
-    setLastSpin(spin)
-    setBoard(current => current
-      ? {
-          ...current,
-          reputation: spin!.reputation,
-          stats: spin!.stats,
-          recent: [spin!.transaction, ...current.recent.filter(entry => entry.id !== spin!.transaction.id)].slice(0, 8),
-        }
-      : current)
+    // Asserted because the assignment happens inside the callback handed to act, which TypeScript's
+    // flow analysis does not follow - without this it still reads the variable as its initialiser.
+    const settled = spin as SlotSpin | null
+    if (!settled) return
+    setLastSpin(settled)
+    // The whole floor comes back with the spin. It has to: the pot on every machine moved, and the one
+    // that was just taken has gone back to its seed with somebody's name against it.
+    setBoard(settled.board)
     await refresh()
   }
 
   if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Casino Floor</h2><span>Closed</span></div><p>{loadError}</p></section>
   if (!board || !active) return <section className="card p-3"><div className="panel-title"><h2>Casino Floor</h2><span>Loading</span></div><p>The cage is counting chips.</p></section>
 
-  const bestJackpot = board.slotMachines.reduce((best, machine) => Math.max(best, machine.jackpot), 0)
+  const biggestPot = board.slotMachines.reduce((best, machine) => Math.max(best, machine.progressive), 0)
   const spinBlocked = firstReason(
     spinning && 'The reels are still turning.',
     busy && BUSY,
     active.locked && (active.lockedReason ?? 'That machine is locked.'),
+    dashboard.turns < board.spinTurnCost && `A pull is ${board.spinTurnCost} turn${board.spinTurnCost === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
     clampedBet < active.minBet && `${active.name} starts at ${money.format(active.minBet)}.`,
     clampedBet > active.maxBet && `${active.name} tops out at ${money.format(active.maxBet)}.`,
     dashboard.cash < totalBet && `You are carrying ${money.format(dashboard.cash)}.`,
@@ -3169,6 +3168,11 @@ function CasinoPage(ctx: PageContext) {
   return <div className="d-grid gtc-1 gtc-xl-split-135 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Casino Floor</h2><span>{dashboard.city}</span></div>
+      {board.jackpotRules.enabled && <p className="text-body-secondary mb-0">
+        Every machine keeps a pot fed by {board.jackpotRules.contributionPercent}% of each stake played on it.
+        Land {board.jackpotRules.symbolsRequired} <strong>{board.jackpotRules.symbolLabel}</strong> anywhere on the grid
+        {board.jackpotRules.requireAllPaylines ? ' with every lane bought' : ''} and the whole thing is yours.
+      </p>}
       <div className="d-grid gtc-fill-180 gap-2 mt-3">
         {board.slotMachines.map(machine => <CasinoMachineTile
           machine={machine}
@@ -3188,7 +3192,9 @@ function CasinoPage(ctx: PageContext) {
       <div className="panel-title"><h2>{active.name}</h2><span>{money.format(active.minBet)} min</span></div>
       <p>{active.blurb}</p>
       <div className="d-flex flex-wrap gap-2 align-items-center">
-        <span className="badge text-bg-primary">Jackpot {money.format(active.jackpot)}</span>
+        {board.jackpotRules.enabled && active.progressive > 0 &&
+          <span className="badge text-bg-warning casino-meter">Pot {money.format(active.progressive)}</span>}
+        <span className="badge text-bg-primary">Top award {money.format(active.topAward)}</span>
         {active.minRepLevel > 1 && <span className="badge text-bg-secondary">{active.minRepLevelName} floor</span>}
       </div>
       <div className="slot-reels d-grid gap-2 my-3" aria-label="Slot reels">
@@ -3253,18 +3259,24 @@ function CasinoPage(ctx: PageContext) {
         <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(active.minBet)}>Min</button>
         <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(Math.min(active.maxBet, Math.floor(dashboard.cash / lineCount)))}>Max</button>
         <Button className="btn btn-primary" blocked={spinBlocked} onClick={() => void runSpin()}>
-          Spin {money.format(totalBet)}
+          Spin {money.format(totalBet)}{board.spinTurnCost > 0 && ` / ${board.spinTurnCost}t`}
         </Button>
       </div>
-      {lastSpin && <div className={`border rounded p-3 mt-3 ${lastSpin.transaction.jackpot ? 'border-warning casino-jackpot' : lastSpin.transaction.netResult >= 0 ? 'border-success' : 'border-secondary'}`}>
+      {lastSpin && <div className={`border rounded p-3 mt-3 ${lastSpin.transaction.jackpotAmount > 0 || lastSpin.transaction.jackpot ? 'border-warning casino-jackpot' : lastSpin.transaction.netResult >= 0 ? 'border-success' : 'border-secondary'}`}>
         <div className="d-flex justify-content-between gap-3 align-items-baseline">
-          <strong>{lastSpin.transaction.jackpot ? 'Jackpot' : lastSpin.transaction.netResult >= 0 ? 'Paid out' : 'No hit'}</strong>
-          <span className={`tnum ${lastSpin.transaction.jackpot ? 'text-warning' : lastSpin.transaction.netResult >= 0 ? 'text-success' : 'text-body-secondary'}`}>
+          <strong>
+            {lastSpin.transaction.jackpotAmount > 0
+              ? 'The pot'
+              : lastSpin.transaction.jackpot ? 'Top award' : lastSpin.transaction.netResult >= 0 ? 'Paid out' : 'No hit'}
+          </strong>
+          <span className={`tnum ${lastSpin.transaction.jackpotAmount > 0 || lastSpin.transaction.jackpot ? 'text-warning' : lastSpin.transaction.netResult >= 0 ? 'text-success' : 'text-body-secondary'}`}>
             {signedMoney(lastSpin.transaction.netResult)}
           </span>
         </div>
         <small className="text-body-tertiary">
           Bet {money.format(lastSpin.transaction.betAmount)}. Won {money.format(lastSpin.transaction.payoutAmount)}.
+          {lastSpin.transaction.jackpotAmount > 0 && ` ${money.format(lastSpin.transaction.jackpotAmount)} of it was the progressive.`}
+          {lastSpin.turnsSpent > 0 && ` ${lastSpin.turnsSpent} turn${lastSpin.turnsSpent === 1 ? '' : 's'}.`}
           {lastSpin.repEarned > 0 && ` +${number.format(lastSpin.repEarned)} casino rep.`}
         </small>
       </div>}
@@ -3293,8 +3305,20 @@ function CasinoPage(ctx: PageContext) {
         <AdminMetric label="Wagered" value={money.format(board.stats.wagered)} />
         <AdminMetric label="Returned" value={money.format(board.stats.won)} />
         <AdminMetric label="Net" value={signedMoney(board.stats.net)} />
-        <AdminMetric label="Best jackpot" value={money.format(bestJackpot)} />
+        <AdminMetric label="Biggest pot" value={money.format(biggestPot)} />
       </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Pots Taken</h2><span>House record</span></div>
+      {board.recentJackpots.length === 0
+        ? <p className="text-body-tertiary mb-0">Nobody has taken one yet. Every pot on the floor is still building.</p>
+        : <ul className="list-unstyled d-grid gap-2 mb-0">
+            {board.recentJackpots.map(drop => <li className="d-flex justify-content-between gap-3 align-items-baseline" key={`${drop.machineKey}-${drop.wonAtUtc}`}>
+              <span><strong>{drop.playerName}</strong> <small className="text-body-tertiary">{drop.machineName}</small></span>
+              <span className="tnum text-warning">{money.format(drop.amount)}</span>
+            </li>)}
+          </ul>}
     </section>
 
     <section className="card p-3 gcol-full">
@@ -3303,14 +3327,19 @@ function CasinoPage(ctx: PageContext) {
         ? <p className="text-body-tertiary mb-0">No spins yet.</p>
         : <div className="table-responsive">
             <table className="table table-sm game-table align-middle mb-0">
-              <thead><tr><th>Machine</th><th>Grid</th><th>Lines</th><th>Bet</th><th>Payout</th><th>Net</th><th>When</th></tr></thead>
+              <thead><tr><th>Machine</th><th>Grid</th><th>Lines</th><th>Bet</th><th>Payout</th><th>Pot</th><th>Net</th><th>When</th></tr></thead>
               <tbody>
                 {board.recent.map(entry => <tr key={entry.id}>
-                  <td>{entry.machineName}{entry.jackpot && <span className="badge text-bg-warning ms-2">Jackpot</span>}</td>
+                  <td>{entry.machineName}{entry.jackpotAmount > 0
+                    ? <span className="badge text-bg-warning ms-2">Pot</span>
+                    : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}</td>
                   <td>{slotGridText(entry.symbols)}</td>
                   <td>{entry.winningPaylines}/{entry.paylines}</td>
                   <td>{money.format(entry.betAmount)}</td>
                   <td>{money.format(entry.payoutAmount)}</td>
+                  <td className={entry.jackpotAmount > 0 ? 'text-warning' : 'text-body-tertiary'}>
+                    {entry.jackpotAmount > 0 ? money.format(entry.jackpotAmount) : '-'}
+                  </td>
                   <td className={entry.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(entry.netResult)}</td>
                   <td>{new Date(entry.createdAtUtc).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
                 </tr>)}
@@ -3337,7 +3366,7 @@ function CasinoMachineTile({ machine, active, bet, busy, onPick }: {
   >
     <strong className="text-body">{machine.name}</strong>
     <small className="text-body-tertiary small">
-      {money.format(machine.minBet)}-{money.format(machine.maxBet)} / jackpot {money.format(machine.jackpot)}
+      {money.format(machine.minBet)}-{money.format(machine.maxBet)} / pot {money.format(machine.progressive)}
     </small>
     {machine.locked
       ? <small className="text-warning small">{machine.lockedReason}</small>
@@ -9959,6 +9988,8 @@ const NEWS_TONE: Record<WorldNewsEntry['category'], string> = {
   arrival: 'text-info',
   crew: 'text-success',
   money: 'text-primary',
+  ground: 'text-primary',
+  casino: 'text-warning',
 }
 
 const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
@@ -9966,7 +9997,9 @@ const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
   build: 'Built',
   arrival: 'Arrival',
   crew: 'Crew',
-  money: 'Money'
+  money: 'Money',
+  ground: 'Ground',
+  casino: 'Casino'
 }
 
 function WorldNewsPanel({ news, currentPlayerId }: { news: WorldNews, currentPlayerId: string }) {

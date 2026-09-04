@@ -15,7 +15,10 @@ export type CasinoMachine = {
   minBet: number
   maxBet: number
   maxWinMultiplier: number
-  jackpot: number
+  /** The most the paytable can pay on one lane at this machine's top stake. */
+  topAward: number
+  /** What the machine's progressive stands at right now, seed included. */
+  progressive: number
   maxPaylines: number
   minRepLevel: number
   minRepLevelName?: string | null
@@ -60,8 +63,27 @@ export type CasinoTransaction = {
   netResult: number
   symbols: string[]
   winningPaylineIndexes: number[]
+  /** Whether a lane paid the machine's top multiplier. */
   jackpot: boolean
+  /** The progressive this spin took, or zero. */
+  jackpotAmount: number
   createdAtUtc: string
+}
+
+export type CasinoJackpotRules = {
+  enabled: boolean
+  symbolLabel: string
+  symbolsRequired: number
+  requireAllPaylines: boolean
+  contributionPercent: number
+}
+
+export type CasinoJackpotDrop = {
+  machineKey: string
+  machineName: string
+  playerName: string
+  amount: number
+  wonAtUtc: string
 }
 
 export type CasinoBoard = {
@@ -70,6 +92,9 @@ export type CasinoBoard = {
   reputation: CasinoReputation
   stats: CasinoStats
   recent: CasinoTransaction[]
+  jackpotRules: CasinoJackpotRules
+  recentJackpots: CasinoJackpotDrop[]
+  spinTurnCost: number
 }
 
 export type SlotSpin = {
@@ -77,9 +102,13 @@ export type SlotSpin = {
   symbols: string[]
   cash: number
   bankCash: number
+  turns: number
+  turnsSpent: number
   repEarned: number
   reputation: CasinoReputation
   stats: CasinoStats
+  /** The whole floor as it stands after the spin, so the meters move without a second fetch. */
+  board: CasinoBoard
 }
 
 export type StoreItem = {
@@ -1175,7 +1204,7 @@ export type WorldNewsEntry = {
   playerName: string
   city: string
   action: string
-  category: 'combat' | 'build' | 'arrival' | 'crew' | 'money'
+  category: 'combat' | 'build' | 'arrival' | 'crew' | 'money' | 'ground' | 'casino'
   summary: string
   turnsSpent: number
   createdAtUtc: string

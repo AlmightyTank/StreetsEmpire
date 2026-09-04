@@ -1283,6 +1283,21 @@ input:focus-visible, textarea:focus-visible {
   animation: none;
 }
 
+// The pot on the machine you are stood at. It is the one number on the page that belongs to everybody
+// rather than to this player, so it gets a slow breath of its own to say it is still building.
+.casino-meter {
+  animation: casino-meter-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes casino-meter-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba($gold, 0); }
+  50% { box-shadow: 0 0 .5rem .1rem rgba($gold, .35); }
+}
+
+[data-motion="reduced"] .casino-meter {
+  animation: none;
+}
+
 // The opening ladder. A tick column, then the rung.
 .ladder-row {
   grid-template-columns: 20px 1fr;

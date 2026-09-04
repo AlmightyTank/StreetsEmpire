@@ -36,23 +36,35 @@ internal static class CasinoEndpoints
             var before = Snapshot(player);
             try
             {
-                var spin = casino.SpinSlots(player, request.MachineKey, request.Bet, request.Paylines, now);
+                var spin = await casino.SpinSlotsAsync(player, request.MachineKey, request.Bet, request.Paylines, now, ct);
                 var transaction = spin.Transaction;
-                var action = transaction.NetResult > 0
-                    ? $"Spun {transaction.MachineKey} slots across {transaction.Paylines:N0} lane(s) for {transaction.BetAmount:C0} and won {transaction.PayoutAmount:C0}."
-                    : $"Spun {transaction.MachineKey} slots across {transaction.Paylines:N0} lane(s) for {transaction.BetAmount:C0}.";
-                AddLog(db, player, before, "CASINO", 0, action, now);
+
+                // A dropped pot is written as its own kind of row rather than as a large CASINO one, so
+                // the feed can always carry it. An ordinary win only reaches the world when it clears
+                // the newsworthy cash swing, which is right for a win and wrong for a jackpot: the pot
+                // on the Sidewalk is the smallest on the floor and still the story of the night.
+                var action = spin.JackpotWon > 0 ? "JACKPOT" : "CASINO";
+                var summary = spin.JackpotWon > 0
+                    ? $"Took the {transaction.MachineKey} progressive for {spin.JackpotWon:C0} on a {transaction.BetAmount:C0} pull."
+                    : transaction.NetResult > 0
+                        ? $"Spun {transaction.MachineKey} slots across {transaction.Paylines:N0} lane(s) for {transaction.BetAmount:C0} and won {transaction.PayoutAmount:C0}."
+                        : $"Spun {transaction.MachineKey} slots across {transaction.Paylines:N0} lane(s) for {transaction.BetAmount:C0}.";
+                AddLog(db, player, before, action, spin.TurnsSpent, summary, now);
                 await db.SaveChangesAsync(ct);
 
                 var response = casino.ToResponse(transaction);
+                var board = await casino.BoardAsync(player, ct);
                 return Results.Ok(new SlotSpinResponse(
                     response,
                     response.Symbols,
                     player.Cash,
                     player.BankCash,
+                    player.Turns,
+                    spin.TurnsSpent,
                     spin.RepEarned,
-                    (await casino.BoardAsync(player, ct)).Reputation,
-                    await casino.StatsAsync(player.Id, ct)));
+                    board.Reputation,
+                    board.Stats,
+                    board));
             }
             catch (GameRuleException ex)
             {

@@ -72,6 +72,10 @@ var tests = new (string Name, Action Test)[]
     ("casino slots pay only left to right matches", CasinoSlotsPayOnlyLeftToRightMatches),
     ("casino slots earn floor standing and unlock machines", CasinoSlotsEarnStandingAndUnlockMachines),
     ("casino standing resets with the season", CasinoStandingResetsWithTheSeason),
+    ("casino slots cost turns and stop at an empty bank", CasinoSlotsCostTurns),
+    ("a progressive grows on every wager and pays out whole", CasinoProgressivePaysThePot),
+    ("a progressive needs every lane bought", CasinoProgressiveNeedsEveryLane),
+    ("a dropped pot starts again from the seed", CasinoProgressiveResetsToSeed),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -1842,11 +1846,11 @@ static void CasinoSlotsSpendCashAndWriteTransaction()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ScriptedRandom(0.0, 0.4, 0.8));
     var now = new DateTime(2026, 9, 3, 4, 30, 0, DateTimeKind.Utc);
 
-    var spin = casino.SpinSlots(player, "test", 100, 1, now);
+    var spin = casino.SpinSlotsAsync(player, "test", 100, 1, now, default).GetAwaiter().GetResult();
     var transaction = spin.Transaction;
     db.SaveChanges();
     var stats = casino.StatsAsync(player.Id, default).GetAwaiter().GetResult();
@@ -1884,18 +1888,18 @@ static void CasinoSlotsEnforceMachineLimits()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ZeroRandom());
 
-    AssertRuleError(() => casino.SpinSlots(player, "vip", 100, 1, DateTime.UtcNow), "a player below the machine's net worth gate spins it");
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(), "a player below the machine's net worth gate spins it");
 
     var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
     AssertTrue(board.SlotMachines.Single().Locked, "the board should show the machine as locked too");
 
     player.Cash = 60_000;
-    AssertRuleError(() => casino.SpinSlots(player, "vip", 50, 1, DateTime.UtcNow), "a bet below the table minimum is placed");
-    AssertRuleError(() => casino.SpinSlots(player, "vip", 1_500, 1, DateTime.UtcNow), "a bet above the table maximum is placed");
-    AssertRuleError(() => casino.SpinSlots(player, "vip", 100, 6, DateTime.UtcNow), "too many lanes are bought");
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 50, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(), "a bet below the table minimum is placed");
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 1_500, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(), "a bet above the table maximum is placed");
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 100, 6, DateTime.UtcNow, default).GetAwaiter().GetResult(), "too many lanes are bought");
 }
 
 static void CasinoSlotsCapJackpotPayoutsByMachine()
@@ -1917,10 +1921,10 @@ static void CasinoSlotsCapJackpotPayoutsByMachine()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ZeroRandom());
 
-    var transaction = casino.SpinSlots(player, "cap", 100, 1, DateTime.UtcNow).Transaction;
+    var transaction = casino.SpinSlotsAsync(player, "cap", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult().Transaction;
 
     AssertEqual(5_900L, player.Cash);
     AssertEqual(5_000L, transaction.PayoutAmount);
@@ -1948,13 +1952,13 @@ static void CasinoSlotsDrawNineCellsAndPayLanes()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ScriptedRandom(
         0.0, 0.0, 0.0,
         0.4, 0.8, 0.4,
         0.8, 0.8, 0.8));
 
-    var spin = casino.SpinSlots(player, "lanes", 10, 5, DateTime.UtcNow);
+    var spin = casino.SpinSlotsAsync(player, "lanes", 10, 5, DateTime.UtcNow, default).GetAwaiter().GetResult();
     var response = casino.ToResponse(spin.Transaction);
 
     AssertEqual(9, response.Symbols.Count);
@@ -1987,14 +1991,14 @@ static void CasinoSlotsPayOnlyLeftToRightMatches()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var scatteredPlayer = new Player { Id = Guid.NewGuid(), Cash = 1_000, City = "Detroit" };
-    var adjacentPlayer = new Player { Id = Guid.NewGuid(), Cash = 1_000, City = "Detroit" };
+    var scatteredPlayer = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, City = "Detroit" };
+    var adjacentPlayer = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, City = "Detroit" };
 
     var scattered = CreateCasino(db, options, new ScriptedRandom(0.0, 0.75, 0.0))
-        .SpinSlots(scatteredPlayer, "left", 10, 1, DateTime.UtcNow)
+        .SpinSlotsAsync(scatteredPlayer, "left", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult()
         .Transaction;
     var adjacent = CreateCasino(db, options, new ScriptedRandom(0.0, 0.0, 0.75))
-        .SpinSlots(adjacentPlayer, "left", 10, 1, DateTime.UtcNow)
+        .SpinSlotsAsync(adjacentPlayer, "left", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult()
         .Transaction;
 
     AssertEqual(0L, scattered.PayoutAmount);
@@ -2032,7 +2036,7 @@ static void CasinoSlotsEarnStandingAndUnlockMachines()
     using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString())
         .Options);
-    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
     var casino = CreateCasino(db, options, new ZeroRandom());
 
     var before = casino.BoardAsync(player, default).GetAwaiter().GetResult();
@@ -2040,7 +2044,7 @@ static void CasinoSlotsEarnStandingAndUnlockMachines()
     AssertEqual(0, before.Reputation.Rep);
     AssertEqual("Walk-In", before.Reputation.LevelName);
 
-    var spin = casino.SpinSlots(player, "open", 100, 1, DateTime.UtcNow);
+    var spin = casino.SpinSlotsAsync(player, "open", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
     var after = casino.BoardAsync(player, default).GetAwaiter().GetResult();
 
     AssertEqual(10, spin.RepEarned);
@@ -2066,14 +2070,221 @@ static void CasinoStandingResetsWithTheSeason()
         Outcome = "cash,chain,seven",
         CreatedAtUtc = now
     });
+    world.Db.CasinoJackpotDrops.Add(new CasinoJackpotDrop
+    {
+        MachineKey = "sidewalk",
+        PlayerId = player.Id,
+        Amount = 12_500,
+        Transaction = world.Db.CasinoTransactions.Local.First(),
+        WonAtUtc = now
+    });
     world.Db.SaveChanges();
+    AssertEqual(1, world.Db.CasinoJackpotDrops.Count());
 
     seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
     seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default).GetAwaiter().GetResult();
 
     AssertEqual(0d, player.CasinoRep);
     AssertEqual(0, world.Db.CasinoTransactions.Count());
+    AssertEqual(0, world.Db.CasinoJackpotDrops.Count());
 }
+
+/// <summary>
+/// A pull costs turns, and running out of them stops the night.
+///
+/// The floor used to be the only thing in the game that charged nothing but money, which made it the
+/// one activity that never competed with any other - there was no hour of the day when spinning was
+/// the wrong thing to be doing.
+/// </summary>
+static void CasinoSlotsCostTurns()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 3,
+            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 7, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var first = casino.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(3, first.TurnsSpent);
+    AssertEqual(4, player.Turns);
+
+    casino.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(1, player.Turns);
+
+    // The stake stays in the player's pocket when the bank is short: being out of turns is the whole
+    // answer to the request, and there is no sense taking money to say so.
+    AssertRuleError(
+        () => casino.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a pull is asked for with fewer turns than it costs");
+    AssertEqual(1, player.Turns);
+    AssertEqual(99_980L, player.Cash);
+
+    // A floor tuned back to costing nothing still works, because the charge is a number and not a rule.
+    var free = CreateCasino(db, Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100, MaxWinMultiplier = 10 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
+        }
+    }), new ZeroRandom());
+    var spin = free.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(0, spin.TurnsSpent);
+    AssertEqual(1, player.Turns);
+}
+
+/// <summary>
+/// The pot is the machine's seed plus a slice of every wager taken since the last time it went, and
+/// the whole of it goes to whoever lands it.
+///
+/// Nothing anywhere stores that number. It is derived from the ledger on the way past, which is what
+/// keeps two people spinning the same machine at the same moment from reading one counter, adding to
+/// it and writing back over each other.
+/// </summary>
+static void CasinoProgressivePaysThePot()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // Two spins that land nothing, each feeding a tenth of its stake into the meter.
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    cold.SpinSlotsAsync(player, "pot", 100, 5, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    cold.SpinSlotsAsync(player, "pot", 100, 5, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var board = cold.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1_100L, board.SlotMachines.Single().Progressive);
+
+    // The third lands the grid. The pot pays what it stood at including this spin's own slice.
+    var hot = CreateCasino(db, options, new ScriptedRandom(0.9));
+    var spin = hot.SpinSlotsAsync(player, "pot", 100, 5, now.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(1_150L, spin.JackpotWon);
+    AssertEqual(1_150L, spin.Transaction.JackpotAmount);
+    AssertEqual(1_150L, spin.Transaction.PayoutAmount);
+    AssertEqual(650L, spin.Transaction.NetResult);
+
+    var drop = db.CasinoJackpotDrops.Single();
+    AssertEqual(1_150L, drop.Amount);
+    AssertEqual("pot", drop.MachineKey);
+    AssertEqual(spin.Transaction.Id, drop.CasinoTransactionId);
+
+    // The pot is not held to the paytable's ceiling. This machine cannot pay more than twice a stake
+    // out of its paytable, and the pot pays more than that - capping it would have the meter
+    // advertising money the machine could not hand over.
+    AssertTrue(spin.Transaction.PayoutAmount > spin.Transaction.BetAmount * 2, "the pot pays past the machine's top multiplier");
+}
+
+/// <summary>
+/// The pot only pays on a full ticket, and only when enough of the symbol actually lands.
+///
+/// Both halves matter. A progressive fed by everybody and collectable on one lane makes the cheapest
+/// possible spin the correct way to chase it, and a rule that counted any two would drop the pot
+/// several times an evening.
+/// </summary>
+static void CasinoProgressiveNeedsEveryLane()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // A grid full of the symbol, four lanes bought. Nothing.
+    var shortTicket = CreateCasino(db, options, new ScriptedRandom(0.9))
+        .SpinSlotsAsync(player, "pot", 100, 4, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(0L, shortTicket.JackpotWon);
+    AssertEqual(0, db.CasinoJackpotDrops.Count());
+
+    // Every lane bought, but only two of the symbol on the grid.
+    var thin = CreateCasino(db, options, new ScriptedRandom(0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        .SpinSlotsAsync(player, "pot", 100, 5, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(0L, thin.JackpotWon);
+    AssertEqual(0, db.CasinoJackpotDrops.Count());
+
+    // Three of the symbol, anywhere on the grid, on a full ticket.
+    var landed = CreateCasino(db, options, new ScriptedRandom(0.9, 0.0, 0.9, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0))
+        .SpinSlotsAsync(player, "pot", 100, 5, now.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertTrue(landed.JackpotWon > 0, "three of the symbol anywhere on a full ticket takes the pot");
+    AssertEqual(1, db.CasinoJackpotDrops.Count());
+}
+
+/// <summary>
+/// A pot that has gone starts again from the seed, and the wager that won it does not feed the next
+/// one. The drop is the line the running total is measured from.
+/// </summary>
+static void CasinoProgressiveResetsToSeed()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    CreateCasino(db, options, new ScriptedRandom(0.9))
+        .SpinSlotsAsync(player, "pot", 100, 5, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    var afterDrop = cold.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1_000L, afterDrop.SlotMachines.Single().Progressive);
+
+    cold.SpinSlotsAsync(player, "pot", 100, 5, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var rebuilding = cold.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1_050L, rebuilding.SlotMachines.Single().Progressive);
+}
+
+/// <summary>
+/// One machine, a thousand in the seed, a tenth of every stake into the meter, and two symbols so a
+/// scripted roll can decide whether the grid lands or not: below the halfway point is a blank and
+/// above it is the jackpot symbol.
+/// </summary>
+static GameOptions ProgressiveOptions()
+    => Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 1,
+            Jackpot = new CasinoJackpotOptions
+            {
+                Enabled = true,
+                ContributionPercent = 10,
+                Symbol = "vault",
+                SymbolsRequired = 3,
+                RequireAllPaylines = true
+            },
+            SlotMachines = [new SlotMachineOptions { Key = "pot", Name = "Pot Slots", MinBet = 10, MaxBet = 1_000, MaxWinMultiplier = 2, JackpotSeed = 1_000 }],
+            SlotSymbols =
+            [
+                // Both pay nothing, so the only money moving in these tests is the pot.
+                new SlotSymbolOptions { Key = "blank", Label = "Blank", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 },
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }
+            ]
+        }
+    });
 
 /// <summary>
 /// What a rival thinks a trip is worth is a multiple of its own fare, and the fare is what those turns
@@ -6213,6 +6424,14 @@ static void WorldNewsKeepsFightsAndDropsNoise()
     AssertTrue(!newsworthy(new GameActionLog { Action = "GROUND", CreatedAtUtc = now, Summary = "X took Y from you." }),
         "a notice written to one player is not published to everyone");
     AssertEqual("ground", WorldNews.Category("TERRITORY"));
+
+    // The pot on the cheapest machine is smaller than the cash swing that makes an ordinary win news,
+    // and it is still the story of the night - it was fed by everybody who played that machine.
+    AssertTrue(newsworthy(new GameActionLog { Action = "JACKPOT", CreatedAtUtc = now, CashDelta = 4_000 }), "a dropped pot is news at any size");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "CASINO", CreatedAtUtc = now, CashDelta = 900 }), "an ordinary pull is not news");
+    AssertTrue(newsworthy(new GameActionLog { Action = "CASINO", CreatedAtUtc = now, CashDelta = 40_000 }), "a big win still clears the swing rule");
+    AssertEqual("casino", WorldNews.Category("JACKPOT"));
+    AssertEqual("casino", WorldNews.Category("CASINO"));
     AssertEqual("combat", WorldNews.Category("ATTACK"));
     AssertEqual("build", WorldNews.Category("HIDEOUT"));
     AssertEqual("money", WorldNews.Category("SALE"));

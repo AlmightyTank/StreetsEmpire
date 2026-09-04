@@ -256,10 +256,39 @@ function slotGridSymbols(faces: string[], symbols?: string[]) {
   return Array.from({ length: slotGridSize }, (_, index) => base[index % base.length])
 }
 
-function slotGridText(faces: string[], symbols: string[]) {
-  const grid = slotGridSymbols(faces, symbols)
-  return Array.from({ length: slotRows }, (_, row) =>
-    grid.slice(row * slotColumns, row * slotColumns + slotColumns).join(' / ')).join(' | ')
+/** The grid written out, for a reader that cannot see the picture of it. */
+function slotGridText(symbols: string[], columns: number) {
+  return Array.from({ length: Math.ceil(symbols.length / columns) }, (_, row) =>
+    symbols.slice(row * columns, row * columns + columns).join(' / ')).join(' | ')
+}
+
+/**
+ * A pull as it landed, small enough to sit in a table cell.
+ *
+ * This column used to be the fifteen symbol names written out - "Cash Stack / Gold Chain / Pistol /
+ * Low-Rider / Crew Crown | ..." - which was two hundred characters of a row that has seven other
+ * columns, and unreadable at any width. Fifteen faces are a picture, so it is drawn as one, with the
+ * cells that actually paid lit the way they are on the machine.
+ *
+ * Columns come off the row rather than off the floor's current shape, because a row written before
+ * the floor widened holds nine symbols and is still in the ledger.
+ */
+function SlotMiniGrid({ symbols, wins }: { symbols: string[], wins: SlotWin[] }) {
+  if (symbols.length === 0) return <span className="text-body-tertiary">-</span>
+
+  const columns = symbols.length % slotColumns === 0 ? slotColumns : 3
+  const lit = new Set(wins.flatMap(win => win.cells))
+  return <span
+    className="slot-mini"
+    style={{ gridTemplateColumns: `repeat(${columns}, auto)` }}
+    role="img"
+    aria-label={slotGridText(symbols, columns)}
+  >
+    {symbols.map((symbol, cell) =>
+      <span className={lit.has(cell) ? 'is-lit' : undefined} key={cell} title={symbol}>
+        <SlotGlyph symbol={symbol} />
+      </span>)}
+  </span>
 }
 
 /**
@@ -3739,7 +3768,7 @@ function CasinoPage(ctx: PageContext) {
                     ? <span className="badge text-bg-warning ms-2">Pot</span>
                     : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}
                     {entry.isFreeSpin && <span className="badge text-bg-secondary ms-2">Free</span>}</td>
-                  <td>{slotGridText(activeFaces, entry.symbols)}</td>
+                  <td><SlotMiniGrid symbols={entry.symbols} wins={entry.wins} /></td>
                   <td>{entry.wins.length}/{entry.paylines}</td>
                   <td className={entry.isFreeSpin ? 'text-body-tertiary' : undefined}>{money.format(entry.betAmount)}</td>
                   <td>{money.format(entry.payoutAmount)}</td>

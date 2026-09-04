@@ -40,6 +40,12 @@
   them.
 
 ### Changed
+- **The ledger shows the pull instead of describing it.** Its grid column was the fifteen symbol
+  names written out - two hundred characters in a row that has seven other columns - which pushed the
+  whole table off the side of the page and was unreadable at any width. Fifteen faces are a picture,
+  so it is drawn as one: a five by three of the same glyphs the reels use, with the cells that
+  actually paid lit the way they were on the machine. The table fits now, and a win is findable in a
+  row without counting along it. The written-out version survives as the label a screen reader gets.
 - **A win is counted out rather than printed.** The payout climbs from nothing to what it landed on,
   and the net climbs with it because it is derived from the same figure rather than animated
   separately - so the two cannot disagree on the way past and both arrive together. How long it takes

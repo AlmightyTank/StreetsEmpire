@@ -1259,6 +1259,30 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
+// A whole pull in a table cell. Small enough that the row still reads as a row,
+// with the cells that paid lit so the win is findable without counting.
+.slot-mini {
+  display: inline-grid;
+  gap: 2px;
+
+  > span {
+    display: grid;
+    place-items: center;
+    inline-size: 16px;
+    block-size: 16px;
+    border-radius: 50%;
+    background: rgba($gold, .09);
+    color: rgba($gold, .55);
+
+    svg { inline-size: 70%; block-size: 70%; }
+  }
+
+  .is-lit {
+    background: rgba($gold, .28);
+    color: $gold;
+  }
+}
+
 // The same face at text size, so the paytable teaches the reel rather than
 // restating the name it is printed next to.
 .slot-pay-glyph {

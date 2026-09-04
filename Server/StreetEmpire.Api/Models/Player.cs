@@ -176,6 +176,21 @@ public sealed class Player
     public double CasinoComps { get; set; }
 
     /// <summary>
+    /// Spins the house owes this player, and the ticket they are owed on.
+    ///
+    /// The ticket is held with the count rather than taken from whatever is on screen when they are
+    /// spent. Free spins that played at the current stake would make the way to use them obvious and
+    /// stupid: win them on the cheapest pull the machine takes, then set the stake to the maximum and
+    /// collect at a hundred times the price of what earned them. They replay the spin that won them,
+    /// which is also what a real floor does with them.
+    /// </summary>
+    public int CasinoFreeSpins { get; set; }
+
+    public string? CasinoFreeSpinMachine { get; set; }
+    public long CasinoFreeSpinBet { get; set; }
+    public int CasinoFreeSpinLanes { get; set; }
+
+    /// <summary>
     /// When the counter will take another investment. Null means now.
     ///
     /// One clock across every favour rather than one per favour, because what is being modelled is the

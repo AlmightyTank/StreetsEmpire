@@ -95,7 +95,18 @@ public sealed record CasinoBoardResponse(
     CasinoJackpotRulesResponse JackpotRules,
     IReadOnlyList<CasinoJackpotDropResponse> RecentJackpots,
     int SpinTurnCost,
-    CasinoCompsResponse Comps);
+    CasinoCompsResponse Comps,
+    CasinoFreeSpinsResponse FreeSpins);
+
+/// <summary>What the house still owes, and the ticket it is owed on.</summary>
+public sealed record CasinoFreeSpinsResponse(
+    bool Enabled,
+    int Owed,
+    string? MachineKey,
+    string? MachineName,
+    long Bet,
+    int Paylines,
+    long TicketValue);
 
 /// <param name="DollarsWageredPerComp">What a dollar of comps costs in play, for the card to say so.</param>
 public sealed record CasinoCompsResponse(
@@ -196,6 +207,8 @@ public sealed record CasinoTransactionResponse(
     long PayoutAmount,
     long NetResult,
     IReadOnlyList<string> Symbols,
+    /// <summary>Whether the house staked this one. Its net is the payout, because nothing went in.</summary>
+    bool IsFreeSpin,
     IReadOnlyList<int> WinningPaylineIndexes,
     bool Jackpot,
     long JackpotAmount,
@@ -212,6 +225,9 @@ public sealed record SlotSpinResponse(
     int CompsEarned,
     CasinoRepResponse Reputation,
     CasinoStatsResponse Stats,
+    bool WasFreeSpin,
+    int FreeSpinsAwarded,
+    int FreeSpinsLeft,
     CasinoBoardResponse Board);
 
 public sealed record ClaimCompResponse(

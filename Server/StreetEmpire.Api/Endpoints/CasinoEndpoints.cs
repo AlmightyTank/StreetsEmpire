@@ -44,8 +44,9 @@ internal static class CasinoEndpoints
                 // the newsworthy cash swing, which is right for a win and wrong for a jackpot: the pot
                 // on the Sidewalk is the smallest on the floor and still the story of the night.
                 var action = spin.JackpotWon > 0 ? "JACKPOT" : "CASINO";
+                var onTheHouse = spin.WasFreeSpin ? " on the house" : string.Empty;
                 var summary = spin.JackpotWon > 0
-                    ? $"Took the {transaction.MachineKey} progressive for {spin.JackpotWon:C0} on a {transaction.BetAmount:C0} pull."
+                    ? $"Took the {transaction.MachineKey} progressive for {spin.JackpotWon:C0} on a {transaction.BetAmount:C0} pull{onTheHouse}."
                     : transaction.NetResult > 0
                         ? $"Spun {transaction.MachineKey} slots across {transaction.Paylines:N0} lane(s) for {transaction.BetAmount:C0} and won {transaction.PayoutAmount:C0}."
                         : $"Spun {transaction.MachineKey} slots across {transaction.Paylines:N0} lane(s) for {transaction.BetAmount:C0}.";
@@ -65,6 +66,9 @@ internal static class CasinoEndpoints
                     spin.CompsEarned,
                     board.Reputation,
                     board.Stats,
+                    spin.WasFreeSpin,
+                    spin.FreeSpinsAwarded,
+                    spin.FreeSpinsLeft,
                     board));
             }
             catch (GameRuleException ex)

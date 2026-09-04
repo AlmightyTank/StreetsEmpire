@@ -54,7 +54,8 @@ public sealed class CasinoService(
             JackpotRules(),
             (await RecentJackpotsAsync(ct)).ToList(),
             Math.Max(0, _options.Casino.SpinTurnCost),
-            CompsFor(player));
+            CompsFor(player),
+            FreeSpinsFor(player));
     }
 
     /// <summary>
@@ -119,6 +120,17 @@ public sealed class CasinoService(
         if (!config.Enabled)
             throw new GameRuleException("The casino cage is closed right now.");
 
+        // A spin the house owes replays the pull that won it, so the ticket comes off the player rather
+        // than off the request. Anything else lets somebody win them at the table minimum and spend
+        // them at the maximum.
+        var onTheHouse = config.FreeSpins.Enabled && player.CasinoFreeSpins > 0;
+        if (onTheHouse)
+        {
+            machineKey = player.CasinoFreeSpinMachine;
+            bet = player.CasinoFreeSpinBet;
+            paylines = player.CasinoFreeSpinLanes;
+        }
+
         var machine = config.Machine(machineKey) ?? config.SlotMachines.FirstOrDefault()
             ?? throw new GameRuleException("There are no slot machines on the floor.");
 
@@ -133,26 +145,33 @@ public sealed class CasinoService(
             throw new GameRuleException("That spin is too large for the cage to write down.");
 
         // Turns before money, because being out of turns is the answer to the whole request and there
-        // is no sense taking a stake off somebody to tell them so.
-        var turnCost = Math.Max(0, config.SpinTurnCost);
+        // is no sense taking a stake off somebody to tell them so. A spin on the house costs neither.
+        var turnCost = onTheHouse ? 0 : Math.Max(0, config.SpinTurnCost);
         if (turnCost > 0 && player.Turns < turnCost)
             throw new GameRuleException($"A pull is {turnCost:N0} turn(s) and you have {player.Turns:N0}.");
 
         var totalBet = bet * paylines;
-        if (player.Cash < totalBet)
+        if (!onTheHouse && player.Cash < totalBet)
             throw new GameRuleException($"You are carrying {player.Cash:C0}.");
 
         // Read before the stake is taken and before the reels turn, so the figure the pot pays is the
         // one that was standing on the machine when the button went down - this spin's own slice
         // included, the way a real meter ticks up as you play it.
-        var pot = await PotAsync(machine, ct) + ContributionFrom(totalBet);
+        // A spin on the house puts nothing into the meter, because nothing went in. It can still take
+        // it: the pot is everybody's money and the machine does not ask whose turn paid for the pull.
+        var pot = await PotAsync(machine, ct) + (onTheHouse ? 0 : ContributionFrom(totalBet));
 
         var repBefore = player.CasinoRep;
-        player.Turns -= turnCost;
-        player.Cash -= totalBet;
-        player.CasinoRep = Math.Max(0, player.CasinoRep + RepFor(machine, totalBet));
         var compsBefore = player.CasinoComps;
-        player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
+        player.Turns -= turnCost;
+        if (!onTheHouse)
+        {
+            player.Cash -= totalBet;
+            // Standing and comps are both rated on what a player stakes. The house is not going to pay
+            // itself standing for money it handed over.
+            player.CasinoRep = Math.Max(0, player.CasinoRep + RepFor(machine, totalBet));
+            player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
+        }
 
         var reel = ReelStrip(config.SymbolsFor(machine));
         var symbols = Enumerable.Range(0, Cells).Select(_ => DrawSymbol(reel)).ToArray();
@@ -175,8 +194,12 @@ public sealed class CasinoService(
             WinningPaylines = result.WinningPaylines,
             BetAmount = totalBet,
             PayoutAmount = payout + jackpot,
-            NetResult = payout + jackpot - totalBet,
+            // Nothing came out of the player's pocket on a free spin, so nothing comes off what they
+            // walk away with. The stake is still recorded above because it is what the paytable
+            // multiplied, but subtracting it here would report a loss to somebody who is up.
+            NetResult = payout + jackpot - (onTheHouse ? 0 : totalBet),
             JackpotAmount = jackpot,
+            IsFreeSpin = onTheHouse,
             Outcome = string.Join(",", symbols.Select(x => x.Key)),
             CreatedAtUtc = nowUtc
         };
@@ -194,12 +217,37 @@ public sealed class CasinoService(
             });
         }
 
+        // Spent after the reels rather than before, so the row that is written is the one that was
+        // played: a spin the house owed is a free spin even though the count is zero by the time it
+        // is saved.
+        var awarded = 0;
+        if (onTheHouse)
+        {
+            player.CasinoFreeSpins = Math.Max(0, player.CasinoFreeSpins - 1);
+        }
+        else if (config.FreeSpins.Enabled
+                 && config.FreeSpins.ChancePerSpin > 0
+                 && random.NextDouble() < config.FreeSpins.ChancePerSpin)
+        {
+            // Rolled after the reels are drawn so that adding this never moved a single grid anybody
+            // had already scripted, and only on a paid pull - free spins cannot pay for more of
+            // themselves, which is the difference between a run of luck and a machine that never stops.
+            awarded = Math.Max(1, config.FreeSpins.Award);
+            player.CasinoFreeSpins += awarded;
+            player.CasinoFreeSpinMachine = machine.Key;
+            player.CasinoFreeSpinBet = bet;
+            player.CasinoFreeSpinLanes = paylines;
+        }
+
         return new CasinoSpin(
             transaction,
             Math.Max(0, (int)Math.Floor(player.CasinoRep) - (int)Math.Floor(repBefore)),
             Math.Max(0, (int)Math.Floor(player.CasinoComps) - (int)Math.Floor(compsBefore)),
             turnCost,
-            jackpot);
+            jackpot,
+            onTheHouse,
+            awarded,
+            player.CasinoFreeSpins);
     }
 
     public async Task<CasinoStatsResponse> StatsAsync(Guid playerId, CancellationToken ct)
@@ -226,7 +274,7 @@ public sealed class CasinoService(
     public async Task<IReadOnlyDictionary<string, long>> PotsAsync(CancellationToken ct)
     {
         var wagered = await db.CasinoTransactions.AsNoTracking()
-            .Where(x => x.GameType == SlotsGame)
+            .Where(x => x.GameType == SlotsGame && !x.IsFreeSpin)
             .Where(x => !db.CasinoJackpotDrops.Any(drop => drop.MachineKey == x.MachineKey && drop.WonAtUtc >= x.CreatedAtUtc))
             .GroupBy(x => x.MachineKey)
             .Select(g => new { Machine = g.Key, Total = g.Sum(x => x.BetAmount) })
@@ -242,7 +290,7 @@ public sealed class CasinoService(
     private async Task<long> PotAsync(SlotMachineOptions machine, CancellationToken ct)
     {
         var wagered = await db.CasinoTransactions.AsNoTracking()
-            .Where(x => x.GameType == SlotsGame && x.MachineKey == machine.Key)
+            .Where(x => x.GameType == SlotsGame && x.MachineKey == machine.Key && !x.IsFreeSpin)
             .Where(x => !db.CasinoJackpotDrops.Any(drop => drop.MachineKey == machine.Key && drop.WonAtUtc >= x.CreatedAtUtc))
             .SumAsync(x => (long?)x.BetAmount, ct) ?? 0;
         return SeedFor(machine) + ContributionFrom(wagered);
@@ -271,6 +319,7 @@ public sealed class CasinoService(
             transaction.PayoutAmount,
             transaction.NetResult,
             symbols.Select(x => x.Label).ToList(),
+            transaction.IsFreeSpin,
             WinningPaylineIndexesFrom(transaction, symbols).ToList(),
             machine is not null && IsTopAward(transaction, symbols, TopMultiplier(machine)),
             transaction.JackpotAmount,
@@ -308,6 +357,21 @@ public sealed class CasinoService(
             x.PlayerName,
             x.Amount,
             x.WonAtUtc)).ToList();
+    }
+
+    private CasinoFreeSpinsResponse FreeSpinsFor(Player player)
+    {
+        var free = _options.Casino.FreeSpins;
+        var owed = free.Enabled ? Math.Max(0, player.CasinoFreeSpins) : 0;
+        var machine = owed > 0 ? _options.Casino.Machine(player.CasinoFreeSpinMachine) : null;
+        return new CasinoFreeSpinsResponse(
+            free.Enabled,
+            owed,
+            machine?.Key,
+            machine?.Name,
+            owed > 0 ? player.CasinoFreeSpinBet : 0,
+            owed > 0 ? player.CasinoFreeSpinLanes : 0,
+            owed > 0 ? player.CasinoFreeSpinBet * player.CasinoFreeSpinLanes : 0);
     }
 
     private CasinoCompsResponse CompsFor(Player player)
@@ -633,7 +697,15 @@ public sealed class CasinoService(
     }
 }
 
-public sealed record CasinoSpin(CasinoTransaction Transaction, int RepEarned, int CompsEarned, int TurnsSpent, long JackpotWon);
+public sealed record CasinoSpin(
+    CasinoTransaction Transaction,
+    int RepEarned,
+    int CompsEarned,
+    int TurnsSpent,
+    long JackpotWon,
+    bool WasFreeSpin,
+    int FreeSpinsAwarded,
+    int FreeSpinsLeft);
 
 public sealed record CompClaim(CompRewardOptions Reward, int TurnsGranted, long CashPaid, double HeatCleared, string Summary);
 

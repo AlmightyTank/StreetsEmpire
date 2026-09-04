@@ -201,6 +201,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Ignore(x => x.Weapons);
             entity.Property(x => x.HoeHappiness).HasPrecision(5, 2);
             entity.Property(x => x.ThugHappiness).HasPrecision(5, 2);
+            // Holds a machine key, so it is sized like every other one on the floor.
+            entity.Property(x => x.CasinoFreeSpinMachine).HasMaxLength(32);
         });
 
         modelBuilder.Entity<Alliance>(entity =>

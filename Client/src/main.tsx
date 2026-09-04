@@ -3381,14 +3381,17 @@ function CasinoPage(ctx: PageContext) {
   if (!board || !active) return <section className="card p-3"><div className="panel-title"><h2>Casino Floor</h2><span>Loading</span></div><p>The cage is counting chips.</p></section>
 
   const biggestPot = board.slotMachines.reduce((best, machine) => Math.max(best, machine.progressive), 0)
+  // A spin the house owes replays its own ticket, so it is blocked on neither cash nor turns and
+  // does not care what the stake box currently says.
+  const onTheHouse = board.freeSpins.enabled && board.freeSpins.owed > 0
   const spinBlocked = firstReason(
     spinning && 'The reels are still turning.',
     busy && BUSY,
     active.locked && (active.lockedReason ?? 'That machine is locked.'),
-    dashboard.turns < board.spinTurnCost && `A pull is ${board.spinTurnCost} turn${board.spinTurnCost === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
-    clampedBet < active.minBet && `${active.name} starts at ${money.format(active.minBet)}.`,
-    clampedBet > active.maxBet && `${active.name} tops out at ${money.format(active.maxBet)}.`,
-    dashboard.cash < totalBet && `You are carrying ${money.format(dashboard.cash)}.`,
+    !onTheHouse && dashboard.turns < board.spinTurnCost && `A pull is ${board.spinTurnCost} turn${board.spinTurnCost === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
+    !onTheHouse && clampedBet < active.minBet && `${active.name} starts at ${money.format(active.minBet)}.`,
+    !onTheHouse && clampedBet > active.maxBet && `${active.name} tops out at ${money.format(active.maxBet)}.`,
+    !onTheHouse && dashboard.cash < totalBet && `You are carrying ${money.format(dashboard.cash)}.`,
   )
   const winningLines = !spinning && lastSpin
     ? board.paylines.filter(line => lastSpin.transaction.winningPaylineIndexes.includes(line.index))
@@ -3489,6 +3492,12 @@ function CasinoPage(ctx: PageContext) {
           {winningLines.map(line => <polyline className="slot-payline-hit" points={slotPaylinePoints(line.cells)} key={line.index} />)}
         </svg>}
       </div>
+      {onTheHouse && <p className="text-warning mb-3">
+        The house owes you {board.freeSpins.owed} spin{board.freeSpins.owed === 1 ? '' : 's'} on
+        {' '}{board.freeSpins.machineName ?? 'this machine'} - {money.format(board.freeSpins.bet)} across
+        {' '}{board.freeSpins.paylines} lane{board.freeSpins.paylines === 1 ? '' : 's'}, the pull that won them.
+        They cost no cash and no turn, and the stake box does not apply until they are gone.
+      </p>}
       <div className="control-block mb-3">
         <div className="d-flex justify-content-between gap-3 align-items-baseline">
           <strong>Lanes</strong>
@@ -3525,7 +3534,9 @@ function CasinoPage(ctx: PageContext) {
         <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(active.minBet)}>Min</button>
         <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(Math.min(active.maxBet, Math.floor(dashboard.cash / lineCount)))}>Max</button>
         <Button className="btn btn-primary" blocked={spinBlocked} onClick={() => void runSpin()}>
-          Spin {money.format(totalBet)}{board.spinTurnCost > 0 && ` / ${board.spinTurnCost}t`}
+          {onTheHouse
+            ? `Free spin (${board.freeSpins.owed} left)`
+            : `Spin ${money.format(totalBet)}${board.spinTurnCost > 0 ? ` / ${board.spinTurnCost}t` : ''}`}
         </Button>
       </div>
       {lastSpin && verdict && !spinning && <div className={`border rounded p-3 mt-3 ${verdict.edge}`}>
@@ -3534,7 +3545,8 @@ function CasinoPage(ctx: PageContext) {
           <span className={`tnum ${verdict.tone}`}>{signedMoney(lastSpin.transaction.netResult)}</span>
         </div>
         <small className="text-body-tertiary">
-          Bet {money.format(lastSpin.transaction.betAmount)}. Won {money.format(lastSpin.transaction.payoutAmount)}.
+          {lastSpin.wasFreeSpin ? 'On the house' : `Bet ${money.format(lastSpin.transaction.betAmount)}`}. Won {money.format(lastSpin.transaction.payoutAmount)}.
+          {lastSpin.freeSpinsAwarded > 0 && ` The house owes you ${lastSpin.freeSpinsAwarded} free spins.`}
           {lastSpin.transaction.jackpotAmount > 0 && ` ${money.format(lastSpin.transaction.jackpotAmount)} of it was the progressive.`}
           {lastSpin.turnsSpent > 0 && ` ${lastSpin.turnsSpent} turn${lastSpin.turnsSpent === 1 ? '' : 's'}.`}
           {lastSpin.repEarned > 0 && ` +${number.format(lastSpin.repEarned)} casino rep.`}
@@ -3612,10 +3624,11 @@ function CasinoPage(ctx: PageContext) {
                 {board.recent.map(entry => <tr key={entry.id}>
                   <td>{entry.machineName}{entry.jackpotAmount > 0
                     ? <span className="badge text-bg-warning ms-2">Pot</span>
-                    : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}</td>
+                    : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}
+                    {entry.isFreeSpin && <span className="badge text-bg-secondary ms-2">Free</span>}</td>
                   <td>{slotGridText(activeFaces, entry.symbols)}</td>
                   <td>{entry.winningPaylines}/{entry.paylines}</td>
-                  <td>{money.format(entry.betAmount)}</td>
+                  <td className={entry.isFreeSpin ? 'text-body-tertiary' : undefined}>{money.format(entry.betAmount)}</td>
                   <td>{money.format(entry.payoutAmount)}</td>
                   <td className={entry.jackpotAmount > 0 ? 'text-warning' : 'text-body-tertiary'}>
                     {entry.jackpotAmount > 0 ? money.format(entry.jackpotAmount) : '-'}

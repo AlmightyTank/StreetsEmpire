@@ -1923,6 +1923,7 @@ public sealed class CasinoOptions
 
     public List<CompRewardOptions> CompRewards { get; set; } = [];
     public CasinoJackpotOptions Jackpot { get; set; } = new();
+    public CasinoFreeSpinOptions FreeSpins { get; set; } = new();
     public List<CasinoRepLevelOptions> Levels { get; set; } = [];
     public List<SlotMachineOptions> SlotMachines { get; set; } = [];
     public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
@@ -2202,6 +2203,32 @@ public sealed class SlotMachineOptions
     /// in the Vault, and one worth chasing in the Vault would be the only thing anybody ever played.
     /// </summary>
     public long JackpotSeed { get; set; }
+}
+
+/// <summary>
+/// Spins on the house, handed out at random.
+///
+/// The one thing on the floor that is not paid for by the person receiving it, which is the whole
+/// point: every other good thing here is bought. They replay the pull that won them - same machine,
+/// same stake, same lanes - so they cannot be won cheaply and spent expensively.
+/// </summary>
+public sealed class CasinoFreeSpinOptions
+{
+    /// <summary>
+    /// Off by default here and on in the shipped configuration, deliberately.
+    ///
+    /// The trigger is a roll against the same generator the reels use, and the test harness runs
+    /// machines on generators that return zero - which is below any chance worth setting, so every
+    /// spin in the suite would win free spins and no test that spends cash would spend any. The
+    /// shipped configuration is what turns this on for the real game.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>The chance a paid pull ends with the house owing you some, as a fraction of one.</summary>
+    public double ChancePerSpin { get; set; } = 0.02;
+
+    /// <summary>How many are owed when it happens.</summary>
+    public int Award { get; set; } = 5;
 }
 
 /// <summary>

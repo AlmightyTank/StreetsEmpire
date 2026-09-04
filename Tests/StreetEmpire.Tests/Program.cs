@@ -81,6 +81,8 @@ var tests = new (string Name, Action Test)[]
     ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
     ("a claimed comp hands over turns, cash and quiet", ACompHandsOverWhatItPromises),
     ("comps reset with the season", CompsResetWithTheSeason),
+    ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
+    ("a free spin pays for none of the floor it plays on", FreeSpinsPayForNoneOfTheFloor),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -2351,6 +2353,135 @@ static void CompsResetWithTheSeason()
 
     AssertEqual(0d, player.CasinoComps);
 }
+
+/// <summary>
+/// A spin the house owes costs nothing and replays the pull that won it.
+///
+/// The ticket travels with the count on purpose. Free spins that played whatever was on screen when
+/// they were spent would have one obvious use: win them on the smallest pull the machine takes, then
+/// set the stake to the maximum and collect at a hundred times the price of what earned them.
+/// </summary>
+static void FreeSpinsReplayThePullThatWonThem()
+{
+    var options = FreeSpinOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 20, Hideout = new Hideout() };
+
+    // MinimumRandom rolls one, which is over any chance worth setting, so this pull wins nothing.
+    var quiet = CreateCasino(db, options, new MinimumRandom())
+        .SpinSlotsAsync(player, "free", 10, 2, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(0, quiet.FreeSpinsAwarded);
+    AssertEqual(0, player.CasinoFreeSpins);
+
+    // ZeroRandom rolls nothing, which is under it, so this one does - on a two-lane pull at ten.
+    var lucky = CreateCasino(db, options, new ZeroRandom())
+        .SpinSlotsAsync(player, "free", 10, 2, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
+    AssertEqual(3, lucky.FreeSpinsAwarded);
+    AssertEqual(3, player.CasinoFreeSpins);
+    AssertEqual(10L, player.CasinoFreeSpinBet);
+    AssertEqual(2, player.CasinoFreeSpinLanes);
+    AssertTrue(!lucky.WasFreeSpin, "the pull that wins them is not itself a free one");
+
+    // Now ask for the largest pull the machine takes. It replays the ticket instead, and takes
+    // neither cash nor a turn for it.
+    var cashBefore = player.Cash;
+    var turnsBefore = player.Turns;
+    var free = CreateCasino(db, options, new MinimumRandom())
+        .SpinSlotsAsync(player, "free", 1_000, 9, DateTime.UtcNow.AddMinutes(2), default).GetAwaiter().GetResult();
+
+    AssertTrue(free.WasFreeSpin, "a spin the house owes should be free");
+    AssertEqual(20L, free.Transaction.BetAmount);
+    AssertEqual(2, free.Transaction.Paylines);
+    AssertEqual(0, free.TurnsSpent);
+    AssertEqual(turnsBefore, player.Turns);
+    AssertEqual(cashBefore, player.Cash);
+    AssertEqual(2, player.CasinoFreeSpins);
+    AssertTrue(free.Transaction.IsFreeSpin, "the row should say who paid for it");
+
+    // And it cannot pay for more of itself, however the roll lands.
+    var second = CreateCasino(db, options, new ZeroRandom())
+        .SpinSlotsAsync(player, "free", 10, 2, DateTime.UtcNow.AddMinutes(3), default).GetAwaiter().GetResult();
+    AssertEqual(0, second.FreeSpinsAwarded);
+    AssertEqual(1, player.CasinoFreeSpins);
+}
+
+/// <summary>
+/// Nothing was staked on a free spin, so it pays for none of the things stakes pay for: not the
+/// progressive, not standing, not comps. It can still take the pot, which is everybody's money and
+/// does not ask whose turn paid for the pull.
+/// </summary>
+static void FreeSpinsPayForNoneOfTheFloor()
+{
+    var options = FreeSpinOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 20, Hideout = new Hideout() };
+
+    CreateCasino(db, options, new ZeroRandom())
+        .SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(3, player.CasinoFreeSpins);
+
+    // ZeroRandom draws the blank, so this one lands nothing and the meter can be read either side of it.
+    var casino = CreateCasino(db, options, new ZeroRandom());
+    var potBefore = casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive;
+    var repBefore = player.CasinoRep;
+    var compsBefore = player.CasinoComps;
+
+    var free = casino.SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertTrue(free.WasFreeSpin, "this one is on the house");
+    AssertEqual(0, free.RepEarned);
+    AssertEqual(0, free.CompsEarned);
+    AssertEqual(repBefore, player.CasinoRep);
+    AssertEqual(compsBefore, player.CasinoComps);
+
+    // The stake is still written down - it is what the paytable multiplied - but it put nothing in,
+    // so it comes off nothing either. Subtracting it here reported a sixty dollar loss to a player
+    // whose cash had just gone up by twenty.
+    AssertEqual(900L, free.Transaction.BetAmount);
+    AssertEqual(free.Transaction.PayoutAmount, free.Transaction.NetResult);
+    AssertTrue(free.Transaction.NetResult >= 0, "a spin that cost nothing cannot lose money");
+    var potAfter = casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive;
+    AssertEqual(potBefore, potAfter);
+
+    // It can still take the pot. MinimumRandom falls off the end of the reel onto the Vault, so this
+    // grid is fifteen of them on a full ticket, which is what the meter pays out on.
+    var winner = CreateCasino(db, options, new MinimumRandom())
+        .SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertTrue(winner.WasFreeSpin, "still on the house");
+    AssertEqual(potAfter, winner.JackpotWon);
+    AssertTrue(winner.JackpotWon > 0, "a spin the house paid for can still take everybody's money");
+}
+
+/// <summary>
+/// One machine that pays nothing at all, so the only money moving in these tests is the free spins
+/// themselves, and a three-spin award on a one-in-fifty roll.
+/// </summary>
+static GameOptions FreeSpinOptions()
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 1,
+            CompsPerDollarWagered = 0.01,
+            RepPerMaxBetSpin = 5,
+            FreeSpins = new CasinoFreeSpinOptions { Enabled = true, ChancePerSpin = 0.02, Award = 3 },
+            Jackpot = new CasinoJackpotOptions { Enabled = true, ContributionPercent = 10, Symbol = "vault", SymbolsRequired = 4, RequireAllPaylines = true },
+            SlotMachines = [new SlotMachineOptions { Key = "free", Name = "Free Slots", MinBet = 10, MaxBet = 1_000, JackpotSeed = 1_000 }],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "blank", Label = "Blank", Weight = 1 },
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1 }
+            ]
+        }
+    };
 
 /// <summary>
 /// A menu of two: one anybody can take, and one the back room keeps for regulars that pays in all

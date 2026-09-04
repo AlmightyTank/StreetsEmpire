@@ -20,6 +20,16 @@ public sealed class CasinoTransaction
     /// </summary>
     public long JackpotAmount { get; set; }
 
+    /// <summary>
+    /// Whether the house paid for this pull rather than the player.
+    ///
+    /// The stake is still written down, because it is what the paytable multiplied and what the row
+    /// has to show to make sense. What it is not is money anybody put in, so it feeds neither the
+    /// progressive nor standing nor comps - all of which are paid for out of what players actually
+    /// stake, and would otherwise be paid for twice.
+    /// </summary>
+    public bool IsFreeSpin { get; set; }
+
     public string Outcome { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

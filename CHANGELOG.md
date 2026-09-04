@@ -40,6 +40,17 @@
   them.
 
 ### Changed
+- **Spins on the house.** A paid pull now has a small chance of ending with the house owing you a
+  handful of free ones. They replay the pull that won them - same machine, same stake, same lanes -
+  which is what a real floor does with them and is also the only way they are not silly: free spins
+  that played whatever was on screen when you spent them would be won on the smallest pull a machine
+  takes and cashed at the largest. While the house owes you any, the stake box does not apply.
+
+  They cost no cash and no turn, and because nothing was staked they pay for none of the things
+  stakes pay for: not the progressive, not standing, not comps, all of which come out of what players
+  actually put in and would otherwise be paid for twice. They can still take the pot, which is
+  everybody's money and does not ask whose turn paid for the pull. A free spin never wins more free
+  spins - that is the difference between a run of luck and a machine that never stops.
 - **The reels stop one at a time.** They all stopped together, which reads as a picture appearing
   rather than as a machine landing - and it threw the result away, because the only reason to keep
   watching a slot machine is the reel that has not stopped yet. They drop left to right now, and the

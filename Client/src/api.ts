@@ -74,6 +74,8 @@ export type CasinoTransaction = {
   payoutAmount: number
   netResult: number
   symbols: string[]
+  /** Whether the house staked this one. Its net is the payout, because nothing went in. */
+  isFreeSpin: boolean
   winningPaylineIndexes: number[]
   /** Whether a lane paid the machine's top multiplier. */
   jackpot: boolean
@@ -108,6 +110,19 @@ export type CasinoBoard = {
   recentJackpots: CasinoJackpotDrop[]
   spinTurnCost: number
   comps: CasinoComps
+  freeSpins: CasinoFreeSpins
+}
+
+export type CasinoFreeSpins = {
+  enabled: boolean
+  /** How many the house still owes. */
+  owed: number
+  machineKey?: string | null
+  machineName?: string | null
+  /** The ticket they replay: per-lane stake, lanes, and what that would have cost. */
+  bet: number
+  paylines: number
+  ticketValue: number
 }
 
 export type CasinoComps = {
@@ -153,6 +168,9 @@ export type SlotSpin = {
   compsEarned: number
   reputation: CasinoReputation
   stats: CasinoStats
+  wasFreeSpin: boolean
+  freeSpinsAwarded: number
+  freeSpinsLeft: number
   /** The whole floor as it stands after the spin, so the meters move without a second fetch. */
   board: CasinoBoard
 }

@@ -191,9 +191,31 @@ function SlotGlyph({ symbol, className }: { symbol: string, className?: string }
 }
 
 /** How long every reel turns before the first of them is allowed to stop. */
-const slotSpinDurationMs = 620
-/** And the gap between each reel stopping and the next, left to right. */
-const slotReelStopMs = 190
+const slotSpinDurationMs = 900
+/** The gap between the first reel stopping and the second. */
+const slotReelStopMs = 380
+/**
+ * How much longer each gap is than the one before it.
+ *
+ * The reels come down 380, 440, 500 and 560 milliseconds apart, so the machine takes its time over
+ * the reels that are still live. The last one is the only one that can still change the answer and
+ * it should be the one you wait longest on.
+ */
+const slotReelStopRampMs = 60
+
+/**
+ * The same landing for somebody who has asked the game to stop moving.
+ *
+ * Under reduced motion the reel strip does not animate at all, so every one of those milliseconds is
+ * a still grid and a wait for nothing. The reels still come down in order, because the order is
+ * information rather than decoration, but they do it fast enough not to be a delay.
+ */
+function slotReelTiming() {
+  const reduced = document.documentElement.getAttribute('data-motion') === 'reduced'
+  return reduced
+    ? { hold: 120, gap: 60, ramp: 0 }
+    : { hold: slotSpinDurationMs, gap: slotReelStopMs, ramp: slotReelStopRampMs }
+}
 const slotColumns = 5
 const slotRows = 3
 const slotGridSize = slotColumns * slotRows
@@ -3329,11 +3351,12 @@ function CasinoPage(ctx: PageContext) {
     // that was just taken has gone back to its seed with somebody's name against it.
     setBoard(settled.board)
 
+    const timing = slotReelTiming()
     const spun = window.performance.now() - started
-    if (spun < slotSpinDurationMs) await wait(slotSpinDurationMs - spun)
+    if (spun < timing.hold) await wait(timing.hold - spun)
     for (let column = 1; column <= slotColumns; column++) {
       setStoppedColumns(column)
-      if (column < slotColumns) await wait(slotReelStopMs)
+      if (column < slotColumns) await wait(timing.gap + (column - 1) * timing.ramp)
     }
     await refresh()
   }
@@ -3450,7 +3473,7 @@ function CasinoPage(ctx: PageContext) {
                 // little slower than the one before it, which is the same order they come to rest in.
                 style={{
                   animationDelay: `${(index % slotColumns) * -130}ms`,
-                  animationDuration: `${520 + (index % slotColumns) * 90}ms`,
+                  animationDuration: `${620 + (index % slotColumns) * 110}ms`,
                 }}
               >
                 {reelSymbols.map((reelSymbol, reelIndex) =>

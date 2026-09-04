@@ -42,8 +42,12 @@
 ### Changed
 - **The reels stop one at a time.** They all stopped together, which reads as a picture appearing
   rather than as a machine landing - and it threw the result away, because the only reason to keep
-  watching a slot machine is the reel that has not stopped yet. They drop left to right now, about a
-  fifth of a second apart, and each reel to the right turns a little slower than the one before it.
+  watching a slot machine is the reel that has not stopped yet. They drop left to right now, and the
+  gaps widen as they go - 380, 440, 500 and 560 milliseconds - so the machine takes longest over the
+  reel that can still change the answer. A spin runs about two and a half seconds. Each reel to the
+  right turns a little slower than the one before it. Somebody who has asked the game to stop moving
+  gets the same order at a tenth of the length, because with the strip animation off those
+  milliseconds are a still grid and a wait for nothing.
   Everything that reads as the verdict waits for the last of them: the winning lines, the lit cells
   and the receipt all hold until the fifth reel is down, so nothing tells you how it went while a reel
   can still change it.

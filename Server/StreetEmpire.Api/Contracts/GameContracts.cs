@@ -178,6 +178,16 @@ public sealed record SlotMachineResponse(
 
 public sealed record SlotSymbolPayResponse(string Label, int Pair, int Triple, int Quad, int Quint);
 
+/// <param name="Run">How many cells from the left actually matched. Two of a kind is a win two cells wide.</param>
+/// <param name="Cells">Exactly the cells it ran across, so the board can light those and no others.</param>
+public sealed record SlotWinResponse(
+    int PaylineIndex,
+    string PaylineName,
+    string Symbol,
+    int Run,
+    IReadOnlyList<int> Cells,
+    long Payout);
+
 public sealed record CasinoRepResponse(
     int Rep,
     int Level,
@@ -209,7 +219,7 @@ public sealed record CasinoTransactionResponse(
     IReadOnlyList<string> Symbols,
     /// <summary>Whether the house staked this one. Its net is the payout, because nothing went in.</summary>
     bool IsFreeSpin,
-    IReadOnlyList<int> WinningPaylineIndexes,
+    IReadOnlyList<SlotWinResponse> Wins,
     bool Jackpot,
     long JackpotAmount,
     DateTime CreatedAtUtc);

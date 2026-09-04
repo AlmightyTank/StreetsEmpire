@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, SlotSpin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3393,10 +3393,10 @@ function CasinoPage(ctx: PageContext) {
     !onTheHouse && clampedBet > active.maxBet && `${active.name} tops out at ${money.format(active.maxBet)}.`,
     !onTheHouse && dashboard.cash < totalBet && `You are carrying ${money.format(dashboard.cash)}.`,
   )
-  const winningLines = !spinning && lastSpin
-    ? board.paylines.filter(line => lastSpin.transaction.winningPaylineIndexes.includes(line.index))
-    : []
-  const winningCells = new Set(winningLines.flatMap(line => line.cells))
+  // A lane that pays on two of a kind won across two cells, not across five. Lighting the whole lane
+  // for it - which is what the board used to do - says a five of a kind landed.
+  const wins: SlotWin[] = !spinning && lastSpin ? lastSpin.transaction.wins : []
+  const winningCells = new Set(wins.flatMap(win => win.cells))
   const verdict = lastSpin ? spinVerdict(lastSpin.transaction) : null
   // Richest first off the paytable, so an idle reel shows the room's own faces.
   const activeFaces = active.paytable.map(pay => pay.label)
@@ -3488,10 +3488,20 @@ function CasinoPage(ctx: PageContext) {
             <strong className="slot-reel-label">{turning ? 'Spinning' : symbol}</strong>
           </div>
         })}
-        {winningLines.length > 0 && <svg className="slot-payline-overlay" viewBox={`0 0 ${slotColumns - 1} ${slotRows - 1}`} preserveAspectRatio="none" aria-hidden="true">
-          {winningLines.map(line => <polyline className="slot-payline-hit" points={slotPaylinePoints(line.cells)} key={line.index} />)}
+        {wins.length > 0 && <svg className="slot-payline-overlay" viewBox={`0 0 ${slotColumns - 1} ${slotRows - 1}`} preserveAspectRatio="none" aria-hidden="true">
+          {wins.map(win => <polyline className="slot-payline-hit" points={slotPaylinePoints(win.cells)} key={win.paylineIndex} />)}
         </svg>}
       </div>
+      {wins.length > 0 && <ul className="list-unstyled d-grid gap-1 mb-3">
+        {wins.map(win => <li className="d-flex justify-content-between gap-3 align-items-baseline small" key={win.paylineIndex}>
+          <span>
+            <SlotGlyph symbol={win.symbol} className="slot-pay-glyph" />
+            <strong>{win.run}</strong> {win.symbol}
+            <span className="text-body-tertiary"> on {win.paylineName.toLowerCase()}</span>
+          </span>
+          <span className="tnum text-success">{money.format(win.payout)}</span>
+        </li>)}
+      </ul>}
       {onTheHouse && <p className="text-warning mb-3">
         The house owes you {board.freeSpins.owed} spin{board.freeSpins.owed === 1 ? '' : 's'} on
         {' '}{board.freeSpins.machineName ?? 'this machine'} - {money.format(board.freeSpins.bet)} across
@@ -3627,7 +3637,7 @@ function CasinoPage(ctx: PageContext) {
                     : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}
                     {entry.isFreeSpin && <span className="badge text-bg-secondary ms-2">Free</span>}</td>
                   <td>{slotGridText(activeFaces, entry.symbols)}</td>
-                  <td>{entry.winningPaylines}/{entry.paylines}</td>
+                  <td>{entry.wins.length}/{entry.paylines}</td>
                   <td className={entry.isFreeSpin ? 'text-body-tertiary' : undefined}>{money.format(entry.betAmount)}</td>
                   <td>{money.format(entry.payoutAmount)}</td>
                   <td className={entry.jackpotAmount > 0 ? 'text-warning' : 'text-body-tertiary'}>

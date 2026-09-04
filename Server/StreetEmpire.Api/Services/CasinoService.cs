@@ -320,7 +320,7 @@ public sealed class CasinoService(
             transaction.NetResult,
             symbols.Select(x => x.Label).ToList(),
             transaction.IsFreeSpin,
-            WinningPaylineIndexesFrom(transaction, symbols).ToList(),
+            WinningLinesFrom(transaction, symbols).ToList(),
             machine is not null && IsTopAward(transaction, symbols, TopMultiplier(machine)),
             transaction.JackpotAmount,
             transaction.CreatedAtUtc);
@@ -602,16 +602,27 @@ public sealed class CasinoService(
     /// every lane hits.
     /// </summary>
     private static int PayoutMultiplier(IReadOnlyList<SlotSymbolOptions> line)
+        => ReadLine(line).Multiplier;
+
+    /// <summary>
+    /// What a lane opens with, how far it runs, and what that is worth.
+    ///
+    /// The run is returned as well as the money because the two are different facts and the board
+    /// needs both: a lane that pays on two of a kind is a win across the first two cells and not
+    /// across all five, and lighting the whole lane for it says a five-of-a-kind landed.
+    /// </summary>
+    private static LineRead ReadLine(IReadOnlyList<SlotSymbolOptions> line)
     {
         if (line.Count == 0)
-            return 0;
+            return new LineRead(null, 0, 0);
 
         var left = line[0];
         var run = 1;
         while (run < line.Count && string.Equals(line[run].Key, left.Key, StringComparison.OrdinalIgnoreCase))
             run++;
 
-        return left.PayFor(run);
+        var multiplier = left.PayFor(run);
+        return new LineRead(left, multiplier > 0 ? run : 0, multiplier);
     }
 
     private static SlotScore ScorePaylines(IReadOnlyList<SlotSymbolOptions> symbols, int paylines, long bet)
@@ -630,16 +641,36 @@ public sealed class CasinoService(
         return new SlotScore(payout, winningPaylines);
     }
 
-    private static IEnumerable<int> WinningPaylineIndexesFrom(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols)
+    /// <summary>
+    /// Every lane that paid, with how far it ran and what it was worth.
+    ///
+    /// The per-lane money is worked out here rather than left to the board, because the board would
+    /// have to know the stake per lane and the paytable to do it, and both of those are the floor's
+    /// business rather than the page's.
+    /// </summary>
+    private static IEnumerable<SlotWinResponse> WinningLinesFrom(CasinoTransaction transaction, IReadOnlyList<SlotSymbolOptions> symbols)
     {
         // A row written before the floor widened holds nine symbols, not fifteen, and every lane here
         // reaches past the ninth. It keeps its grid and its money; it just cannot draw its lines.
         if (symbols.Count < Cells)
             yield break;
 
-        foreach (var line in SlotPaylines.Take(Math.Clamp(transaction.Paylines, 1, SlotPaylines.Length)))
-            if (PayoutMultiplier(line.Cells.Select(cell => symbols[cell]).ToArray()) > 0)
-                yield return line.Index;
+        var lanes = Math.Clamp(transaction.Paylines, 1, SlotPaylines.Length);
+        var perLane = transaction.BetAmount / Math.Max(1, lanes);
+        foreach (var line in SlotPaylines.Take(lanes))
+        {
+            var read = ReadLine(line.Cells.Select(cell => symbols[cell]).ToArray());
+            if (read.Multiplier <= 0 || read.Symbol is null) continue;
+
+            yield return new SlotWinResponse(
+                line.Index,
+                line.Name,
+                read.Symbol.Label,
+                read.Run,
+                // The cells it actually ran across, so the board lights those and no others.
+                line.Cells.Take(read.Run).ToList(),
+                perLane * read.Multiplier);
+        }
     }
 
     private CasinoRepResponse ReputationFor(Player player)
@@ -710,6 +741,9 @@ public sealed record CasinoSpin(
 public sealed record CompClaim(CompRewardOptions Reward, int TurnsGranted, long CashPaid, double HeatCleared, string Summary);
 
 internal sealed record SlotScore(long Payout, int WinningPaylines);
+
+/// <summary>What a lane opened with, how far it ran, and what that pays.</summary>
+internal sealed record LineRead(SlotSymbolOptions? Symbol, int Run, int Multiplier);
 
 internal sealed record ReelStripOptions(IReadOnlyList<SlotSymbolOptions> Symbols, int TotalWeight);
 

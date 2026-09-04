@@ -40,6 +40,13 @@
   them.
 
 ### Changed
+- **A win is lit across what actually matched.** A lane that paid on two of a kind lit all five of its
+  cells and drew a line the full width of the grid, which says a five of a kind landed. With runs of
+  two to five being the whole mechanic, that was the board reporting the wrong win: a pair and a
+  five-of-a-kind looked identical. Lanes now carry the run they paid on, and only those cells light
+  and only that much line is drawn. Under the reels is what each lane actually did - the symbol, how
+  far it ran, which lane, and what it paid - because a nine-lane win was otherwise one number with no
+  account of where it came from.
 - **Spins on the house.** A paid pull now has a small chance of ending with the house owing you a
   handful of free ones. They replay the pull that won them - same machine, same stake, same lanes -
   which is what a real floor does with them and is also the only way they are not silly: free spins

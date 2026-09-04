@@ -2073,7 +2073,11 @@ static void CasinoSlotsDrawFifteenCellsAndPayLanes()
     AssertEqual(90L, spin.Transaction.BetAmount);
     AssertEqual(450L, spin.Transaction.PayoutAmount);
     AssertEqual(360L, spin.Transaction.NetResult);
-    AssertEqual("1,2,3,4,5,6,7,8,9", string.Join(",", response.WinningPaylineIndexes));
+    AssertEqual("1,2,3,4,5,6,7,8,9", string.Join(",", response.Wins.Select(x => x.PaylineIndex)));
+    // Every cell the same symbol, so every lane ran the whole width of the grid.
+    AssertTrue(response.Wins.All(x => x.Run == 5), "a grid of one symbol runs five cells on every lane");
+    AssertTrue(response.Wins.All(x => x.Cells.Count == 5), "and lights all five of them");
+    AssertEqual(50L, response.Wins[0].Payout);
 }
 
 /// <summary>
@@ -2116,7 +2120,15 @@ static void CasinoSlotsPayOnlyLeftToRightMatches()
     AssertEqual(50L, spin.Transaction.PayoutAmount);
     AssertEqual(30L, spin.Transaction.NetResult);
     AssertEqual(1, spin.Transaction.WinningPaylines);
-    AssertEqual("2", string.Join(",", response.WinningPaylineIndexes));
+
+    // The win is two cells wide, and only those two. Reporting the whole lane here is what made the
+    // board light five cells for a pair.
+    var win = response.Wins.Single();
+    AssertEqual(2, win.PaylineIndex);
+    AssertEqual(2, win.Run);
+    AssertEqual("0,1", string.Join(",", win.Cells));
+    AssertEqual("A", win.Symbol);
+    AssertEqual(50L, win.Payout);
 }
 
 static void CasinoSlotsEarnStandingAndUnlockMachines()

@@ -37,6 +37,17 @@ export type SlotSymbolPay = {
   quint: number
 }
 
+export type SlotWin = {
+  paylineIndex: number
+  paylineName: string
+  symbol: string
+  /** How many cells from the left actually matched. Two of a kind is a win two cells wide. */
+  run: number
+  /** Exactly the cells it ran across, so only those are lit. */
+  cells: number[]
+  payout: number
+}
+
 export type SlotPayline = {
   index: number
   name: string
@@ -76,7 +87,7 @@ export type CasinoTransaction = {
   symbols: string[]
   /** Whether the house staked this one. Its net is the payout, because nothing went in. */
   isFreeSpin: boolean
-  winningPaylineIndexes: number[]
+  wins: SlotWin[]
   /** Whether a lane paid the machine's top multiplier. */
   jackpot: boolean
   /** The progressive this spin took, or zero. */

@@ -452,6 +452,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.OriginCity).HasMaxLength(32);
             entity.Property(x => x.TargetCity).HasMaxLength(32);
             entity.Property(x => x.Summary).HasMaxLength(512);
+            entity.Property(x => x.ReturnRiskPercent).HasPrecision(5, 2);
             entity.Property(x => x.CommittedCokePurity).HasPrecision(5, 4);
             entity.Property(x => x.ReturningCokePurity).HasPrecision(5, 4);
             entity.Ignore(x => x.IsInbound);

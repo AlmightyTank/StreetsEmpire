@@ -676,6 +676,8 @@ export type StrikeTrip = {
   /** The full turn price per method, the drive included. */
   turnCosts: Record<string, number>
   hitChancePenaltyPercent: number
+  /** The odds the drive home goes wrong, for a crew carrying something that is not theirs. */
+  returnRiskPercent: number
 }
 
 /** One of your crews on the road. */

@@ -9740,6 +9740,12 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
         {' '}{money.format(trip.fare)} in petrol and plates.
         {trip.hitChancePenaltyPercent > 0 && ` A ${method.label.toLowerCase()} is ${trip.hitChancePenaltyPercent}% harder on streets nobody knows.`}
       </span>
+      {/* Only the two verbs that carry something home are told about the road back, because only they
+          have anything on it that anybody would stop them for. */}
+      {trip.returnRiskPercent > 0 && (method.key === 'jack' || method.key === 'poach') && <span className="small">
+        And {trip.returnRiskPercent}% of the way back going wrong. What they took is what gets taken;
+        what they set out with is theirs either way.
+      </span>}
       <span className="small text-body-secondary">
         Whatever is standing in that house when they get there is what they meet, not what is standing now.
       </span>

@@ -25,8 +25,16 @@
   Loud work suffers for the distance and quiet work does not. A drive-by and a jacking lose odds on
   streets nobody knows, and a drive-by that goes wrong away from home is a car left behind rather than
   a fast drive back. An infestation is one person being quiet and a poach is money talking, and
-  neither cares how far it came. And what a crew took has to be driven home: a jacked car is on a
-  motorway until they are back at their own door.
+  neither cares how far it came.
+
+  And what a crew took has to be driven home, which is a journey of its own. A jacked car is on a
+  motorway until they are back at their own door, and the road out of a town you have just robbed is
+  the half of an away job nobody thinks about until it goes wrong: the town's own risk plus the length
+  of the drive, never a certainty, quoted before the crew leave and frozen when they do. It reads on
+  the haul and never on the load they set out with - a car you own and a car you took an hour ago are
+  the same object and completely different journeys, and only one of them is the reason anybody is
+  looking. Which is also what keeps a drive-by the cheap fast verb: it brings nothing home but its own
+  car, so there is nothing to stop it for.
 
   Heat is charged where the crime happened rather than where the criminal lives. Loud things in New
   York are noticed by New York, wherever you are standing.

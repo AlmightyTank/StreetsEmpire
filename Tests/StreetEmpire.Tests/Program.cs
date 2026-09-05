@@ -69,6 +69,7 @@ var tests = new (string Name, Action Test)[]
     ("a trip that finds a shield turns round with the load", AShieldedLandingTurnsTheCrewRound),
     ("what a crew are still carrying comes home with them", TheHaulComesHomeAtTheDoor),
     ("a lookout buys notice and never detail", ALookoutBuysNoticeAndNeverDetail),
+    ("the way home is its own risk, and only for what was taken", TheWayHomeIsItsOwnRisk),
     ("an intelligence centre buys back the switches distance takes", IntelligenceBuysBackRemoteControl),
     ("crew are swept up, bailed out, or left inside", CrewAreSweptUpBailedOrLeftInside),
     ("a bond is refused late, short, or twice", ABondIsRefusedLateShortOrTwice),
@@ -8211,6 +8212,7 @@ static PendingStrikeService CreatePendingStrikes(GameDbContext db, GameOptions o
     return new PendingStrikeService(
         db,
         snapshot,
+        roll,
         new StreetStrikeService(snapshot, roll, hideouts),
         hideouts,
         new TerritoryService(db, snapshot),
@@ -8369,8 +8371,9 @@ static void TheHaulComesHomeAtTheDoor()
 {
     var options = Resolve(new GameOptions());
     using var db = NewStrikeWorld();
-    // A roll of nought lands every chance in the game, so the jacking succeeds and takes what it can.
-    var pending = CreatePendingStrikes(db, options, new AlwaysRandom());
+    // Nought lands the jacking; one gets them home clean. The way back is its own roll and it has to
+    // be answered here, or this test is measuring two things and reporting one.
+    var pending = CreatePendingStrikes(db, options, new ScriptedRandom(0, 1));
     var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
 
     var attacker = Attacker(options);
@@ -8395,6 +8398,7 @@ static void TheHaulComesHomeAtTheDoor()
 
     pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
     AssertEqual(PendingStrikeStatus.Done, road.Status);
+    AssertEqual(0, road.SeizedRides);
     AssertTrue(attacker.Rides > 0, "and now it is home");
 }
 
@@ -8443,6 +8447,85 @@ static void ALookoutBuysNoticeAndNeverDetail()
     AssertEqual(0, pending.WarningMinutesFor(target.Hideout));
     AssertTrue(!pending.AnythingInboundAsync(target, road.ArrivesAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult(),
         "there is nobody in a wrecked lookout to do the watching");
+}
+
+
+/// <summary>
+/// The half of an away job nobody thinks about until it goes wrong.
+///
+/// A car you own and a car you took an hour ago are the same object and completely different journeys:
+/// one has plates nobody is looking for, and the other is the reason anybody is looking. So the road
+/// home reads on the haul and never on the load a crew set out with - which is also what keeps a
+/// drive-by the cheap fast verb, since it brings nothing home but its own car.
+/// </summary>
+static void TheWayHomeIsItsOwnRisk()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    Player Target()
+    {
+        var target = Defender(options, rides: 3);
+        target.City = "Los Angeles";
+        target.Hideout!.City = "Los Angeles";
+        target.Thugs = 0;
+        target.Armoury = Armoury.Empty;
+        return target;
+    }
+
+    // Quoted before anything is committed, because a risk somebody is judged by and never shown is a
+    // surprise rather than a decision. It is never a certainty, however far the drive is.
+    var quoted = CreatePendingStrikes(db, options);
+    var far = quoted.ReturnRiskFor("Los Angeles", options.CityMarkets.TravelTurns("Los Angeles"));
+    var near = quoted.ReturnRiskFor("Detroit", options.CityMarkets.TravelTurns("Detroit"));
+    AssertTrue(far > near, $"a longer drive is more road to be stopped on: {far:P0} against {near:P0}");
+    AssertTrue(far < 1, "and it is never a certainty");
+    AssertEqual(0.0, quoted.ReturnRiskFor("Detroit", 0));
+
+    // Nought lands the jacking, and nought again stops them on the way out with it.
+    var stopped = CreatePendingStrikes(db, options, new AlwaysRandom());
+    var robber = Attacker(options);
+    var robbed = Target();
+    db.Players.AddRange(robber, robbed);
+    db.SaveChanges();
+
+    var road = stopped.LaunchAsync(robber, robbed, Strike(robbed, AttackMethods.Jack), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertTrue(road.ReturnRiskPercent > 0, "the odds were written down when they left");
+
+    stopped.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual("Victory", road.Outcome);
+    var took = road.ReturningRides;
+    AssertTrue(took > 0, "they got a car out of the garage");
+
+    stopped.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(took, road.SeizedRides);
+    AssertEqual(0, robber.Rides);
+    AssertTrue(road.Summary.Contains("stopped on the way out"), $"and the summary says so: {road.Summary}");
+    // Taken from the target either way. A stop on the road is not the car going back where it came from.
+    AssertTrue(robbed.Rides < 3, "the target is still short a car");
+
+    // A drive-by carries nothing home but the car it left with, so there is nothing to stop it for.
+    // Minimum rolls: the pass misses, the car survives the street, and it is not impounded either.
+    using var second = NewStrikeWorld();
+    var quiet = CreatePendingStrikes(second, options, new MinimumRandom());
+    var shooter = Attacker(options, rides: 2);
+    var shot = Target();
+    second.Players.AddRange(shooter, shot);
+    second.SaveChanges();
+
+    var pass = quiet.LaunchAsync(shooter, shot, Strike(shot, AttackMethods.DriveBy), now, default)
+        .GetAwaiter().GetResult();
+    second.SaveChanges();
+    AssertEqual(1, shooter.Rides);
+
+    quiet.ResolveDueAsync(pass.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    quiet.ResolveDueAsync(pass.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(PendingStrikeStatus.Done, pass.Status);
+    AssertEqual(0, pass.SeizedRides);
+    AssertEqual(2, shooter.Rides);
 }
 
 static Player Rookie(GameOptions options) => new()

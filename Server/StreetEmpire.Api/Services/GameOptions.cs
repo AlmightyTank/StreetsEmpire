@@ -433,6 +433,27 @@ public sealed class StrikeDistanceOptions
     /// </summary>
     public double RideImpoundChanceOnFailure { get; set; } = 0.5;
 
+    /// <summary>
+    /// How much riskier every turn of distance makes the drive home, on top of the town's own.
+    ///
+    /// The way back is the half of an away job that nobody thinks about until it goes wrong, and it is
+    /// where a jacking and a poach get their character: one is driving stolen cars on plates that have
+    /// been called in, the other is a van of people who walked out of somebody else's house an hour
+    /// ago. Neither is a quiet journey, and the further it is the more road there is to be stopped on.
+    /// </summary>
+    public double ReturnRiskPerTravelTurn { get; set; } = 0.04;
+
+    /// <summary>Never a certainty, however far it is. A road that always ends badly is a road nobody takes.</summary>
+    public double MaxReturnRisk { get; set; } = 0.55;
+
+    /// <summary>
+    /// The share of the haul that goes when the way home goes wrong. Wide, and deliberately so: this
+    /// is the swing an away job is bought with, and a flat two-thirds every time would be a tax rather
+    /// than a risk.
+    /// </summary>
+    public double ReturnSeizureMinPercent { get; set; } = 0.34;
+    public double ReturnSeizureMaxPercent { get; set; } = 1.0;
+
     /// <summary>The strikes that suffer for the distance. The quiet ones are not on it.</summary>
     public IReadOnlyList<string> LoudMethods => [AttackMethods.DriveBy, AttackMethods.Jack];
 

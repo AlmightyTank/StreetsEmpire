@@ -249,7 +249,15 @@ public sealed record StrikeTripResponse(
     /// <summary>The full turn price per method, the drive included, keyed by method.</summary>
     IReadOnlyDictionary<string, int> TurnCosts,
     /// <summary>Whether the loud methods take an odds penalty for the distance, and how much.</summary>
-    int HitChancePenaltyPercent);
+    int HitChancePenaltyPercent,
+    /// <summary>
+    /// The odds the drive home goes wrong, for a crew carrying something that is not theirs.
+    ///
+    /// Quoted before the commitment because it is the whole of what a jacking and a poach are buying
+    /// at distance, and a risk somebody is judged by after the fact but never shown beforehand is not
+    /// a decision - it is a surprise.
+    /// </summary>
+    int ReturnRiskPercent);
 
 /// <summary>One of this player's crews on the road, as they see it.</summary>
 public sealed record PendingStrikeResponse(

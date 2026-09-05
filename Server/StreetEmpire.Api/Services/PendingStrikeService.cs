@@ -22,6 +22,7 @@ namespace StreetEmpire.Api.Services;
 public sealed class PendingStrikeService(
     GameDbContext db,
     IOptionsSnapshot<GameOptions> options,
+    IGameRandom random,
     StreetStrikeService strikes,
     HideoutService hideouts,
     TerritoryService territories,
@@ -72,6 +73,27 @@ public sealed class PendingStrikeService(
         return string.Equals(from, to, StringComparison.OrdinalIgnoreCase)
             ? 0
             : Math.Max(1, _options.CityMarkets.TravelTurns(to));
+    }
+
+    /// <summary>
+    /// The odds the drive home ends badly, for a haul taken out of this town at this distance.
+    ///
+    /// The town's own risk is the floor, because you have just done something loud in it and people
+    /// are looking; the distance is what is added, because a longer drive is more road to be stopped
+    /// on. Never a certainty however far it is - a road that always ends badly is a road nobody takes,
+    /// and then a jacking is simply a local verb again.
+    ///
+    /// Quoted to the attacker before they commit and written on the row when they do, so the number
+    /// they are judged by is the number they were shown.
+    /// </summary>
+    public double ReturnRiskFor(string? targetCity, int travelTurns)
+    {
+        if (travelTurns <= 0) return 0;
+        var distance = _options.Strikes.Distance;
+        return Math.Clamp(
+            _options.CityMarkets.BustChance(targetCity) + Math.Max(0, distance.ReturnRiskPerTravelTurn) * travelTurns,
+            0,
+            Math.Clamp(distance.MaxReturnRisk, 0, 1));
     }
 
     /// <summary>
@@ -136,7 +158,8 @@ public sealed class PendingStrikeService(
             ReturnsAtUtc = nowUtc.AddMinutes(legMinutes * 2),
             Status = PendingStrikeStatus.Outbound,
             TurnsSpent = turnCost,
-            Fare = fare
+            Fare = fare,
+            ReturnRiskPercent = ReturnRiskFor(target, travelTurns) * 100
         };
 
         Commit(strike, attacker, request);
@@ -318,6 +341,9 @@ public sealed class PendingStrikeService(
     {
         var attacker = strike.Attacker;
         var capacity = hideouts.CapacityFor(attacker.Hideout);
+        // Before a thing is unloaded, because what is taken off them is taken on the road rather than
+        // at the door.
+        var stopped = RollTheWayHome(strike);
 
         // What a crew left with is theirs and always comes back. Only what they came home *with* is
         // new, and only new stock has to find room - refusing a player their own car because the garage
@@ -346,7 +372,49 @@ public sealed class PendingStrikeService(
 
         strike.Status = PendingStrikeStatus.Done;
         strike.CompletedAtUtc = nowUtc;
-        strike.Summary = $"{strike.Summary} The crew are back in {strike.OriginCity}.{short_}";
+        strike.Summary = $"{strike.Summary} The crew are back in {strike.OriginCity}.{stopped}{short_}";
+    }
+
+    /// <summary>
+    /// The drive home, for a crew carrying something that is not theirs.
+    ///
+    /// Rolled against the haul and never against the load they set out with. A car you own and a car
+    /// you took an hour ago are the same object and completely different journeys: one has plates
+    /// nobody is looking for, and the other is the reason anybody is looking. The same is true of the
+    /// people in the van - a crew going home is a crew going home, and a crew going home with somebody
+    /// else's house in the back is a story.
+    ///
+    /// One roll for the whole trip, then a share, which is the shape a mule run's seizure already has.
+    /// Rolling per unit would turn a wide risk into a narrow average and take the swing out of it.
+    /// </summary>
+    private string RollTheWayHome(PendingStrike strike)
+    {
+        // What they took, as against what they left with. A drive-by brings its own car back and has
+        // no haul at all, which is why it is never stopped.
+        var haulRides = Math.Max(0, strike.ReturningRides - strike.CommittedRides);
+        var haulHoes = strike.ReturningHoes;
+        if (haulRides + haulHoes <= 0) return string.Empty;
+        if (random.NextDouble() >= Math.Clamp(strike.ReturnRiskPercent / 100.0, 0, 1)) return string.Empty;
+
+        var distance = _options.Strikes.Distance;
+        var share = Math.Clamp(
+            distance.ReturnSeizureMinPercent
+                + random.NextDouble() * Math.Max(0, distance.ReturnSeizureMaxPercent - distance.ReturnSeizureMinPercent),
+            0,
+            1);
+
+        // At least one of whatever there was, so a stop that happens is a stop that cost something.
+        strike.SeizedRides = haulRides <= 0 ? 0 : Math.Min(haulRides, Math.Max(1, (int)Math.Round(haulRides * share)));
+        strike.SeizedHoes = haulHoes <= 0 ? 0 : Math.Min(haulHoes, Math.Max(1, (int)Math.Round(haulHoes * share)));
+        strike.ReturningRides -= strike.SeizedRides;
+        strike.ReturningHoes -= strike.SeizedHoes;
+
+        var lost = new List<string>();
+        if (strike.SeizedRides > 0) lost.Add($"{strike.SeizedRides:N0} of the cars");
+        if (strike.SeizedHoes > 0) lost.Add($"{strike.SeizedHoes:N0} of them");
+        return strike.SeizedRides + strike.SeizedHoes >= haulRides + haulHoes
+            ? $" They were stopped on the way out of {strike.TargetCity} and lost the lot."
+            : $" They were stopped on the way out of {strike.TargetCity} and lost {string.Join(" and ", lost)}.";
     }
 
     /// <summary>

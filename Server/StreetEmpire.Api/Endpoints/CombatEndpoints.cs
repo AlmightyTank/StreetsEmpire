@@ -169,7 +169,8 @@ internal static class CombatEndpoints
                         Math.Max(1, travelTurns * Math.Max(1, gameOptions.Value.Mules.MinutesPerTravelTurn)),
                         strikes.FareFor(travelTurns),
                         AttackMethods.Strikes.ToDictionary(x => x, x => strikes.TurnCostOf(x, travelTurns)),
-                        (int)Math.Round(Math.Max(0, distance.HitChancePenaltyPerTravelTurn) * travelTurns * 100));
+                        (int)Math.Round(Math.Max(0, distance.HitChancePenaltyPerTravelTurn) * travelTurns * 100),
+                        (int)Math.Round(pendingStrikes.ReturnRiskFor(HideoutService.HomeCity(target.Player), travelTurns) * 100));
                 }
             }
 

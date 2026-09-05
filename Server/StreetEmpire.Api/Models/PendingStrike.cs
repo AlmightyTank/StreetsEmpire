@@ -60,6 +60,23 @@ public sealed class PendingStrike
     public int TurnsSpent { get; set; }
     public long Fare { get; set; }
 
+    /// <summary>
+    /// The odds the drive home goes wrong, as a percentage, frozen at launch like everything else here.
+    ///
+    /// Written down rather than worked out at the door for the reason a mule run writes its own down:
+    /// a trip already on the road must not be re-priced by somebody re-tuning a table while it drives.
+    /// It is also the number the attacker was shown before they committed, and being judged by a
+    /// different one than you were quoted is the worst thing a risk can do.
+    ///
+    /// It reads on the haul only. What a crew left with is theirs and comes back; what they took is
+    /// hot, and hot is what gets stopped.
+    /// </summary>
+    public double ReturnRiskPercent { get; set; }
+
+    /// <summary>What the road took off them on the way back, in whatever they were carrying.</summary>
+    public int SeizedRides { get; set; }
+    public int SeizedHoes { get; set; }
+
     // What went with them, taken off the attacker at launch and handed back to the crew on arrival.
     // A car for a drive-by, doses for an infestation, product for a poach; a jacking spends nothing to
     // throw, which is why there is no column for it.

@@ -179,6 +179,7 @@ internal static class GameEndpoints
                 player.Account.IsAdmin,
                 player.WalkthroughSeenAtUtc is null,
                 player.City,
+                ToLocation(player, hideouts),
                 currentMarket,
                 cityMarkets,
                 travel,
@@ -221,6 +222,9 @@ internal static class GameEndpoints
                 player.Coke,
                 player.Moonshine,
                 player.Cut,
+                ToStash(player.Carried, opts),
+                ToStash(hideouts.CarryCapacityFor(player), opts),
+                player.EquippedWeapon,
                 economy.ProductSellPrice(player.City, "weed"),
                 economy.ProductSellPrice(player.City, "coke"),
                 (int)Math.Round(player.CokePurity * 100),
@@ -873,6 +877,91 @@ internal static class GameEndpoints
         }).RequireAuthorization();
 
 
+        // Moving stock and money across the hideout's own threshold. Separate from the bank endpoints
+        // above on purpose: the bank is reachable from every town and charges a trip for it, while the
+        // safe and the shelves are free and only reachable from the doorstep. Two different bargains,
+        // so two different doors.
+        app.MapPost("/api/game/hideout/stash", async (
+            StashRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            HideoutService hideouts,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            try
+            {
+                // A negative quantity is the same move in the other direction. One endpoint for both,
+                // because they are one rule - something can only move if where it is going has room -
+                // and two endpoints is two chances for the halves to disagree about guns.
+                var depositing = request.Quantity >= 0;
+                var result = hideouts.MoveStock(player, request.Item, Math.Abs(request.Quantity), depositing);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/hideout/safe", async (
+            SafeRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            HideoutService hideouts,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var result = hideouts.MoveCash(player, Math.Abs(request.Amount), request.Amount >= 0);
+                AddLog(db, player, before, "SAFE", 0, result.Summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPut("/api/game/equip", async (
+            EquipRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            HideoutService hideouts,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            try
+            {
+                var result = hideouts.Equip(player, request.Weapon);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
         app.MapPost("/api/game/hideout/recover", async (
             MoraleRecoveryRequest request,
             CurrentPlayerService current,
@@ -946,6 +1035,13 @@ internal static class GameEndpoints
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
             if (player.Hideout is null) return Results.BadRequest(new { error = "You have no hideout." });
+
+            if (!HideoutService.IsAtHideout(player) && !hideouts.CanControlLabsRemotely(player.Hideout))
+                return Results.BadRequest(new
+                {
+                    error = $"Your labs are in {player.Hideout.City} and you are in {player.City}. "
+                            + $"Working them from another town needs a level {gameOptions.Value.Hideout.RemoteLabControlLevel:N0} intelligence centre."
+                });
 
             var product = (request.Product ?? string.Empty).Trim().ToLowerInvariant();
             if (product is not ("weed" or "coke"))

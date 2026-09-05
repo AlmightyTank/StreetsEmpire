@@ -37,9 +37,14 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         var supplyTurns = SupplyTurnsFor(tripMinutes);
         var condomsNeeded = RequiredUpkeep(crew, supplyTurns, _options.Morale.TurnsPerCondom);
         var beerNeeded = RequiredUpkeep(heads, supplyTurns, _options.Morale.TurnsPerBeer);
-        var condomsUsed = Math.Min(player.Condoms, condomsNeeded);
-        var beerUsed = Math.Min(player.Beer, beerNeeded);
-        var moonshineUsed = Math.Min(player.Moonshine, beerNeeded - beerUsed);
+        // Off the shelves rather than out of the player's pockets. A run is packed at the house by the
+        // people who are about to leave it, and quoting it against whatever the player happens to be
+        // carrying in another town would make the same run possible or impossible depending on where
+        // its boss was standing.
+        var supplies = Supplies(player);
+        var condomsUsed = Math.Min(supplies.Condoms, condomsNeeded);
+        var beerUsed = Math.Min(supplies.Beer, beerNeeded);
+        var moonshineUsed = Math.Min(supplies.Moonshine, beerNeeded - beerUsed);
 
         var capacity = crew * Math.Max(1, mules.HoeCarryCapacity);
         var unitPrice = TradeGoods.ReferencePrice(_options, product, destination);
@@ -87,8 +92,11 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         if (pimp.PlayerId != player.Id || pimp.LostAtUtc is not null)
             throw new GameRuleException("That pimp is not on your payroll.");
 
+        // Briefed at the house, by the pimp and the hoes who are standing in it.
+        HideoutService.EnsureAtHideout(player, "Briefing a run");
         var quote = Quote(player, city, good, hoes, cashToSend);
-        if (string.Equals(quote.DestinationCity, player.City, StringComparison.OrdinalIgnoreCase))
+        // Against the house rather than the player, because that is where the run starts and ends.
+        if (string.Equals(quote.DestinationCity, HideoutService.HomeCity(player), StringComparison.OrdinalIgnoreCase))
             throw new GameRuleException("A mule run has to go somewhere else.");
         if (player.Hoes < quote.Hoes)
             throw new GameRuleException($"You need {quote.Hoes} hoe(s) to send. You have {player.Hoes}.");
@@ -96,22 +104,21 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
             throw new GameRuleException($"Briefing a run to {quote.DestinationCity} takes {quote.Turns} turn(s).");
         if (quote.CashSent <= 0)
             throw new GameRuleException("Send them with something to buy with.");
-        if (player.Cash + player.BankCash < quote.TotalCost)
+        var supplies = Supplies(player);
+        if (Capital.Available(player) < quote.TotalCost)
             throw new GameRuleException(
                 $"A run to {quote.DestinationCity} costs {quote.TotalCost:C0}: {quote.CashSent:C0} to buy with, {quote.Fare:C0} in fares and {quote.Upkeep:C0} to keep them while they are gone.");
         if (quote.CondomShortage > 0 || quote.BeerShortage > 0)
             throw new GameRuleException(
-                $"A run to {quote.DestinationCity} needs {SupplyList(quote.CondomsNeeded, quote.BeerNeeded, "beer or moonshine")} for {quote.SupplyTurns} upkeep turn(s). You have {SupplyList(player.Condoms, player.Beer + player.Moonshine, "beer or moonshine")}.");
+                $"A run to {quote.DestinationCity} needs {SupplyList(quote.CondomsNeeded, quote.BeerNeeded, "beer or moonshine")} for {quote.SupplyTurns} upkeep turn(s). Your storage holds {SupplyList(supplies.Condoms, supplies.Beer + supplies.Moonshine, "beer or moonshine")}.");
 
         // Bank first, same as a hideout upgrade: money is money, and making a player withdraw by hand
         // before every run would be a chore rather than a decision.
-        var fromBank = Math.Min(player.BankCash, quote.TotalCost);
-        player.BankCash -= fromBank;
-        player.Cash -= quote.TotalCost - fromBank;
+        Capital.Charge(player, quote.TotalCost);
         player.Turns -= quote.Turns;
-        player.Condoms -= quote.CondomsUsed;
-        player.Beer -= quote.BeerUsed;
-        player.Moonshine -= quote.MoonshineUsed;
+        supplies.Condoms -= quote.CondomsUsed;
+        supplies.Beer -= quote.BeerUsed;
+        supplies.Moonshine -= quote.MoonshineUsed;
         // The hoes go with them, so they are off the books until they come back. Counting them at home
         // would have them earning on the streets and carrying cargo at the same time.
         player.Hoes -= quote.Hoes;
@@ -119,7 +126,7 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
         return new MuleRun
         {
             PlayerId = player.Id,
-            OriginCity = player.City,
+            OriginCity = HideoutService.HomeCity(player),
             DestinationCity = quote.DestinationCity,
             Good = quote.Good,
             Status = MuleRunStatus.Outbound,
@@ -238,7 +245,9 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
 
         run.Outcome = MuleRunOutcome.Delivered;
         run.CashReturned = unspent;
-        player.Cash += unspent;
+        // Into the safe, because the man carrying it walked back into the hideout and the player may
+        // not have been there to meet him. What the safe cannot hold is banked rather than lost.
+        hideouts.IntoSafe(player, unspent);
         var (landed, landedSpill) = Deliver(player, run.Good, units);
         var home = ReturnHoes(player, run);
         run.Summary = unspent > 0
@@ -248,18 +257,21 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
     }
 
     /// <summary>
-    /// Puts the load away, up to what the storage room holds. Cargo that will not fit is left behind
-    /// rather than overfilling the room, the same way a lab stops at the walls. What was left is
-    /// returned as well as what was stored, because the player paid for both and a run that quietly
-    /// dropped a third of the load would read as the price being wrong.
+    /// Puts the load on to the shelves, up to what the storage room holds. Cargo that will not fit is
+    /// left behind rather than overfilling the room, the same way a lab stops at the walls. What was
+    /// left is returned as well as what was stored, because the player paid for both and a run that
+    /// quietly dropped a third of the load would read as the price being wrong.
+    ///
+    /// On to the shelves and not into the player's pockets, which is the whole shape of a mule run: a
+    /// crew was sent out from the house and came back to it. The player may have been in another town
+    /// the entire time, and a load that appeared in their coat wherever they were standing would make
+    /// mule running a way to teleport goods to yourself.
     /// </summary>
     private (int Stored, int Spilled) Deliver(Player player, string good, int units)
     {
         if (units <= 0) return (0, 0);
-        var capacity = TradeGoods.Capacity(hideouts.CapacityFor(player.Hideout), good);
-        var room = TradeGoods.Room(player, hideouts.CapacityFor(player.Hideout), good);
-        var stored = Math.Min(units, room);
-        TradeGoods.Add(player, good, stored, 1);
+        var stored = Math.Min(units, TradeGoods.Room(player.Stored, hideouts.CapacityFor(player.Hideout), good));
+        TradeGoods.Add(player.Stored, good, stored, 1);
         return (stored, units - stored);
     }
 
@@ -283,7 +295,10 @@ public sealed class MuleService(IOptionsSnapshot<GameOptions> options, HideoutSe
 
     private string ResolveDestination(Player player, string? city)
         => _options.CityMarkets.ResolveCity(city)
-           ?? throw new GameRuleException($"Pick one of: {string.Join(", ", _options.CityMarkets.Profiles.Where(x => !string.Equals(x.City, player.City, StringComparison.OrdinalIgnoreCase)).Select(x => x.City))}.");
+           ?? throw new GameRuleException($"Pick one of: {string.Join(", ", _options.CityMarkets.Profiles.Where(x => !string.Equals(x.City, HideoutService.HomeCity(player), StringComparison.OrdinalIgnoreCase)).Select(x => x.City))}.");
+
+    /// <summary>The pile a run is packed out of: the hideout's shelves, where crew supplies live.</summary>
+    private static IStash Supplies(Player player) => player.Stored;
 
     private int SupplyTurnsFor(int tripMinutes)
     {

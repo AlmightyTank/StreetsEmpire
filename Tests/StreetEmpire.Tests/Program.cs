@@ -58,6 +58,13 @@ var tests = new (string Name, Action Test)[]
     ("everything you can hold is worth something", EverythingYouCanHoldIsWorthSomething),
     ("the bench never makes an attack cheaper than its answer", DefenceIsNeverDearerThanAttack),
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
+    ("travel moves the player and leaves the empire", TravelMovesThePlayerAndLeavesTheEmpire),
+    ("the empire cannot be worked from another town", TheEmpireCannotBeWorkedFromAnotherTown),
+    ("a raid on the house never reaches a pocket in another state", ARaidNeverReachesAPocketInAnotherState),
+    ("stock is deposited and withdrawn against both ceilings", StockMovesAgainstBothCeilings),
+    ("heat is drawn in the town each pile is standing in", HeatIsDrawnWhereEachPileStands),
+    ("the whole gun rack answers to its own name", TheRackAnswersToItsOwnName),
+    ("an intelligence centre buys back the switches distance takes", IntelligenceBuysBackRemoteControl),
     ("crew are swept up, bailed out, or left inside", CrewAreSweptUpBailedOrLeftInside),
     ("a bond is refused late, short, or twice", ABondIsRefusedLateShortOrTwice),
     ("a trip to the bank costs turns", ATripToTheBankCostsTurns),
@@ -457,9 +464,15 @@ static void WorthExpressionsTranslateToSql()
     AssertTrue(ranked.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
         "net worth ranks on the hideout in the database");
 
-    // And the raid sum must not touch it at all, or every target query pays for a join it never reads.
-    AssertTrue(!plunder.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
-        "what a raid can take owes nothing to the building");
+    // The raid sum reaches the hideout too, and has to. It is not reading the building - a building is
+    // still not loot, and HideoutValue is still only on the ranking side - it is reading the safe,
+    // which a raid empties. Leaving it out would let a player hide a fortune behind a door the raid
+    // can open and still be weighed as somebody with nothing worth taking, which is exactly the
+    // mismatch the anti-farm rules exist to catch.
+    AssertTrue(plunder.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
+        "what a raid can take includes what is in the safe");
+    AssertTrue(!plunder.Contains("StorageLevel", StringComparison.OrdinalIgnoreCase),
+        "but never what the rooms cost to build");
 }
 
 static void AHideoutIsWorthWhatItCost()
@@ -1567,6 +1580,7 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
 {
     var options = new GameOptions { WeedSellPrice = 40 };
     var service = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
     var player = new Player
     {
         Cash = 49_000,
@@ -1576,21 +1590,28 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
         Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
     };
 
-    // 60 weed at $40 is $2,400, which pushes cash past the level 1 safe's $50,000.
+    // 60 weed at $40 is $2,400, which would once have pushed cash past the level 1 safe's $50,000 and
+    // been swept into the bank. It is not any more: the safe stopped being the ceiling on what a
+    // player can hold the moment it became a room in a particular town with a door on it. Walking
+    // around with more than the safe would take is allowed, and it is meant to be a bad idea rather
+    // than an impossible one - the road into the next town is what charges for it.
     var result = service.SellProduct(player, "weed", 60);
 
-    AssertEqual(50_000L, player.Cash);
-    AssertEqual(1_400L, player.BankCash);
-    AssertEqual(1_400L, Value<long>(RequiredBreakdown(result), "cashBankedByOverflow"));
-    AssertTrue(result.Summary.Contains("safe was full"), "the summary should explain the transfer");
+    AssertEqual(51_400L, player.Cash);
+    AssertEqual(0L, player.BankCash);
+    AssertEqual(0, Value<int>(RequiredBreakdown(result), "storedByOverflow"));
 
-    // The sweep is not a trip to the bank and is never charged for. This is deliberate rather than an
-    // oversight: money over the safe is money the player could not hold, and billing them turns for
-    // failing to hold it would be a fee on earning well. It leaves a door open - a safe kept full
-    // banks its overflow for nothing - but a full safe is also the most a raid can ever take, so the
-    // trade pays for itself and is a strategy rather than a hole.
+    // And the safe is a place now, not a limit. It only holds what is put in it, by somebody standing
+    // in front of it, and what it holds is the pile a raid on the house actually gets at.
+    AssertEqual(0L, player.Hideout!.SafeCash);
+    hideouts.MoveCash(player, 20_000, depositing: true);
+    AssertEqual(31_400L, player.Cash);
+    AssertEqual(20_000L, player.Hideout.SafeCash);
+
+    // Neither move is a trip to the bank and neither is charged for. Money already at your own house
+    // costs nothing to touch; the bank charges because it is somewhere else.
     AssertEqual(20, player.Turns);
-    AssertTrue(player.LastBankedAtUtc is null, "an overflow sweep should not open the free window either");
+    AssertTrue(player.LastBankedAtUtc is null, "the safe should not open the bank's free window either");
 }
 
 /// <summary>
@@ -3195,18 +3216,27 @@ static void CityMarketsChangeProductSalePrices()
     {
         City = "Chicago",
         Weed = 2,
-        Coke = 1,
-        Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
+        Hideout = new Hideout { City = "Chicago", SafeLevel = 1, StorageLevel = 3 }
     };
 
+    // At home, a sale comes off the shelves at the price of the town the shelves are in.
     var weed = service.SellProduct(player, "weed", 2);
     AssertEqual(100L, player.Cash);
     AssertEqual(50, Value<int>(RequiredBreakdown(weed), "unitPrice"));
 
+    // In another town it comes out of the bag instead, at that town's price. Which is the trade the
+    // whole city market exists to offer: the dear town pays more, and getting the load there means
+    // deciding beforehand how much of the warehouse to carry.
     player.City = "Detroit";
+    player.Carried.Coke = 1;
     var coke = service.SellProduct(player, "coke", 1);
     AssertEqual(250L, player.Cash);
     AssertEqual(150, Value<int>(RequiredBreakdown(coke), "unitPrice"));
+    AssertEqual(0, player.Carried.Coke);
+
+    // And the shelves at home are not reachable from here, however full they are.
+    player.Coke = 50;
+    AssertRuleError(() => service.SellProduct(player, "coke", 1), "selling stock that is in another town");
 }
 
 static void TravelChangesCityAndSpendsTheTownsDistance()
@@ -3236,7 +3266,12 @@ static void TravelChangesCityAndSpendsTheTownsDistance()
 static void StoppedRunTakesAShareOfTheLoadButNeverTheBank()
 {
     var service = CreateEconomy(null, new AlwaysRandom());
-    var player = new Player { City = "Detroit", Turns = 10, Cash = 10_000, BankCash = 50_000, Weed = 100, Coke = 40 };
+    // The load is in the bag, because that is the only load that gets on the plane. What is on the
+    // shelves at home was never on the road and cannot be stopped on it.
+    var player = new Player { City = "Detroit", Turns = 10, Cash = 10_000, BankCash = 50_000 };
+    player.Carried.Weed = 100;
+    player.Carried.Coke = 40;
+    player.Weed = 500;
 
     var result = service.Travel(player, "Chicago");
     var breakdown = RequiredBreakdown(result);
@@ -3248,8 +3283,9 @@ static void StoppedRunTakesAShareOfTheLoadButNeverTheBank()
 
     AssertEqual(50_000L, player.BankCash);
     AssertEqual(8_000L, player.Cash);
-    AssertEqual(80, player.Weed);
-    AssertEqual(32, player.Coke);
+    AssertEqual(80, player.Carried.Weed);
+    AssertEqual(32, player.Carried.Coke);
+    AssertTrue(player.Weed == 500, "the shelves at home are untouched by a stop on the road");
     AssertEqual(2_000L, Value<long>(breakdown, "cashSeized"));
     AssertEqual(20, Value<int>(breakdown, "weedSeized"));
     AssertEqual(8, Value<int>(breakdown, "cokeSeized"));
@@ -7163,7 +7199,7 @@ static void LabSwitchesStopAndSell()
     Player Grower(int level = 1) => new()
     {
         City = "Atlanta",
-        Hideout = new Hideout { StorageLevel = 2, WeedLabLevel = level, LabsCollectedAtUtc = start }
+        Hideout = new Hideout { City = "Atlanta", StorageLevel = 2, WeedLabLevel = level, LabsCollectedAtUtc = start }
     };
 
     // Off makes nothing, and says so rather than reporting a yield of zero as if nothing had happened.
@@ -7195,8 +7231,13 @@ static void LabSwitchesStopAndSell()
     AssertEqual(0, sold.Weed);
     AssertEqual(0, operation.Weed);
     AssertEqual(perHour * 3, sold.WeedSold);
-    AssertEqual(sold.Earned, operation.Cash);
-    AssertTrue(operation.Cash > 0, "and it is worth something");
+    // Into the safe, not into the player's pocket. The labs run whether or not anybody is home, so the
+    // money they make has to land somewhere that does not require the player to be standing there -
+    // and putting it in their hands wherever they happened to be would have a New York lab paying out
+    // in Las Vegas.
+    AssertEqual(sold.Earned, operation.Hideout!.SafeCash);
+    AssertEqual(0L, operation.Cash);
+    AssertTrue(operation.Hideout.SafeCash > 0, "and it is worth something");
     AssertTrue(sold.Describe().Contains("sold"), $"the notice says it sold: {sold.Describe()}");
 
     // A full store is no reason for a selling lab to stop, which is most of what the upgrade buys.
@@ -7720,7 +7761,7 @@ static void AShiftNamesOnlyWhatHappened()
     player.Pimps = 4;
     player.Condoms = 500;
     player.Beer = 500;
-    player.Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 4 };
+    player.Hideout = new Hideout { City = player.City, Tier = 2, StorageLevel = 4, SafeLevel = 4 };
     var summary = economy.Scout(player, 10).Summary;
 
     // The work and the money, in that order, in sentences rather than in a ledger.
@@ -7863,9 +7904,302 @@ static void GuidancePointsAtTheGame()
 
 }
 
+
+/// <summary>
+/// The rule the whole change exists for: a plane ticket moves a person, not an operation.
+///
+/// Written as one test over every column that used to follow the player around, because the failure
+/// this guards against is not one of them going wrong - it is a new one being added later and quietly
+/// being made to travel by whoever adds it.
+/// </summary>
+static void TravelMovesThePlayerAndLeavesTheEmpire()
+{
+    var options = Resolve(null);
+    var economy = CreateEconomy(options);
+    var player = new Player
+    {
+        City = "New York",
+        Turns = 100,
+        Cash = 25_000,
+        Pimps = 3,
+        Hoes = 20,
+        Thugs = 10,
+        Weed = 400,
+        Coke = 100,
+        Condoms = 200,
+        Rides = 5,
+        Hideout = new Hideout { City = "New York", Tier = 2, StorageLevel = 4, SafeLevel = 3, SafeCash = 100_000 }
+    };
+    player.Carried.Weed = 10;
+    player.AddWeapons(WeaponTiers.Pistol, 8);
+    player.Carried.AddWeapons(WeaponTiers.Pistol, 1);
+
+    var result = economy.Travel(player, "Las Vegas");
+
+    // The player is somewhere else.
+    AssertEqual("Las Vegas", player.City);
+
+    // Everything they built is not.
+    AssertEqual("New York", player.Hideout!.City);
+    AssertEqual(100_000L, player.Hideout.SafeCash);
+    AssertEqual(400, player.Weed);
+    AssertEqual(100, player.Coke);
+    AssertEqual(200, player.Condoms);
+    AssertEqual(8, player.Weapons);
+    AssertEqual(3, player.Pimps);
+    AssertEqual(20, player.Hoes);
+    AssertEqual(10, player.Thugs);
+    // The fleet least of all. A car is the one thing here that cannot be carried at any price: it is
+    // driven out of a garage and back into it, so it is in exactly one town and that town is the
+    // hideout's. Moving one is a flatbed and a bill, and that is relocation's problem rather than a
+    // side effect of buying a plane ticket.
+    AssertEqual(5, player.Rides);
+
+    // What is in their hands came with them.
+    AssertEqual(25_000L, player.Cash);
+    AssertEqual(10, player.Carried.Weed);
+    AssertEqual(1, player.Carried.Weapons);
+
+    // And the summary says so, because this is the rule most likely to surprise somebody.
+    AssertTrue(result.Summary.Contains("stay in New York"), $"the trip should say what stayed: {result.Summary}");
+    AssertTrue(!HideoutService.IsAtHideout(player), "they are not at their own front door any more");
+}
+
+/// <summary>
+/// Being able to see the hideout from another town is not being able to reach into it.
+///
+/// Every one of these is a physical act at a particular address - a shift on a corner, a crew being
+/// paid off, a safe being opened, a wall being built - and the point of the list is that they are
+/// refused by one rule rather than by however many of them remembered to check.
+/// </summary>
+static void TheEmpireCannotBeWorkedFromAnotherTown()
+{
+    var options = Resolve(null);
+    var economy = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
+    var away = new Player
+    {
+        City = "Las Vegas",
+        Turns = 200,
+        Cash = 5_000_000,
+        Pimps = 2,
+        Hoes = 20,
+        Thugs = 10,
+        Condoms = 500,
+        Beer = 500,
+        Weed = 100,
+        HoeHappiness = 90,
+        ThugHappiness = 90,
+        Hideout = new Hideout { City = "New York", Tier = 2, StorageLevel = 4, SafeLevel = 3, SafeCash = 100_000 }
+    };
+
+    AssertRuleError(() => economy.Scout(away, 5), "working a street a thousand miles from your crew");
+    AssertRuleError(() => economy.HireCrew(away, "thugs", 1), "hiring into a house you are not standing in");
+    AssertRuleError(() => economy.FireCrew(away, "thugs", 1), "paying somebody off from another state");
+    AssertRuleError(() => economy.RecoverCrewMorale(away, "rest"), "throwing a party you will not be at");
+    AssertRuleError(() => hideouts.Upgrade(away, "storage", DateTime.UtcNow), "signing off a wall by telephone");
+    AssertRuleError(() => hideouts.MoveCash(away, 1_000, depositing: true), "opening a safe in another town");
+    AssertRuleError(() => hideouts.MoveStock(away, "weed", 1, depositing: false), "reaching a shelf in another town");
+
+    // The money in that safe is not spendable either, however much of it there is. It is counted when
+    // the player is standing in front of it and not otherwise, which is what stops a fortune locked in
+    // New York from quietly paying for something in Las Vegas.
+    AssertEqual(away.Cash + away.BankCash, Capital.Available(away));
+    away.City = "New York";
+    AssertEqual(away.Cash + away.BankCash + 100_000L, Capital.Available(away));
+
+    // And at the door, every one of them works again.
+    hideouts.MoveCash(away, 1_000, depositing: true);
+    AssertEqual(101_000L, away.Hideout!.SafeCash);
+}
+
+/// <summary>
+/// The two halves of the same rule, from both ends: a raid is on a place and a mugging is on a person,
+/// and neither can reach across the country to find the other.
+/// </summary>
+static void ARaidNeverReachesAPocketInAnotherState()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var away = new Player
+    {
+        City = "Las Vegas",
+        Cash = 25_000,
+        Heat = 10_000,
+        Coke = 400,
+        Weed = 400,
+        Hideout = new Hideout { City = "New York", StorageLevel = 6, SafeLevel = 4, SafeCash = 80_000 }
+    };
+    away.Carried.Coke = 10;
+    away.Carried.AddWeapons(WeaponTiers.Pistol, 1);
+
+    var bust = hideouts.RollBust(away, 1, new AlwaysRandom(), now);
+    AssertTrue(bust.Happened, "a hunted house with that much in it gets turned over");
+
+    // They took what was in the building.
+    AssertTrue(away.Coke < 400, "the shelves were emptied out");
+    AssertTrue(away.Hideout!.SafeCash < 80_000, "and the safe was opened");
+
+    // And nothing at all that was in Las Vegas.
+    AssertEqual(10, away.Carried.Coke);
+    AssertEqual(1, away.Carried.Weapons);
+    AssertEqual(25_000L, away.Cash);
+
+    // Standing in it, the same raid catches them with what they are holding as well - which is the
+    // decision the split creates rather than a loophole in it.
+    var home = new Player
+    {
+        City = "New York",
+        Cash = 25_000,
+        Heat = 10_000,
+        Coke = 400,
+        Hideout = new Hideout { City = "New York", StorageLevel = 6, SafeLevel = 4, SafeCash = 80_000 }
+    };
+    home.Carried.Coke = 10;
+
+    AssertTrue(hideouts.RollBust(home, 1, new AlwaysRandom(), now).Happened, "the same house, the same night");
+    AssertTrue(home.Carried.Coke < 10, "and this time they were in it");
+}
+
+/// <summary>
+/// Moving stock across your own threshold, which is bounded on both sides: the shelf holds what the
+/// room holds, and a person holds what a person can carry.
+/// </summary>
+static void StockMovesAgainstBothCeilings()
+{
+    var options = Resolve(null);
+    options.Carry.Weed = 20;
+    var hideouts = CreateHideouts(options);
+    var player = new Player
+    {
+        City = "New York",
+        Weed = 100,
+        Hideout = new Hideout { City = "New York", StorageLevel = 1 }
+    };
+
+    // Out to the carry limit and no further, and short deliveries say so rather than being silent.
+    var taken = hideouts.MoveStock(player, "weed", 60, depositing: false);
+    AssertEqual(20, player.Carried.Weed);
+    AssertEqual(80, player.Weed);
+    AssertTrue(taken.Summary.Contains("only carry"), $"a short withdrawal says so: {taken.Summary}");
+
+    // Full hands refuse rather than silently dropping what was asked for.
+    AssertRuleError(() => hideouts.MoveStock(player, "weed", 1, depositing: false), "carrying more than a person can");
+
+    // And back, which is bounded by the room instead. A level 1 store holds 50 weed and has 80 in it
+    // already, from before the room was this small - a deposit cannot make that worse.
+    AssertRuleError(() => hideouts.MoveStock(player, "weed", 1, depositing: true), "putting weed on a full shelf");
+
+    // Down to 30 on a shelf that holds 50, so all twenty fit and the bag empties.
+    player.Weed = 30;
+    var put = hideouts.MoveStock(player, "weed", 20, depositing: true);
+    AssertEqual(0, player.Carried.Weed);
+    AssertEqual(50, player.Weed);
+    AssertTrue(put.Summary.Contains("New York"), $"a deposit names the town it happened in: {put.Summary}");
+
+    // Poison is on the shelf even though it is not on the player market, which is the distinction the
+    // storable list exists to make: you can put a dose down, you just cannot sell one to anybody.
+    player.Poison = 5;
+    hideouts.MoveStock(player, "poison", 2, depositing: false);
+    AssertEqual(2, player.Carried.Poison);
+}
+
+/// <summary>
+/// Heat follows the goods rather than the person, because the goods are what somebody notices.
+///
+/// Two piles in two towns are two rates, and the interesting consequence is that emptying a store into
+/// a bag and flying somewhere quiet genuinely cools the house down - and makes the traveller the most
+/// interesting person at the airport.
+/// </summary>
+static void HeatIsDrawnWhereEachPileStands()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+
+    // The same coke, in the same town, in one pile or the other, draws the same notice.
+    var shelved = new Player { City = "New York", Coke = 100, Hideout = new Hideout { City = "New York" } };
+    var pocketed = new Player { City = "New York", Hideout = new Hideout { City = "New York" } };
+    pocketed.Carried.Coke = 100;
+    AssertEqual(hideouts.HeldGoodsHeatFor(shelved), hideouts.HeldGoodsHeatFor(pocketed));
+
+    // Carry it somewhere quieter and only the half that moved cools down.
+    var split = new Player { City = "Detroit", Coke = 100, Hideout = new Hideout { City = "New York" } };
+    split.Carried.Coke = 100;
+    AssertTrue(hideouts.CarriedGoodsHeatFor(split) < hideouts.StoredGoodsHeatFor(split),
+        "the half on the plane is in a quieter town than the half on the shelves");
+
+    // The crew never move, so their share is always read at the house.
+    var crew = new Player { City = "Detroit", Pimps = 2, Hoes = 20, Thugs = 10, Hideout = new Hideout { City = "New York" } };
+    var athome = new Player { City = "New York", Pimps = 2, Hoes = 20, Thugs = 10, Hideout = new Hideout { City = "New York" } };
+    AssertEqual(hideouts.CrewHeatFor(athome), hideouts.CrewHeatFor(crew));
+}
+
+/// <summary>
+/// The rack has two names - the four tiers and the pile - and both have to reach the same ceiling.
+///
+/// A regression rather than a feature. Settling an overflow asks what the shelf holds for "weapons",
+/// because four tiers share one ceiling and there is no honest way to ask that tier by tier. The keys
+/// table only knew the four, so it answered nought, and every gun above what a player walked in with
+/// would have been spilled into the street by the next shift they worked.
+/// </summary>
+static void TheRackAnswersToItsOwnName()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var capacity = hideouts.CapacityFor(new Hideout { StorageLevel = 3 });
+
+    AssertTrue(capacity.MaxWeapons > 0, "a level 3 store holds guns at all");
+    AssertEqual(capacity.MaxWeapons, TradeGoods.Capacity(capacity, "weapons"));
+    foreach (var tier in WeaponTiers.All)
+        AssertEqual(capacity.MaxWeapons, TradeGoods.Capacity(capacity, tier));
+
+    // And a shift that ends under the ceiling leaves the rack exactly as it found it.
+    var player = new Player { City = "Detroit", Hideout = new Hideout { City = "Detroit", StorageLevel = 3 } };
+    player.AddWeapons(WeaponTiers.Rifle, 4);
+    player.AddWeapons(WeaponTiers.Pistol, 4);
+    var before = StockLevels.From(player);
+    var overflow = hideouts.Settle(player, before);
+
+    AssertEqual(8, player.Weapons);
+    AssertEqual(4, player.Armoury.Rifles);
+    AssertEqual(0, overflow.WeaponsLost);
+}
+
+/// <summary>
+/// The first thing the intelligence centre is worth once a player can be somewhere else: a switch is a
+/// phone call, and a room that exists to know things is the honest place to buy one.
+/// </summary>
+static void IntelligenceBuysBackRemoteControl()
+{
+    var options = Resolve(null);
+    options.Hideout.RemoteLabControlLevel = 2;
+    options.Hideout.RemoteRepairLevel = 3;
+    var hideouts = CreateHideouts(options);
+
+    var bare = new Hideout { City = "New York" };
+    AssertTrue(!hideouts.CanControlLabsRemotely(bare), "a house with no centre reaches nothing");
+    AssertTrue(!hideouts.CanRepairRemotely(bare), "and certainly cannot run a building site");
+
+    var wired = new Hideout { City = "New York", IntelligenceLevel = 2 };
+    AssertTrue(hideouts.CanControlLabsRemotely(wired), "level 2 answers the phone");
+    AssertTrue(!hideouts.CanRepairRemotely(wired), "but does not sign off a repair");
+
+    var deep = new Hideout { City = "New York", IntelligenceLevel = 3 };
+    AssertTrue(hideouts.CanRepairRemotely(deep), "level 3 does");
+
+    // A room through a wall reaches nothing at all, which is the whole reason a raider wants it.
+    deep.SetWrecked(HideoutRooms.Intelligence, DateTime.UtcNow);
+    AssertTrue(!hideouts.CanControlLabsRemotely(deep), "there is nobody in a wrecked centre to take the call");
+    AssertTrue(!hideouts.CanRepairRemotely(deep), "or to place one");
+}
+
 static Player Rookie(GameOptions options) => new()
 {
     City = "Detroit",
+    // Set up where they are standing. It has to be said out loud now: a hideout has a town of its own,
+    // and a rookie whose house was in a city they had never been to could not work their own street.
     Cash = options.StartingCash,
     Turns = options.StartingTurns,
     Pimps = options.StartingPimps,
@@ -7876,7 +8210,7 @@ static Player Rookie(GameOptions options) => new()
     Pistols = options.StartingWeapons,
     HoeHappiness = 100,
     ThugHappiness = 100,
-    Hideout = new Hideout { Tier = 1, StorageLevel = 1, SafeLevel = 1 }
+    Hideout = new Hideout { City = "Detroit", Tier = 1, StorageLevel = 1, SafeLevel = 1 }
 };
 
 static GuidanceService CreateGuidance(GameOptions options)
@@ -9373,6 +9707,8 @@ static void CityRiskReachesTheDailyLoop()
     static Player Working(string city) => new()
     {
         City = city,
+        // The house is in the town being measured, which is the whole point of the comparison: what
+        // changes between these two players is the town, and nothing else may.
         Turns = 100,
         Pimps = 1,
         Hoes = 6,
@@ -9383,7 +9719,7 @@ static void CityRiskReachesTheDailyLoop()
         HoeHappiness = 90,
         ThugHappiness = 90,
         HoeCutPercent = 30,
-        Hideout = new Hideout { Tier = 1, StorageLevel = 3, SafeLevel = 3 }
+        Hideout = new Hideout { City = city, Tier = 1, StorageLevel = 3, SafeLevel = 3 }
     };
 }
 
@@ -9613,10 +9949,10 @@ static void MuleRunsArePricedAndFrozen()
 
     // Los Angeles is six turns out on the shipped map; Detroit is two.
     var player = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Condoms = 10, Beer = 10 };
-    player.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
+    player.Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 };
 
     // Without the room there are no runs at all: the intelligence centre is the gate, not a discount.
-    var roomless = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { Tier = 2 } };
+    var roomless = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { City = "Los Angeles", Tier = 2 } };
     AssertEqual(0, hideouts.ConcurrentRunCap(roomless.Hideout));
     AssertRuleError(
         () => mules.Launch(roomless, Pimp(roomless, "Vic", 100), "Detroit", "weed", 2, 10_000, 0, DateTime.UtcNow),
@@ -9694,13 +10030,13 @@ static void MuleRunsArePricedAndFrozen()
     AssertTrue(briefed > 0, "a briefing is not a guarantee");
     AssertTrue(mules.BustChancePercent(player, "New York", 6) > briefed, "more bodies are easier to notice");
 
-    var dry = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };
+    var dry = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 } };
     AssertRuleError(
         () => mules.Launch(dry, Pimp(dry, "Vic", 100), "Detroit", "weed", 3, 30_000, 0, launchedAt),
         "needs");
 
     var stockedWithContraband = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Condoms = 10, Moonshine = 10 };
-    stockedWithContraband.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
+    stockedWithContraband.Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 };
     var moonshineQuote = mules.Quote(stockedWithContraband, "Detroit", "weed", 3, 30_000);
     AssertEqual(0, moonshineQuote.BeerUsed);
     AssertEqual(moonshineQuote.BeerNeeded, moonshineQuote.MoonshineUsed);
@@ -9708,7 +10044,7 @@ static void MuleRunsArePricedAndFrozen()
     AssertEqual(10 - moonshineQuote.MoonshineUsed, stockedWithContraband.Moonshine);
 
     // Sending crew you do not have, or money you cannot cover, is refused rather than run on credit.
-    var thin = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 1, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };
+    var thin = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 1, Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 } };
     AssertRuleError(
         () => mules.Launch(thin, Pimp(thin, "Vic", 100), "Detroit", "weed", 4, 30_000, 0, launchedAt),
         "hoe(s) to send");
@@ -9743,7 +10079,11 @@ static void MuleRunsSettleThreeWays()
     AssertEqual(30_000L - 135 * price, run.CashReturned);
     AssertEqual(135, lucky.Weed);
     AssertEqual(20, lucky.Hoes);
-    AssertEqual(30_000L - 135 * price, lucky.Cash);
+    // The change comes back into the safe rather than into the player's hand, for the same reason the
+    // cargo goes on to the shelves: a crew walked back into the house with it, and the player may have
+    // been in another town the whole time.
+    AssertEqual(30_000L - 135 * price, lucky.Hideout!.SafeCash);
+    AssertEqual(0L, lucky.Cash);
     AssertEqual(135, settled.UnitsDelivered);
     AssertTrue(!run.IsOut, "a settled run is no longer out");
 
@@ -10881,7 +11221,7 @@ static void AStrikeRefusesBeforeTheClick()
     var strikes = CreateStrikes(options);
 
     // Turns are checked before any of this, so give them enough that the ride is what refuses.
-    var attacker = new Player { Name = "You", City = "Detroit", Turns = 40, Thugs = 4, Pistols = 4, Coke = 500, CokePurity = 1, Poison = 10, Hideout = new Hideout() };
+    var attacker = new Player { Name = "You", City = "Detroit", Turns = 40, Thugs = 4, Pistols = 4, Coke = 500, CokePurity = 1, Poison = 10, Hideout = new Hideout { City = "Detroit" } };
 
     // Nothing parked: the jacking is refused, and it is refused by name.
     // Rich enough to be worth attacking at all: the anti-farm floor is checked before any of this,
@@ -11004,7 +11344,10 @@ static Player Attacker(GameOptions options, int rides = 0, int coke = 0) => new(
     Coke = coke,
     HoeHappiness = 100,
     ThugHappiness = 100,
-    Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 3 }
+    // The house is in the town they are standing in. A strike is thrown by the crew, and the crew are
+    // wherever the house is - so an attacker whose base was in a city they had never visited could not
+    // throw one at the person across the street.
+    Hideout = new Hideout { City = "Detroit", Tier = 2, StorageLevel = 4, SafeLevel = 3 }
 };
 
 static Player Defender(GameOptions options, int rides = 0) => new()
@@ -11020,7 +11363,7 @@ static Player Defender(GameOptions options, int rides = 0) => new()
     Rides = rides,
     HoeHappiness = 70,
     ThugHappiness = 70,
-    Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 3 }
+    Hideout = new Hideout { City = "Detroit", Tier = 2, StorageLevel = 4, SafeLevel = 3 }
 };
 
 static CombatAttackRequest Strike(Player defender, string method, int coke = 0)
@@ -11648,10 +11991,19 @@ static void ATownsCounterCarriesWhatItsTraderCarries()
     AssertEqual(3, few.Available);
     AssertTrue(!few.Locked, "three left is still three for sale");
     cheap.Cash = 10_000_000;
-    cheap.Hideout = new Hideout { Tier = 4, StorageLevel = 6 };
+    cheap.Hideout = new Hideout { City = "Chicago", Tier = 4, StorageLevel = 6 };
     AssertRuleError(() => economy.BuyStoreItem(cheap, "medicine", 4, thin), "buying more than the counter has");
     economy.BuyStoreItem(cheap, "medicine", 3, thin);
+    // Bought at the counter in the town the buyer's house is in, so it goes straight on to the shelves.
+    // Carrying a crate through your own front door is not a decision worth a second click.
     AssertEqual(3, cheap.Medicine);
+    AssertEqual(0, cheap.Carried.Medicine);
+
+    // Bought anywhere else it stays in their hands, and has to be flown home before the crew see it.
+    var abroad = new Player { City = "Las Vegas", Cash = 10_000_000, Hideout = new Hideout { City = "Chicago", Tier = 4, StorageLevel = 6 } };
+    economy.BuyStoreItem(abroad, "medicine", 2);
+    AssertEqual(2, abroad.Carried.Medicine);
+    AssertEqual(0, abroad.Medicine);
 }
 
 // Asking the dealer what else is going: free once a cycle, then money and standing together, charged a

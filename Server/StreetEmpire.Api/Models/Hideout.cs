@@ -10,8 +10,46 @@ public sealed class Hideout
     public Guid PlayerId { get; set; }
     public Player Player { get; set; } = null!;
 
+    /// <summary>
+    /// The town the house is actually in.
+    ///
+    /// This is the change everything else here hangs off. A hideout used to have no location at all,
+    /// which meant it was implicitly wherever the player happened to be standing - so a flight to Las
+    /// Vegas quietly carried the building, the shelves, the safe and the crew along with it, and a
+    /// player's entire operation moved every time they wanted to look at a different market.
+    ///
+    /// Set once when the house is founded and not touched by travel. There is no relocation mechanic
+    /// yet and that is deliberate: moving a base should be an expensive, deliberate act with its own
+    /// rules, not a side effect of buying a plane ticket.
+    /// </summary>
+    public string City { get; set; } = "New York";
+
     /// <summary>Tier 1 is the Trap House. Each tier above raises crew caps and unlocks deeper rooms.</summary>
     public int Tier { get; set; } = 1;
+
+    /// <summary>
+    /// Money in the safe. It sits in <see cref="City"/> and it does not travel.
+    ///
+    /// The third place a player can keep money, and the one in the middle. Cash on hand goes where
+    /// they go and can be taken off them on the road; the bank is out of everybody's reach but charges
+    /// a trip every time it is opened; the safe is free to use, holds only what the room can hold, and
+    /// is the pile a raid on the house actually gets at. The interesting part is that it needs the
+    /// player to be standing in front of it, so a fortune locked in a New York safe is worth nothing
+    /// at all to somebody at a table in Las Vegas.
+    /// </summary>
+    public long SafeCash { get; set; }
+
+    /// <summary>
+    /// What is on the shelves lives on the player's own row - see <see cref="Player"/>'s goods columns
+    /// and <see cref="Player.Stored"/>.
+    ///
+    /// It reads oddly and it is deliberate. Those columns have always been the hideout's store: the
+    /// storage room is what caps them, the labs are what fill them, and a raid is what empties them.
+    /// What the game was missing was not a place to put the shelves - it was the other pile, the one a
+    /// player carries. Adding that as <see cref="Player.Carried"/> and leaving the shelves where they
+    /// are means every rule that feeds a crew, arms a thug or prices a raid is already reading the
+    /// right pile, and none of them had to be rewritten to find out where it went.
+    /// </summary>
 
     /// <summary>
     /// The tier being built, and when it lands. Set together or not at all: a build is paid for up

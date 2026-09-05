@@ -204,6 +204,19 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.ThugHappiness).HasPrecision(5, 2);
             // Holds a machine key, so it is sized like every other one on the floor.
             entity.Property(x => x.CasinoFreeSpinMachine).HasMaxLength(32);
+            // A weapon tier key, bounded like every other key column here.
+            entity.Property(x => x.EquippedWeapon).HasMaxLength(16);
+            // The bag rides in the player's own row rather than a table of its own: there is no
+            // question anybody asks of it that does not begin with whose pockets it is in.
+            entity.OwnsOne(x => x.Carried, bag =>
+            {
+                bag.Ignore(x => x.Armoury);
+                bag.Ignore(x => x.Weapons);
+                bag.Ignore(x => x.Any);
+                bag.Property(x => x.CokePurity).HasPrecision(5, 4);
+            });
+            entity.Navigation(x => x.Carried).IsRequired();
+            entity.Ignore(x => x.Stored);
         });
 
         modelBuilder.Entity<Alliance>(entity =>
@@ -417,6 +430,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             // every other key column here is: a string column with no length is a column somebody can
             // eventually write a paragraph into.
             entity.Property(x => x.RepairingRoom).HasMaxLength(16);
+            entity.Property(x => x.City).HasMaxLength(32);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
@@ -692,6 +706,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Name).HasMaxLength(48);
             entity.Property(x => x.LostReason).HasMaxLength(32);
             entity.Property(x => x.Loyalty).HasPrecision(5, 2);
+            entity.Property(x => x.Assignment).HasMaxLength(16);
+            entity.Property(x => x.City).HasMaxLength(32);
             entity.HasOne(x => x.Player)
                 .WithMany(x => x.Crew)
                 .HasForeignKey(x => x.PlayerId)

@@ -434,6 +434,23 @@ function firstReason(...reasons: Blocked[]): string | null {
 // same in-flight request.
 const BUSY = 'Hold on - your last move is still going through.'
 
+/**
+ * What a large purchase can actually be paid out of, which mirrors Capital.Available on the server.
+ *
+ * The bank always, cash always, and the safe only while the player is standing in front of it - money
+ * locked in a safe in New York is worth nothing at all to somebody in Las Vegas, and a page that
+ * counted it would quote a total the server will refuse.
+ */
+function spendable(dashboard: Dashboard) {
+  return dashboard.cash + dashboard.bankCash + (dashboard.hideout.atHideout ? dashboard.hideout.safeCash : 0)
+}
+
+/** Why a hideout action cannot be taken from here, or false when it can. */
+function awayFromHideout(dashboard: Dashboard, what: string) {
+  return !dashboard.hideout.atHideout
+    && `Your hideout is in ${dashboard.hideout.city} and you are in ${dashboard.city}. ${what} needs you there.`
+}
+
 // The same thing said behind the admin desk, where the buttons act on the game rather than play it.
 const WORKING = 'Hold on - the last request is still going through.'
 
@@ -4511,6 +4528,7 @@ function StreetPage(ctx: PageContext) {
         )} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</Button>
         <Button className="btn btn-primary" blocked={firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Working a shift'),
           !!pendingOutgoingAttack && 'Your crew is out on a job. Nobody is left to work a shift.',
           maxStreetTurns < 1 && 'Your storage cannot supply even a 1-turn street shift for this crew.',
           streetTurns < 1 && 'Set the shift to at least one turn.',
@@ -4608,7 +4626,9 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hirePimpCost}
           cash={dashboard.cash}
           busy={busy}
-          fireBlocked={dashboard.pimps - crewQty.pimps < 1 && 'Somebody has to run the house. You cannot let your last pimp go.'}
+          hireBlocked={awayFromHideout(dashboard, 'Taking somebody on')}
+          fireBlocked={awayFromHideout(dashboard, 'Letting somebody go')
+            || (dashboard.pimps - crewQty.pimps < 1 && 'Somebody has to run the house. You cannot let your last pimp go.')}
           onQuantity={quantity => setCrewQty(value => ({ ...value, pimps: quantity }))}
           onHire={() => void act(() => api.hireCrew('pimps', crewQty.pimps))}
           onFire={() => void act(() => api.fireCrew('pimps', crewQty.pimps))}
@@ -4621,9 +4641,11 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hireHoeCost}
           cash={dashboard.cash}
           busy={busy}
-          hireBlocked={dashboard.hoeHappiness < dashboard.crewReport.minHoeMoraleToHire
+          hireBlocked={awayFromHideout(dashboard, 'Taking somebody on')
+            || dashboard.hoeHappiness < dashboard.crewReport.minHoeMoraleToHire
             && `Nobody new signs on to an unhappy house. Morale is ${dashboard.hoeHappiness.toFixed(0)}% and hiring wants ${dashboard.crewReport.minHoeMoraleToHire.toFixed(0)}%.`}
-          fireBlocked={dashboard.hoes < crewQty.hoes && `You are letting ${number.format(crewQty.hoes)} go and you have ${number.format(dashboard.hoes)}.`}
+          fireBlocked={awayFromHideout(dashboard, 'Letting somebody go')
+            || (dashboard.hoes < crewQty.hoes && `You are letting ${number.format(crewQty.hoes)} go and you have ${number.format(dashboard.hoes)}.`)}
           onQuantity={quantity => setCrewQty(value => ({ ...value, hoes: quantity }))}
           onHire={() => void act(() => api.hireCrew('hoes', crewQty.hoes))}
           onFire={() => void act(() => api.fireCrew('hoes', crewQty.hoes))}
@@ -4642,9 +4664,11 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hireThugCost}
           cash={dashboard.cash}
           busy={busy}
-          hireBlocked={dashboard.thugHappiness < dashboard.crewReport.minThugMoraleToHire
+          hireBlocked={awayFromHideout(dashboard, 'Taking somebody on')
+            || dashboard.thugHappiness < dashboard.crewReport.minThugMoraleToHire
             && `Nobody new signs on to an unhappy house. Morale is ${dashboard.thugHappiness.toFixed(0)}% and hiring wants ${dashboard.crewReport.minThugMoraleToHire.toFixed(0)}%.`}
-          fireBlocked={dashboard.thugs < crewQty.thugs && `You are letting ${number.format(crewQty.thugs)} go and you have ${number.format(dashboard.thugs)}.`}
+          fireBlocked={awayFromHideout(dashboard, 'Letting somebody go')
+            || (dashboard.thugs < crewQty.thugs && `You are letting ${number.format(crewQty.thugs)} go and you have ${number.format(dashboard.thugs)}.`)}
           onQuantity={quantity => setCrewQty(value => ({ ...value, thugs: quantity }))}
           onHire={() => void act(() => api.hireCrew('thugs', crewQty.thugs))}
           onFire={() => void act(() => api.fireCrew('thugs', crewQty.thugs))}
@@ -4682,6 +4706,25 @@ function HideoutPage(ctx: PageContext) {
   }, [repairing?.completesAtUtc])
 
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
+    {/* Before anything else, because it changes what every panel below it means. The page deliberately
+        does not disappear when the player is elsewhere - watching your labs run and your timers tick
+        from another town is most of what an operation is - but nothing on it can be touched, and
+        saying that once at the top is better than eleven buttons each refusing separately. */}
+    {!hideout.atHideout && <section className="card p-3 gcol-full border-warning" data-area="away">
+      <div className="panel-title">
+        <h2>You are not here</h2>
+        <span>{dashboard.city} &rarr; {hideout.city}</span>
+      </div>
+      <p className="mb-2">
+        Your hideout is in {hideout.city} and you are in {dashboard.city}. Everything below is still
+        running - the labs, the timers, the lookout - and you can watch all of it. Touching any of it
+        needs you to be standing there.
+      </p>
+      <ul className="small text-body-secondary mb-0">
+        {dashboard.location.blockedHere.map(what => <li key={what}>{what}</li>)}
+      </ul>
+    </section>}
+
     {/* Above the capacity bars on purpose. A house with three dark rooms has one decision in it and
         this is it, and a player who has to scroll past their storage graph to find out why the mules
         will not leave has been told last. Absent entirely when nothing is broken, rather than an
@@ -4709,7 +4752,9 @@ function HideoutPage(ctx: PageContext) {
             busy && BUSY,
             repairing?.room === room.room && `The crew are in there now. Working again in ${timeUntil(repairing.completesAtUtc)}.`,
             !!repairing && repairing.room !== room.room && `Your crew are in the ${repairing.name} for another ${timeUntil(repairing.completesAtUtc)}.`,
-            dashboard.cash + dashboard.bankCash < room.repairCost && `That costs ${money.format(room.repairCost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+            !dashboard.hideout.atHideout && !dashboard.location.canRepairRemotely
+              && `Starting a repair from ${dashboard.city} needs a bigger intelligence centre. Your hideout is in ${dashboard.hideout.city}.`,
+            spendable(dashboard) < room.repairCost && `That costs ${money.format(room.repairCost)} and you have ${money.format(spendable(dashboard))} across your cash, safe and bank.`,
           )} onClick={() => repair(room.room)}>
             {repairing?.room === room.room ? 'Being fixed' : `Repair ${money.format(room.repairCost)}`}
           </Button>
@@ -4718,14 +4763,18 @@ function HideoutPage(ctx: PageContext) {
     </section>}
 
     <section className="card p-3 gcol-full" data-area="capacity">
-      <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier}</span></div>
-      <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
+      <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier} in {hideout.city}</span></div>
+      <p>
+        Everything the house can hold is decided here. Crew the place has no room for walks away, and
+        goods the store cannot take are left in the street. What you are carrying is a separate and
+        much smaller pile - it is below, and it is the only part that travels with you.
+      </p>
       <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-3">
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
         <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
         <CapacityBar label="Thugs" used={dashboard.thugs} cap={hideout.maxThugs} />
-        <CapacityBar label="Garage" used={dashboard.rides} cap={hideout.maxRides} />
-        <CapacityBar label="Cash on hand" used={dashboard.cash} cap={hideout.maxCash} money />
+        <CapacityBar label={`Garage (${hideout.city})`} used={dashboard.rides} cap={hideout.maxRides} />
+        <CapacityBar label="Safe" used={hideout.safeCash} cap={hideout.maxCash} money />
         <CapacityBar label="Condoms" used={dashboard.condoms} cap={hideout.maxCondoms} />
         <CapacityBar label="Beer" used={dashboard.beer} cap={hideout.maxBeer} />
         <CapacityBar label="Weapons" used={dashboard.weapons} cap={hideout.maxWeapons} />
@@ -4738,6 +4787,8 @@ function HideoutPage(ctx: PageContext) {
       </div>
     </section>
 
+    <StashPanel {...ctx} />
+
     <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
 
     <section className="card p-3 gcol-full" data-area="rooms">
@@ -4748,17 +4799,20 @@ function HideoutPage(ctx: PageContext) {
           level={hideout.storageLevel}
           detail={`Holds ${number.format(hideout.maxCondoms)} condoms, ${number.format(hideout.maxBeer)} beer, ${number.format(hideout.maxWeapons)} weapons, ${number.format(hideout.maxWeed)} weed, ${number.format(hideout.maxCoke)} coke`}
           upgrade={hideout.storageUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
+          repairBlocked={!dashboard.location.canRepairRemotely && awayFromHideout(dashboard, 'Starting a repair')}
           onUpgrade={() => void act(() => api.upgradeHideout('storage'))}
         />
         <RoomRow
           name="Safe"
           level={hideout.safeLevel}
-          detail={`Holds ${money.format(hideout.maxCash)} cash on hand`}
+          detail={`Holds ${money.format(hideout.maxCash)}, in ${hideout.city}, out of a mugger's reach and inside a raider's`}
           upgrade={hideout.safeUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('safe'))}
         />
         <RoomRow
@@ -4768,8 +4822,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Grows weed on its own while you are out, and stretches a shift further when you are in.'
             : `Active +${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own.`}
           upgrade={hideout.weedLabUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('weedlab'))}
           damage={broken('weedlab')}
           repairing={repairing}
@@ -4783,6 +4838,7 @@ function HideoutPage(ctx: PageContext) {
             minSellLevel={hideout.minLabLevelForAutoSell}
             busy={busy}
             act={act}
+            remote={!dashboard.location.canControlLabsRemotely && awayFromHideout(dashboard, 'Switching a lab')}
           />
         </RoomRow>
         <RoomRow
@@ -4792,8 +4848,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Cooks coke on its own while you are out, and stretches a shift further when you are in.'
             : `Active +${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own.`}
           upgrade={hideout.cokeLabUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
           damage={broken('cokelab')}
           repairing={repairing}
@@ -4807,6 +4864,7 @@ function HideoutPage(ctx: PageContext) {
             minSellLevel={hideout.minLabLevelForAutoSell}
             busy={busy}
             act={act}
+            remote={!dashboard.location.canControlLabsRemotely && awayFromHideout(dashboard, 'Switching a lab')}
           />
         </RoomRow>
         {workshop && <RoomRow
@@ -4816,8 +4874,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Unlocks crafting for guns, moonshine, cut, medicine and poison.'
             : `Crafts run at ${number.format(workshop.perTurn)} unit${workshop.perTurn === 1 ? '' : 's'} a turn before each recipe's own rate.`}
           upgrade={workshop.upgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('workshop'))}
           damage={broken('workshop')}
           repairing={repairing}
@@ -4831,8 +4890,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Someone on the street watching for the law, so a raid is less likely to land.'
             : `Cuts the odds of a raid by ${hideout.bustRiskReductionPercent}%`}
           upgrade={hideout.lookoutUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('lookout'))}
           damage={broken('lookout')}
           repairing={repairing}
@@ -4845,8 +4905,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Makes nothing. Lets you run mules out of town, and knows the routes they take.'
             : `${hideout.concurrentRunCap} mule run(s) out at once, on routes you already know`}
           upgrade={hideout.intelligenceUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('intelligence'))}
           damage={broken('intelligence')}
           repairing={repairing}
@@ -5019,6 +5080,7 @@ function MulePage(ctx: PageContext) {
           className="btn btn-primary"
           blocked={firstReason(
             busy && BUSY,
+            awayFromHideout(dashboard, 'Briefing a run'),
             !pimpId && 'Nobody is free to lead the run. Every pimp you have is already away.',
             board.runsOut >= board.concurrentRunCap && `You already have ${board.runsOut} run${board.runsOut === 1 ? '' : 's'} out, which is all your hideout can keep track of.`,
             hoes > board.hoesAvailable && `You are sending ${hoes} and only ${board.hoesAvailable} ${board.hoesAvailable === 1 ? 'is' : 'are'} free to go.`,
@@ -5081,6 +5143,121 @@ function muleSupplyLabel(quote: MuleQuote) {
 
 function muleSupplyNeedLabel(quote: MuleQuote) {
   return `${number.format(quote.condomsNeeded)} condoms and ${number.format(quote.beerNeeded)} beer or moonshine`
+}
+
+
+/**
+ * The threshold: what is on the shelves, what is in your hands, and the two buttons between them.
+ *
+ * One table with both columns rather than two panels, because every question anybody has here is a
+ * comparison - is this in the right pile, will the rest fit, what am I about to get on a plane with -
+ * and two panels is two things to hold in your head while you decide.
+ *
+ * The safe sits at the top of it rather than in its own card for the same reason: money is stock, it
+ * has exactly the same two sides and the same one rule, and separating it would suggest otherwise.
+ */
+function StashPanel({ dashboard, busy, act }: PageContext) {
+  const hideout = dashboard.hideout
+  const home = hideout.atHideout
+  const [amount, setAmount] = useState('')
+  const safeRoom = Math.max(0, hideout.maxCash - hideout.safeCash)
+
+  // Only the rows worth showing. A shelf list with fourteen zeroes on it is a list nobody reads, so a
+  // good appears once there is some of it somewhere - and the goods a player has never touched stay
+  // out of the way until the day they buy one.
+  const lines = (hideout.stash ?? []).filter(line => line.carried > 0 || line.stored > 0)
+  const away = !home && `Your storage is in ${hideout.city} and you are in ${dashboard.city}.`
+  const move = (item: string, quantity: number) => void act(() => api.moveStock(item, quantity))
+
+  const cash = Math.max(0, Math.floor(Number(amount.replace(/[^0-9]/g, '')) || 0))
+  const moveCash = (sign: 1 | -1) => {
+    if (cash <= 0) return
+    void act(() => api.moveSafeCash(sign * cash))
+    setAmount('')
+  }
+
+  return <section className="card p-3 gcol-full" data-area="stash">
+    <div className="panel-title">
+      <h2>Storage and what you carry</h2>
+      <span>{home ? `At the door in ${hideout.city}` : `Locked: ${hideout.city}`}</span>
+    </div>
+    <p>
+      The shelves and the safe stay in {hideout.city}. What you are carrying goes where you go, and it
+      is the only thing a stop on the road can take - just as it is the only thing a raid on the house
+      cannot. Deciding what to put in your hands before you fly is the whole of it.
+    </p>
+
+    <div className="d-flex flex-wrap align-items-end gap-2 border rounded p-2 mt-2">
+      <div className="min-w-0 flex-grow-1">
+        <span className="eyebrow">Safe</span>
+        <div className="tnum"><strong>{money.format(hideout.safeCash)}</strong> / {money.format(hideout.maxCash)}</div>
+        <div className="small text-body-secondary">
+          Free to use and costs no turns, unlike the bank &mdash; but a raid on the house opens it.
+        </div>
+      </div>
+      <input
+        className="form-control w-auto tnum"
+        inputMode="numeric"
+        placeholder="Amount"
+        value={amount}
+        onChange={event => setAmount(event.target.value)}
+        aria-label="Amount to move in or out of the safe"
+      />
+      <Button className="btn btn-outline-secondary btn-sm" blocked={firstReason(
+        busy && BUSY,
+        away,
+        cash <= 0 && 'Say how much.',
+        cash > dashboard.cash && `You are carrying ${money.format(dashboard.cash)}.`,
+        safeRoom <= 0 && 'The safe is full. A bigger one holds more.',
+      )} onClick={() => moveCash(1)}>Put in</Button>
+      <Button className="btn btn-outline-secondary btn-sm" blocked={firstReason(
+        busy && BUSY,
+        away,
+        cash <= 0 && 'Say how much.',
+        cash > hideout.safeCash && `The safe is holding ${money.format(hideout.safeCash)}.`,
+      )} onClick={() => moveCash(-1)}>Take out</Button>
+    </div>
+
+    {lines.length === 0
+      ? <p className="small text-body-secondary mb-0 mt-3">Nothing on the shelves and nothing in your hands.</p>
+      : <div className="table-responsive mt-3">
+        <table className="table table-sm align-middle tnum mb-0">
+          <thead>
+            <tr>
+              <th scope="col">Good</th>
+              <th scope="col" className="text-end">On the shelf</th>
+              <th scope="col" className="text-end">Carried</th>
+              <th scope="col" className="text-end">Move</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map(line => <tr key={line.key}>
+              <th scope="row" className="fw-normal">{line.label}</th>
+              <td className="text-end">{number.format(line.stored)} <span className="text-body-secondary">/ {number.format(line.storageCapacity)}</span></td>
+              <td className="text-end">{number.format(line.carried)} <span className="text-body-secondary">/ {number.format(line.carryCapacity)}</span></td>
+              <td className="text-end">
+                <div className="btn-group btn-group-sm">
+                  <Button className="btn btn-outline-secondary" blocked={firstReason(
+                    busy && BUSY,
+                    away,
+                    line.carried <= 0 && `You are not carrying any ${line.label.toLowerCase()}.`,
+                    line.stored >= line.storageCapacity && 'The shelf is full.',
+                  )} onClick={() => move(line.key, Math.min(line.carried, line.storageCapacity - line.stored))}
+                    title={`Put ${line.label.toLowerCase()} on the shelf`}>Store</Button>
+                  <Button className="btn btn-outline-secondary" blocked={firstReason(
+                    busy && BUSY,
+                    away,
+                    line.stored <= 0 && `There is no ${line.label.toLowerCase()} on the shelf.`,
+                    line.carried >= line.carryCapacity && 'Your hands are full.',
+                  )} onClick={() => move(line.key, -Math.min(line.stored, line.carryCapacity - line.carried))}
+                    title={`Carry ${line.label.toLowerCase()}`}>Carry</Button>
+                </div>
+              </td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>}
+  </section>
 }
 
 function CapacityBar({ label, used, cap, money: asMoney = false }: { label: string, used: number, cap: number, money?: boolean }) {
@@ -5247,6 +5424,7 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
         // thing standing in the way rather than the last.
         const whyNot = firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Working the labs'),
           !!activeCraft && `The bench is busy making ${activeCraft.label.toLowerCase()}, ready in ${timeUntil(activeCraft.completesAtUtc)}.`,
           workUnits < 1 && 'Set the batch to at least one work unit.',
           workUnits > dashboard.maxActionTurns && `You can spend ${dashboard.maxActionTurns} turns at a time at most.`,
@@ -5315,6 +5493,7 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
         const totalCost = station.costPerUnit * quantity
         const whyNot = firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Working the bench'),
           !!activeCraft && `The bench is busy making ${activeCraft.label.toLowerCase()}, ready in ${timeUntil(activeCraft.completesAtUtc)}.`,
           runTurns < 1 && 'Set the run to at least one work unit.',
           runTurns > dashboard.maxActionTurns && `You can spend ${dashboard.maxActionTurns} turns at a time at most.`,
@@ -5442,6 +5621,7 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
         className="btn btn-primary btn-sm"
         blocked={firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Stretching a batch'),
           blocked,
           batch <= 0 && 'There is nothing to stretch at this size.',
           turnsNeeded > dashboard.turns && `That batch wants ${turnsNeeded} turn${turnsNeeded === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
@@ -5461,7 +5641,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
   // Cash and bank together, matching what the server charges. Checking cash on hand alone greyed the
   // button out for exactly the players who could afford it, since a tier costs more than any safe below
   // it holds and the rest of their money is necessarily in the bank.
-  const canAffordTier = !next || dashboard.cash + dashboard.bankCash >= next.cost
+  const canAffordTier = !next || spendable(dashboard) >= next.cost
 
   // The panel keeps its own second hand. The app-wide one stops once turns are maxed, which would
   // otherwise freeze the countdown for exactly the players most likely to be building something.
@@ -5519,7 +5699,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
               <strong>{next.name}</strong>
               <span>
                 {money.format(next.cost)} and {next.turns} turns. Takes {next.buildMinutes} minutes to build.
-                Paid from the bank first, then cash on hand.
+                Paid from the bank first, then the safe, then cash on hand.
               </span>
             </div>
             <em>Tier {next.level}</em>
@@ -5527,7 +5707,8 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
               className="btn btn-primary"
               blocked={firstReason(
                 busy && BUSY,
-                !canAffordTier && `The ${next.name} costs ${money.format(next.cost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+                awayFromHideout(dashboard, 'Building'),
+                !canAffordTier && `The ${next.name} costs ${money.format(next.cost)} and you have ${money.format(spendable(dashboard))} across your cash, safe and bank.`,
                 dashboard.turns < next.turns && `Starting the build costs ${next.turns} turns and you have ${dashboard.turns}.`,
               )}
               onClick={() => void act(() => api.upgradeHideout('tier'))}
@@ -5562,7 +5743,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
  * out of a raider's reach, which product never can. It costs the spread, since it takes the local
  * price the hour it is made rather than whatever it would fetch somewhere worth carrying it to.
  */
-function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, act }: {
+function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, act, remote }: {
   product: 'weed' | 'coke'
   level: number
   running: boolean
@@ -5570,6 +5751,8 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
   minSellLevel: number
   busy: boolean
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+  /** Why the switches cannot be reached from here, or false when they can. */
+  remote?: Blocked
 }) {
   if (level <= 0) return null
   const canSell = level >= minSellLevel
@@ -5577,13 +5760,14 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
   return <div className="d-flex flex-wrap align-items-center gap-2 mt-1">
     <Button
       className={`btn btn-sm ${running ? 'btn-secondary' : 'btn-primary'}`}
-      blocked={busy && BUSY}
+      blocked={firstReason(busy && BUSY, remote)}
       onClick={() => void act(() => api.setLab(product, !running, autoSell))}
     >{running ? 'Switch off' : 'Switch on'}</Button>
     <Button
       className={`btn btn-sm ${autoSell ? 'btn-primary' : 'btn-secondary'}`}
       blocked={firstReason(
         busy && BUSY,
+        remote,
         !running && 'A lab that is switched off has nothing to sell.',
         !canSell && `Selling its own output needs level ${minSellLevel}. This one is level ${level}.`,
       )}
@@ -5593,7 +5777,7 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
       {!running
         ? 'Off. It makes nothing, and the hours it is off are gone rather than owed.'
         : autoSell
-          ? 'Sold at this town’s price as it is made, so nothing sits drawing heat.'
+          ? 'Sold at the hideout town’s price as it is made, so nothing sits drawing heat.'
           : canSell
             ? 'Shelved, where it draws the law and a raid can take it.'
             : `Shelved. Level ${minSellLevel} can sell it instead.`}
@@ -5601,7 +5785,7 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
   </div>
 }
 
-function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair, children }: {
+function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair, children, blocked, repairBlocked }: {
   name: string
   level: number
   detail: string
@@ -5609,6 +5793,14 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage,
   funds: number
   busy: boolean
   onUpgrade: () => void
+  /**
+   * Why this room cannot be built from here, or false when it can. Separate from the repair reason
+   * below because the two are not the same rule: a wall is signed off on site and never by telephone,
+   * while a repair can be placed from another town by somebody with a big enough intelligence centre.
+   */
+  blocked?: Blocked
+  /** Why a repair cannot be started from here, or false when it can. */
+  repairBlocked?: Blocked
   damage?: HideoutDamage | null
   repairing?: HideoutRepair | null
   onRepair?: () => void
@@ -5653,19 +5845,21 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage,
     {damage
       ? <Button className="btn btn-danger" blocked={firstReason(
         busy && BUSY,
+        repairBlocked,
         underway && `The crew are already in the ${damage.name}. They are out in ${timeUntil(repairing!.completesAtUtc)}.`,
         elsewhere && `Your crew are in the ${repairing!.name} until ${timeUntil(repairing!.completesAtUtc)} from now. They can only be in one room at a time.`,
-        funds < damage.repairCost && `Putting it back costs ${money.format(damage.repairCost)} and you have ${money.format(funds)} between cash and the bank.`,
+        funds < damage.repairCost && `Putting it back costs ${money.format(damage.repairCost)} and you have ${money.format(funds)} across your cash, safe and bank.`,
       )} onClick={() => onRepair?.()}>
         {underway ? 'Being fixed' : `Repair ${money.format(damage.repairCost)}`}
       </Button>
       : <Button className="btn btn-primary" blocked={firstReason(
         busy && BUSY,
+        blocked,
         !upgrade && `The ${name.toLowerCase()} is at its highest level. There is nothing left to buy here.`,
         tierLocked && workshopLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better and a level ${upgrade!.requiredWorkshopLevel} workshop.`,
         tierLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better. Move the building up first.`,
         workshopLocked && `Level ${upgrade!.level} wants a level ${upgrade!.requiredWorkshopLevel} workshop first.`,
-        !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} between cash and the bank.`,
+        !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} across your cash, safe and bank.`,
       )} onClick={onUpgrade}>
         {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
       </Button>}
@@ -5830,7 +6024,7 @@ function TerritoryPage(ctx: PageContext) {
               blocked={firstReason(
                 busy && BUSY,
                 t.nextDevelopment.tierLocked && `Working ${t.name} up to ${t.nextDevelopment.name} wants the ${t.nextDevelopment.requiredTierName} behind you first.`,
-                dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost && `The work costs ${money.format(t.nextDevelopment.cost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+                spendable(dashboard) < t.nextDevelopment.cost && `The work costs ${money.format(t.nextDevelopment.cost)} and you have ${money.format(spendable(dashboard))} across your cash, safe and bank.`,
                 dashboard.turns < t.nextDevelopment.turns && `The work costs ${t.nextDevelopment.turns} turns and you have ${dashboard.turns}.`,
               )}
               title={`${t.nextDevelopment.effectNow}% now, ${t.nextDevelopment.effectAfter}% once it lands`}
@@ -5838,7 +6032,7 @@ function TerritoryPage(ctx: PageContext) {
             >
               {t.nextDevelopment.tierLocked
                 ? `${t.nextDevelopment.name} needs the ${t.nextDevelopment.requiredTierName}`
-                : dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
+                : spendable(dashboard) < t.nextDevelopment.cost
                   ? `${t.nextDevelopment.name}: ${money.format(t.nextDevelopment.cost)}`
                   : dashboard.turns < t.nextDevelopment.turns
                     ? `${t.nextDevelopment.turns} turns and you have ${dashboard.turns}`
@@ -8606,7 +8800,18 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
       title={dashboard.hideout.heatNote}
     />
     <Stat label="Rank" value={`#${dashboard.rank}`} />
-    <Stat label="City" value={dashboard.city} />
+    {/* Two towns rather than one, and the second only when they differ. A player at home has one
+        location and a strip that says it twice is a strip that stops being read; a player who is
+        away has two, and which is which is the single most load-bearing fact on the page. */}
+    <Stat
+      label="You are in"
+      value={dashboard.city}
+      sub={dashboard.location.atHideout ? 'At your hideout' : `Hideout: ${dashboard.location.hideoutCity}`}
+      tone={dashboard.location.atHideout ? undefined : 'border-warning'}
+      title={dashboard.location.atHideout
+        ? undefined
+        : `Your crew, your storage and your safe are in ${dashboard.location.hideoutCity}. Only what you are carrying is here.`}
+    />
   </section>
 }
 
@@ -9028,8 +9233,9 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
 
   // The buttons carry these rather than printing them underneath. Said in both places at once, the
   // sentence appeared twice on screen the moment anybody hovered the thing it was about.
-  const restBlocked = firstReason(busy && BUSY, restReason)
-  const partyBlocked = firstReason(busy && BUSY, partyReason)
+  const away = awayFromHideout(dashboard, 'Looking after the crew')
+  const restBlocked = firstReason(busy && BUSY, away, restReason)
+  const partyBlocked = firstReason(busy && BUSY, away, partyReason)
 
   return <section className="card p-3 gcol-full" data-area="recovery">
     <div className="panel-title"><h2>Recovery</h2><span>{dashboard.hideout.tierName} morale</span></div>
@@ -9741,7 +9947,7 @@ function ArrestPanel({ dashboard, busy, act }: {
               className="btn btn-primary"
               blocked={firstReason(
                 busy && BUSY,
-                !arrest.canAffordBail && `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)} between cash and the bank.`,
+                !arrest.canAffordBail && `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)} across your cash, safe and bank.`,
               )}
               onClick={() => void act(async () => { const r = await api.bailArrest(arrest.id); await load(); return r })}>
               Bail out ({money.format(arrest.bailAmount)})

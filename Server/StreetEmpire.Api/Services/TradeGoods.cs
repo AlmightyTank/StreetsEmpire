@@ -21,6 +21,22 @@ public static class TradeGoods
     public static bool IsTradeable(string? key)
         => key is not null && Keys.Contains(key.Trim().ToLowerInvariant());
 
+    /// <summary>
+    /// Everything that occupies a shelf, which is not the same list as everything players sell each
+    /// other. Poison is the difference: the counter stocks it, the storage room caps it and a raid
+    /// seizes it, but it is deliberately not on the player market - the one thing you cannot do with a
+    /// dose is sell it to the person it is for.
+    ///
+    /// Its own list rather than a special case at each call site, because "can this be put down
+    /// somewhere" and "can this be listed for sale" are two questions, and the code that moves goods
+    /// between a bag and a shelf was asking the wrong one - which is how the counter came to refuse to
+    /// hand over a good it was advertising two lines above.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Storable = [.. Keys, "poison"];
+
+    public static bool IsStorable(string? key)
+        => key is not null && Storable.Contains(key.Trim().ToLowerInvariant());
+
     public static string Normalise(string? key)
         => key?.Trim().ToLowerInvariant() ?? string.Empty;
 
@@ -37,7 +53,7 @@ public static class TradeGoods
         _ => WeaponTiers.IsWeapon(key) ? WeaponTiers.Label(key) : key
     };
 
-    public static int Held(Player player, string key) => key switch
+    public static int Held(IStash player, string key) => key switch
     {
         "condoms" => player.Condoms,
         "beer" => player.Beer,
@@ -56,7 +72,7 @@ public static class TradeGoods
     /// rather than counted onto it. Taking coke away leaves purity alone, since removing a share of a
     /// mixture does not change the mixture.
     /// </param>
-    public static void Add(Player player, string key, int amount, double purity = 1)
+    public static void Add(IStash player, string key, int amount, double purity = 1)
     {
         if (key == "coke" && amount > 0)
         {
@@ -86,6 +102,10 @@ public static class TradeGoods
         }
     }
 
+    /// <summary>
+    /// What a shelf in the hideout store holds. The player's pockets are a different and much smaller
+    /// question - see <see cref="CarryCapacity"/>.
+    /// </summary>
     public static int Capacity(HideoutCapacity capacity, string key) => key switch
     {
         "condoms" => capacity.MaxCondoms,
@@ -96,6 +116,10 @@ public static class TradeGoods
         "coke" => capacity.MaxCoke,
         "moonshine" => capacity.MaxMoonshine,
         "cut" => capacity.MaxCut,
+        // The rack answers to its own name as well as to each gun's. Four tiers share one ceiling, so
+        // there are rules - settling an overflow, clamping a seeded rival - that want to ask about the
+        // whole rack at once, and without this arm they were told the shelf holds no guns at all.
+        "weapons" => capacity.MaxWeapons,
         _ => WeaponTiers.IsWeapon(key) ? capacity.MaxWeapons : 0
     };
 
@@ -108,10 +132,34 @@ public static class TradeGoods
     /// tiers. Subtracting the rifles alone from the shared cap would let a player fill the shelf four
     /// times over, once per tier.
     /// </summary>
-    public static int Room(Player player, HideoutCapacity capacity, string key)
+    public static int Room(IStash player, HideoutCapacity capacity, string key)
+        => Room(player, Capacity(capacity, key), key);
+
+    /// <summary>
+    /// The same question against a bare ceiling, for the piles that are not the hideout store - a
+    /// player's pockets, and whatever else ends up holding goods.
+    /// </summary>
+    public static int Room(IStash stash, int cap, string key)
     {
-        var occupied = WeaponTiers.IsWeapon(key) ? player.Weapons : Held(player, key);
-        return Math.Max(0, Capacity(capacity, key) - occupied);
+        var occupied = WeaponTiers.IsWeapon(key) ? stash.Weapons : Held(stash, key);
+        return Math.Max(0, cap - occupied);
+    }
+
+    /// <summary>
+    /// Moves as much of one good as will fit from one pile to another, and says how much went.
+    ///
+    /// One function because every way goods change place is this: a deposit, a withdrawal, a lab
+    /// filling a shelf, a bag overflowing into the store room. Written out at each of those, the coke
+    /// purity gets blended in three of them and forgotten in the fourth.
+    /// </summary>
+    public static int Move(IStash from, IStash to, string key, int wanted, int room)
+    {
+        var moved = Math.Min(Math.Min(Math.Max(0, wanted), Held(from, key)), Math.Max(0, room));
+        if (moved <= 0) return 0;
+        var purity = key == "coke" ? from.CokePurity : 1;
+        Add(from, key, -moved);
+        Add(to, key, moved, purity);
+        return moved;
     }
 
     /// <summary>

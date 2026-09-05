@@ -43,6 +43,9 @@ public sealed class CombatMissionService(
         CancellationToken cancellationToken)
     {
         TravelGate.EnsureLanded(attacker);
+        // A raid party is thugs, and thugs are at the house. Until there is a way to take people with
+        // you, being somewhere else means the men who would go are a thousand miles from the door.
+        HideoutService.EnsureAtHideout(attacker, "Sending a crew out");
 
         var combat = _options.Combat;
         var activeMissions = await ActiveAttackMissions(attacker.Id)
@@ -914,20 +917,38 @@ public sealed class CombatMissionService(
         });
     }
 
+    /// <summary>
+    /// Takes the house apart and carries what was in it home.
+    ///
+    /// A raid is on a building, so what it can take is what is in that building: the shelves and the
+    /// safe. Cash in the defender's pocket, and the load they are carrying, are wherever the defender
+    /// is - which may be another town entirely - and a raid that reached them would be a raid on a
+    /// person rather than on a place. That is a different verb, and the street strikes are it.
+    ///
+    /// The haul lands on the attacker's own shelves for the same reason, and stops at what those
+    /// shelves hold. A crew that came back with more than the room takes leaves the rest at the door.
+    /// </summary>
     private StorageOverflow ApplyLoot(CombatMission mission)
     {
         var combat = _options.Combat;
         var share = Math.Clamp(mission.LootMultiplierPercent, 0, 100) / 100.0;
-        mission.CashStolen = Scale(LootCash(mission.Defender.Cash, combat.MinCashLootPercent, combat.MaxCashLootPercent), share);
+        var raided = mission.Defender.Hideout;
+
+        // Out of the safe rather than out of the defender's pocket. Everything else a raid takes was
+        // already the hideout's - the shelves are the defender's own goods columns - and cash was the
+        // one line that reached into a person who might be standing in another state.
+        mission.CashStolen = Scale(LootCash(raided?.SafeCash ?? 0, combat.MinCashLootPercent, combat.MaxCashLootPercent), share);
         mission.WeedStolen = (int)Scale(LootProduct(mission.Defender.Weed, combat.MinProductLootPercent, combat.MaxProductLootPercent), share);
         mission.CokeStolen = (int)Scale(LootProduct(mission.Defender.Coke, combat.MinProductLootPercent, combat.MaxProductLootPercent), share);
-        mission.Defender.Cash -= mission.CashStolen;
+        if (raided is not null) raided.SafeCash -= mission.CashStolen;
         mission.Defender.Weed -= mission.WeedStolen;
         mission.Defender.Coke -= mission.CokeStolen;
 
-        // The haul still has to fit at home: cash over the safe banks itself, goods over storage spill.
+        // The haul goes to the winner's house, not into their hands: they may not have been standing
+        // at the door when the crew got back. Cash into the safe, spilling to the bank; goods on to the
+        // shelves, spilling into the street exactly as they always did.
         var stockBefore = StockLevels.From(mission.Attacker);
-        mission.Attacker.Cash += mission.CashStolen;
+        hideout.IntoSafe(mission.Attacker, mission.CashStolen);
         mission.Attacker.Weed += mission.WeedStolen;
         mission.Attacker.AddCoke(mission.CokeStolen, mission.Defender.CokePurity);
         return hideout.Settle(mission.Attacker, stockBefore);

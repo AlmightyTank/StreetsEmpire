@@ -24,6 +24,15 @@ public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record TravelRequest(string? City);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
 public sealed record BankRequest(long Amount);
+
+/// <summary>Moving one good between the player's bag and the hideout's shelves.</summary>
+public sealed record StashRequest(string? Item, int Quantity);
+
+/// <summary>Moving money between the player's pocket and the safe.</summary>
+public sealed record SafeRequest(long Amount);
+
+/// <summary>The gun to put on the player's hip, or null to carry nothing.</summary>
+public sealed record EquipRequest(string? Weapon);
 public sealed record SlotSpinRequest(string? MachineKey, long Bet, int Paylines = 1);
 
 public sealed record ClaimCompRequest(string? RewardKey);
@@ -984,7 +993,16 @@ public sealed record DashboardResponse(
     /// and for anybody who has asked for it again from their settings.
     /// </summary>
     bool WalkthroughDue,
+    /// <summary>The town the player is standing in. The operation's town is on <see cref="Location"/>.</summary>
     string City,
+    /// <summary>
+    /// Where the player is against where their empire is, and what that costs them from here.
+    ///
+    /// At the top of the response rather than buried in the hideout block, because almost every panel
+    /// on the page has to know it: the street cannot be worked from another town, the counter puts what
+    /// it sells into a different pile, and the safe is not openable at all.
+    /// </summary>
+    LocationResponse Location,
     CityMarketResponse CurrentMarket,
     IReadOnlyList<CityMarketResponse> CityMarkets,
     TravelStatusResponse Travel,
@@ -1030,6 +1048,17 @@ public sealed record DashboardResponse(
     int Coke,
     int Moonshine,
     int Cut,
+    /// <summary>
+    /// What the player is physically carrying, which is a different pile from every count above it.
+    ///
+    /// The counts above are the hideout's shelves, in the hideout's town, and they are what feeds the
+    /// crew and arms the thugs. This is what is in the player's hands and on the plane with them.
+    /// </summary>
+    StashResponse Carried,
+    /// <summary>What one person can carry, before anything is on them.</summary>
+    StashResponse CarryCapacity,
+    /// <summary>The gun on their hip, or null. Always one of the guns in <see cref="Carried"/>.</summary>
+    string? EquippedWeapon,
     int WeedSellPrice,
     int CokeSellPrice,
     /// <summary>How clean the coke pile is, and what that does to its price here.</summary>
@@ -1612,6 +1641,56 @@ public sealed record BlockRequest(Guid? PlayerId);
 /// <summary>How much of an order to hand over. Null means as much as will go.</summary>
 public sealed record DeliverContractRequest(int? Quantity);
 
+/// <summary>
+/// One good, in both places at once, with the room each side has left.
+///
+/// Sent as a pair rather than as two lists because every question the page asks about a good is a
+/// comparison - can I carry more of this, is there room on the shelf, how much is in the wrong town -
+/// and two lists that have to be zipped in the browser is two lists that will eventually be zipped
+/// wrongly.
+/// </summary>
+/// <summary>
+/// One pile of goods, or one set of limits on a pile. The same shape for both, so the page can put a
+/// count and its ceiling side by side without a second contract that means almost the same thing.
+/// </summary>
+public sealed record StashResponse(
+    int Condoms,
+    int Beer,
+    int Weapons,
+    IReadOnlyList<WeaponTierResponse> WeaponRack,
+    int Medicine,
+    int Poison,
+    int Weed,
+    int Coke,
+    int Moonshine,
+    int Cut,
+    int CokePurityPercent);
+
+public sealed record StashLineResponse(
+    string Key,
+    string Label,
+    int Carried,
+    int CarryCapacity,
+    int Stored,
+    int StorageCapacity);
+
+/// <summary>
+/// Where the player is standing, where their operation is, and what that costs them right now.
+///
+/// The one thing the whole page hangs off. Being able to see the hideout from another town is not the
+/// same as being able to reach into it, and this is what tells the client which of those it is drawing.
+/// </summary>
+public sealed record LocationResponse(
+    string PlayerCity,
+    string HideoutCity,
+    bool AtHideout,
+    /// <summary>What is blocked from here, in the words the server would refuse it in. Empty at home.</summary>
+    IReadOnlyList<string> BlockedHere,
+    /// <summary>Whether the intelligence centre reaches far enough to work the labs from here.</summary>
+    bool CanControlLabsRemotely,
+    /// <summary>Whether it reaches far enough to start a repair from here.</summary>
+    bool CanRepairRemotely);
+
 public sealed record HideoutResponse(
     string TierName,
     int Tier,
@@ -1676,7 +1755,15 @@ public sealed record HideoutResponse(
     /// </summary>
     IReadOnlyList<HideoutDamageResponse> Damage,
     /// <summary>The room the crew are in right now, or null when they are not in one.</summary>
-    HideoutRepairResponse? Repair);
+    HideoutRepairResponse? Repair,
+    /// <summary>The town the house is in. Not necessarily the town the player is in.</summary>
+    string City,
+    /// <summary>Whether the player is standing in it, and can therefore touch anything.</summary>
+    bool AtHideout,
+    /// <summary>What is in the safe, and what the safe holds.</summary>
+    long SafeCash,
+    /// <summary>Every good, on the shelves and in the bag, with the room left on each side.</summary>
+    IReadOnlyList<StashLineResponse> Stash);
 
 /// <summary>
 /// A room that has been put out of action, and the bill for putting it back.

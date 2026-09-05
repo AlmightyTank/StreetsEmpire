@@ -1,6 +1,6 @@
 namespace StreetEmpire.Api.Models;
 
-public sealed class Player
+public sealed class Player : IStash
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid AccountId { get; set; }
@@ -8,9 +8,37 @@ public sealed class Player
 
     public string Name { get; set; } = string.Empty;
     public DateTime? NameChangedAtUtc { get; set; }
+    /// <summary>
+    /// The town the player is physically standing in.
+    ///
+    /// Deliberately not the same thing as <see cref="Models.Hideout.City"/>, and the whole point of
+    /// this pairing. Travel moves this and nothing else: the house, the shelves, the safe and the crew
+    /// stay where they were built, which is what makes going somewhere a decision rather than a
+    /// teleport for an entire operation. Anything the player physically walks up to - the counter, the
+    /// casino floor, the street, a trader's job book - reads this. Anything the house does on its own
+    /// reads the hideout's town instead.
+    /// </summary>
     public string City { get; set; } = "New York";
 
+    /// <summary>
+    /// The gun on the player's hip, as a weapon tier key, or null for somebody carrying nothing.
+    ///
+    /// A tier rather than a count because this is not a shelf: it is which of the guns in
+    /// <see cref="Armoury"/> is the one to hand. Kept on the player rather than the rack so it travels
+    /// with them, and swapping it for something out of hideout storage needs a trip home.
+    /// </summary>
+    public string? EquippedWeapon { get; set; }
+
     // Money
+    /// <summary>
+    /// Cash in the player's pocket. It goes where they go, it is what the street, the store and the
+    /// casino floor are paid out of, and it is the only money a stop on the way into town can take.
+    ///
+    /// Uncapped on purpose. The safe used to be the ceiling on this, back when cash on hand and the
+    /// safe were the same pile; now that <see cref="Models.Hideout.SafeCash"/> is a real place with a
+    /// real door, the ceiling belongs to it. Walking around with a fortune is allowed and is meant to
+    /// be a bad idea.
+    /// </summary>
     public long Cash { get; set; }
     public long BankCash { get; set; }
 
@@ -50,7 +78,13 @@ public sealed class Player
     public double HoeHappiness { get; set; } = 100;
     public double ThugHappiness { get; set; } = 100;
 
-    // Inventory
+    // Inventory - the hideout's shelves. See Carried for the other pile.
+    //
+    // Every good below sits in the hideout, in Hideout.City, and does not move when the player does.
+    // These are the columns the storage room caps, the labs fill, the crew eat, the thugs arm
+    // themselves from, and a raid carries out of the door - which is why they stayed here rather than
+    // being moved on to the Hideout row when the two piles were split. What a player physically has on
+    // them is Carried, and it is the new half.
     public int Condoms { get; set; }
     public int Beer { get; set; }
 
@@ -124,8 +158,19 @@ public sealed class Player
     public int Poison { get; set; }
 
     /// <summary>
-    /// Low-riders. A ride is what a drive-by is fired from and what a jacking takes, so it is the one
-    /// asset that is both a tool and a target: parking a fleet outside a thin guard is an invitation.
+    /// Low-riders, parked in the garage at <see cref="Models.Hideout.City"/>.
+    ///
+    /// A ride is what a drive-by is fired from and what a jacking takes, so it is the one asset that is
+    /// both a tool and a target: parking a fleet outside a thin guard is an invitation.
+    ///
+    /// It is the hideout's, and it is the only good here whose home is the building rather than the
+    /// storage room - the garage is bought with the tier, not with shelves. Cars do not get on planes
+    /// with their owner, and there is deliberately no way to carry one: a ride is a thing you drive out
+    /// of a garage and back into it, so it is in exactly one town and that town is the hideout's.
+    ///
+    /// When a base can be relocated, the fleet does not follow it for free either - moving cars between
+    /// towns is a flatbed and a bill, and that price belongs to the relocation rule rather than to
+    /// anything here. This column simply never changes because the player went somewhere.
     /// </summary>
     public int Rides { get; set; }
 
@@ -376,6 +421,33 @@ public sealed class Player
     public int AllianceDefenders { get; set; }
 
     public Hideout? Hideout { get; set; }
+
+    /// <summary>
+    /// What the player physically has on them. It goes where they go.
+    ///
+    /// The other half of the split, and the new one. Everything else on this row that looks like stock
+    /// is the hideout's - see the inventory block above - and the difference between the two is
+    /// entirely a matter of where it is standing when something happens to it. A stop on the road into
+    /// town takes from here; a raid on the house cannot reach here at all. Product bought at a counter
+    /// lands here, and putting it somewhere safer is a decision the player makes at their own front
+    /// door.
+    ///
+    /// An owned type rather than nine more loose columns, so that it is one thing the rules can be
+    /// handed rather than nine the next rule has to remember all of. Capped by
+    /// <see cref="Services.HideoutService.CarryCapacityFor"/>, which is where bags, cars, escorts and
+    /// skills will eventually be read.
+    /// </summary>
+    public Stash Carried { get; set; } = new();
+
+    /// <summary>
+    /// The hideout's shelves, as one value rather than as a dozen columns.
+    ///
+    /// It is <c>this</c>, because the player row is where the store has always been kept. The property
+    /// exists so that code written from here on can say which of the two piles it means instead of
+    /// leaving the reader to know, and so that the day the store does move to a table of its own, the
+    /// rules that read it do not have to move with it.
+    /// </summary>
+    public IStash Stored => this;
 
     /// <summary>Named pimps, active and fallen. <see cref="Pimps"/> counts the active ones.</summary>
     public List<Pimp> Crew { get; set; } = [];

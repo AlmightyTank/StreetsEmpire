@@ -624,6 +624,55 @@ export type Hideout = {
   damage: HideoutDamage[]
   /** The room the crew are in right now. One at a time, so one room rather than a list. */
   repair?: HideoutRepair | null
+  /** The town the house is in, which is not necessarily the town the player is in. */
+  city: string
+  /** Whether the player is standing in it, and can therefore touch anything here. */
+  atHideout: boolean
+  /** What is in the safe. It stays in `city` and cannot be spent from anywhere else. */
+  safeCash: number
+  /** Every good, on the shelves and in the bag, with the room left on each side. */
+  stash: StashLine[]
+}
+
+/** One good in both places at once. What the deposit and withdraw panel is drawn from. */
+export type StashLine = {
+  key: string
+  label: string
+  carried: number
+  carryCapacity: number
+  stored: number
+  storageCapacity: number
+}
+
+/** One pile of goods, or one set of limits on a pile. */
+export type Stash = {
+  condoms: number
+  beer: number
+  weapons: number
+  weaponRack: WeaponTier[]
+  medicine: number
+  poison: number
+  weed: number
+  coke: number
+  moonshine: number
+  cut: number
+  cokePurityPercent: number
+}
+
+/**
+ * Where the player is against where their empire is.
+ *
+ * The page reads `blockedHere` rather than working the rules out for itself, because a client that
+ * infers what the server will allow is a client that will eventually disagree with it - and the
+ * disagreement is only ever found by somebody clicking a button that then refuses them.
+ */
+export type PlayerLocation = {
+  playerCity: string
+  hideoutCity: string
+  atHideout: boolean
+  blockedHere: string[]
+  canControlLabsRemotely: boolean
+  canRepairRemotely: boolean
 }
 
 export type HideoutDamage = {
@@ -746,7 +795,9 @@ export type Dashboard = {
   isAdmin: boolean
   /** The opening walkthrough has not been finished yet, on this account rather than in this browser. */
   walkthroughDue: boolean
+  /** The town the player is standing in. Their operation's town is on `location`. */
   city: string
+  location: PlayerLocation
   currentMarket: CityMarket
   cityMarkets: CityMarket[]
   travel: TravelStatus
@@ -787,6 +838,17 @@ export type Dashboard = {
   coke: number
   moonshine: number
   cut: number
+  /**
+   * What the player is physically carrying, which is a different pile from every count above it.
+   *
+   * The counts above are the hideout's shelves, in the hideout's town: what feeds the crew and arms
+   * the thugs. This is what is in their hands and on the plane with them.
+   */
+  carried: Stash
+  /** What one person can carry, before anything is on them. */
+  carryCapacity: Stash
+  /** The gun on their hip, or null. Always one of the guns in `carried`. */
+  equippedWeapon: string | null
   weedSellPrice: number
   cokeSellPrice: number
   cokePurityPercent: number
@@ -2338,6 +2400,28 @@ export const api = {
   }),
   /** Marks the opening walkthrough done, or false to put it back in front of the player. */
   /** Switches one lab on or off, and whether it sells what it makes. */
+  /**
+   * Moving one good across the hideout's threshold. A negative quantity is the same move the other
+   * way, because there is one rule here - something can only move if where it is going has room - and
+   * two endpoints would be two chances for the halves to disagree about guns.
+   */
+  moveStock: (item: string, quantity: number) => request<ActionResult>('/api/game/hideout/stash', {
+    method: 'POST',
+    body: JSON.stringify({ item, quantity })
+  }),
+
+  /** Money in and out of the safe. Free, unlike the bank, and only reachable from the doorstep. */
+  moveSafeCash: (amount: number) => request<ActionResult>('/api/game/hideout/safe', {
+    method: 'POST',
+    body: JSON.stringify({ amount })
+  }),
+
+  /** The gun on the player's hip, out of what they are carrying. Null to carry nothing. */
+  equip: (weapon: string | null) => request<ActionResult>('/api/game/equip', {
+    method: 'PUT',
+    body: JSON.stringify({ weapon })
+  }),
+
   setLab: (product: 'weed' | 'coke', running: boolean, autoSell: boolean) => request<ActionResult>('/api/game/hideout/lab', {
     method: 'PUT',
     body: JSON.stringify({ product, running, autoSell }),

@@ -41,6 +41,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var smg = PriceOf(options, WeaponTiers.Smg);
         var rifle = PriceOf(options, WeaponTiers.Rifle);
 
+        // Both piles, because a player owns both of them. The shelves have always been on this sum; the
+        // bag is the new half, and the safe is money exactly as much as the bank is. Both are
+        // plunderable - a raid on the house takes the shelves and the safe, a stop on the road takes
+        // the bag - so both belong on this side of it rather than with the building.
         Expression<Func<Player, long>> portable = player => player.Cash
                      + player.BankCash
                      + (long)player.Pimps * options.PimpNetWorth
@@ -61,7 +65,25 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                      // Coke is worth what it is, not what it weighs. Math.Pow translates to the
                      // database's own power(), so ranking still happens there rather than in memory.
                      + (long)(player.Coke * options.CokeNetWorth
-                              * Math.Pow(player.CokePurity, options.CokePurityPricePower));
+                              * Math.Pow(player.CokePurity, options.CokePurityPricePower))
+                     // The bag. An owned type, so these are columns on the same row and the database
+                     // reads them without a join.
+                     + (long)player.Carried.Condoms * options.CondomPrice
+                     + (long)player.Carried.Beer * options.BeerPrice
+                     + (long)player.Carried.Pistols * pistol
+                     + (long)player.Carried.Shotguns * shotgun
+                     + (long)player.Carried.Smgs * smg
+                     + (long)player.Carried.Rifles * rifle
+                     + (long)player.Carried.Medicine * options.MedicineNetWorth
+                     + (long)player.Carried.Poison * options.PoisonNetWorth
+                     + (long)player.Carried.Weed * options.WeedNetWorth
+                     + (long)player.Carried.Moonshine * options.MoonshineNetWorth
+                     + (long)player.Carried.Cut * options.CutNetWorth
+                     + (long)(player.Carried.Coke * options.CokeNetWorth
+                              * Math.Pow(player.Carried.CokePurity, options.CokePurityPricePower))
+                     // The safe. The null check has to be inside the tree rather than around it: this
+                     // runs in the database, where the join to the hideout may find nothing.
+                     + (player.Hideout == null ? 0L : player.Hideout.SafeCash);
 
         if (!withHideout) return portable;
 
@@ -303,16 +325,28 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
            + (long)player.Pimps * options.PimpNetWorth
            + (long)player.Hoes * options.HoeNetWorth
            + (long)player.Thugs * options.ThugNetWorth
-           + (long)player.Condoms * options.CondomPrice
-           + (long)player.Beer * options.BeerPrice
-           + options.WeaponValue(player.Armoury)
-           + (long)player.Medicine * options.MedicineNetWorth
-           + (long)player.Poison * options.PoisonNetWorth
            + (long)player.Rides * options.RideNetWorth
-           + (long)player.Weed * options.WeedNetWorth
-           + (long)player.Moonshine * options.MoonshineNetWorth
-           + (long)player.Cut * options.CutNetWorth
-           + (long)(player.Coke * options.CokeNetWorth * options.PurityMultiplier(player.CokePurity));
+           + StashValue(player.Stored, options)
+           + StashValue(player.Carried, options)
+           + (player.Hideout?.SafeCash ?? 0);
+
+    /// <summary>
+    /// What a pile of goods is worth, wherever it is standing.
+    ///
+    /// Shared between the pockets and the shelves rather than written twice, because there is now more
+    /// than one of them and the day there are three, a valuation that lives at each call site is a
+    /// valuation that disagrees with itself.
+    /// </summary>
+    private static long StashValue(IStash stash, GameOptions options)
+        => (long)stash.Condoms * options.CondomPrice
+           + (long)stash.Beer * options.BeerPrice
+           + options.WeaponValue(stash.Armoury)
+           + (long)stash.Medicine * options.MedicineNetWorth
+           + (long)stash.Poison * options.PoisonNetWorth
+           + (long)stash.Weed * options.WeedNetWorth
+           + (long)stash.Moonshine * options.MoonshineNetWorth
+           + (long)stash.Cut * options.CutNetWorth
+           + (long)(stash.Coke * options.CokeNetWorth * options.PurityMultiplier(stash.CokePurity));
 
     public CrewReportResponse GetCrewReport(Player player)
     {
@@ -405,6 +439,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse Scout(Player player, int turns, bool autoBuySupplies = false, TerritoryEffects? territory = null, IReadOnlyCollection<long>? awayPimpIds = null, string? district = null)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Working a shift");
         ValidateStreetTurns(player, turns);
         var capacity = hideout.CapacityFor(player.Hideout);
         var suppliedTurnLimit = StorageSuppliedStreetTurns(player, capacity, _options.MaxTurnsFor(player));
@@ -622,7 +657,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             ["autoBoughtBeer"] = restock.Beer,
             ["autoBuyCost"] = restock.Cost,
             ["recruitsTurnedAway"] = recruitsTurnedAway,
-            ["cashBankedByOverflow"] = overflow.CashBanked,
+            ["storedByOverflow"] = overflow.Stored,
             ["condomsLostToStorage"] = overflow.CondomsLost,
             ["beerLostToStorage"] = overflow.BeerLost,
             ["weedLostToStorage"] = overflow.WeedLost,
@@ -662,6 +697,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse Produce(Player player, string? product, int turns, TerritoryEffects? territory = null)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Working the labs");
         ValidateTurns(player, turns, _options.MaxActionTurns, "Production");
         var key = NormalizeProduct(product);
         var production = GetProduction(key);
@@ -714,6 +750,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public WorkshopCraft StartProductionCraft(Player player, string? product, int workUnits, TerritoryEffects? territory, DateTime nowUtc)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Setting the labs going");
         if (workUnits < 1 || workUnits > _options.MaxActionTurns)
             throw new GameRuleException($"Work between 1 and {_options.MaxActionTurns} turns.");
         if (player.Turns < workUnits)
@@ -785,6 +822,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse CutCoke(Player player, int turns)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Stretching a batch");
         ValidateTurns(player, turns, _options.MaxActionTurns, "Cutting coke");
 
         // Stepping on coke needs a bench that can make the cut it is stepped on with, which is the
@@ -869,6 +907,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     /// </param>
     public ActionResultResponse Make(Player player, int turns, string? good = null)
     {
+        HideoutService.EnsureAtHideout(player, "Working the bench");
         var plan = PlanCraft(player, turns, good, requireTurns: true);
 
         player.Turns -= plan.WorkUnits;
@@ -916,6 +955,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
 
     public ActionResultResponse CompleteCraft(Player player, WorkshopCraft craft, DateTime nowUtc)
     {
+        HideoutService.EnsureAtHideout(player, "Collecting what the bench made");
         if (craft.CompletedAtUtc is not null)
             return new ActionResultResponse(craft.Summary, player.Turns);
 
@@ -1063,23 +1103,33 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var key = NormalizeProduct(product);
         var stockBefore = StockLevels.From(player);
         var listPrice = ProductSellPrice(player.City, key);
+
+        // One pile at a time, and which one depends on where the seller is standing: the shelves at
+        // home, and whatever is in the bag anywhere else. Not both at once, because coke is not
+        // interchangeable with itself - two piles are two strengths and therefore two prices, and a
+        // sale that drew from both would have to quote an average nobody could have worked out.
+        var atHome = HideoutService.IsAtHideout(player);
+        var from = atHome ? player.Stored : player.Carried;
+        var held = TradeGoods.Held(from, key);
+        if (held < quantity)
+        {
+            var elsewhere = TradeGoods.Held(atHome ? player.Carried : player.Stored, key);
+            var hint = elsewhere <= 0
+                ? string.Empty
+                : atHome
+                    ? $" You are carrying another {elsewhere:N0} - put it in storage to sell it here."
+                    : $" There is another {elsewhere:N0} on the shelves in {HideoutService.HomeCity(player)}.";
+            throw new GameRuleException($"You only hold {held:N0} {key}.{hint}");
+        }
+
         // Coke is priced on what it actually is. Stretching gains units and loses strength, and the
         // buyer is paying for the strength: without this the mix house is simply a cheaper coke lab.
-        var purity = key == "coke" ? player.CokePurity : 1;
+        var purity = key == "coke" ? from.CokePurity : 1;
         var price = key == "coke"
             ? Math.Max(1, (long)Math.Round(listPrice * _options.PurityMultiplier(purity)))
             : listPrice;
-        if (key == "weed")
-        {
-            if (player.Weed < quantity) throw new GameRuleException($"You only hold {player.Weed:N0} weed.");
-            player.Weed -= quantity;
-        }
-        else
-        {
-            if (player.Coke < quantity) throw new GameRuleException($"You only hold {player.Coke:N0} coke.");
-            // Selling a share of a mixture leaves the mixture as it was.
-            player.Coke -= quantity;
-        }
+        // Selling a share of a mixture leaves the mixture as it was.
+        TradeGoods.Add(from, key, -quantity);
 
         var total = (long)quantity * price;
         player.Cash += total;
@@ -1096,7 +1146,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["quantity"] = quantity,
                 ["unitPrice"] = price,
                 ["total"] = total,
-                ["cashBankedByOverflow"] = overflow.CashBanked
+                ["storedByOverflow"] = overflow.Stored
             });
     }
 
@@ -1129,9 +1179,14 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var seizure = RollTravelSeizure(player, destination);
         var prices = $"Weed is {profile.Weed.ToLowerInvariant()}, coke is {profile.Coke.ToLowerInvariant()}.";
         var landing = $"You land in {flightMinutes} minute(s).";
+        // Said out loud on every trip, because it is the rule most likely to surprise somebody: what is
+        // in your hands is on the plane and everything else is exactly where you left it.
+        var behind = player.Hideout is { } home && !string.Equals(home.City, destination, StringComparison.OrdinalIgnoreCase)
+            ? $" Your hideout, your crew and everything on the shelves stay in {home.City}."
+            : string.Empty;
         var summary = seizure.Busted
-            ? $"Left {from} for {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices} {landing}"
-            : $"Left {from} for {destination} clean. {prices} {landing}";
+            ? $"Left {from} for {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices} {landing}{behind}"
+            : $"Left {from} for {destination} clean. {prices} {landing}{behind}";
 
         return new ActionResultResponse(
             summary,
@@ -1150,18 +1205,24 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["weedSeized"] = seizure.Weed,
                 ["cokeSeized"] = seizure.Coke,
                 ["weedSellPrice"] = ProductSellPrice(destination, "weed"),
-                ["cokeSellPrice"] = ProductSellPrice(destination, "coke")
+                ["cokeSellPrice"] = ProductSellPrice(destination, "coke"),
+                ["hideoutCity"] = player.Hideout?.City,
+                ["atHideout"] = HideoutService.IsAtHideout(player)
             });
     }
 
     /// <summary>
-    /// What a player has on them, valued the way net worth values it. Cash in the bank is deliberately
-    /// absent: it is the one place a load is safe, and that is what makes banking before a run a move.
+    /// What a player has on them, valued the way net worth values it.
+    ///
+    /// Literally on them now, which is the whole point: the bag and the money in their pocket. The
+    /// bank is absent because it is out of everybody's reach, and the shelves and the safe are absent
+    /// because they are in another town and were never on the plane. Deciding how much of the
+    /// warehouse to put in the bag before a run is the move this number is measuring.
     /// </summary>
     public long CarriedValue(Player player)
         => player.Cash
-           + (long)player.Weed * _options.WeedNetWorth
-           + (long)player.Coke * _options.CokeNetWorth;
+           + (long)player.Carried.Weed * _options.WeedNetWorth
+           + (long)player.Carried.Coke * _options.CokeNetWorth;
 
     /// <summary>
     /// Rolled once per trip rather than per turn: a run is one event, and per-turn rolls would make
@@ -1177,15 +1238,19 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             markets.SeizureMinPercent + random.NextDouble() * (markets.SeizureMaxPercent - markets.SeizureMinPercent),
             0,
             1);
+        // Only what is on the plane. A stop on the road into town cannot reach a shelf a thousand miles
+        // behind it, which is the other half of the rule that stops a raid on the house reaching a
+        // player's pockets in another state.
+        var bag = player.Carried;
         var seizure = new TravelSeizure(
             true,
             SeizeCash(player.Cash, share),
-            SeizeUnits(player.Weed, share),
-            SeizeUnits(player.Coke, share));
+            SeizeUnits(bag.Weed, share),
+            SeizeUnits(bag.Coke, share));
 
         player.Cash -= seizure.Cash;
-        player.Weed -= seizure.Weed;
-        player.Coke -= seizure.Coke;
+        bag.Weed -= seizure.Weed;
+        bag.Coke -= seizure.Coke;
         return seizure;
     }
 
@@ -1256,53 +1321,73 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 $"{StoreTrader.For(player.City, _options).Name} has {onHand:N0} {item.Name.ToLowerInvariant()} left.");
 
         // Purchases are refused rather than clamped: losing goods you paid for is worse than a refusal.
+        //
+        // Where they land is where the buyer is. At home the crate goes straight through the door and
+        // on to the shelves, which is what buying supplies has always been and needs no extra step from
+        // anybody. Away, it goes in the bag and gets flown back - which is the whole reason a cheap
+        // town is worth visiting, and why the bag is small enough to make it a decision.
+        var atHome = HideoutService.IsAtHideout(player);
         var capacity = hideout.CapacityFor(player.Hideout);
+        var carry = hideout.CarryCapacityFor(player);
+        var into = atHome ? player.Stored : player.Carried;
         // Rides are the one purchase held by the building rather than the storage room, so the refusal
         // has to name the right thing to upgrade: telling someone to buy a bigger shelf for a car would
-        // send them to spend money that cannot help.
+        // send them to spend money that cannot help. A car also cannot go in a bag, which is the one
+        // thing on the shelf that cannot be bought on the road at all.
+        if (item.Key == "rides")
+            HideoutService.EnsureAtHideout(player, "Buying a ride");
+
         var (held, cap, roomName) = item.Key switch
         {
-            "condoms" => (player.Condoms, capacity.MaxCondoms, "storage room"),
-            "beer" => (player.Beer, capacity.MaxBeer, "storage room"),
-            "medicine" => (player.Medicine, capacity.MaxMedicine, "storage room"),
-            "poison" => (player.Poison, capacity.MaxPoison, "storage room"),
             "rides" => (player.Rides, capacity.MaxRides, "garage"),
             // Guns share one shelf whatever kind they are, so what is already on it is the whole
             // rack. Counting only the tier being bought would let a player fill the room four times.
-            _ when WeaponTiers.IsWeapon(item.Key) => (player.Weapons, capacity.MaxWeapons, "storage room"),
+            _ when WeaponTiers.IsWeapon(item.Key) => (into.Weapons, Cap(item.Key), Where()),
+            _ when TradeGoods.IsStorable(item.Key) => (TradeGoods.Held(into, item.Key), Cap(item.Key), Where()),
             _ => throw new GameRuleException($"The counter does not stock {item.Name.ToLowerInvariant()}.")
         };
         var room = Math.Max(0, cap - held);
         if (quantity > room)
             throw new GameRuleException(room == 0
-                ? $"Your {roomName} is full at {cap:N0} {item.Name.ToLowerInvariant()}. {(roomName == "garage" ? "A bigger hideout parks more." : "Upgrade it to hold more.")}"
+                ? $"Your {roomName} is full at {cap:N0} {item.Name.ToLowerInvariant()}. {FixIt(roomName)}"
                 : $"Your {roomName} only has space for {room:N0} more {item.Name.ToLowerInvariant()}.");
+
+        int Cap(string good) => atHome ? TradeGoods.Capacity(capacity, good) : carry.Of(good);
+        string Where() => atHome ? "storage room" : "hands";
+        string FixIt(string where) => where switch
+        {
+            "garage" => "A bigger hideout parks more.",
+            "hands" => "Get it home before you buy any more.",
+            _ => "Upgrade it to hold more."
+        };
 
         player.Cash -= total;
         // Every dollar over the counter counts, whatever it bought. Credited on what was actually
         // handed over rather than the sticker, so a discount is worth less rep as well as less money.
         var repBefore = player.StoreRep;
         StoreRep.Credit(player, total, _options);
-        switch (item.Key)
+        if (item.Key == "rides")
         {
-            case "condoms": player.Condoms += quantity; break;
-            case "beer": player.Beer += quantity; break;
-            case "medicine": player.Medicine += quantity; break;
-            case "poison": player.Poison += quantity; break;
-            case "rides": player.Rides += quantity; break;
-            default:
-                // Every remaining store key should be a gun. Checked rather than assumed: this arm
-                // used to take anything it did not recognise and put it on the weapon rack, so a new
-                // good added to the shop and forgotten here was bought, paid for, and quietly filed
-                // as a gun. A refusal is a bug report; a silent wrong shelf is a mystery.
-                if (!WeaponTiers.IsWeapon(item.Key))
-                    throw new GameRuleException($"The counter cannot hand over {item.Name.ToLowerInvariant()}.");
-                player.AddWeapons(item.Key, quantity);
-                break;
+            player.Rides += quantity;
+        }
+        else
+        {
+            // Every remaining store key should be something the goods table knows how to shelve.
+            // Checked rather than assumed: this arm used to take anything it did not recognise and put
+            // it on the weapon rack, so a new good added to the shop and forgotten here was bought,
+            // paid for, and quietly filed as a gun. A refusal is a bug report; a silent wrong shelf is
+            // a mystery.
+            if (!TradeGoods.IsStorable(item.Key))
+                throw new GameRuleException($"The counter cannot hand over {item.Name.ToLowerInvariant()}.");
+            TradeGoods.Add(into, item.Key, quantity);
         }
 
+        var carriedOut = atHome || item.Key == "rides"
+            ? string.Empty
+            : $" You are carrying it; it is not in your storage in {HideoutService.HomeCity(player)}.";
+
         return new ActionResultResponse(
-            $"Bought {quantity:N0} {item.Name.ToLowerInvariant()} for ${total:N0}.{RepGained(player, repBefore)}",
+            $"Bought {quantity:N0} {item.Name.ToLowerInvariant()} for ${total:N0}.{RepGained(player, repBefore)}{carriedOut}",
             player.Turns,
             new Dictionary<string, object?>
             {
@@ -1404,6 +1489,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse SellRides(Player player, int quantity)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Selling out of the garage");
         if (quantity is < 1 or > 10_000)
             throw new GameRuleException("Move between 1 and 10,000 at a time.");
         if (player.Rides < quantity)
@@ -1433,7 +1519,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
                 ["unitPrice"] = unitPrice,
                 ["total"] = total,
                 ["ridesRemaining"] = player.Rides,
-                ["cashBankedByOverflow"] = overflow.CashBanked
+                ["storedByOverflow"] = overflow.Stored
             });
     }
 
@@ -1466,14 +1552,10 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         ValidateMoneyAmount(amount);
         if (player.BankCash < amount) throw new GameRuleException($"The bank is holding {player.BankCash:C0}.");
 
-        // Refused rather than clamped, since clamping would bounce the cash straight back to the bank.
-        var safeCap = hideout.CapacityFor(player.Hideout).MaxCash;
-        var room = Math.Max(0, safeCap - player.Cash);
-        if (amount > room)
-            throw new GameRuleException(room == 0
-                ? $"Your safe is full at ${safeCap:N0} cash on hand. Upgrade it to hold more."
-                : $"Your safe only has room for ${room:N0} more cash on hand.");
-
+        // Nothing to refuse any more. The safe used to be the ceiling on cash on hand, back when the
+        // two were the same pile; now the safe is a room in a particular town and what a player walks
+        // around with is their own business. Carrying a fortune is allowed, and every stop on every
+        // road between here and anywhere is the reason it is a bad idea.
         var trip = ChargeBankTrip(player, nowUtc);
         player.BankCash -= amount;
         player.Cash += amount;
@@ -1492,6 +1574,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse HireCrew(Player player, string? role, int quantity)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Taking somebody on");
         var crew = _options.Crew;
         var normalizedRole = NormalizeCrewRole(role);
         ValidateCrewQuantity(quantity, crew);
@@ -1565,6 +1648,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse FireCrew(Player player, string? role, int quantity)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Letting somebody go");
         var crew = _options.Crew;
         var normalizedRole = NormalizeCrewRole(role);
         ValidateCrewQuantity(quantity, crew);
@@ -1623,6 +1707,7 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
     public ActionResultResponse RecoverCrewMorale(Player player, string? strategy)
     {
         TravelGate.EnsureLanded(player);
+        HideoutService.EnsureAtHideout(player, "Looking after the crew");
         var morale = _options.Morale;
         var key = strategy?.Trim().ToLowerInvariant() ?? "rest";
         var hoeBefore = player.HoeHappiness;

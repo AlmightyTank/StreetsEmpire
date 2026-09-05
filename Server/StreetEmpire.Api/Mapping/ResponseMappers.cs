@@ -241,17 +241,105 @@ internal static class ResponseMappers
 
     /// <summary>The gun rack as the client sees it: what is held, what it costs, what it is worth.</summary>
     internal static List<WeaponTierResponse> ToWeaponRack(Player player, GameOptions options)
+        => ToWeaponRack(player.Stored, options);
+
+    /// <summary>
+    /// The same rack drawn over any pile, because there are two of them now: the one on the wall at
+    /// the hideout and the one or two guns in somebody's coat.
+    /// </summary>
+    internal static List<WeaponTierResponse> ToWeaponRack(IStash stash, GameOptions options)
         => options.Weapons
             .OrderBy(x => x.Price)
             .Select(x => new WeaponTierResponse(
                 x.Key,
                 WeaponTiers.Label(x.Key),
-                player.Armoury.Of(x.Key),
+                stash.Armoury.Of(x.Key),
                 x.Price,
                 x.Firepower,
                 x.CanForge ? x.ForgeCost : null,
                 x.CanForge ? x.MinWorkshopLevel : null))
             .ToList();
+
+    /// <summary>One pile of goods as the client reads it.</summary>
+    internal static StashResponse ToStash(IStash stash, GameOptions options)
+        => new(
+            stash.Condoms,
+            stash.Beer,
+            stash.Weapons,
+            ToWeaponRack(stash, options),
+            stash.Medicine,
+            stash.Poison,
+            stash.Weed,
+            stash.Coke,
+            stash.Moonshine,
+            stash.Cut,
+            (int)Math.Round(Math.Clamp(stash.CokePurity, 0, 1) * 100));
+
+    /// <summary>
+    /// The carry ceiling in the same shape as a pile, so the page can draw a bar without a second
+    /// contract that means almost the same thing. Purity has no ceiling, so it reports as full.
+    /// </summary>
+    internal static StashResponse ToStash(CarryCapacity carry, GameOptions options)
+        => new(
+            carry.MaxCondoms,
+            carry.MaxBeer,
+            carry.MaxWeapons,
+            [],
+            carry.MaxMedicine,
+            carry.MaxPoison,
+            carry.MaxWeed,
+            carry.MaxCoke,
+            carry.MaxMoonshine,
+            carry.MaxCut,
+            100);
+
+    /// <summary>
+    /// Where the player is against where their empire is, and what that stops them doing from here.
+    ///
+    /// The blocked list is written out rather than left to the client to infer, because the client
+    /// inferring it is how the page and the server end up disagreeing about what is allowed - and the
+    /// disagreement is only ever discovered by a player clicking a button that then refuses them.
+    /// </summary>
+    internal static LocationResponse ToLocation(Player player, HideoutService hideouts)
+    {
+        var home = HideoutService.HomeCity(player);
+        var atHome = HideoutService.IsAtHideout(player);
+        var labs = hideouts.CanControlLabsRemotely(player.Hideout);
+        var repairs = hideouts.CanRepairRemotely(player.Hideout);
+        var blocked = new List<string>();
+        if (!atHome)
+        {
+            blocked.Add("Working the street");
+            blocked.Add("Running the labs and the bench");
+            blocked.Add("Hiring, firing and looking after the crew");
+            blocked.Add("Sending a crew out");
+            blocked.Add("Opening the safe and moving stock");
+            blocked.Add("Building");
+            if (!repairs) blocked.Add("Starting repairs");
+            if (!labs) blocked.Add("Switching the labs");
+        }
+
+        return new LocationResponse(player.City, home, atHome, blocked, labs, repairs);
+    }
+
+    /// <summary>
+    /// Every good in both places at once, with the room each side has left. What the deposit and
+    /// withdraw panel is drawn from.
+    /// </summary>
+    internal static List<StashLineResponse> ToStashLines(Player player, HideoutService hideouts)
+    {
+        var storage = hideouts.CapacityFor(player.Hideout);
+        var carry = hideouts.CarryCapacityFor(player);
+        return TradeGoods.Storable
+            .Select(key => new StashLineResponse(
+                key,
+                TradeGoods.Label(key),
+                TradeGoods.Held(player.Carried, key),
+                carry.Of(key),
+                TradeGoods.Held(player.Stored, key),
+                TradeGoods.Capacity(storage, key)))
+            .ToList();
+    }
 
     /// <summary>
     /// Standing at the counter.
@@ -422,12 +510,12 @@ internal static class ResponseMappers
             Math.Round(heat, 1),
             HeatLabel(heat, options),
             HeatDetail(heat, options),
-            HeatNote(heat, options, player.City),
+            HeatNote(heat, options, HideoutService.HomeCity(player)),
             buildingValue,
             ToRoomUpgrade(hideouts, player.Hideout, "storage"),
             ToRoomUpgrade(hideouts, player.Hideout, "safe"),
-            ToRoomUpgrade(hideouts, player.Hideout, "weedlab", options, player.City),
-            ToRoomUpgrade(hideouts, player.Hideout, "cokelab", options, player.City),
+            ToRoomUpgrade(hideouts, player.Hideout, "weedlab", options, HideoutService.HomeCity(player)),
+            ToRoomUpgrade(hideouts, player.Hideout, "cokelab", options, HideoutService.HomeCity(player)),
             ToRoomUpgrade(hideouts, player.Hideout, "intelligence"),
             ToRoomUpgrade(hideouts, player.Hideout, "lookout"),
             nextTier is null
@@ -461,7 +549,11 @@ internal static class ResponseMappers
             ProductionStations(player, hideouts, options),
             Stations(player, hideouts, options),
             Damage(player.Hideout, hideouts),
-            Repair(player.Hideout, hideouts, nowUtc));
+            Repair(player.Hideout, hideouts, nowUtc),
+            HideoutService.HomeCity(player),
+            HideoutService.IsAtHideout(player),
+            player.Hideout?.SafeCash ?? 0,
+            ToStashLines(player, hideouts));
     }
 
     /// <summary>

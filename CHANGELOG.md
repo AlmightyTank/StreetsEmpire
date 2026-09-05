@@ -2,6 +2,58 @@
 
 ## 0.3.0
 
+### Changed
+- **Travel moves the player, not the empire.** A hideout has a town of its own now. It used to have
+  none at all, which meant it was implicitly wherever its owner was standing - so a flight to Las
+  Vegas quietly carried the building, the shelves, the safe and the crew along with it, and looking at
+  a different market moved a player's entire operation to it.
+
+  Now a plane ticket moves one person. The house stays where it was built, the crew stay in it, the
+  shelves stay on its walls, and only what the player is physically carrying gets on the plane with
+  them.
+
+  Two piles instead of one, and the difference between them is entirely a matter of where each is
+  standing when something happens to it. What is on the shelves feeds the crew, arms the thugs and is
+  what a raid on the house carries out of the door. What is in the bag is what a stop on the road into
+  town can take, and it is the only thing a raid can never reach. A player in Las Vegas with the coke
+  in a bag keeps the coke and loses whatever they left behind - which is a decision they made rather
+  than a loophole.
+
+  Nothing moved in the database. Every good a player owns was already the hideout's store - the
+  storage room is what has always capped it - so it stays exactly where it was, and the bag starts
+  empty. Filling it is a deliberate withdrawal, at your own front door.
+
+- **A safe you have to walk to.** Cash on hand used to be capped by the safe, back when the two were
+  one pile. The safe is now a place with a door: it holds what the room holds, it costs no turns and
+  no trip unlike the bank, it can only be opened while you are standing in front of it, and it is the
+  money a raid on the house actually gets at. Cash in your pocket has no ceiling at all any more.
+  Walking around with a fortune is allowed and is meant to be a bad idea.
+
+- **The house keeps its own books.** Anything the hideout does on its own now reads the hideout's
+  town rather than whichever one its owner happens to be in. A selling lab takes its own market's
+  price and pays into the safe; heat on the shelves is charged at the shelves' town and heat in the
+  bag at the player's; a mule run leaves from the house and comes back to it. Travelling stopped being
+  an economic lever - a player could otherwise fly to the dearest market on the board and leave their
+  labs selling into it from a thousand miles away.
+
+- **Being away is a real cost.** The hideout page still works from anywhere and still shows
+  everything - the labs running, the timers ticking, the damage, the heat - because watching your
+  operation from another town is most of what having one is. Touching any of it needs you there:
+  street shifts, the labs and the bench, hiring and firing, raids and strikes, mule runs, building,
+  and the safe. The page says so once at the top rather than eleven buttons each refusing separately.
+  An intelligence centre buys some of it back - the lab switches at level 2, repairs at level 3.
+
+- **The fleet stays in the garage.** Rides are the hideout's, parked at its town, and they are the one
+  thing that cannot be carried at any price - a car is driven out of a garage and back into it, so it
+  is in exactly one place and that place is the house. Buying one, selling one, firing from one and
+  jacking one all need you standing in that town. When a base can be relocated the fleet will not
+  follow it for free either: moving cars between towns is a flatbed and a bill, and that price belongs
+  to the relocation rule rather than to travel.
+
+- **Carrying capacity.** A person carries a person's worth. Configured in `Carry`, deliberately small
+  against the storage room, and read in exactly one place so that bags, cars, escorts, skills and
+  hideout upgrades can be added later without any rule that moves a good learning they exist.
+
 ### Added
 - **Splitting.** A pair becomes two hands, each with its own stake and each played out in turn, and
   then one dealer hand answers all of them. That last part is what makes it a decision rather than a

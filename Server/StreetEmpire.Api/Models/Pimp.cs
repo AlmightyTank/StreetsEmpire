@@ -20,6 +20,27 @@ public sealed class Pimp
     /// </summary>
     public string Specialty { get; set; } = PimpSpecialties.Hustler;
 
+    /// <summary>
+    /// What this pimp is doing, from <see cref="CrewAssignment"/>. At the hideout unless something put
+    /// them somewhere else.
+    ///
+    /// Nothing reads this to make a decision yet - garrisons, mule runs and raid parties are still
+    /// worked out from their own tables, and rewriting all three at once to go through a roster would
+    /// be a lot of risk for no new behaviour. What it does is give the answer a home, so that when the
+    /// player is in Las Vegas and the hideout page wants to say where everybody is, there is somewhere
+    /// truthful to read it from, and so that an entourage has a value to write when one arrives.
+    /// </summary>
+    public string Assignment { get; set; } = CrewAssignment.AtHideout;
+
+    /// <summary>
+    /// The town this pimp is standing in, or null to mean "wherever the hideout is".
+    ///
+    /// Null rather than a copy of the hideout's town on purpose: the overwhelming majority of crew are
+    /// at the house, and a denormalised copy on every row is a copy that goes stale the first time a
+    /// base moves. Only somebody who is genuinely somewhere else carries a town of their own.
+    /// </summary>
+    public string? City { get; set; }
+
     /// <summary>A few percent, rolled at hire.</summary>
     public int BonusPercent { get; set; }
 

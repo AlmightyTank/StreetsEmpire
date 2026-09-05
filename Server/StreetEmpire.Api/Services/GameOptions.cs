@@ -252,6 +252,7 @@ public sealed class GameOptions
     public AllianceOptions Alliances { get; set; } = new();
     public TitleOptions Titles { get; set; } = new();
     public HideoutOptions Hideout { get; set; } = new();
+    public CarryOptions Carry { get; set; } = new();
     public PimpOptions Pimps { get; set; } = new();
     public AntiFarmOptions AntiFarm { get; set; } = new();
     public WorldNewsOptions WorldNews { get; set; } = new();
@@ -886,6 +887,70 @@ public sealed class PimpOptions
 /// initializers would merge them with appsettings and let the stale default win the level lookup.
 /// Call <see cref="ApplyDefaultsWhereEmpty"/> after binding to fill in whatever config omitted.
 /// </summary>
+/// <summary>
+/// What a player can physically carry.
+///
+/// This exists because the hideout store stopped being the player's pockets. While the two were one
+/// pile the storage room was the only ceiling anybody needed; now that a player can walk out of the
+/// door with a load and get on a plane, "how much" is a question with its own answer, and an
+/// unanswered one is a player carrying four hundred weed across the country in their coat.
+///
+/// Flat numbers today. Every modifier the design wants later - bags, a car, an escort, a skill, a
+/// perk, a bigger house - is a multiplier or an addition on top of these, and the single place they
+/// all have to land is <see cref="HideoutService.CarryCapacityFor"/>. Nothing outside that method
+/// reads these numbers, so adding a modifier is a change to one function rather than to every rule
+/// that moves a good.
+/// </summary>
+public sealed class CarryOptions
+{
+    /// <summary>
+    /// Whether carry limits are enforced at all. On by design; the switch is here so a bad number in
+    /// this table is a configuration fix rather than a deploy.
+    /// </summary>
+    public bool Enforce { get; set; } = true;
+
+    public int Condoms { get; set; } = 40;
+    public int Beer { get; set; } = 25;
+    public int Medicine { get; set; } = 10;
+    public int Poison { get; set; } = 10;
+
+    /// <summary>
+    /// Guns, across every tier at once, exactly as the storage room counts them. Small on purpose:
+    /// an armoury is a thing you keep somewhere, and what you take out of it is a couple of pieces.
+    /// </summary>
+    public int Weapons { get; set; } = 6;
+
+    /// <summary>
+    /// Product. Sized against the opening storage room rather than the top of the ladder, so carrying
+    /// a load between towns by hand is a real trade and never the best way to move a warehouse - that
+    /// is what mule runs are for, and they take a pimp, a crew and a risk.
+    /// </summary>
+    public int Weed { get; set; } = 60;
+    public int Coke { get; set; } = 30;
+    public int Moonshine { get; set; } = 30;
+    public int Cut { get; set; } = 30;
+
+    /// <summary>
+    /// Extra room per hideout tier, as a percentage of the base. Zero by default: the hook is here so
+    /// that a house upgrade can be made to matter without any rule outside the capacity function
+    /// learning that hideout tiers exist.
+    /// </summary>
+    public int PerTierBonusPercent { get; set; }
+
+    public int Of(string key) => key switch
+    {
+        "condoms" => Condoms,
+        "beer" => Beer,
+        "medicine" => Medicine,
+        "poison" => Poison,
+        "weed" => Weed,
+        "coke" => Coke,
+        "moonshine" => Moonshine,
+        "cut" => Cut,
+        _ => WeaponTiers.IsWeapon(key) ? Weapons : 0
+    };
+}
+
 public sealed class HideoutOptions
 {
     public List<HideoutTierOptions> Tiers { get; set; } = [];
@@ -1072,6 +1137,22 @@ public sealed class HideoutOptions
     /// cupboard and it has nobody to sell to; by the third it is an operation with a buyer.
     /// </summary>
     public int MinLabLevelForAutoSell { get; set; } = 3;
+
+    /// <summary>
+    /// The intelligence centre level at which the labs can be switched, and set to sell, from another
+    /// town. Zero would mean always, and a level above the table would mean never.
+    ///
+    /// The first rung of remote management, and deliberately the cheapest one: a switch is a phone
+    /// call. It is gated at all because being away from the house is supposed to cost something, and
+    /// the room that exists to know things is the honest place to buy that cost back.
+    /// </summary>
+    public int RemoteLabControlLevel { get; set; } = 2;
+
+    /// <summary>
+    /// The level at which repairs can be started from another town. Higher than a switch because this
+    /// one spends money and puts a crew in a room, which is a decision rather than a message.
+    /// </summary>
+    public int RemoteRepairLevel { get; set; } = 3;
 
     public void ApplyDefaultsWhereEmpty()
     {

@@ -162,6 +162,9 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
     private void Validate(Player attacker, Player defender, string method, CombatAttackRequest request, DateTime nowUtc)
     {
         TravelGate.EnsureLanded(attacker);
+        // The car, the thugs and the doses are all at the house, and so is whoever would be sent. Until
+        // a player can take people with them, a strike is thrown from the town the crew are standing in.
+        HideoutService.EnsureAtHideout(attacker, "Throwing a strike");
         if (attacker.Id == defender.Id)
             throw new GameRuleException("You cannot attack yourself.");
         if (AllianceService.AreAllied(attacker, defender))

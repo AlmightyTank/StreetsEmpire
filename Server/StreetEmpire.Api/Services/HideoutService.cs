@@ -81,11 +81,19 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 
         // Sold before the store is consulted, so a full shelf is no reason for a selling lab to stop:
         // that is most of what the upgrade buys. What is shelved is still capped by the room.
+        //
+        // Priced at the house's own town rather than at whichever one the player is standing in. The
+        // labs are in that town, the buyer is in that town, and nobody in the fiction is flying a
+        // week's output out to wherever the boss happens to be having dinner. It is also the rule that
+        // stops travel from being an economic lever: a player could otherwise fly to the dearest
+        // market on the board and leave their labs selling into it from a thousand miles away.
         var weedSold = SellsItsOwn(hideout, "weed") ? weedMade : 0;
         var cokeSold = SellsItsOwn(hideout, "coke") ? cokeMade : 0;
-        var earned = (long)weedSold * ProductPrice(player.City, "weed")
-                     + (long)cokeSold * ProductPrice(player.City, "coke");
-        player.Cash += earned;
+        var earned = (long)weedSold * ProductPrice(hideout.City, "weed")
+                     + (long)cokeSold * ProductPrice(hideout.City, "coke");
+        // Into the safe rather than into the player's pocket, because the player may not be there and
+        // money does not fly. Whatever the safe cannot hold goes to the bank rather than evaporating.
+        IntoSafe(player, earned);
 
         var weed = Produce(player.Weed, capacity.MaxWeed, weedMade - weedSold);
         var coke = Produce(player.Coke, capacity.MaxCoke, cokeMade - cokeSold);
@@ -110,25 +118,68 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public double EarnedHeatFor(Player player)
         => Math.Max(0, player.Heat);
 
+    /// <summary>
+    /// Attention drawn by contraband, from both piles at once and each in its own town.
+    ///
+    /// Two multipliers rather than one because the two piles are in two places. What is on the shelves
+    /// draws notice where the house is; what is in the player's pockets draws it wherever they are
+    /// standing. A player who empties their store into a bag and flies somewhere quiet genuinely has
+    /// cooled their house down, and is now the most interesting person at the airport - which is the
+    /// trade this is meant to offer.
+    /// </summary>
     public double HeldGoodsHeatFor(Player player)
+        => CarriedGoodsHeatFor(player) + StoredGoodsHeatFor(player);
+
+    /// <summary>What the player is walking around with, at the rate of the town they are walking in.</summary>
+    public double CarriedGoodsHeatFor(Player player)
+        => GoodsHeat(player.Carried) * _options.CityMarkets.HeatMultiplier(player.City);
+
+    /// <summary>What is on the shelves, at the rate of the town the shelves are in.</summary>
+    public double StoredGoodsHeatFor(Player player)
+        => GoodsHeat(player.Stored) * _options.CityMarkets.HeatMultiplier(HomeCity(player));
+
+    private double GoodsHeat(IStash stash)
     {
         var config = _options.Hideout;
-        return TownHeatMultiplier(player) * (player.Coke * config.CokeHeatPerUnit
-               + player.Moonshine * config.MoonshineHeatPerUnit
-               + player.Weed * config.WeedHeatPerUnit
-               + player.Cut * config.CutHeatPerUnit);
+        return stash.Coke * config.CokeHeatPerUnit
+               + stash.Moonshine * config.MoonshineHeatPerUnit
+               + stash.Weed * config.WeedHeatPerUnit
+               + stash.Cut * config.CutHeatPerUnit;
     }
 
+    /// <summary>
+    /// Attention drawn by the people on the payroll, at the rate of the town they are in - which is
+    /// the hideout's, because crew do not get on the plane with the player.
+    /// </summary>
     public double CrewHeatFor(Player player)
     {
         var config = _options.Hideout;
-        return TownHeatMultiplier(player) * (player.Pimps * config.PimpHeat
+        return HomeHeatMultiplier(player) * (player.Pimps * config.PimpHeat
                + player.Hoes * config.HoeHeat
                + player.Thugs * config.ThugHeat);
     }
 
-    private double TownHeatMultiplier(Player player)
-        => _options.CityMarkets.HeatMultiplier(player.City);
+    /// <summary>The heat rate of the town the operation lives in, which is not necessarily the player's.</summary>
+    private double HomeHeatMultiplier(Player player)
+        => _options.CityMarkets.HeatMultiplier(HomeCity(player));
+
+    /// <summary>
+    /// The town the operation is run from. The hideout's, falling back to the player's for anybody who
+    /// has not got one yet - a house that does not exist is wherever its owner is standing.
+    /// </summary>
+    public static string HomeCity(Player player) => player.Hideout?.City ?? player.City;
+
+    /// <summary>
+    /// Whether the player is standing at their own front door.
+    ///
+    /// The question behind every physical hideout action: opening the safe, moving stock on or off a
+    /// shelf, paying a builder, taking a gun off the rack. Somebody with no hideout at all is treated
+    /// as home, because there is no door for them to be away from and refusing them would lock a brand
+    /// new player out of their own first purchase.
+    /// </summary>
+    public static bool IsAtHideout(Player player)
+        => player.Hideout is not { } hideout
+           || string.Equals(player.City, hideout.City, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Cools earned heat and then rolls for the law turning up, once per elapsed hour.
@@ -172,14 +223,26 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         // One roll for the whole raid: the band decides how prepared they came through the door, and
         // this decides how much of the house they actually turned over once they were in.
         var share = HeatBands.SeizedPercent(band, config, random.NextDouble());
-        var weed = Seize(player, "weed", share);
-        var coke = Seize(player, "coke", share);
-        var moonshine = Seize(player, "moonshine", share);
-        var cut = Seize(player, "cut", share);
+
+        // A raid is on the house. It takes what is on the shelves and what is in the safe, and it can
+        // only take what the player is carrying if the player is there to be caught with it - which is
+        // the other half of the rule that stops a hideout raid reaching into another town's pockets.
+        // Somebody who flew out this morning with the coke in a bag keeps the coke and loses whatever
+        // they left behind, and that is a decision they made rather than a loophole.
+        var caughtHere = IsAtHideout(player);
+        int Take(string good)
+            => Seize(player.Stored, good, share)
+               + (caughtHere ? Seize(player.Carried, good, share) : 0);
+
+        var weed = Take("weed");
+        var coke = Take("coke");
+        var moonshine = Take("moonshine");
+        var cut = Take("cut");
 
         var units = weed + coke + moonshine + cut;
-        var fine = Math.Min(player.Cash, (long)Math.Round(units * Math.Max(0, config.FinePerSeizedUnit)));
-        player.Cash -= fine;
+        // The safe pays first and the player's pockets only if they are standing in front of it. A
+        // fine that could reach into another town would be the same reach the seizure is denied.
+        var fine = FromSafeThenPocket(player, (long)Math.Round(units * Math.Max(0, config.FinePerSeizedUnit)), caughtHere);
         var wrecked = Wreck(player.Hideout, HeatBands.RoomsWrecked(band, config), random, nowUtc);
         // A raid resets the attention it was drawn by. Leaving it high would mean one bust guarantees
         // the next, which is a spiral rather than a risk.
@@ -222,13 +285,63 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     }
 
     /// <summary>Takes a share of one pile, through the same mapping every other mover of goods uses.</summary>
-    private static int Seize(Player player, string good, double share)
+    private static int Seize(IStash stash, string good, double share)
     {
-        var held = TradeGoods.Held(player, good);
+        var held = TradeGoods.Held(stash, good);
         if (held <= 0) return 0;
         var taken = Math.Min(held, Math.Max(1, (int)Math.Round(held * share)));
-        TradeGoods.Add(player, good, -taken);
+        TradeGoods.Add(stash, good, -taken);
         return taken;
+    }
+
+    /// <summary>
+    /// Charges a bill against the safe first and then the money in the player's hand, and says what
+    /// was actually paid. Never past what is there: a fine that could push somebody into debt is a
+    /// much nastier mechanic than losing the stash, and it is not the one being built.
+    /// </summary>
+    private static long FromSafeThenPocket(Player player, long amount, bool reachPocket)
+    {
+        var owed = Math.Max(0, amount);
+        var paid = 0L;
+        if (player.Hideout is { } hideout && hideout.SafeCash > 0)
+        {
+            var fromSafe = Math.Min(hideout.SafeCash, owed);
+            hideout.SafeCash -= fromSafe;
+            paid += fromSafe;
+            owed -= fromSafe;
+        }
+
+        if (reachPocket && owed > 0)
+        {
+            var fromHand = Math.Min(player.Cash, owed);
+            player.Cash -= fromHand;
+            paid += fromHand;
+        }
+
+        return paid;
+    }
+
+    /// <summary>
+    /// Puts money in the safe, up to what the room holds, and banks whatever will not fit.
+    ///
+    /// Everything the house earns on its own comes through here, because the player may be a thousand
+    /// miles away when it does and cash cannot fly to them. Overflow goes to the bank rather than
+    /// being lost: a full safe is a reason to buy a bigger one, not a reason for a night's production
+    /// to disappear.
+    /// </summary>
+    public long IntoSafe(Player player, long amount)
+    {
+        if (amount <= 0) return 0;
+        if (player.Hideout is not { } hideout)
+        {
+            player.BankCash += amount;
+            return 0;
+        }
+
+        var stored = Math.Min(Math.Max(0, CapacityFor(hideout).MaxCash - hideout.SafeCash), amount);
+        hideout.SafeCash += stored;
+        player.BankCash += amount - stored;
+        return stored;
     }
 
     /// <summary>
@@ -464,46 +577,133 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         => Math.Max(0, CapacityFor(player.Hideout).MaxRides - player.Rides);
 
     /// <summary>
-    /// Settles a finished action against the hideout's limits. Cash over the safe is moved to the
-    /// bank; goods over storage are lost. Stock a player already held is never taken away, so
-    /// grandfathered amounts survive and drain down naturally through upkeep instead.
+    /// What this player can physically carry, before anything is on them.
+    ///
+    /// The single place every carry modifier the design wants later has to land - bags, a car, an
+    /// escort, a skill, a perk, a bigger house. Only the tier bonus exists today and it defaults to
+    /// nothing, so this is currently the configured table read straight through; the point of the
+    /// method is that adding the next one changes this function and nothing else.
     /// </summary>
-    public StorageOverflow Settle(Player player, StockLevels before)
+    public CarryCapacity CarryCapacityFor(Player player)
     {
-        var capacity = CapacityFor(player.Hideout);
+        var carry = _options.Carry;
+        if (!carry.Enforce)
+            return CarryCapacity.Unlimited;
 
-        var cashCeiling = Math.Max(capacity.MaxCash, before.Cash);
-        var banked = 0L;
-        if (player.Cash > cashCeiling)
-        {
-            banked = player.Cash - cashCeiling;
-            player.Cash = cashCeiling;
-            player.BankCash += banked;
-        }
+        var tiersAbove = Math.Max(0, (player.Hideout?.Tier ?? 1) - 1);
+        var scale = 1 + Math.Max(0, carry.PerTierBonusPercent) / 100.0 * tiersAbove;
+        int Room(int slots) => slots <= 0 ? 0 : Math.Max(1, (int)Math.Round(slots * scale));
 
-        var condoms = Spill(player.Condoms, capacity.MaxCondoms, before.Condoms);
-        var beer = Spill(player.Beer, capacity.MaxBeer, before.Beer);
-        var weapons = Spill(player.Weapons, capacity.MaxWeapons, before.Weapons);
-        var weed = Spill(player.Weed, capacity.MaxWeed, before.Weed);
-        var coke = Spill(player.Coke, capacity.MaxCoke, before.Coke);
-        var medicine = Spill(player.Medicine, capacity.MaxMedicine, before.Medicine);
-        var poison = Spill(player.Poison, capacity.MaxPoison, before.Poison);
-        player.Condoms -= condoms;
-        player.Beer -= beer;
-        // Cheapest guns first. A full rack losing its rifles to an overflowing shelf would make owning
-        // good ones a hazard, which is the opposite of what a gun rack is for.
-        player.RemoveWeapons(weapons);
-        player.Weed -= weed;
-        player.Coke -= coke;
-        player.Medicine -= medicine;
-        player.Poison -= poison;
-
-        return new StorageOverflow(banked, condoms, beer, weapons, weed, coke, medicine);
+        return new CarryCapacity(
+            true,
+            Room(carry.Condoms),
+            Room(carry.Beer),
+            Room(carry.Weapons),
+            Room(carry.Weed),
+            Room(carry.Coke),
+            Room(carry.Moonshine),
+            Room(carry.Cut),
+            Room(carry.Medicine),
+            Room(carry.Poison));
     }
 
     /// <summary>
-    /// Hard-clamps a player to capacity with no grandfathering, moving excess cash to the bank rather
-    /// than destroying it. Used when seeding rivals, who must play by the same limits as players.
+    /// Settles a finished action against what the player can carry, putting the surplus on the shelves
+    /// and losing whatever will not fit there either.
+    ///
+    /// Two ceilings now instead of one, because a shift ends with the takings in somebody's hands and
+    /// a store room down the hall. What a player walked in holding is never taken off them, so
+    /// grandfathered amounts survive and drain down through upkeep, exactly as before.
+    ///
+    /// Cash is not on this list any more. It used to be capped by the safe, back when cash on hand and
+    /// the safe were the same pile; now that the safe is a place with a door, walking around with a
+    /// fortune is allowed and is meant to be a bad idea rather than an impossible one.
+    /// </summary>
+    public StorageOverflow Settle(Player player, StockLevels before)
+    {
+        var storage = CapacityFor(player.Hideout);
+        var carry = CarryCapacityFor(player);
+        var bag = player.Carried;
+        // A shelf a thousand miles away catches nothing that falls out of a pocket in another town.
+        // Every action that settles requires being at the house today, so this is a guard rather than
+        // a branch anybody reaches - but the day one of them does not, the surplus has to go into the
+        // gutter rather than teleport home.
+        var canShelve = IsAtHideout(player);
+
+        var shelved = 0;
+        var lost = new Dictionary<string, int>();
+        foreach (var key in Spillable)
+        {
+            // The shelves first, exactly as they always were: what a shift or a haul leaves over the
+            // storage room is gone. What a player walked in holding is never taken off them.
+            var onShelf = key == Rack ? player.Weapons : TradeGoods.Held(player, key);
+            var overShelf = Spill(onShelf, TradeGoods.Capacity(storage, key), before.Of(key));
+            if (overShelf > 0)
+            {
+                if (key == Rack) player.RemoveWeapons(overShelf);
+                else TradeGoods.Add(player, key, -overShelf);
+                lost[key] = overShelf;
+            }
+
+            // Then the bag, which spills on to the shelves before it spills into the street.
+            var inBag = key == Rack ? bag.Weapons : TradeGoods.Held(bag, key);
+            var overBag = Spill(inBag, carry.Of(key), 0);
+            if (overBag <= 0) continue;
+
+            var moved = 0;
+            if (canShelve)
+                moved = key == Rack
+                    ? ShelveWeapons(bag, player, overBag, storage.MaxWeapons)
+                    : TradeGoods.Move(bag, player, key, overBag, TradeGoods.Room(player, storage, key));
+
+            shelved += moved;
+            var dropped = overBag - moved;
+            if (dropped <= 0) continue;
+            if (key == Rack) bag.RemoveWeapons(dropped);
+            else TradeGoods.Add(bag, key, -dropped);
+            lost[key] = Lost(key) + dropped;
+        }
+
+        int Lost(string key) => lost.TryGetValue(key, out var value) ? value : 0;
+        return new StorageOverflow(
+            Lost("condoms"), Lost("beer"), Lost(Rack), Lost("weed"),
+            Lost("coke"), Lost("medicine"), Lost("poison"), Lost("moonshine"), Lost("cut"), shelved);
+    }
+
+    /// <summary>
+    /// The whole gun rack as one key. Weapons are the odd good out: four columns sharing a single
+    /// ceiling, so they are settled and clamped as one pile rather than tier by tier.
+    /// </summary>
+    private const string Rack = "weapons";
+
+    /// <summary>
+    /// The goods a finished action can leave somebody over-loaded with, in the order the overflow
+    /// sentence names them.
+    /// </summary>
+    private static readonly IReadOnlyList<string> Spillable =
+        ["condoms", "beer", Rack, "weed", "coke", "medicine", "poison", "moonshine", "cut"];
+
+    /// <summary>
+    /// Moves guns from a rack to a shelf, cheapest first, and says how many went. Not a
+    /// <see cref="TradeGoods.Move"/> because the rack is four piles under one cap, and moving a count
+    /// rather than named tiers is what keeps the good ones on the hip.
+    /// </summary>
+    private static int ShelveWeapons(IStash from, IStash to, int count, int cap)
+    {
+        var room = Math.Max(0, cap - to.Weapons);
+        var taken = from.RemoveWeapons(Math.Min(count, room));
+        foreach (var tier in WeaponTiers.All)
+            to.AddWeapons(tier, taken.Of(tier));
+        return taken.Total;
+    }
+
+    /// <summary>
+    /// Hard-clamps a player to capacity with no grandfathering. Used when seeding rivals, who must play
+    /// by the same limits as players.
+    ///
+    /// Both ceilings, because a seeded rival has to be a legal position and not just a plausible one:
+    /// pockets down to what a person can carry, shelves down to what the room holds, and cash over the
+    /// safe into the bank rather than destroyed.
     /// </summary>
     public void ClampToCapacity(Player player)
     {
@@ -511,19 +711,29 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
         player.Pimps = Math.Min(player.Pimps, capacity.MaxPimps);
         player.Hoes = Math.Min(player.Hoes, capacity.MaxHoes);
         player.Thugs = Math.Min(player.Thugs, capacity.MaxThugs);
-        player.Condoms = Math.Min(player.Condoms, capacity.MaxCondoms);
-        player.Beer = Math.Min(player.Beer, capacity.MaxBeer);
-        player.RemoveWeapons(Math.Max(0, player.Weapons - capacity.MaxWeapons));
-        player.Weed = Math.Min(player.Weed, capacity.MaxWeed);
-        player.Coke = Math.Min(player.Coke, capacity.MaxCoke);
-        player.Medicine = Math.Min(player.Medicine, capacity.MaxMedicine);
-        player.Poison = Math.Min(player.Poison, capacity.MaxPoison);
         player.Rides = Math.Min(player.Rides, capacity.MaxRides);
 
-        var overSafe = player.Cash - capacity.MaxCash;
+        var carry = CarryCapacityFor(player);
+        var bag = player.Carried;
+        foreach (var key in Spillable)
+        {
+            if (key == Rack)
+            {
+                player.RemoveWeapons(Math.Max(0, player.Weapons - capacity.MaxWeapons));
+                bag.RemoveWeapons(Math.Max(0, bag.Weapons - carry.MaxWeapons));
+                continue;
+            }
+
+            TradeGoods.Add(player, key, -Math.Max(0, TradeGoods.Held(player, key) - TradeGoods.Capacity(capacity, key)));
+            TradeGoods.Add(bag, key, -Math.Max(0, TradeGoods.Held(bag, key) - carry.Of(key)));
+        }
+
+        if (player.Hideout is not { } hideout) return;
+
+        var overSafe = hideout.SafeCash - capacity.MaxCash;
         if (overSafe > 0)
         {
-            player.Cash -= overSafe;
+            hideout.SafeCash -= overSafe;
             player.BankCash += overSafe;
         }
     }
@@ -531,6 +741,10 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public ActionResultResponse Upgrade(Player player, string? room, DateTime nowUtc)
     {
         var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
+        // Building is done on site. There is no remote unlock for this one and there should not be:
+        // signing off a wall is not a phone call, and a hideout that can be rebuilt from anywhere is a
+        // hideout with no location worth having.
+        EnsureAtHideout(player, "Building");
         var key = HideoutRooms.Normalize(room);
         var config = _options.Hideout;
 
@@ -579,8 +793,8 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
 
         var next = Level(_options.Hideout.Tiers, hideout.Tier + 1, x => x.Level)
             ?? throw new GameRuleException("Your hideout is already the biggest there is.");
-        if (player.Cash + player.BankCash < next.UpgradeCost)
-            throw new GameRuleException($"Moving up to the {next.Name} costs {next.UpgradeCost:C0} across your cash and bank.");
+        if (Capital.Available(player) < next.UpgradeCost)
+            throw new GameRuleException($"Moving up to the {next.Name} costs {next.UpgradeCost:C0} across your cash, safe and bank.");
         if (player.Turns < next.UpgradeTurns)
             throw new GameRuleException($"Moving up to the {next.Name} takes {next.UpgradeTurns} turns of work.");
 
@@ -648,6 +862,12 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
     public ActionResultResponse Repair(Player player, string? room, DateTime nowUtc)
     {
         var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
+        // A repair can be ordered from another town, but only by somebody with a centre big enough to
+        // order it: the room that exists to know things is where remote management is bought.
+        if (!CanRepairRemotely(hideout))
+            EnsureAtHideout(player, _options.Hideout.RemoteRepairLevel > 0
+                ? $"Starting a repair from another town needs a level {_options.Hideout.RemoteRepairLevel:N0} intelligence centre, so this"
+                : "Starting a repair");
         var key = HideoutRooms.Normalize(room);
         if (!HideoutRooms.CanBreak(key))
             throw new GameRuleException($"Room must be one of {string.Join(", ", HideoutRooms.Breakable)}.");
@@ -669,9 +889,9 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             throw new GameRuleException($"Your {HideoutRooms.Name(key)} is not broken.");
 
         var cost = RepairCost(hideout, key);
-        if (player.Cash + player.BankCash < cost)
+        if (Capital.Available(player) < cost)
             throw new GameRuleException(
-                $"Putting the {HideoutRooms.Name(key)} back costs {cost:C0} across your cash and bank. You have {player.Cash + player.BankCash:C0}.");
+                $"Putting the {HideoutRooms.Name(key)} back costs {cost:C0} across your cash, safe and bank. You have {Capital.Available(player):C0}.");
 
         var fromBank = ChargeCapital(player, cost);
         var minutes = RepairMinutes(hideout, key);
@@ -807,7 +1027,7 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             throw new GameRuleException($"A level {next.Level} {label} needs the {TierName(next.RequiredTier)} or better.");
         if (next.WorkshopLocked)
             throw new GameRuleException($"A level {next.Level} {label} needs a level {next.RequiredWorkshopLevel} workshop.");
-        if (player.Cash + player.BankCash < next.Cost)
+        if (Capital.Available(player) < next.Cost)
             throw new GameRuleException($"You need {next.Cost:C0} across your cash and bank to upgrade the {label}.");
 
         var fromBank = ChargeCapital(player, next.Cost);
@@ -876,6 +1096,197 @@ public sealed class HideoutService(IOptionsSnapshot<GameOptions> options)
             if (levelOf(candidate) == level)
                 return candidate;
         return null;
+    }
+
+    /// <summary>
+    /// Refuses an action that needs the player to be standing in their own hideout, naming where it is.
+    ///
+    /// The counterpart to <see cref="TravelGate.EnsureLanded"/>, and it exists for the same reason:
+    /// there is one rule here and two dozen places that would otherwise have to remember it. Being able
+    /// to see the hideout page from another town is not the same as being able to reach into it, and
+    /// this is the line between those two.
+    /// </summary>
+    public static void EnsureAtHideout(Player player, string what)
+    {
+        if (IsAtHideout(player)) return;
+        var hideout = player.Hideout!;
+        throw new GameRuleException(
+            $"Your hideout is in {hideout.City} and you are in {player.City}. {what} needs you there.");
+    }
+
+    /// <summary>
+    /// Whether the labs can be switched, and set to sell, from another town.
+    ///
+    /// The first thing the intelligence centre buys back once a player can be somewhere else. A switch
+    /// is a phone call, so it is the cheapest remote control there is - but it is still bought rather
+    /// than free, because being away from the house is supposed to cost something.
+    /// </summary>
+    public bool CanControlLabsRemotely(Hideout? hideout)
+        => Reaches(hideout, _options.Hideout.RemoteLabControlLevel);
+
+    /// <summary>
+    /// Whether a repair can be started from another town. Dearer than a switch, because this one spends
+    /// money and puts a crew in a room.
+    /// </summary>
+    public bool CanRepairRemotely(Hideout? hideout)
+        => Reaches(hideout, _options.Hideout.RemoteRepairLevel);
+
+    /// <summary>
+    /// The intelligence level a remote control needs, against the one that is actually standing. A
+    /// wrecked centre reaches nothing, which is the whole point of breaking it.
+    /// </summary>
+    private static bool Reaches(Hideout? hideout, int required)
+        => required > 0 && (hideout?.WorkingLevel(HideoutRooms.Intelligence) ?? 0) >= required;
+
+    /// <summary>
+    /// Puts goods on the shelves, or takes them off, for a player standing in front of them.
+    ///
+    /// One method for both directions because they are one rule read in two directions: something can
+    /// only move if the place it is going has room for it. Splitting them was the first draft, and the
+    /// two halves immediately disagreed about guns - a rack is four piles under one ceiling, and the
+    /// version that forgot that let a player shelve rifles into a shelf that was already full.
+    /// </summary>
+    public ActionResultResponse MoveStock(Player player, string? item, int quantity, bool depositing)
+    {
+        TravelGate.EnsureLanded(player);
+        var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
+        EnsureAtHideout(player, depositing ? "Storing something" : "Taking something out");
+
+        var key = TradeGoods.Normalise(item);
+        if (!TradeGoods.IsStorable(key))
+            throw new GameRuleException($"Store one of: {string.Join(", ", TradeGoods.Storable)}.");
+        if (quantity <= 0)
+            throw new GameRuleException("Move at least one.");
+
+        var (from, to) = depositing ? ((IStash)player.Carried, player.Stored) : (player.Stored, player.Carried);
+        var held = TradeGoods.Held(from, key);
+        if (held <= 0)
+            throw new GameRuleException(depositing
+                ? $"You are not carrying any {TradeGoods.Label(key).ToLowerInvariant()}."
+                : $"There is no {TradeGoods.Label(key).ToLowerInvariant()} on the shelves.");
+
+        var room = depositing
+            ? TradeGoods.Room(player.Stored, CapacityFor(hideout), key)
+            : TradeGoods.Room(player.Carried, CarryCapacityFor(player).Of(key), key);
+        if (room <= 0)
+            throw new GameRuleException(depositing
+                ? $"Your storage room is full of {TradeGoods.Label(key).ToLowerInvariant()}."
+                : $"You cannot carry any more {TradeGoods.Label(key).ToLowerInvariant()}.");
+
+        var moved = TradeGoods.Move(from, to, key, quantity, room);
+        var label = TradeGoods.Label(key).ToLowerInvariant();
+        var short_ = moved < quantity
+            ? depositing
+                ? $" The shelf only had room for {moved:N0}."
+                : $" You could only carry {moved:N0}."
+            : string.Empty;
+
+        return new ActionResultResponse(
+            depositing
+                ? $"Put {moved:N0} {label} into storage in {hideout.City}.{short_}"
+                : $"Took {moved:N0} {label} off the shelf in {hideout.City}.{short_}",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["item"] = key,
+                ["quantity"] = moved,
+                ["direction"] = depositing ? "deposit" : "withdraw",
+                ["carried"] = TradeGoods.Held(player.Carried, key),
+                ["stored"] = TradeGoods.Held(player.Stored, key)
+            });
+    }
+
+    /// <summary>
+    /// Moves money between the player's pocket and the safe.
+    ///
+    /// Free, unlike the bank, and that is the trade the two offer against each other: the safe costs no
+    /// turns but has to be walked to and can be carried out of the door by a raid, while the bank costs
+    /// a trip and cannot be reached by anybody. A player in another town has neither - which is what
+    /// makes deciding what to take with them a decision at all.
+    /// </summary>
+    public ActionResultResponse MoveCash(Player player, long amount, bool depositing)
+    {
+        TravelGate.EnsureLanded(player);
+        var hideout = player.Hideout ?? throw new GameRuleException("Your hideout is not set up yet.");
+        EnsureAtHideout(player, depositing ? "Opening the safe" : "Opening the safe");
+
+        if (amount <= 0)
+            throw new GameRuleException("Move at least a dollar.");
+
+        long moved;
+        if (depositing)
+        {
+            if (player.Cash < amount)
+                throw new GameRuleException($"You are carrying {player.Cash:C0}.");
+            var room = Math.Max(0, CapacityFor(hideout).MaxCash - hideout.SafeCash);
+            if (room <= 0)
+                throw new GameRuleException($"Your safe is full at {CapacityFor(hideout).MaxCash:C0}. Upgrade it to hold more.");
+            moved = Math.Min(amount, room);
+            player.Cash -= moved;
+            hideout.SafeCash += moved;
+        }
+        else
+        {
+            if (hideout.SafeCash < amount)
+                throw new GameRuleException($"The safe is holding {hideout.SafeCash:C0}.");
+            moved = amount;
+            hideout.SafeCash -= moved;
+            player.Cash += moved;
+        }
+
+        var short_ = moved < amount ? $" The safe only had room for {moved:C0}." : string.Empty;
+        return new ActionResultResponse(
+            depositing
+                ? $"Put {moved:C0} in the safe.{short_}"
+                : $"Took {moved:C0} out of the safe.",
+            player.Turns,
+            new Dictionary<string, object?>
+            {
+                ["amount"] = moved,
+                ["direction"] = depositing ? "deposit" : "withdraw",
+                ["cash"] = player.Cash,
+                ["safeCash"] = hideout.SafeCash
+            });
+    }
+
+    /// <summary>
+    /// Puts a gun on the player's hip, or takes the one that is there off.
+    ///
+    /// Only out of what they are carrying, which is what makes the rack worth splitting in the first
+    /// place: a player with eight rifles on a shelf in New York and a pistol in their pocket in Las
+    /// Vegas is carrying a pistol, and no amount of owning rifles changes that.
+    /// </summary>
+    public ActionResultResponse Equip(Player player, string? weapon)
+    {
+        TravelGate.EnsureLanded(player);
+        var key = TradeGoods.Normalise(weapon);
+        if (key.Length == 0)
+        {
+            player.EquippedWeapon = null;
+            return new ActionResultResponse("You are carrying nothing on your hip.", player.Turns,
+                new Dictionary<string, object?> { ["equipped"] = null });
+        }
+
+        if (!WeaponTiers.IsWeapon(key))
+            throw new GameRuleException($"Carry one of: {string.Join(", ", WeaponTiers.All)}.");
+        if (player.Carried.Armoury.Of(key) <= 0)
+            throw new GameRuleException(
+                $"You are not carrying a {WeaponTiers.One(key)}. Take one out of storage while you are at the hideout.");
+
+        player.EquippedWeapon = key;
+        return new ActionResultResponse($"You are carrying a {WeaponTiers.One(key)}.", player.Turns,
+            new Dictionary<string, object?> { ["equipped"] = key });
+    }
+
+    /// <summary>
+    /// Drops an equipped gun that is no longer being carried. Called wherever a player is refreshed,
+    /// because a rack can empty in a dozen ways - a fight, a stop on the road, a deposit - and none of
+    /// them should have to remember that a hip exists.
+    /// </summary>
+    public static void SettleEquipped(Player player)
+    {
+        if (player.EquippedWeapon is { } tier && player.Carried.Armoury.Of(tier) <= 0)
+            player.EquippedWeapon = null;
     }
 
     /// <summary>How much of an amount does not fit, never dipping below what was already held.</summary>
@@ -1020,30 +1431,114 @@ public sealed record HideoutCapacity(
     int MaxMedicine,
     int MaxPoison);
 
-/// <summary>The stock a player held before an action, used as the floor for grandfathered amounts.</summary>
-public sealed record StockLevels(long Cash, int Condoms, int Beer, int Weapons, int Weed, int Coke, int Medicine, int Poison)
+/// <summary>
+/// What a player can physically carry, once every modifier has been applied.
+///
+/// The same shape as <see cref="HideoutCapacity"/> for the goods the two have in common, because they
+/// are the same question asked of two different places: one is a shelf and the other is a pair of
+/// pockets, and the rules that move goods between them should not have to care which they are looking
+/// at.
+/// </summary>
+public sealed record CarryCapacity(
+    bool Enforced,
+    int MaxCondoms,
+    int MaxBeer,
+    int MaxWeapons,
+    int MaxWeed,
+    int MaxCoke,
+    int MaxMoonshine,
+    int MaxCut,
+    int MaxMedicine,
+    int MaxPoison)
 {
-    public static StockLevels From(Player player)
-        => new(player.Cash, player.Condoms, player.Beer, player.Weapons, player.Weed, player.Coke, player.Medicine, player.Poison);
+    /// <summary>
+    /// No limit at all, for a configuration with carry limits switched off. Everything is int.MaxValue
+    /// rather than zero, so the switch reads as "carry what you like" at every call site without any
+    /// of them needing to check <see cref="Enforced"/> first.
+    /// </summary>
+    public static readonly CarryCapacity Unlimited = new(
+        false, int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue,
+        int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue);
+
+    public int Of(string key) => key switch
+    {
+        "condoms" => MaxCondoms,
+        "beer" => MaxBeer,
+        "medicine" => MaxMedicine,
+        "poison" => MaxPoison,
+        "weed" => MaxWeed,
+        "coke" => MaxCoke,
+        "moonshine" => MaxMoonshine,
+        "cut" => MaxCut,
+        "weapons" => MaxWeapons,
+        _ => WeaponTiers.IsWeapon(key) ? MaxWeapons : 0
+    };
 }
 
+/// <summary>The stock a player held before an action, used as the floor for grandfathered amounts.</summary>
+public sealed record StockLevels(
+    long Cash,
+    int Condoms,
+    int Beer,
+    int Weapons,
+    int Weed,
+    int Coke,
+    int Medicine,
+    int Poison,
+    int Moonshine = 0,
+    int Cut = 0)
+{
+    public static StockLevels From(Player player)
+        => new(player.Cash, player.Condoms, player.Beer, player.Weapons, player.Weed, player.Coke,
+            player.Medicine, player.Poison, player.Moonshine, player.Cut);
+
+    /// <summary>The floor for one good, by the key the settling loop walks.</summary>
+    public int Of(string key) => key switch
+    {
+        "condoms" => Condoms,
+        "beer" => Beer,
+        "medicine" => Medicine,
+        "poison" => Poison,
+        "weed" => Weed,
+        "coke" => Coke,
+        "moonshine" => Moonshine,
+        "cut" => Cut,
+        "weapons" => Weapons,
+        _ => WeaponTiers.IsWeapon(key) ? Weapons : 0
+    };
+}
+
+/// <summary>
+/// What would not fit when an action finished: what went on the shelves, and what was dropped.
+///
+/// The cash half is gone. It used to say "your safe was full so the money went to the bank", which was
+/// true while the safe was the ceiling on cash on hand; now that the safe is somewhere the player has
+/// to walk to, cash in a pocket has no ceiling to overflow.
+/// </summary>
 public sealed record StorageOverflow(
-    long CashBanked,
     int CondomsLost,
     int BeerLost,
     int WeaponsLost,
     int WeedLost,
     int CokeLost,
-    int MedicineLost)
+    int MedicineLost,
+    int PoisonLost = 0,
+    int MoonshineLost = 0,
+    int CutLost = 0,
+    /// <summary>How much of the surplus made it on to a shelf rather than into the gutter.</summary>
+    int Stored = 0)
 {
-    public bool Any => CashBanked > 0 || CondomsLost > 0 || BeerLost > 0 || WeaponsLost > 0 || WeedLost > 0 || CokeLost > 0 || MedicineLost > 0;
+    public int TotalLost => CondomsLost + BeerLost + WeaponsLost + WeedLost + CokeLost
+                            + MedicineLost + PoisonLost + MoonshineLost + CutLost;
+
+    public bool Any => TotalLost > 0 || Stored > 0;
 
     /// <summary>A sentence to append to an action summary, or empty when nothing overflowed.</summary>
     public string Describe()
     {
         var sentences = new List<string>();
-        if (CashBanked > 0)
-            sentences.Add($"Your safe was full, so ${CashBanked:N0} went to the bank.");
+        if (Stored > 0)
+            sentences.Add($"You could not carry it all, so {Stored:N0} went into hideout storage.");
 
         var lost = new List<string>();
         if (CondomsLost > 0) lost.Add($"{CondomsLost:N0} condoms");
@@ -1052,8 +1547,11 @@ public sealed record StorageOverflow(
         if (WeedLost > 0) lost.Add($"{WeedLost:N0} weed");
         if (CokeLost > 0) lost.Add($"{CokeLost:N0} coke");
         if (MedicineLost > 0) lost.Add($"{MedicineLost:N0} medicine");
+        if (PoisonLost > 0) lost.Add($"{PoisonLost:N0} poison");
+        if (MoonshineLost > 0) lost.Add($"{MoonshineLost:N0} moonshine");
+        if (CutLost > 0) lost.Add($"{CutLost:N0} cut");
         if (lost.Count > 0)
-            sentences.Add($"Storage overflowed and you lost {string.Join(", ", lost)}.");
+            sentences.Add($"Your hands and your storage were both full, so you lost {string.Join(", ", lost)}.");
 
         return sentences.Count == 0 ? string.Empty : $" {string.Join(" ", sentences)}";
     }

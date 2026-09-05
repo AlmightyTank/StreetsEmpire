@@ -89,6 +89,8 @@ var tests = new (string Name, Action Test)[]
     ("an ace counts eleven only while it fits", BlackjackCountsAcesBothWays),
     ("the hole card stays down until the hand is over", BlackjackKeepsTheHoleCardDown),
     ("a hand settles on what the two totals are", BlackjackSettlesOnTheTotals),
+    ("a split pair becomes two hands against one dealer", BlackjackSplitsIntoTwoHands),
+    ("split aces take one card and stop", BlackjackSplitAcesTakeOneCard),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -2413,7 +2415,7 @@ static void BlackjackKeepsTheHoleCardDown()
     var stored = JsonSerializer.Deserialize<List<string>>(hand.DealerCardsJson)!;
     AssertEqual(2, stored.Count);
 
-    var view = pit.View(hand);
+    var view = pit.View(player, hand);
     if (view.InPlay)
     {
         AssertEqual(1, view.DealerCards.Count);
@@ -2425,8 +2427,8 @@ static void BlackjackKeepsTheHoleCardDown()
 
         // Standing turns it over, and only then.
         var done = pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
-        var shown = pit.View(done);
-        AssertTrue(!shown.InPlay, "standing ends the hand");
+        var shown = pit.View(player, done);
+        AssertTrue(!shown.InPlay, "standing ends the round");
         AssertTrue(shown.DealerCards.Count >= 2, "and turns the dealer's hand face up");
         AssertEqual(stored[0], shown.DealerCards[0]);
         AssertEqual(stored[1], shown.DealerCards[1]);
@@ -2456,7 +2458,9 @@ static void BlackjackSettlesOnTheTotals()
     db.SaveChanges();
 
     // AS 3S against 2S 4S: eleven soft against six, so nothing has settled itself.
-    AssertEqual("[\u0022AS\u0022,\u00223S\u0022]".Replace("\u0022", "\""), hand.PlayerCardsJson);
+    var dealt = pit.View(player, hand);
+    AssertEqual(1, dealt.Hands.Count);
+    AssertEqual("AS,3S", string.Join(",", dealt.Hands[0].Cards));
     AssertEqual(BlackjackStatus.Playing, hand.Status);
     AssertEqual(cash - 100, player.Cash);
     AssertEqual(19, player.Turns);
@@ -2474,7 +2478,7 @@ static void BlackjackSettlesOnTheTotals()
     var table = CreateBlackjack(second, options, new NoShuffleRandom());
     table.DealAsync(busy, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
     second.SaveChanges();
-    if (!BlackjackStatus.IsOver(table.BoardAsync(busy, default).GetAwaiter().GetResult().Hand!.Status))
+    if (!BlackjackStatus.IsOver(table.BoardAsync(busy, default).GetAwaiter().GetResult().Round!.Status))
     {
         AssertRuleError(() => table.DealAsync(busy, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult(),
             "a second hand is dealt on top of a live one");
@@ -2515,6 +2519,121 @@ static GameOptions BlackjackOptions()
             }
         }
     };
+
+/// <summary>
+/// Deals from a seeded shoe until the player is holding what the test needs, and hands back the round
+/// waiting on a decision.
+///
+/// A pair cannot be arranged by picking a shuffle: the generators these tests use elsewhere return one
+/// value, and Fisher-Yates driven by one value only ever swaps against a single index - the first and
+/// third cards off such a shoe are never the same rank. So this deals real shuffles from a fixed seed,
+/// which is both deterministic and the actual code path.
+/// </summary>
+static (BlackjackService Pit, GameDbContext Db, Player Player, BlackjackHand Round) DealUntil(
+    GameOptions options, Func<IReadOnlyList<string>, bool> wanted, string looking)
+{
+    for (var seed = 1; seed <= 4_000; seed++)
+    {
+        var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        var player = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
+        var pit = CreateBlackjack(db, options, new SeededRandom(seed));
+        var round = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+
+        var hands = pit.View(player, round).Hands;
+        if (hands.Count == 1 && wanted(hands[0].Cards) && !BlackjackStatus.IsOver(round.Status))
+            return (pit, db, player, round);
+
+        db.Dispose();
+    }
+
+    throw new InvalidOperationException($"No seed in four thousand dealt {looking}.");
+}
+
+/// <summary>
+/// A split pair becomes two hands, each with its own stake, and both are answered by one dealer hand.
+///
+/// That last part is the whole reason splitting is a decision rather than a free roll: two hands are
+/// two stakes against the same dealer, so a dealer twenty takes both of them at once.
+/// </summary>
+static void BlackjackSplitsIntoTwoHands()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options,
+        cards => BlackjackService.Value(cards[0]) == BlackjackService.Value(cards[1]) && cards[0][0] != 'A',
+        "a pair that is not aces");
+    using var _ = db;
+
+    var dealt = pit.View(player, round);
+    AssertTrue(dealt.Hands[0].CanSplit, "a pair should be splittable");
+    var cashBefore = player.Cash;
+
+    pit.SplitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var after = pit.View(player, round);
+    AssertEqual(2, after.Hands.Count);
+    // A second stake went up for the second hand, and the round knows what it cost altogether.
+    AssertEqual(cashBefore - 100, player.Cash);
+    AssertEqual(200L, round.Bet);
+    AssertEqual(1, round.Splits);
+    // Each hand keeps one of the pair and is dealt back up to two.
+    AssertEqual(2, after.Hands[0].Cards.Count);
+    AssertEqual(2, after.Hands[1].Cards.Count);
+    AssertEqual(100L, after.Hands[0].Bet);
+    AssertEqual(100L, after.Hands[1].Bet);
+    AssertEqual(dealt.Hands[0].Cards[0], after.Hands[0].Cards[0]);
+    AssertEqual(dealt.Hands[0].Cards[1], after.Hands[1].Cards[0]);
+
+    // Play both out. The table waits on the first, then the second, then the dealer plays once.
+    var guard = 0;
+    while (pit.View(player, round).InPlay && guard++ < 10)
+        pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var settled = pit.View(player, round);
+    AssertTrue(!settled.InPlay, "standing on the last hand settles the round");
+    AssertEqual(BlackjackStatus.Split, round.Status);
+    AssertTrue(settled.Hands.All(x => x.Status != BlackjackStatus.Playing), "every hand is answered");
+    // One dealer hand answered both, and the round's money is the sum of what the hands did.
+    AssertEqual(settled.Hands.Sum(x => x.Payout), round.Payout);
+    AssertEqual(round.Payout - round.Bet, settled.NetResult);
+    AssertTrue(settled.DealerCards.Count >= 2, "the dealer's hand is face up at the end");
+
+    // One row in the ledger for the round, carrying both hands.
+    var board = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(2, board.Recent[0].Hands.Count);
+    AssertEqual(200L, board.Recent[0].Bet);
+}
+
+/// <summary>
+/// Split aces take one card each and are not asked anything else, which every house in the world
+/// insists on: a pair of aces resplit and drawn on freely is the strongest position in the game.
+/// </summary>
+static void BlackjackSplitAcesTakeOneCard()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options, cards => cards[0][0] == 'A' && cards[1][0] == 'A', "a pair of aces");
+    using var _ = db;
+
+    // Two aces is soft twelve rather than twenty-one, so the round is live and the pair is splittable.
+    var dealt = pit.View(player, round);
+    AssertEqual(12, dealt.Hands[0].Best);
+    AssertTrue(dealt.Hands[0].CanSplit, "aces are a pair like any other");
+
+    pit.SplitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var after = pit.View(player, round);
+    AssertEqual(2, after.Hands.Count);
+    AssertTrue(after.Hands.All(x => x.Cards.Count == 2), "each split ace takes exactly one card");
+    AssertTrue(!after.InPlay, "and neither hand is asked anything after it");
+    // Whatever they made, neither is paid as a natural: a natural is the hand as it was dealt.
+    AssertTrue(after.Hands.All(x => x.Status != BlackjackStatus.PlayerBlackjack),
+        "twenty-one after a split is twenty-one, not blackjack");
+}
 
 /// <summary>
 /// Roulette's return is not tuned, it is arithmetic, and this checks the arithmetic rather than the
@@ -13228,6 +13347,31 @@ sealed class MinimumRandom : IGameRandom
 /// the top of that range swaps every card with itself and the shoe comes out in build order. That
 /// makes the cards dealt to a test knowable without the test having to model the shuffle.
 /// </summary>
+/// <summary>
+/// A real shuffle from a fixed seed.
+///
+/// The other doubles here answer with one value, which is what makes them useful for walking a wheel
+/// or leaving a shoe alone - and useless for dealing a pair, because a Fisher-Yates driven by a
+/// constant only ever swaps against one index, so the first and third cards off such a shoe are never
+/// the same rank. This is a plain linear congruential generator: nothing worth trusting with money,
+/// and exactly enough to shuffle a shoe the same way twice.
+/// </summary>
+sealed class SeededRandom(int seed) : IGameRandom
+{
+    private uint _state = (uint)seed * 2_654_435_761u + 1u;
+
+    private uint Next()
+    {
+        _state = _state * 1_664_525u + 1_013_904_223u;
+        return _state;
+    }
+
+    public int NextInclusive(int min, int max)
+        => max <= min ? min : min + (int)(Next() % (uint)(max - min + 1));
+
+    public double NextDouble() => Next() / (double)uint.MaxValue;
+}
+
 sealed class NoShuffleRandom : IGameRandom
 {
     public int NextInclusive(int min, int max) => max;

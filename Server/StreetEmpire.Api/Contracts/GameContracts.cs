@@ -30,25 +30,36 @@ public sealed record ClaimCompRequest(string? RewardKey);
 
 public sealed record BlackjackDealRequest(string? TableKey, long Bet);
 
+/// <param name="IsActive">Whether this is the hand the table is waiting on.</param>
+public sealed record BlackjackHandView(
+    int Index,
+    IReadOnlyList<string> Cards,
+    int Best,
+    bool Soft,
+    long Bet,
+    string Status,
+    long Payout,
+    long NetResult,
+    bool IsActive,
+    bool CanDouble,
+    bool CanSplit);
+
 /// <param name="DealerCards">
-/// What the dealer is showing. While a hand is live this is the up card alone - the hole card is dealt
-/// at the same time as everything else and simply never leaves the server until the hand is over.
+/// What the dealer is showing. While a round is live this is the up card alone - the hole card is
+/// dealt at the same time as everything else and never leaves the server until the round is over.
 /// </param>
 /// <param name="DealerBest">Read off the cards above, so it gives nothing away either.</param>
-public sealed record BlackjackHandView(
+public sealed record BlackjackRoundView(
     long Id,
     string TableKey,
     long Bet,
-    IReadOnlyList<string> PlayerCards,
-    int PlayerBest,
-    bool PlayerSoft,
+    IReadOnlyList<BlackjackHandView> Hands,
     IReadOnlyList<string> DealerCards,
     int DealerBest,
     bool InPlay,
     string Status,
     long Payout,
-    long NetResult,
-    bool CanDouble);
+    long NetResult);
 
 public sealed record BlackjackTableResponse(
     string Key,
@@ -61,12 +72,18 @@ public sealed record BlackjackTableResponse(
     bool Locked,
     string? LockedReason);
 
+public sealed record BlackjackRowHand(
+    IReadOnlyList<string> Cards,
+    int Best,
+    long Bet,
+    string Status,
+    long NetResult);
+
 public sealed record BlackjackRowResponse(
     long Id,
     string TableKey,
     string TableName,
-    IReadOnlyList<string> PlayerCards,
-    int PlayerBest,
+    IReadOnlyList<BlackjackRowHand> Hands,
     IReadOnlyList<string> DealerCards,
     int DealerBest,
     string Status,
@@ -82,11 +99,12 @@ public sealed record BlackjackBoardResponse(
     bool DealerHitsSoft17,
     int BlackjackPaysNumerator,
     int BlackjackPaysDenominator,
-    BlackjackHandView? Hand,
+    int MaxSplits,
+    BlackjackRoundView? Round,
     IReadOnlyList<BlackjackRowResponse> Recent);
 
 public sealed record BlackjackActionResponse(
-    BlackjackHandView Hand,
+    BlackjackRoundView Round,
     long Cash,
     long Turns,
     BlackjackBoardResponse Board);

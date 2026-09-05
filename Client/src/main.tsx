@@ -3958,7 +3958,7 @@ function BlackjackPanel(ctx: PageContext) {
   }, [dashboard.playerId])
 
   const table = board?.tables.find(t => t.key === tableKey) ?? board?.tables.find(t => !t.locked) ?? board?.tables[0]
-  const hand = board?.hand ?? null
+  const round = board?.round ?? null
 
   const run = async (call: () => Promise<{ board: BlackjackBoard }>) => {
     let next: { board: BlackjackBoard } | null = null
@@ -3979,18 +3979,21 @@ function BlackjackPanel(ctx: PageContext) {
   const clamped = Math.min(Math.max(bet, table.minBet), table.maxBet)
   const dealBlocked = firstReason(
     busy && BUSY,
-    hand?.inPlay && 'Finish the hand in front of you.',
+    round?.inPlay && 'Finish the hand in front of you.',
     table.locked && (table.lockedReason ?? 'That table is closed to you.'),
     dashboard.turns < board.handTurnCost && `A hand is ${board.handTurnCost} turn${board.handTurnCost === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
     dashboard.cash < clamped && `You are carrying ${money.format(dashboard.cash)}.`,
   )
 
-  const verdict = !hand || hand.inPlay ? null
-    : hand.status === 'blackjack' ? 'Blackjack'
-    : hand.status === 'bust' ? 'Bust'
-    : hand.status === 'dealer_bust' ? 'Dealer bust'
-    : hand.status === 'won' ? 'You take it'
-    : hand.status === 'push' ? 'Push'
+  // One word for how a hand ended, used for the round when it has only one hand in it.
+  const verdictOf = (status: string) =>
+    status === 'blackjack' ? 'Blackjack'
+    : status === 'bust' ? 'Bust'
+    : status === 'dealer_bust' ? 'Dealer bust'
+    : status === 'won' ? 'You take it'
+    : status === 'push' ? 'Push'
+    : status === 'split' ? 'Split decision'
+    : status === 'stood' ? 'Waiting on the dealer'
     : 'The house takes it'
 
   return <div className="d-grid gap-3">
@@ -3999,14 +4002,15 @@ function BlackjackPanel(ctx: PageContext) {
       <p className="text-body-secondary mb-0">
         The only game here you can play badly, and so the only one worth learning. The dealer
         {board.dealerHitsSoft17 ? ' hits' : ' stands on'} a soft seventeen, a natural pays
-        {' '}{board.blackjackPaysNumerator} to {board.blackjackPaysDenominator}, and the shoe is
+        {' '}{board.blackjackPaysNumerator} to {board.blackjackPaysDenominator}, you may split up to
+        {' '}{board.maxSplits} time{board.maxSplits === 1 ? '' : 's'} a round, and the shoe is
         shuffled every hand so there is nothing to count.
       </p>
       <div className="d-grid gtc-fill-220 gap-2 mt-3">
         {board.tables.map(t => <button
           className={`tile d-grid gap-1 text-start border rounded p-2 ${t.key === table.key ? 'active border-primary' : 'bg-body-tertiary'} ${t.locked ? 'opacity-75' : ''}`}
           type="button"
-          disabled={busy || !!hand?.inPlay}
+          disabled={busy || !!round?.inPlay}
           onClick={() => { setTableKey(t.key); setBet(t.minBet) }}
           key={t.key}
         >
@@ -4022,48 +4026,67 @@ function BlackjackPanel(ctx: PageContext) {
     <section className="card p-3">
       <div className="panel-title"><h2>{table.name}</h2><span>{money.format(table.minBet)} min</span></div>
 
-      {hand
+      {round
         ? <div className="d-grid gap-3">
             <div className="d-grid gap-1">
               <small className="text-body-tertiary">
-                Dealer{hand.inPlay ? ' shows' : ''} <strong>{hand.dealerBest}</strong>{hand.inPlay && ' and one down'}
+                Dealer{round.inPlay ? ' shows' : ''} <strong>{round.dealerBest}</strong>{round.inPlay && ' and one down'}
               </small>
               <div className="d-flex flex-wrap gap-1 align-items-center">
-                {hand.dealerCards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
-                {hand.inPlay && <span className="playing-card is-down" aria-label="Face down" />}
+                {round.dealerCards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
+                {round.inPlay && <span className="playing-card is-down" aria-label="Face down" />}
               </div>
             </div>
 
-            <div className="d-grid gap-1">
-              <small className="text-body-tertiary">
-                You have <strong>{hand.playerBest}</strong>{hand.playerSoft && ' soft'} for {money.format(hand.bet)}
-              </small>
-              <div className="d-flex flex-wrap gap-1">
-                {hand.playerCards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
-              </div>
-            </div>
+            {/* One hand usually, several after a split, and the one being played is ringed. */}
+            <div className="d-grid gap-2">
+              {round.hands.map(hand => <div
+                className={`d-grid gap-1 rounded p-2 ${hand.isActive ? 'border border-primary' : 'border border-transparent'}`}
+                key={hand.index}
+              >
+                <small className="text-body-tertiary d-flex justify-content-between gap-2">
+                  <span>
+                    {round.hands.length > 1 && <strong>Hand {hand.index + 1}. </strong>}
+                    <strong>{hand.best}</strong>{hand.soft && ' soft'} for {money.format(hand.bet)}
+                  </span>
+                  {!round.inPlay && <span className={hand.netResult > 0 ? 'text-success' : 'text-body-secondary'}>
+                    {verdictOf(hand.status)} {signedMoney(hand.netResult)}
+                  </span>}
+                </small>
+                <div className="d-flex flex-wrap gap-1">
+                  {hand.cards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
+                </div>
 
-            {hand.inPlay
-              ? <div className="control-row">
+                {hand.isActive && <div className="control-row mt-1">
                   <Button className="btn btn-primary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('hit'))}>Hit</Button>
                   <Button className="btn btn-secondary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('stand'))}>Stand</Button>
                   <Button
                     className="btn btn-secondary"
-                    blocked={firstReason(busy && BUSY, !hand.canDouble && 'Doubling is for the first two cards.', dashboard.cash < hand.bet && `Doubling is another ${money.format(hand.bet)}.`)}
+                    blocked={firstReason(busy && BUSY, !hand.canDouble && 'Doubling is for the first two cards, and needs the stake again.')}
                     onClick={() => void run(() => api.blackjackMove('double'))}
                   >Double {money.format(hand.bet)}</Button>
-                </div>
-              : <div className={`border rounded p-3 ${hand.netResult > 0 ? 'border-success' : hand.netResult === 0 ? 'border-secondary' : 'border-secondary'}`}>
-                  <div className="d-flex justify-content-between gap-3 align-items-baseline">
-                    <strong>{verdict}</strong>
-                    <span className={`tnum ${hand.netResult > 0 ? 'text-success' : 'text-body-secondary'}`}>{signedMoney(hand.netResult)}</span>
-                  </div>
-                  <small className="text-body-tertiary">You {hand.playerBest}, dealer {hand.dealerBest}.</small>
+                  {hand.canSplit && <Button
+                    className="btn btn-secondary"
+                    blocked={busy && BUSY}
+                    onClick={() => void run(() => api.blackjackMove('split'))}
+                  >Split {money.format(hand.bet)}</Button>}
                 </div>}
+              </div>)}
+            </div>
+
+            {!round.inPlay && <div className={`border rounded p-3 ${round.netResult > 0 ? 'border-success' : 'border-secondary'}`}>
+              <div className="d-flex justify-content-between gap-3 align-items-baseline">
+                <strong>{round.hands.length > 1 ? `${round.hands.length} hands` : verdictOf(round.status)}</strong>
+                <span className={`tnum ${round.netResult > 0 ? 'text-success' : 'text-body-secondary'}`}>{signedMoney(round.netResult)}</span>
+              </div>
+              <small className="text-body-tertiary">
+                Dealer {round.dealerBest} against {round.hands.map(h => h.best).join(', ')}. {money.format(round.bet)} down, {money.format(round.payout)} back.
+              </small>
+            </div>}
           </div>
         : <p className="text-body-tertiary">Nothing dealt. Put a bet up and the dealer will take it.</p>}
 
-      {!hand?.inPlay && <div className="control-row mt-3">
+      {!round?.inPlay && <div className="control-row mt-3">
         <label className="field">Bet
           <input
             className="form-control"
@@ -4093,7 +4116,10 @@ function BlackjackPanel(ctx: PageContext) {
               <tbody>
                 {board.recent.map(row => <tr key={row.id}>
                   <td>{row.tableName}</td>
-                  <td><span className="d-inline-flex gap-1 align-items-center">{row.playerCards.map((c, i) => <PlayingCard card={c} key={i} />)}<span className="text-body-tertiary ms-1">{row.playerBest}</span></span></td>
+                  <td><span className="d-grid gap-1">{row.hands.map((h, hi) => <span className="d-inline-flex gap-1 align-items-center" key={hi}>
+                    {h.cards.map((c, i) => <PlayingCard card={c} key={i} />)}
+                    <span className="text-body-tertiary ms-1">{h.best}</span>
+                  </span>)}</span></td>
                   <td><span className="d-inline-flex gap-1 align-items-center">{row.dealerCards.map((c, i) => <PlayingCard card={c} key={i} />)}<span className="text-body-tertiary ms-1">{row.dealerBest}</span></span></td>
                   <td>{row.status.replace('_', ' ')}</td>
                   <td>{money.format(row.bet)}</td>

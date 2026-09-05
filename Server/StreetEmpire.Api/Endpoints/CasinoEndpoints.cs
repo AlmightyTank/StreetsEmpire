@@ -106,11 +106,11 @@ internal static class CasinoEndpoints
             var before = Snapshot(player);
             try
             {
-                var hand = await blackjack.DealAsync(player, request.TableKey, request.Bet, now, ct);
-                AddLog(db, player, before, "CASINO", 0, $"Sat down at {hand.TableKey} blackjack for {request.Bet:C0}.", now);
+                var round = await blackjack.DealAsync(player, request.TableKey, request.Bet, now, ct);
+                AddLog(db, player, before, "CASINO", 0, $"Sat down at {round.TableKey} blackjack for {request.Bet:C0}.", now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new BlackjackActionResponse(
-                    blackjack.View(hand), player.Cash, player.Turns, await blackjack.BoardAsync(player, ct)));
+                    blackjack.View(player, round), player.Cash, player.Turns, await blackjack.BoardAsync(player, ct)));
             }
             catch (GameRuleException ex)
             {
@@ -118,7 +118,7 @@ internal static class CasinoEndpoints
             }
         }).RequireAuthorization();
 
-        foreach (var move in new[] { "hit", "stand", "double" })
+        foreach (var move in new[] { "hit", "stand", "double", "split" })
         {
             var chosen = move;
             app.MapPost($"/api/game/casino/blackjack/{chosen}", async (
@@ -134,25 +134,26 @@ internal static class CasinoEndpoints
                 var before = Snapshot(player);
                 try
                 {
-                    var hand = chosen switch
+                    var round = chosen switch
                     {
                         "hit" => await blackjack.HitAsync(player, now, ct),
                         "double" => await blackjack.DoubleAsync(player, now, ct),
+                        "split" => await blackjack.SplitAsync(player, now, ct),
                         _ => await blackjack.StandAsync(player, now, ct)
                     };
 
                     // Only worth a line in the log once it is settled - a card at a time is not news.
-                    if (hand.SettledAtUtc is not null)
+                    if (round.SettledAtUtc is not null)
                     {
-                        var summary = hand.Payout > hand.Bet
-                            ? $"Played a {hand.TableKey} blackjack hand for {hand.Bet:C0} and took {hand.Payout:C0}."
-                            : $"Played a {hand.TableKey} blackjack hand for {hand.Bet:C0} and lost it.";
+                        var summary = round.Payout > round.Bet
+                            ? $"Played a {round.TableKey} blackjack hand for {round.Bet:C0} and took {round.Payout:C0}."
+                            : $"Played a {round.TableKey} blackjack hand for {round.Bet:C0} and lost it.";
                         AddLog(db, player, before, "CASINO", 0, summary, now);
                     }
 
                     await db.SaveChangesAsync(ct);
                     return Results.Ok(new BlackjackActionResponse(
-                        blackjack.View(hand), player.Cash, player.Turns, await blackjack.BoardAsync(player, ct)));
+                        blackjack.View(player, round), player.Cash, player.Turns, await blackjack.BoardAsync(player, ct)));
                 }
                 catch (GameRuleException ex)
                 {

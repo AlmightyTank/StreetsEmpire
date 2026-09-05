@@ -2259,6 +2259,24 @@ public sealed class BlackjackOptions
     public int BlackjackPaysNumerator { get; set; } = 3;
     public int BlackjackPaysDenominator { get; set; } = 2;
 
+    /// <summary>
+    /// How many times a round may be split, so three of them is four hands.
+    ///
+    /// A limit rather than none, because splitting is the one move that can be made again on its own
+    /// result and a table with no ceiling on it is a table that can be asked for an arbitrary number
+    /// of stakes off one deal.
+    /// </summary>
+    public int MaxSplits { get; set; } = 3;
+
+    /// <summary>
+    /// Whether split aces take one card each and stop.
+    ///
+    /// Every house makes this exception. A pair of aces that could be resplit and drawn on freely is
+    /// the strongest position in the game by a distance, and the rule is what keeps splitting them
+    /// from being the only move anybody thinks about.
+    /// </summary>
+    public bool OneCardOnSplitAces { get; set; } = true;
+
     public List<BlackjackTableOptions> Tables { get; set; } = [];
 
     public BlackjackTableOptions? Table(string? key)

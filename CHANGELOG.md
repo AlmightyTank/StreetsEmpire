@@ -3,6 +3,17 @@
 ## 0.3.0
 
 ### Added
+- **Splitting.** A pair becomes two hands, each with its own stake and each played out in turn, and
+  then one dealer hand answers all of them. That last part is what makes it a decision rather than a
+  free roll: two hands are two stakes against the same dealer, so a dealer twenty takes both at once.
+  Up to three splits a round, so four hands. Split aces take one card each and stop, which every house
+  in the world insists on because a pair of aces resplit and drawn on freely is the strongest position
+  in the game. And twenty-one made on a split hand is twenty-one rather than a natural, so it pays
+  even money.
+
+  A round is the unit now rather than a hand, since a split is still one visit to the table: one shoe,
+  one dealer hand, one turn paid for. Rounds played before this kept their cards - the migration
+  carries each of them into a list of exactly one, which is what they always were.
 - **Blackjack, in a pit of two tables.** Hit, stand and double against a dealer who draws to a rule
   rather than a decision. Six decks, shuffled fresh every hand so there is nothing to count, a natural
   paying three to two, and a dealer standing on a soft seventeen - all of it configuration, because
@@ -19,8 +30,7 @@
   at the deal and simply never leaves the server until the hand is over; even the dealer's total is
   read off the card that is showing.
 
-  No splitting, insurance or surrender yet. Hit, stand and double is the game with its decisions in
-  it; the rest are refinements on top.
+  No insurance or surrender yet.
 - **Roulette, on two wheels.** A cloth with every number on it, the outside bets down the side, and as
   many chips on it at once as the croupier will take. Every bet settles against one pocket, which is
   what makes covering the board a way to lose steadily rather than a clever idea.

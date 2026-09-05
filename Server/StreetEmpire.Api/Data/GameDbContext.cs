@@ -291,7 +291,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Status).HasMaxLength(24);
             // Six decks of three-character cards with quotes and commas, and room to spare.
             entity.Property(x => x.DeckJson).HasMaxLength(4_000);
-            entity.Property(x => x.PlayerCardsJson).HasMaxLength(400);
+            // Four hands of cards with their stakes and states.
+            entity.Property(x => x.HandsJson).HasMaxLength(2_000);
             entity.Property(x => x.DealerCardsJson).HasMaxLength(400);
             entity.HasOne(x => x.Player)
                 .WithMany()

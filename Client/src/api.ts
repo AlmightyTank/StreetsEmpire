@@ -50,28 +50,48 @@ export type BlackjackTable = {
 }
 
 export type BlackjackHand = {
+  index: number
+  cards: string[]
+  best: number
+  soft: boolean
+  bet: number
+  status: string
+  payout: number
+  netResult: number
+  /** Whether the table is waiting on this hand. */
+  isActive: boolean
+  canDouble: boolean
+  canSplit: boolean
+}
+
+export type BlackjackRound = {
   id: number
   tableKey: string
   bet: number
-  playerCards: string[]
-  playerBest: number
-  playerSoft: boolean
-  /** While the hand is live this is the up card alone. The hole card never leaves the server. */
+  /** One hand unless somebody splits, and they are played in this order. */
+  hands: BlackjackHand[]
+  /** While the round is live this is the up card alone. The hole card never leaves the server. */
   dealerCards: string[]
   dealerBest: number
   inPlay: boolean
   status: string
   payout: number
   netResult: number
-  canDouble: boolean
+}
+
+export type BlackjackRowHand = {
+  cards: string[]
+  best: number
+  bet: number
+  status: string
+  netResult: number
 }
 
 export type BlackjackRow = {
   id: number
   tableKey: string
   tableName: string
-  playerCards: string[]
-  playerBest: number
+  hands: BlackjackRowHand[]
   dealerCards: string[]
   dealerBest: number
   status: string
@@ -88,12 +108,13 @@ export type BlackjackBoard = {
   dealerHitsSoft17: boolean
   blackjackPaysNumerator: number
   blackjackPaysDenominator: number
-  hand?: BlackjackHand | null
+  maxSplits: number
+  round?: BlackjackRound | null
   recent: BlackjackRow[]
 }
 
 export type BlackjackAction = {
-  hand: BlackjackHand
+  round: BlackjackRound
   cash: number
   turns: number
   board: BlackjackBoard
@@ -2301,7 +2322,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ tableKey, bet }),
   }),
-  blackjackMove: (move: 'hit' | 'stand' | 'double') =>
+  blackjackMove: (move: 'hit' | 'stand' | 'double' | 'split') =>
     request<BlackjackAction>(`/api/game/casino/blackjack/${move}`, { method: 'POST' }),
   spinRoulette: (tableKey: string, bets: RouletteStake[]) => request<RouletteSpin>('/api/game/casino/roulette/spin', {
     method: 'POST',

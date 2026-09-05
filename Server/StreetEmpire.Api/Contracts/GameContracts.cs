@@ -27,6 +27,71 @@ public sealed record BankRequest(long Amount);
 public sealed record SlotSpinRequest(string? MachineKey, long Bet, int Paylines = 1);
 
 public sealed record ClaimCompRequest(string? RewardKey);
+
+public sealed record RouletteBetRequest(string Kind, string? Value, long Amount);
+
+public sealed record RouletteSpinRequest(string? TableKey, IReadOnlyList<RouletteBetRequest>? Bets);
+
+/// <param name="RedPockets">Which numbers are red. Not derivable from the number, so the board is told.</param>
+public sealed record RouletteBoardResponse(
+    bool Enabled,
+    IReadOnlyList<RouletteTableResponse> Tables,
+    IReadOnlyList<RouletteBetKindResponse> BetKinds,
+    IReadOnlyList<int> RedPockets,
+    int SpinTurnCost,
+    int MaxBetsPerSpin,
+    IReadOnlyList<RouletteSpinRowResponse> Recent);
+
+/// <param name="ReturnPercent">
+/// Exact rather than measured. Every bet pays as though the zeroes were not on the wheel, so what
+/// comes back is thirty-six over however many pockets there are, and that is the same figure for
+/// every bet the table takes.
+/// </param>
+public sealed record RouletteTableResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    int Zeroes,
+    int Pockets,
+    double ReturnPercent,
+    long MinBet,
+    long MaxBet,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record RouletteBetKindResponse(string Key, string Name, int Odds, string Blurb, bool TakesNumber);
+
+public sealed record RouletteSettledBetResponse(
+    string Kind,
+    string Label,
+    string Value,
+    long Amount,
+    long Payout);
+
+public sealed record RouletteSpinRowResponse(
+    long Id,
+    string TableKey,
+    string TableName,
+    string Pocket,
+    string Colour,
+    IReadOnlyList<RouletteSettledBetResponse> Bets,
+    long Staked,
+    long PayoutAmount,
+    long NetResult,
+    DateTime CreatedAtUtc);
+
+public sealed record RouletteSpinResponse(
+    RouletteSpinRowResponse Spin,
+    string Pocket,
+    string Colour,
+    long Cash,
+    long Turns,
+    int TurnsSpent,
+    int RepEarned,
+    int CompsEarned,
+    RouletteBoardResponse Board);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
 public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);

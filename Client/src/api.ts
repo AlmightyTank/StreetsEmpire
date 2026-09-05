@@ -37,6 +37,80 @@ export type SlotSymbolPay = {
   quint: number
 }
 
+export type RouletteTable = {
+  key: string
+  name: string
+  blurb: string
+  /** One or two. The only thing that separates the tables, and the whole of the house edge. */
+  zeroes: number
+  pockets: number
+  /** Exact, not measured: 36 back for every pocket on the wheel. */
+  returnPercent: number
+  minBet: number
+  maxBet: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type RouletteBetKind = {
+  key: string
+  name: string
+  /** What it pays to one, on top of the stake coming back. */
+  odds: number
+  blurb: string
+  /** Whether it needs a value with it - a pocket, a dozen, a column. */
+  takesNumber: boolean
+}
+
+export type RouletteSettledBet = {
+  kind: string
+  label: string
+  value: string
+  amount: number
+  payout: number
+}
+
+export type RouletteSpinRow = {
+  id: number
+  tableKey: string
+  tableName: string
+  pocket: string
+  colour: string
+  bets: RouletteSettledBet[]
+  staked: number
+  payoutAmount: number
+  netResult: number
+  createdAtUtc: string
+}
+
+export type RouletteBoard = {
+  enabled: boolean
+  tables: RouletteTable[]
+  betKinds: RouletteBetKind[]
+  /** Which pockets are red. Not derivable from the number, so the server says. */
+  redPockets: number[]
+  spinTurnCost: number
+  maxBetsPerSpin: number
+  recent: RouletteSpinRow[]
+}
+
+export type RouletteSpin = {
+  spin: RouletteSpinRow
+  pocket: string
+  colour: string
+  cash: number
+  turns: number
+  turnsSpent: number
+  repEarned: number
+  compsEarned: number
+  board: RouletteBoard
+}
+
+/** One bet going onto the cloth. */
+export type RouletteStake = { kind: string, value: string | null, amount: number }
+
 export type SlotWin = {
   paylineIndex: number
   paylineName: string
@@ -2159,6 +2233,11 @@ export const api = {
     body: JSON.stringify({ amount }),
   }),
   casino: () => request<CasinoBoard>('/api/game/casino'),
+  roulette: () => request<RouletteBoard>('/api/game/casino/roulette'),
+  spinRoulette: (tableKey: string, bets: RouletteStake[]) => request<RouletteSpin>('/api/game/casino/roulette/spin', {
+    method: 'POST',
+    body: JSON.stringify({ tableKey, bets }),
+  }),
   claimComp: (rewardKey: string) => request<ClaimedComp>('/api/game/casino/comps/claim', {
     method: 'POST',
     body: JSON.stringify({ rewardKey }),

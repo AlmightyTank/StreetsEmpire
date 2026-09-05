@@ -30,6 +30,20 @@ public sealed class CasinoTransaction
     /// </summary>
     public bool IsFreeSpin { get; set; }
 
+    /// <summary>
+    /// What the pull or the spin was, in whatever shape that game needs: the nine or fifteen symbol
+    /// keys for a machine, the pocket the ball stopped in for the wheel.
+    /// </summary>
     public string Outcome { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Anything the game needs written down that does not fit a column, as JSON. Roulette keeps the
+    /// bets that were on the cloth here.
+    ///
+    /// A blob rather than a table because nothing ever queries across it - it is read back with the
+    /// row it belongs to and never on its own - and a child table for something only ever fetched by
+    /// its parent is a join bought for nothing.
+    /// </summary>
+    public string? DetailJson { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

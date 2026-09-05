@@ -274,6 +274,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.MachineKey).HasMaxLength(32);
             entity.Property(x => x.Paylines).HasDefaultValue(1);
             entity.Property(x => x.Outcome).HasMaxLength(240);
+            // A dozen bets with their odds and payouts, and room for the shape to grow.
+            entity.Property(x => x.DetailJson).HasMaxLength(2_000);
             entity.HasOne(x => x.Player)
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)

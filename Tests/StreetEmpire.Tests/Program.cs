@@ -83,6 +83,9 @@ var tests = new (string Name, Action Test)[]
     ("comps reset with the season", CompsResetWithTheSeason),
     ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
     ("a free spin pays for none of the floor it plays on", FreeSpinsPayForNoneOfTheFloor),
+    ("every roulette bet carries the wheel's own edge and no other", RouletteEdgeIsTheZeroesAndNothingElse),
+    ("the zeroes are on the wheel and not on the cloth", RouletteZeroesBeatTheOutsideBets),
+    ("a roulette spin settles every bet against one pocket", RouletteSettlesEveryBetAgainstOnePocket),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -2365,6 +2368,159 @@ static void CompsResetWithTheSeason()
 
     AssertEqual(0d, player.CasinoComps);
 }
+
+/// <summary>
+/// Roulette's return is not tuned, it is arithmetic, and this checks the arithmetic rather than the
+/// tuning: paid over every pocket in turn, each bet returns thirty-six times its stake for every
+/// thirty-seven or thirty-eight pockets on the wheel, whichever wheel it is sitting at.
+///
+/// That sameness is the point of the game. A player choosing between a straight number and red is
+/// choosing variance and nothing else, and if any row of this test disagreed with the others then one
+/// of the bets on the cloth would be the right one to make.
+/// </summary>
+static void RouletteEdgeIsTheZeroesAndNothingElse()
+{
+    foreach (var (key, zeroes, pockets) in new[] { ("front", 2, 38), ("back", 1, 37) })
+    {
+        var options = RouletteOptions(zeroes);
+        foreach (var (kind, value) in new[] { ("straight", "17"), ("red", ""), ("odd", ""), ("low", ""), ("dozen", "2"), ("column", "3") })
+        {
+            long staked = 0, returned = 0;
+            // Every pocket exactly once, so this is the whole wheel rather than a sample of it.
+            for (var pocket = 0; pocket < pockets; pocket++)
+            {
+                using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+                    .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                    .Options);
+                var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+                var spin = CreateRoulette(db, options, new FixedIntRandom(pocket))
+                    .Spin(player, key, [new RouletteBetRequest(kind, value, 100)], DateTime.UtcNow);
+                staked += spin.Transaction.BetAmount;
+                returned += spin.Transaction.PayoutAmount;
+            }
+
+            // 36 back for every pocket staked: 94.74% on two zeroes, 97.30% on one.
+            AssertEqual(pockets * 100L, staked);
+            AssertEqual(3_600L, returned);
+        }
+    }
+}
+
+/// <summary>
+/// The zeroes are numbers on the wheel and nothing at all on the cloth. They are the house's entire
+/// take, so a zero paying an outside bet even once would hand the edge back.
+/// </summary>
+static void RouletteZeroesBeatTheOutsideBets()
+{
+    var options = RouletteOptions(2);
+    foreach (var pocket in new[] { 0, 37 })
+    {
+        foreach (var kind in new[] { "red", "black", "odd", "even", "low", "high", "dozen", "column" })
+        {
+            using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options);
+            var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+            var spin = CreateRoulette(db, options, new FixedIntRandom(pocket))
+                .Spin(player, "front", [new RouletteBetRequest(kind, "1", 100)], DateTime.UtcNow);
+
+            AssertEqual(0L, spin.Transaction.PayoutAmount);
+            AssertEqual("green", spin.Colour);
+        }
+    }
+
+    // And a straight number on the zero itself is paid like any other pocket.
+    using var zeroDb = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var backer = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+    var onZero = CreateRoulette(zeroDb, RouletteOptions(2), new FixedIntRandom(37))
+        .Spin(backer, "front", [new RouletteBetRequest("straight", "00", 100)], DateTime.UtcNow);
+    AssertEqual("00", onZero.Pocket);
+    AssertEqual(3_600L, onZero.Transaction.PayoutAmount);
+
+    // The double zero is not a pocket on a single-zero wheel, so it is not a bet either.
+    using var singleDb = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var quiet = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, CasinoRep = 100_000, Hideout = new Hideout() };
+    AssertRuleError(() => CreateRoulette(singleDb, RouletteOptions(1), new FixedIntRandom(0))
+            .Spin(quiet, "back", [new RouletteBetRequest("straight", "00", 500)], DateTime.UtcNow),
+        "a double zero is backed on a wheel that does not have one");
+}
+
+/// <summary>
+/// Several bets ride on one spin and all of them are settled against the same pocket - which is what
+/// makes covering the cloth a way to lose steadily rather than a way to win.
+/// </summary>
+static void RouletteSettlesEveryBetAgainstOnePocket()
+{
+    var options = RouletteOptions(2);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+
+    // The ball finds 17: black, odd, low, second dozen, second column.
+    var spin = CreateRoulette(db, options, new FixedIntRandom(17)).Spin(player, "front",
+    [
+        new RouletteBetRequest("straight", "17", 100),
+        new RouletteBetRequest("red", null, 100),
+        new RouletteBetRequest("odd", null, 100),
+        new RouletteBetRequest("dozen", "2", 100),
+        new RouletteBetRequest("column", "1", 100)
+    ], DateTime.UtcNow);
+
+    AssertEqual("17", spin.Pocket);
+    AssertEqual("black", spin.Colour);
+    AssertEqual(500L, spin.Transaction.BetAmount);
+    // 3,600 on the number, 200 on odd, 300 on the dozen. Red loses; 17 is in the second column, not the first.
+    AssertEqual(4_100L, spin.Transaction.PayoutAmount);
+    AssertEqual(3_600L, spin.Transaction.NetResult);
+    AssertEqual(5, spin.Transaction.Paylines);
+    AssertEqual(3, spin.Transaction.WinningPaylines);
+    AssertEqual(13_600L, player.Cash);
+    AssertEqual(4, player.Turns);
+
+    // The breakdown survives the round trip through the row rather than living only in the response.
+    var row = CreateRoulette(db, options).ToResponse(spin.Transaction);
+    AssertEqual(5, row.Bets.Count);
+    AssertEqual("Straight up 17", row.Bets[0].Label);
+    AssertEqual(3_600L, row.Bets[0].Payout);
+    AssertEqual(0L, row.Bets[1].Payout);
+    AssertEqual("17", row.Pocket);
+
+    // An empty cloth is not a spin, and the table will not take a bet under its minimum.
+    AssertRuleError(() => CreateRoulette(db, options).Spin(player, "front", [], DateTime.UtcNow),
+        "the wheel is spun with nothing on the cloth");
+    AssertRuleError(() => CreateRoulette(db, options).Spin(player, "front", [new RouletteBetRequest("red", null, 1)], DateTime.UtcNow),
+        "a bet under the table minimum is placed");
+    AssertRuleError(() => CreateRoulette(db, options).Spin(player, "front", [new RouletteBetRequest("nonsense", null, 100)], DateTime.UtcNow),
+        "a bet nobody offers is placed");
+}
+
+/// <summary>Two wheels that differ only in how many zeroes they carry.</summary>
+static GameOptions RouletteOptions(int zeroes)
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            RepPerMaxBetSpin = 5,
+            CompsPerDollarWagered = 0.01,
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1 }],
+            Roulette = new RouletteOptions
+            {
+                Enabled = true,
+                SpinTurnCost = 1,
+                Tables =
+                [
+                    new RouletteTableOptions { Key = "front", Name = "Front", Zeroes = 2, MinBet = 25, MaxBet = 2_500 },
+                    new RouletteTableOptions { Key = "back", Name = "Back", Zeroes = zeroes, MinBet = 25, MaxBet = 50_000 }
+                ]
+            }
+        }
+    };
 
 /// <summary>
 /// A spin the house owes costs nothing and replays the pull that won it.
@@ -12559,6 +12715,12 @@ static CasinoService CreateCasino(GameDbContext db, GameOptions? options = null,
     return new CasinoService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
 }
 
+static RouletteService CreateRoulette(GameDbContext db, GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new RouletteService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
+}
+
 /// <summary>
 /// Built without a database on purpose. The methods under test here decide what held ground is worth
 /// and how much of it a tier may run, and neither reads a row: the caller hands them the ground.
@@ -12906,6 +13068,13 @@ sealed class MinimumRandom : IGameRandom
 }
 
 /// <summary>Every roll lands, for exercising a path rather than sampling it.</summary>
+/// <summary>Drops the ball in one named pocket, for walking a wheel one number at a time.</summary>
+sealed class FixedIntRandom(int value) : IGameRandom
+{
+    public int NextInclusive(int min, int max) => Math.Clamp(value, min, max);
+    public double NextDouble() => 0;
+}
+
 sealed class ZeroRandom : IGameRandom
 {
     public int NextInclusive(int min, int max) => min;

@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3384,6 +3384,7 @@ function CasinoPage(ctx: PageContext) {
   const [anticipating, setAnticipating] = useState(false)
   const spinning = stoppedColumns < slotColumns
   const [compNote, setCompNote] = useState('')
+  const [game, setGame] = useState<'slots' | 'roulette'>('slots')
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
@@ -3533,7 +3534,13 @@ function CasinoPage(ctx: PageContext) {
   // Richest first off the paytable, so an idle reel shows the room's own faces.
   const activeFaces = active.paytable.map(pay => pay.label)
 
+  if (game === 'roulette') return <div className="d-grid gap-3">
+    <CasinoGames game={game} onPick={setGame} />
+    <RoulettePanel {...ctx} />
+  </div>
+
   return <div className="d-grid gtc-1 gtc-xl-split-135 gap-3 align-items-start">
+    <div className="gcol-full"><CasinoGames game={game} onPick={setGame} /></div>
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Casino Floor</h2><span>{dashboard.city}</span></div>
       {board.jackpotRules.enabled && <p className="text-body-secondary mb-0">
@@ -3806,6 +3813,366 @@ function CompRewardTile({ reward, busy, onClaim }: {
     {reward.locked
       ? <small className="text-warning small">{reward.lockedReason}</small>
       : <button className="btn btn-secondary btn-sm" type="button" disabled={busy} onClick={onClaim}>Take it</button>}
+  </div>
+}
+
+/**
+ * The order the numbers actually sit in around a wheel, which is not the order they sit in on the
+ * cloth and is not derivable from anything.
+ *
+ * Both sequences are the real ones. They are built so that colours alternate, high and low alternate,
+ * and each half of the wheel carries a balanced spread - a wheel numbered one to thirty-six in order
+ * would let a player cover half the outcomes with one arc of it.
+ *
+ * Cosmetic, strictly: the server draws a pocket uniformly and does not care where it sits. But a wheel
+ * that showed the numbers in the wrong places would be a picture of a different game.
+ */
+const wheelOrders: Record<number, string[]> = {
+  1: ['0', '32', '15', '19', '4', '21', '2', '25', '17', '34', '6', '27', '13', '36', '11', '30', '8', '23',
+      '10', '5', '24', '16', '33', '1', '20', '14', '31', '9', '22', '18', '29', '7', '28', '12', '35', '3', '26'],
+  2: ['0', '28', '9', '26', '30', '11', '7', '20', '32', '17', '5', '22', '34', '15', '3', '24', '36', '13', '1',
+      '00', '27', '10', '25', '29', '12', '8', '19', '31', '18', '6', '21', '33', '16', '4', '23', '35', '14', '2'],
+}
+
+/** How long the ball is in the air. Longer than a reel drop, because a wheel is slower than a reel. */
+const rouletteSpinMs = 4200
+
+/** A point on the rim, measured clockwise from twelve where the pointer sits. */
+function wheelPoint(degrees: number, radius: number) {
+  const radians = degrees * Math.PI / 180
+  return [100 + radius * Math.sin(radians), 100 - radius * Math.cos(radians)] as const
+}
+
+function wheelSector(from: number, to: number, outer: number, inner: number) {
+  const [x0, y0] = wheelPoint(from, outer)
+  const [x1, y1] = wheelPoint(to, outer)
+  const [x2, y2] = wheelPoint(to, inner)
+  const [x3, y3] = wheelPoint(from, inner)
+  return `M${x0} ${y0} A${outer} ${outer} 0 0 1 ${x1} ${y1} L${x2} ${y2} A${inner} ${inner} 0 0 0 ${x3} ${y3} Z`
+}
+
+/**
+ * The wheel itself.
+ *
+ * The disc turns and the pointer does not, so landing a pocket means rotating until that pocket's
+ * middle is under twelve o'clock. Everything else - the whole turns, the easing - is just how long it
+ * takes to get there.
+ */
+function RouletteWheel({ order, red, rotation, turning }: {
+  order: string[]
+  red: Set<number>
+  rotation: number
+  turning: boolean
+}) {
+  const step = 360 / order.length
+  return <div className="roulette-wheel">
+    <svg viewBox="0 0 200 200" role="img" aria-label={turning ? 'The wheel is turning' : 'The wheel is at rest'}>
+      <circle cx="100" cy="100" r="97" className="roulette-wheel-rim" />
+      <g
+        style={{
+          transform: `rotate(${rotation}deg)`,
+          transformOrigin: '100px 100px',
+          transition: turning ? `transform ${rouletteSpinMs}ms cubic-bezier(.16,.7,.18,1)` : 'none',
+        }}
+      >
+        {order.map((pocket, index) => {
+          const from = index * step
+          const colour = pocket === '0' || pocket === '00' ? 'green' : red.has(Number(pocket)) ? 'red' : 'black'
+          const [tx, ty] = wheelPoint(from + step / 2, 74)
+          return <g key={pocket}>
+            <path d={wheelSector(from, from + step, 92, 56)} className={`roulette-arc is-${colour}`} />
+            <text
+              x={tx}
+              y={ty}
+              className="roulette-arc-label"
+              transform={`rotate(${from + step / 2} ${tx} ${ty})`}
+            >{pocket}</text>
+          </g>
+        })}
+      </g>
+      <circle cx="100" cy="100" r="54" className="roulette-wheel-hub" />
+      {/* The pointer, and the ball resting under it. Neither moves: the wheel comes to them. */}
+      <path d="M100 4 L94 20 L106 20 Z" className="roulette-pointer" />
+      <circle cx="100" cy="30" r="5" className="roulette-ball" />
+    </svg>
+  </div>
+}
+
+function CasinoGames({ game, onPick }: { game: 'slots' | 'roulette', onPick: (game: 'slots' | 'roulette') => void }) {
+  return <div className="btn-group" role="group" aria-label="Casino games">
+    {(['slots', 'roulette'] as const).map(key =>
+      <button
+        className={`btn ${game === key ? 'btn-primary' : 'btn-secondary'}`}
+        type="button"
+        onClick={() => onPick(key)}
+        key={key}
+      >
+        {key === 'slots' ? 'Slots' : 'Roulette'}
+      </button>)}
+  </div>
+}
+
+/**
+ * The cloth.
+ *
+ * Bets are held here and sent together, because that is what a spin of a real wheel is: everything on
+ * the table settles against one pocket. Sending them one at a time would be a different game with the
+ * same name and much better odds.
+ */
+function RoulettePanel(ctx: PageContext) {
+  const { dashboard, busy, refresh, act } = ctx
+  const [board, setBoard] = useState<RouletteBoard | null>(null)
+  const [tableKey, setTableKey] = useState('')
+  const [chip, setChip] = useState(0)
+  const [stakes, setStakes] = useState<RouletteStake[]>([])
+  const [last, setLast] = useState<RouletteSpin | null>(null)
+  const [rolling, setRolling] = useState(false)
+  // Where the disc is pointing, in degrees. It only ever grows, so each spin carries on from wherever
+  // the last one stopped rather than snapping back to nothing first.
+  const [rotation, setRotation] = useState(0)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let live = true
+    void api.roulette()
+      .then(next => {
+        if (!live) return
+        setBoard(next)
+        const open = next.tables.find(t => !t.locked) ?? next.tables[0]
+        if (open) { setTableKey(open.key); setChip(open.minBet) }
+        setLoadError('')
+      })
+      .catch(error => { if (live) setLoadError((error as Error).message) })
+    return () => { live = false }
+  }, [dashboard.playerId])
+
+  const table = board?.tables.find(t => t.key === tableKey) ?? board?.tables.find(t => !t.locked) ?? board?.tables[0]
+  const staked = stakes.reduce((total, bet) => total + bet.amount, 0)
+  const red = new Set(board?.redPockets ?? [])
+
+  // One entry per spot on the cloth: clicking the same spot again stacks another chip on it, which is
+  // how chips go down in a casino and keeps the bet count under the croupier's limit.
+  const place = (kind: string, value: string | null) => {
+    if (!table) return
+    setStakes(current => {
+      const at = current.findIndex(bet => bet.kind === kind && (bet.value ?? '') === (value ?? ''))
+      if (at < 0) return [...current, { kind, value, amount: chip }]
+      const raised = Math.min(table.maxBet, current[at].amount + chip)
+      return current.map((bet, i) => i === at ? { ...bet, amount: raised } : bet)
+    })
+  }
+
+  const lift = (kind: string, value: string | null) =>
+    setStakes(current => current.filter(bet => !(bet.kind === kind && (bet.value ?? '') === (value ?? ''))))
+
+  const amountOn = (kind: string, value: string | null) =>
+    stakes.find(bet => bet.kind === kind && (bet.value ?? '') === (value ?? ''))?.amount ?? 0
+
+  const roll = async () => {
+    if (!table || rolling || stakes.length === 0) return
+    let spin: RouletteSpin | null = null
+    setRolling(true)
+    await act(async () => {
+      const result = await api.spinRoulette(table.key, stakes)
+      spin = result
+      return result
+    })
+
+    const settled = spin as RouletteSpin | null
+    if (!settled) {
+      setRolling(false)
+      return
+    }
+
+    // Turn the disc until the pocket that came up is under the pointer. Six whole turns on top of
+    // that, so it reads as a wheel being spun rather than as a dial being set.
+    const order = wheelOrders[table.zeroes >= 2 ? 2 : 1]
+    const landed = Math.max(0, order.indexOf(settled.pocket))
+    const step = 360 / order.length
+    const facing = -(landed * step + step / 2)
+    const reduced = document.documentElement.getAttribute('data-motion') === 'reduced'
+    setRotation(current => {
+      const turns = reduced ? 0 : 360 * 6
+      // Whatever it takes to get from where the disc is now to where it has to end up, going forwards.
+      const shortfall = ((facing - current) % 360 + 360) % 360
+      return current + turns + shortfall
+    })
+
+    if (!reduced) await wait(rouletteSpinMs)
+    setRolling(false)
+    setLast(settled)
+    setBoard(settled.board)
+    setStakes([])
+    await refresh()
+  }
+
+  if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Roulette</h2><span>Closed</span></div><p>{loadError}</p></section>
+  if (!board || !table) return <section className="card p-3"><div className="panel-title"><h2>Roulette</h2><span>Loading</span></div><p>The croupier is counting the float.</p></section>
+  if (!board.enabled) return <section className="card p-3"><div className="panel-title"><h2>Roulette</h2><span>Covered</span></div><p>The wheel is covered for the night.</p></section>
+
+  const blocked = firstReason(
+    rolling && 'The ball is still going.',
+    busy && BUSY,
+    table.locked && (table.lockedReason ?? 'That table is closed to you.'),
+    stakes.length === 0 && 'Put something on the cloth first.',
+    stakes.length > board.maxBetsPerSpin && `The croupier will take ${board.maxBetsPerSpin} bets on one spin.`,
+    dashboard.turns < board.spinTurnCost && `A spin is ${board.spinTurnCost} turn${board.spinTurnCost === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
+    dashboard.cash < staked && `That is ${money.format(staked)} on the cloth and you are carrying ${money.format(dashboard.cash)}.`,
+  )
+
+  const pockets = Array.from({ length: 36 }, (_, i) => String(i + 1))
+  const zeroes = table.zeroes >= 2 ? ['0', '00'] : ['0']
+  const outside = board.betKinds.filter(k => k.key !== 'straight')
+  const chips = [table.minBet, table.minBet * 5, table.minBet * 20, table.minBet * 100].filter(v => v <= table.maxBet)
+
+  return <div className="d-grid gap-3">
+    <section className="card p-3">
+      <div className="panel-title"><h2>Roulette</h2><span>{dashboard.city}</span></div>
+      <p className="text-body-secondary mb-0">
+        Every bet on a cloth is paid as though the zeroes were not on the wheel, so the zeroes are the
+        entire house edge and every bet carries the same one. Picking between a number and a colour is
+        picking how hard you want the swing, not how good the odds are.
+      </p>
+      <div className="d-grid gtc-fill-220 gap-2 mt-3">
+        {board.tables.map(t => <button
+          className={`tile d-grid gap-1 text-start border rounded p-2 ${t.key === table.key ? 'active border-primary' : 'bg-body-tertiary'} ${t.locked ? 'opacity-75' : ''}`}
+          type="button"
+          disabled={busy || rolling}
+          onClick={() => { setTableKey(t.key); setStakes([]); setChip(t.minBet) }}
+          key={t.key}
+        >
+          <strong className="text-body">{t.name}</strong>
+          <small className="text-body-tertiary small">{money.format(t.minBet)}-{money.format(t.maxBet)} / {t.pockets} pockets</small>
+          <small className="text-body-tertiary small">Returns {t.returnPercent}% / {t.zeroes === 1 ? 'single zero' : 'double zero'}</small>
+          {t.locked
+            ? <small className="text-warning small">{t.lockedReason}</small>
+            : <small className="text-primary small">{t.blurb}</small>}
+        </button>)}
+      </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>{table.name}</h2><span>{money.format(table.minBet)} min</span></div>
+
+      <div className="d-flex flex-wrap gap-3 align-items-center justify-content-center mb-3">
+        <RouletteWheel
+          order={wheelOrders[table.zeroes >= 2 ? 2 : 1]}
+          red={red}
+          rotation={rotation}
+          turning={rolling}
+        />
+      </div>
+
+      {last && !rolling && <div className={`roulette-result d-flex align-items-center gap-3 border rounded p-3 mb-3 ${last.spin.netResult > 0 ? 'border-success' : 'border-secondary'}`}>
+        <span className={`roulette-pocket is-${last.colour}`}>{last.pocket}</span>
+        <div className="d-grid">
+          <strong>{last.spin.netResult > 0 ? `Paid ${money.format(last.spin.payoutAmount)}` : 'The house takes it'}</strong>
+          <small className="text-body-tertiary">
+            {last.spin.bets.filter(b => b.payout > 0).length} of {last.spin.bets.length} bets came in
+            {last.turnsSpent > 0 && `, ${last.turnsSpent} turn${last.turnsSpent === 1 ? '' : 's'}`}
+            {last.repEarned > 0 && `, +${number.format(last.repEarned)} rep`}.
+          </small>
+        </div>
+        <span className={`tnum ms-auto ${last.spin.netResult >= 0 ? 'text-success' : 'text-body-secondary'}`}>
+          {signedMoney(last.spin.netResult)}
+        </span>
+      </div>}
+
+      <div className="control-row mb-3">
+        <span className="text-body-secondary">Chip</span>
+        <div className="btn-group" role="group" aria-label="Chip">
+          {chips.map(value => <button
+            className={`btn btn-sm ${chip === value ? 'btn-primary' : 'btn-secondary'}`}
+            type="button"
+            disabled={busy || rolling}
+            onClick={() => setChip(value)}
+            key={value}
+          >{money.format(value)}</button>)}
+        </div>
+      </div>
+
+      <div className="roulette-cloth d-grid gap-1 mb-3">
+        {zeroes.map(pocket => <button
+          className={`roulette-spot is-green ${amountOn('straight', pocket) > 0 ? 'is-backed' : ''}`}
+          style={{ gridColumn: `span ${6 / zeroes.length}` }}
+          type="button"
+          disabled={busy || rolling}
+          onClick={() => place('straight', pocket)}
+          onContextMenu={event => { event.preventDefault(); lift('straight', pocket) }}
+          key={pocket}
+        >
+          {pocket}
+          {amountOn('straight', pocket) > 0 && <span className="roulette-chip">{money.format(amountOn('straight', pocket))}</span>}
+        </button>)}
+        {pockets.map(pocket => <button
+          className={`roulette-spot ${red.has(Number(pocket)) ? 'is-red' : 'is-black'} ${amountOn('straight', pocket) > 0 ? 'is-backed' : ''}`}
+          type="button"
+          disabled={busy || rolling}
+          onClick={() => place('straight', pocket)}
+          onContextMenu={event => { event.preventDefault(); lift('straight', pocket) }}
+          key={pocket}
+        >
+          {pocket}
+          {amountOn('straight', pocket) > 0 && <span className="roulette-chip">{money.format(amountOn('straight', pocket))}</span>}
+        </button>)}
+      </div>
+
+      <div className="d-grid gtc-fill-180 gap-2 mb-3">
+        {outside.flatMap(kind => (kind.takesNumber ? ['1', '2', '3'] : [null]).map(value => {
+          const on = amountOn(kind.key, value)
+          return <button
+            className={`btn btn-sm text-start ${on > 0 ? 'btn-primary' : 'btn-secondary'}`}
+            type="button"
+            disabled={busy || rolling}
+            onClick={() => place(kind.key, value)}
+            onContextMenu={event => { event.preventDefault(); lift(kind.key, value) }}
+            title={kind.blurb}
+            key={`${kind.key}-${value ?? 'x'}`}
+          >
+            {value ? `${kind.name} ${value}` : kind.name}
+            <span className="text-body-tertiary"> {kind.odds}:1</span>
+            {on > 0 && <strong className="float-end">{money.format(on)}</strong>}
+          </button>
+        }))}
+      </div>
+
+      <div className="control-row">
+        <span className="text-body-secondary">
+          {stakes.length === 0
+            ? 'Nothing on the cloth.'
+            : `${stakes.length} bet${stakes.length === 1 ? '' : 's'}, ${money.format(staked)} down.`}
+        </span>
+        <button className="btn btn-secondary" type="button" disabled={busy || rolling || stakes.length === 0} onClick={() => setStakes([])}>Clear</button>
+        <Button className="btn btn-primary" blocked={blocked} onClick={() => void roll()}>
+          Spin {money.format(staked)}{board.spinTurnCost > 0 && ` / ${board.spinTurnCost}t`}
+        </Button>
+      </div>
+      <small className="text-body-tertiary d-block mt-2">Click a spot to back it, again to add another chip, right-click to take it off.</small>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Wheel Ledger</h2><span>Recent spins</span></div>
+      {board.recent.length === 0
+        ? <p className="text-body-tertiary mb-0">No spins yet.</p>
+        : <div className="table-responsive">
+            <table className="table table-sm game-table align-middle mb-0">
+              <thead><tr><th>Table</th><th>Pocket</th><th>Bets</th><th>Staked</th><th>Payout</th><th>Net</th><th>When</th></tr></thead>
+              <tbody>
+                {board.recent.map(row => <tr key={row.id}>
+                  <td>{row.tableName}</td>
+                  <td><span className={`roulette-pocket is-small is-${row.colour}`}>{row.pocket}</span></td>
+                  <td title={row.bets.map(b => `${b.label} ${money.format(b.amount)}`).join(', ')}>
+                    {row.bets.filter(b => b.payout > 0).length}/{row.bets.length}
+                  </td>
+                  <td>{money.format(row.staked)}</td>
+                  <td>{money.format(row.payoutAmount)}</td>
+                  <td className={row.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(row.netResult)}</td>
+                  <td>{new Date(row.createdAtUtc).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>}
+    </section>
   </div>
 }
 

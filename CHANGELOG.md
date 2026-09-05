@@ -3,6 +3,22 @@
 ## 0.3.0
 
 ### Added
+- **Roulette, on two wheels.** A cloth with every number on it, the outside bets down the side, and as
+  many chips on it at once as the croupier will take. Every bet settles against one pocket, which is
+  what makes covering the board a way to lose steadily rather than a clever idea.
+
+  Roulette needs none of the tuning the slots needed, and that is the interesting thing about it: every
+  bet is paid as though the zeroes were not on the wheel, so the zeroes are the house's entire take and
+  every bet on the table carries exactly the same edge. Two zeroes returns 94.74% and one returns
+  97.30% - which is not tuned but arithmetic, and is checked by walking a stake around every pocket of
+  both wheels and finding thirty-six back every time. So the Front Table has two zeroes and takes
+  anybody, and the Back Table has one, wants High Roller and half a million in net worth, and is the
+  best odds on the floor.
+
+  The wheel is a real one. The numbers sit in the order they sit in on an actual wheel rather than in
+  counting order - both sequences, one per table - because that ordering is the thing that stops an arc
+  of the wheel being an arc of the cloth. It turns six times over and eases down onto the pocket that
+  came up, with the ball and the pointer staying put and the disc coming to them.
 - **The Casino District is a floor you can play.** Four slot machines, a nine cell grid of weighted
   symbols and five paylines bought one at a time. Pays read left to right - the first two cells of a
   lane have to match before the third decides between a pair and a triple - and the paytable returns

@@ -1924,6 +1924,7 @@ public sealed class CasinoOptions
     public List<CompRewardOptions> CompRewards { get; set; } = [];
     public CasinoJackpotOptions Jackpot { get; set; } = new();
     public CasinoFreeSpinOptions FreeSpins { get; set; } = new();
+    public RouletteOptions Roulette { get; set; } = new();
     public List<CasinoRepLevelOptions> Levels { get; set; } = [];
     public List<SlotMachineOptions> SlotMachines { get; set; } = [];
     public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
@@ -2099,6 +2100,8 @@ public sealed class CasinoOptions
             ];
         }
 
+        Roulette.ApplyDefaultsWhereEmpty();
+
         if (SlotSymbols.Count == 0)
         {
             SlotSymbols =
@@ -2163,6 +2166,81 @@ public sealed class CompRewardOptions
     public double Heat { get; set; }
 
     public int MinCasinoRepLevel { get; set; } = 1;
+}
+
+/// <summary>
+/// The wheel.
+///
+/// Unlike the slots, roulette's return needs no tuning at all: it falls out of the wheel. Thirty-six
+/// to one paid on a straight number that comes up one time in thirty-seven returns 97.3%, and adding
+/// a second zero makes it one in thirty-eight and 94.7%. Every bet on the table carries the same edge
+/// as every other, which is the thing that makes it roulette rather than a paytable.
+///
+/// So the tables differ by how many zeroes they carry, and that is the whole of it. The double-zero
+/// wheel is out front where anybody can reach it; the single-zero is in the back and wants standing,
+/// which is how a real floor arranges the same two wheels.
+/// </summary>
+public sealed class RouletteOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>What a spin of the wheel costs, in turns. The same as a pull on the slots.</summary>
+    public int SpinTurnCost { get; set; } = 1;
+
+    /// <summary>How many separate bets can ride on one spin.</summary>
+    public int MaxBetsPerSpin { get; set; } = 12;
+
+    public List<RouletteTableOptions> Tables { get; set; } = [];
+
+    public RouletteTableOptions? Table(string? key)
+        => Tables.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (Tables.Count > 0) return;
+
+        Tables =
+        [
+            new RouletteTableOptions
+            {
+                Key = "front",
+                Name = "The Front Table",
+                Blurb = "Two zeroes and a crowd. Nobody here is counting anything.",
+                Zeroes = 2,
+                MinBet = 25,
+                MaxBet = 2_500
+            },
+            new RouletteTableOptions
+            {
+                Key = "back",
+                Name = "The Back Table",
+                Blurb = "One zero, a quieter room, and a croupier who knows your name.",
+                Zeroes = 1,
+                MinBet = 500,
+                MaxBet = 50_000,
+                MinCasinoRepLevel = 3,
+                MinNetWorth = 500_000
+            }
+        ];
+    }
+}
+
+public sealed class RouletteTableOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+
+    /// <summary>
+    /// One or two. This single number is the entire difference between the tables: it decides how many
+    /// pockets the ball can land in, and therefore the house edge on every bet the table takes.
+    /// </summary>
+    public int Zeroes { get; set; } = 2;
+
+    public long MinBet { get; set; } = 25;
+    public long MaxBet { get; set; } = 2_500;
+    public int MinCasinoRepLevel { get; set; } = 1;
+    public long MinNetWorth { get; set; }
 }
 
 public sealed class CasinoRepLevelOptions

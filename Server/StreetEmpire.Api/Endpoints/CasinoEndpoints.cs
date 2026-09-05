@@ -77,6 +77,59 @@ internal static class CasinoEndpoints
             }
         }).RequireAuthorization();
 
+        app.MapGet("/api/game/casino/roulette", async (
+            CurrentPlayerService current,
+            RouletteService roulette,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            return player is null
+                ? Results.Unauthorized()
+                : Results.Ok(await roulette.BoardAsync(player, ct));
+        }).RequireAuthorization();
+
+        app.MapPost("/api/game/casino/roulette/spin", async (
+            RouletteSpinRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            RouletteService roulette,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var spin = roulette.Spin(player, request.TableKey, request.Bets ?? [], now);
+                var transaction = spin.Transaction;
+                var won = transaction.NetResult > 0;
+                var summary = won
+                    ? $"Backed {transaction.Paylines:N0} bet(s) for {transaction.BetAmount:C0} on {transaction.MachineKey} roulette; {spin.Pocket} {spin.Colour} paid {transaction.PayoutAmount:C0}."
+                    : $"Backed {transaction.Paylines:N0} bet(s) for {transaction.BetAmount:C0} on {transaction.MachineKey} roulette and the ball found {spin.Pocket} {spin.Colour}.";
+                AddLog(db, player, before, "CASINO", spin.TurnsSpent, summary, now);
+                await db.SaveChangesAsync(ct);
+
+                return Results.Ok(new RouletteSpinResponse(
+                    roulette.ToResponse(transaction),
+                    spin.Pocket,
+                    spin.Colour,
+                    player.Cash,
+                    player.Turns,
+                    spin.TurnsSpent,
+                    spin.RepEarned,
+                    spin.CompsEarned,
+                    await roulette.BoardAsync(player, ct)));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
         app.MapPost("/api/game/casino/comps/claim", async (
             ClaimCompRequest request,
             CurrentPlayerService current,

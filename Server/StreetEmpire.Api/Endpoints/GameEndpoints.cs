@@ -61,6 +61,7 @@ internal static class GameEndpoints
             PimpRoster pimps,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             StreetStrikeService strikes,
             AllianceService allianceRules,
             StandingsRecorder standings,
@@ -79,6 +80,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             if ((await clock.AdvanceAsync(player, now, db, ct)).Changed)
                 await db.SaveChangesAsync(ct);
             // Sampled from the busiest read in the game, behind a timer, so standings history builds up
@@ -87,6 +89,17 @@ internal static class GameEndpoints
 
             var netWorth = economy.CalculateNetWorth(player);
             var combatSince = now.AddDays(-1);
+            // Whose door each crew is at, read in one go rather than a name at a time.
+            var out_ = await pendingStrikes.OutAsync(player.Id, ct);
+            var targetNames = out_.Count == 0
+                ? new Dictionary<Guid, string>()
+                : await db.Players.AsNoTracking()
+                    .Where(x => out_.Select(y => y.DefenderId).Contains(x.Id))
+                    .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+            var strikesOut = out_
+                .Select(x => ToPendingStrike(x, targetNames.TryGetValue(x.DefenderId, out var name) ? name : "someone"))
+                .ToList();
+
             var recentAttacksMade = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.AttackerId == player.Id && x.CreatedAtUtc >= combatSince, ct);
             var recentDefenses = await db.CombatLogs.AsNoTracking()
@@ -240,6 +253,8 @@ internal static class GameEndpoints
                 pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 ToCombatCrewResponse(combatCrew),
                 ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
+                await pendingStrikes.AnythingInboundAsync(player, now, ct),
+                strikesOut,
                 unreadAlerts,
                 economy.GetStore(player, await shelves.RemainingAsync(player.City, economy.GetStore(player), now, ct)),
                 ToStoreRep(player, opts, now),
@@ -260,6 +275,7 @@ internal static class GameEndpoints
             PlayerClock clock,
             EconomyService economy,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -267,6 +283,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var blockedReason = await TravelBlockedReasonAsync(db, player.Id, ct);
             if (blockedReason is not null)
                 return Results.BadRequest(new { error = blockedReason });
@@ -296,6 +313,7 @@ internal static class GameEndpoints
             ArrestService arrests,
             TerritoryService territories,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -303,6 +321,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var pendingAttack = await ActiveOutgoingMissionAsync(db, player.Id, ct);
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
@@ -355,6 +374,7 @@ internal static class GameEndpoints
             ArrestService arrests,
             TerritoryService territories,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -362,6 +382,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var pendingAttack = await ActiveOutgoingMissionAsync(db, player.Id, ct);
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });

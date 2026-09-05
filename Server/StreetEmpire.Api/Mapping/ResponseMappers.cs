@@ -168,7 +168,8 @@ internal static class ResponseMappers
         DateTime? viewerLaneReadyAtUtc,
         long viewerPlunder = 0,
         IReadOnlyList<PlayerTitleResponse>? titles = null,
-        IReadOnlyDictionary<string, string>? strikeBlockers = null)
+        IReadOnlyDictionary<string, string>? strikeBlockers = null,
+        StrikeTripResponse? strikeTrip = null)
     {
         var player = ranked.Player;
         var mismatch = viewer is null || viewer.Id == player.Id
@@ -177,6 +178,7 @@ internal static class ResponseMappers
         var messageBlock = MessageBlockedReason(viewer, player, viewerPactAllies);
         return new PlayerProfileResponse(
             strikeBlockers ?? new Dictionary<string, string>(),
+            strikeTrip,
             player.Id,
             player.Name,
             AvatarUrl(player.Account),
@@ -259,6 +261,20 @@ internal static class ResponseMappers
                 x.CanForge ? x.ForgeCost : null,
                 x.CanForge ? x.MinWorkshopLevel : null))
             .ToList();
+
+    /// <summary>One of this player's crews on the road.</summary>
+    internal static PendingStrikeResponse ToPendingStrike(PendingStrike strike, string targetName)
+        => new(
+            strike.Id,
+            strike.Method,
+            AttackMethods.Label(strike.Method),
+            targetName,
+            strike.TargetCity,
+            strike.Status,
+            strike.ArrivesAtUtc,
+            strike.ReturnsAtUtc,
+            strike.Summary,
+            strike.Outcome);
 
     /// <summary>One pile of goods as the client reads it.</summary>
     internal static StashResponse ToStash(IStash stash, GameOptions options)

@@ -35,6 +35,7 @@ internal static class CombatEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             TitleService titles,
             CancellationToken ct) =>
         {
@@ -44,6 +45,7 @@ internal static class CombatEndpoints
             var normalizedQuery = query?.Trim() ?? string.Empty;
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(player.Id, now, ct);
             // What this viewer could carry off, which is what the target list gates on.
             var viewerPlunder = economy.CalculatePlunder(player);
@@ -88,6 +90,7 @@ internal static class CombatEndpoints
             IOptionsSnapshot<GameOptions> gameOptions,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             StreetStrikeService strikes,
             TitleService titles,
             IntelService intel,
@@ -98,6 +101,7 @@ internal static class CombatEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var laneReadyAt = await combatMissions.LaneReadyAtUtcAsync(viewer.Id, now, ct);
             var subject = await db.Players
                 .Include(x => x.Account)
@@ -140,6 +144,7 @@ internal static class CombatEndpoints
             // Asked of the same function the launch will ask, so the sentence under a dead button is
             // the sentence the server would have thrown had it been pressed.
             var blockers = new Dictionary<string, string>();
+            StrikeTripResponse? trip = null;
             if (viewer is not null)
             {
                 foreach (var method in AttackMethods.All.Where(AttackMethods.IsStrike))
@@ -149,6 +154,22 @@ internal static class CombatEndpoints
                     var coke = method == AttackMethods.Poach ? gameOptions.Value.Strikes.Poach.CokePerHoe : 0;
                     if (strikes.WhyNot(method, viewer, target.Player, coke) is { } why)
                         blockers[method] = why;
+                }
+
+                // The drive, priced here because this is the one screen that can see both houses. The
+                // attack menu is built from the attacker alone and never learns who is being looked at,
+                // so a cost that depends on the target has nowhere else to be said.
+                var travelTurns = pendingStrikes.TravelTurnsBetween(viewer, target.Player);
+                if (travelTurns > 0)
+                {
+                    var distance = gameOptions.Value.Strikes.Distance;
+                    trip = new StrikeTripResponse(
+                        HideoutService.HomeCity(target.Player),
+                        travelTurns,
+                        Math.Max(1, travelTurns * Math.Max(1, gameOptions.Value.Mules.MinutesPerTravelTurn)),
+                        strikes.FareFor(travelTurns),
+                        AttackMethods.Strikes.ToDictionary(x => x, x => strikes.TurnCostOf(x, travelTurns)),
+                        (int)Math.Round(Math.Max(0, distance.HitChancePenaltyPerTravelTurn) * travelTurns * 100));
                 }
             }
 
@@ -164,7 +185,8 @@ internal static class CombatEndpoints
                 // Nobody signed in has nothing to weigh, and the gate reads zero as "no opinion".
                 viewer is null ? 0 : economy.CalculatePlunder(viewer),
                 await titles.BoardAsync(now, ct),
-                blockers));
+                blockers,
+                trip));
         }).RequireAuthorization();
 
 
@@ -200,12 +222,15 @@ internal static class CombatEndpoints
             CurrentPlayerService current,
             GameDbContext db,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
             await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+
+            await pendingStrikes.ResolveDueAsync(DateTime.UtcNow, ct);
             var combatLogs = await db.CombatLogs.AsNoTracking()
                 .Include(x => x.Attacker)
                 .Include(x => x.Defender)
@@ -228,12 +253,15 @@ internal static class CombatEndpoints
             CurrentPlayerService current,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
             await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+
+            await pendingStrikes.ResolveDueAsync(DateTime.UtcNow, ct);
             var missions = await combatMissions.VisibleMissions(player.Id).ToListAsync(ct);
             return Results.Ok(missions.Select(ToCombatMissionResponse).ToList());
         }).RequireAuthorization();
@@ -248,6 +276,7 @@ internal static class CombatEndpoints
             GameDbContext db,
             PlayerClock clock,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
         {
@@ -256,6 +285,7 @@ internal static class CombatEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             // Settle first, and save before reading. The labs and any finished build are usually
             // settled by this very request, and the queries below go to the database: without the save
             // they would miss rows sitting unsaved in the change tracker and the player would be told
@@ -403,12 +433,15 @@ internal static class CombatEndpoints
             CurrentPlayerService current,
             GameDbContext db,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
 
             await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+
+            await pendingStrikes.ResolveDueAsync(DateTime.UtcNow, ct);
             var logs = await db.CombatLogs.AsNoTracking()
                 .Include(x => x.Attacker)
                 .Where(x => x.DefenderId == player.Id && x.Outcome != "Pending")
@@ -472,9 +505,10 @@ internal static class CombatEndpoints
             return Results.Ok(new AlertsResponse(0, player.CombatAlertsSeenAtUtc, []));
         }).RequireAuthorization();
 
-        // One endpoint for the whole attack menu. A raid launches a travelling mission; the four strikes
-        // settle here and now. Keeping them behind one route means the client sends the same shape
-        // whichever it picked, and a caller that names no method still gets the raid it always got.
+        // One endpoint for the whole attack menu. A raid launches a travelling mission; a strike settles
+        // here and now against a neighbour, or takes to the road against anybody further. Keeping them
+        // behind one route means the client sends the same shape whichever it picked, and a caller that
+        // names no method still gets the raid it always got.
         app.MapPost("/api/game/combat/attack", async (
             CombatAttackRequest request,
             CurrentPlayerService current,
@@ -482,6 +516,7 @@ internal static class CombatEndpoints
             PlayerClock clock,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             AllianceService alliances,
             TerritoryService territories,
             StreetStrikeService strikes,
@@ -492,6 +527,7 @@ internal static class CombatEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
 
             var defender = await db.Players
                 .Include(x => x.Account)
@@ -507,24 +543,30 @@ internal static class CombatEndpoints
                     if (await alliances.AreAlliedAsync(attacker, defender, ct))
                         throw new GameRuleException($"{defender.Name} is allied with your crew.");
 
-                    // Whoever the defender still has at home, and what they still have to hold. Crew
-                    // already out attacking someone else cannot also be guarding the garage - and
-                    // neither can the guns that went with them, which is what makes striking a player
-                    // who is mid-raid the opening it should be. Their best guns are precisely the ones
-                    // a raiding party takes.
-                    var committed = await combatMissions.ActiveAttackMissions(defender.Id)
-                        .Select(x => new { x.RemainingAttackers, x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles })
-                        .ToListAsync(ct);
-                    var away = committed.Aggregate(
-                        Armoury.Empty,
-                        (rack, x) => rack + new Armoury(x.CarriedPistols, x.CarriedShotguns, x.CarriedSmgs, x.CarriedRifles));
-                    var cityControlDefenders = defender.AllianceId is { } defenderAllianceId
-                        ? await territories.CityControlThugsForAllianceInCityAsync(defenderAllianceId, defender.City, ct)
-                        : 0;
-                    var defence = new StrikeDefence(
-                        Math.Max(0, defender.Thugs - committed.Sum(x => x.RemainingAttackers)) + cityControlDefenders,
-                        defender.Armoury - away);
+                    // A house on the other side of the country is a drive, and a drive is a commitment
+                    // now and an outcome later. A neighbour is still answered on the spot, which is the
+                    // asymmetry the whole thing rests on: the people nearest you cannot be seen coming.
+                    var travelTurns = pendingStrikes.TravelTurnsBetween(attacker, defender);
+                    if (travelTurns > 0)
+                    {
+                        var road = await pendingStrikes.LaunchAsync(attacker, defender, request, now, ct);
+                        AddLog(db, attacker, before, "ATTACK", road.TurnsSpent, road.Summary);
+                        await db.SaveChangesAsync(ct);
+                        return Results.Ok(new ActionResultResponse(road.Summary, attacker.Turns, new Dictionary<string, object?>
+                        {
+                            ["method"] = road.Method,
+                            ["pendingStrikeId"] = road.Id,
+                            ["targetCity"] = road.TargetCity,
+                            ["travelTurns"] = road.TravelTurns,
+                            ["turnsSpent"] = road.TurnsSpent,
+                            ["fare"] = road.Fare,
+                            ["arrivesAtUtc"] = road.ArrivesAtUtc,
+                            ["returnsAtUtc"] = road.ReturnsAtUtc
+                        }));
+                    }
 
+                    // Whoever the defender still has at home, and what they still have to hold.
+                    var defence = await pendingStrikes.DefenceForAsync(defender, ct);
                     var strike = strikes.Resolve(attacker, defender, request, defence, now);
                     db.CombatLogs.Add(strike.Log);
                     AddLog(db, attacker, before, "ATTACK", strike.Log.TurnsSpent, strike.Log.Summary);
@@ -560,6 +602,7 @@ internal static class CombatEndpoints
             CurrentPlayerService current,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var attacker = await current.GetAsync(ct);
@@ -567,6 +610,7 @@ internal static class CombatEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
 
             try
             {

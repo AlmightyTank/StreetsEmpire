@@ -20,6 +20,7 @@ internal static class TerritoryEndpoints
             TerritoryService territories,
             PimpRoster pimps,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             PlayerClock clock,
             IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
@@ -29,6 +30,7 @@ internal static class TerritoryEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             // This page is the one that reads the building to decide how much ground the player may
             // run, and it was the one page that never settled a finished build. A Warehouse paid for
             // and finished still reported a Trap House's single plot until something else happened to
@@ -195,6 +197,7 @@ internal static class TerritoryEndpoints
             GameDbContext db,
             CombatMissionService missions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             PlayerClock clock,
             CancellationToken ct) =>
         {
@@ -203,6 +206,7 @@ internal static class TerritoryEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
 
             var ground = await db.Territories.Include(x => x.Holder).SingleOrDefaultAsync(x => x.Id == request.TerritoryId, ct);
             if (ground is null) return Results.NotFound(new { error = "That ground does not exist." });

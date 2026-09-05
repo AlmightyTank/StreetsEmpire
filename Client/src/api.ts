@@ -666,6 +666,32 @@ export type Stash = {
  * infers what the server will allow is a client that will eventually disagree with it - and the
  * disagreement is only ever found by somebody clicking a button that then refuses them.
  */
+/** What it costs to send a crew to a house in another town. Null for a neighbour. */
+export type StrikeTrip = {
+  targetCity: string
+  travelTurns: number
+  /** One leg. They arrive after this and are home again after twice it. */
+  minutesEachWay: number
+  fare: number
+  /** The full turn price per method, the drive included. */
+  turnCosts: Record<string, number>
+  hitChancePenaltyPercent: number
+}
+
+/** One of your crews on the road. */
+export type PendingStrike = {
+  id: number
+  method: string
+  methodLabel: string
+  targetName: string
+  targetCity: string
+  status: 'Outbound' | 'Returning' | 'Done'
+  arrivesAtUtc: string
+  returnsAtUtc: string
+  summary: string
+  outcome: string | null
+}
+
 export type PlayerLocation = {
   playerCity: string
   hideoutCity: string
@@ -860,6 +886,16 @@ export type Dashboard = {
   fallenCrew: Pimp[]
   combatCrew: CombatCrew
   combatStatus: CombatStatus
+  /**
+   * Whether the lookout can see anybody coming in off the road, and nothing more than that.
+   *
+   * A bare yes or no on purpose: not who, not what kind, not how long. Three different purchases
+   * answer the four strikes and the warning does not say which one is wanted, so having to guess is
+   * the decision. Always false for a house with no lookout, or one with a wrecked one.
+   */
+  strikeInbound: boolean
+  /** Your own crews on the road, out and coming back. */
+  strikesOut: PendingStrike[]
   unreadDefenceAlerts: number
   store: StoreItem[]
   storeRep: StoreRep
@@ -1453,6 +1489,8 @@ export type Intel = {
 export type PlayerProfile = PlayerTarget & {
   /** Why each strike cannot be thrown at this person, keyed by method. Absent when it can. */
   strikeBlockers: Record<string, string | undefined>
+  /** The drive to this person's door, or null when they are on your own streets. */
+  strikeTrip: StrikeTrip | null
   profileBanner: ProfileBanner
   /** When they started. Only on the profile somebody opened, never on a leaderboard row. */
   joinedAtUtc: string

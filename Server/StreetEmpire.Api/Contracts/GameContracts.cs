@@ -234,6 +234,36 @@ public sealed record CombatAttackRequest(
 /// One entry on the attack menu, priced and gated for the player looking at it. Sent from the server so
 /// the client never has to know a rule: a method it cannot use arrives already carrying the reason.
 /// </summary>
+/// <summary>
+/// What it costs to send a strike to a house in another town, and how long it is on the road.
+///
+/// Null for a neighbour, which is how the page tells the two apart without knowing the rule: a trip
+/// that exists is a trip, and one that does not is a strike that lands the moment it is pressed.
+/// </summary>
+public sealed record StrikeTripResponse(
+    string TargetCity,
+    int TravelTurns,
+    /// <summary>One leg. They arrive after this and are home again after twice it.</summary>
+    int MinutesEachWay,
+    long Fare,
+    /// <summary>The full turn price per method, the drive included, keyed by method.</summary>
+    IReadOnlyDictionary<string, int> TurnCosts,
+    /// <summary>Whether the loud methods take an odds penalty for the distance, and how much.</summary>
+    int HitChancePenaltyPercent);
+
+/// <summary>One of this player's crews on the road, as they see it.</summary>
+public sealed record PendingStrikeResponse(
+    long Id,
+    string Method,
+    string MethodLabel,
+    string TargetName,
+    string TargetCity,
+    string Status,
+    DateTime ArrivesAtUtc,
+    DateTime ReturnsAtUtc,
+    string Summary,
+    string? Outcome);
+
 public sealed record AttackMethodResponse(
     string Key,
     string Label,
@@ -1071,6 +1101,18 @@ public sealed record DashboardResponse(
     IReadOnlyList<PimpResponse> FallenCrew,
     CombatCrewResponse CombatCrew,
     CombatStatusResponse CombatStatus,
+    /// <summary>
+    /// Whether the lookout can see anybody coming in off the road, and nothing more than that.
+    ///
+    /// A bare yes or no on purpose. The room buys notice, never detail: not who, not what kind, not
+    /// how long. Medicine, a bigger guard and a better cut are three different purchases and only one
+    /// of them answers what is actually coming, so having to guess is the decision.
+    ///
+    /// Always false for a house with no lookout, or one with a wrecked one. Blind is the default.
+    /// </summary>
+    bool StrikeInbound,
+    /// <summary>This player's own crews on the road, out and coming back.</summary>
+    IReadOnlyList<PendingStrikeResponse> StrikesOut,
     int UnreadDefenceAlerts,
     IReadOnlyList<StoreItemResponse> Store,
     /// <summary>Where this player stands with the counter, and what standing is costing or saving them.</summary>
@@ -1366,6 +1408,8 @@ public sealed record PlayerProfileResponse(
     /// attacker alone and never sees who is being looked at.
     /// </summary>
     IReadOnlyDictionary<string, string> StrikeBlockers,
+    /// <summary>The drive to this person's door, or null when they are on your own streets.</summary>
+    StrikeTripResponse? StrikeTrip,
     Guid PlayerId,
     string Name,
     string? AvatarUrl,

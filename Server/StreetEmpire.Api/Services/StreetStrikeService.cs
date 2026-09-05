@@ -70,6 +70,41 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
         ];
     }
 
+    /// <summary>
+    /// How much of a loud strike's chance the drive costs it. Nothing at all for a quiet one, and
+    /// nothing at all in your own town.
+    ///
+    /// Read through one function rather than written into each method, because the two that pay it pay
+    /// it for the same reason - strange streets and no way out - and the two that do not are not paying
+    /// a smaller version of it, they are not paying it at all.
+    /// </summary>
+    private double DistancePenalty(string method, int travelTurns)
+    {
+        var distance = _options.Strikes.Distance;
+        return travelTurns <= 0 || !distance.IsLoud(method)
+            ? 0
+            : Math.Max(0, distance.HitChancePenaltyPerTravelTurn) * travelTurns;
+    }
+
+    /// <summary>
+    /// What a strike costs in turns once the drive is counted. The method's own price at home, and a
+    /// share of the distance on top of it anywhere else.
+    ///
+    /// Mild on purpose: a cross-country drive-by lands near a raid's turn cost only at the far end of
+    /// the map, and what actually makes distance expensive is the clock and the warning it hands the
+    /// target. Turns are the wrong lever for that - they would simply stop poor players throwing
+    /// punches while a rich one threw as many as before.
+    /// </summary>
+    public int TurnCostOf(string method, int travelTurns)
+        => TurnCostOf(method)
+           + (travelTurns <= 0
+               ? 0
+               : (int)Math.Ceiling(travelTurns * Math.Max(0, _options.Strikes.Distance.TurnCostPerTravelTurn)));
+
+    /// <summary>What the road costs in cash: petrol, plates, and somewhere to wait.</summary>
+    public long FareFor(int travelTurns)
+        => travelTurns <= 0 ? 0 : travelTurns * Math.Max(0, _options.Strikes.Distance.FarePerTravelTurn);
+
     public int TurnCostOf(string method) => AttackMethods.Normalize(method) switch
     {
         AttackMethods.DriveBy => Math.Max(1, _options.Strikes.DriveBy.TurnCost),
@@ -83,6 +118,10 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
     /// The crew actually standing in the defender's house right now, with whatever they are holding.
     /// Crew away on missions of their own cannot also be guarding the garage.
     /// </param>
+    /// <summary>
+    /// A strike thrown at a house down the street. Validated, charged and resolved on the spot, which
+    /// is what a strike has always been and what it stays for anybody hitting their own town.
+    /// </summary>
     public StrikeResult Resolve(
         Player attacker,
         Player defender,
@@ -95,20 +134,54 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
             throw new GameRuleException($"{AttackMethods.Label(method)} is not a strike.");
 
         Validate(attacker, defender, method, request, nowUtc);
+        return Apply(attacker, defender, request, defence, nowUtc, TurnCostOf(method), travelTurns: 0);
+    }
 
+    /// <summary>
+    /// A strike that has just finished a drive, resolved against whatever it found when it got there.
+    ///
+    /// The same body as a local one, and deliberately so: a rule written twice is a rule that will
+    /// disagree with itself, and there is no version of "what a drive-by does to a guard" that should
+    /// depend on how far the car came. What distance changes is the odds and the price, and both of
+    /// those are arguments rather than a second copy of the rules.
+    ///
+    /// It does not validate. The refusals were all answered at launch, and the two that can go stale
+    /// while the crew are on the road - the shield and the anti-farm band - are re-asked by the caller,
+    /// which is the only thing that knows how to turn the trip around and hand the load back.
+    /// </summary>
+    public StrikeResult ResolveLanded(
+        Player attacker,
+        Player defender,
+        CombatAttackRequest request,
+        StrikeDefence defence,
+        DateTime nowUtc,
+        int travelTurns)
+        => Apply(attacker, defender, request, defence, nowUtc, turnCost: 0, travelTurns);
+
+    private StrikeResult Apply(
+        Player attacker,
+        Player defender,
+        CombatAttackRequest request,
+        StrikeDefence defence,
+        DateTime nowUtc,
+        int turnCost,
+        int travelTurns)
+    {
+        var method = AttackMethods.Normalize(request.Method);
         var strike = method switch
         {
-            AttackMethods.DriveBy => DriveBy(attacker, defender, defence),
-            AttackMethods.Jack => Jack(attacker, defender, defence),
+            AttackMethods.DriveBy => DriveBy(attacker, defender, defence, travelTurns),
+            AttackMethods.Jack => Jack(attacker, defender, defence, travelTurns),
             AttackMethods.Infest => Infest(attacker, defender),
             _ => Poach(attacker, defender, request)
         };
 
-        var turnCost = TurnCostOf(method);
         attacker.Turns -= turnCost;
-        // Loud crimes in public, against people with their own reasons to talk to the law. Charged at the
-        // town's own rate, like every other way of drawing notice here.
-        attacker.Heat += Math.Max(0, HeatOf(method)) * _options.CityMarkets.HeatMultiplier(attacker.City);
+        // Loud crimes in public, against people with their own reasons to talk to the law. Charged at
+        // the rate of the town it happened in rather than the town the attacker lives in: you shot up a
+        // street in New York, and it is New York that noticed. Which also means hitting the loud towns
+        // is intrinsically hotter than hitting the quiet ones, wherever you are standing.
+        attacker.Heat += Math.Max(0, HeatOf(method)) * _options.CityMarkets.HeatMultiplier(HideoutService.HomeCity(defender));
 
         defender.HoeHappiness = ClampMorale(defender.HoeHappiness - strike.HoeMoraleHit);
         defender.ThugHappiness = ClampMorale(defender.ThugHappiness - strike.ThugMoraleHit);
@@ -158,6 +231,16 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
 
         return new StrikeResult(method, outcome, log, new ActionResultResponse(strike.Summary, attacker.Turns, breakdown));
     }
+
+    /// <summary>
+    /// Every reason a strike cannot be thrown, asked once.
+    ///
+    /// Public because a strike with a drive in front of it has to be refused before the car leaves
+    /// rather than after it arrives - a player who spends turns and a fare on a trip that was never
+    /// legal has been charged for the game's own oversight.
+    /// </summary>
+    public void EnsureCanThrow(Player attacker, Player defender, string method, CombatAttackRequest request, DateTime nowUtc)
+        => Validate(attacker, defender, method, request, nowUtc);
 
     private void Validate(Player attacker, Player defender, string method, CombatAttackRequest request, DateTime nowUtc)
     {
@@ -257,7 +340,7 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
     /// where somebody sees you coming and everyone is behind a wall before you arrive. Whether the car
     /// comes back leans on guns: a pistol rarely stops a moving car and a rifle very often does.
     /// </summary>
-    private Strike DriveBy(Player attacker, Player defender, StrikeDefence defence)
+    private Strike DriveBy(Player attacker, Player defender, StrikeDefence defence, int travelTurns)
     {
         var config = _options.Strikes.DriveBy;
         var guard = defence.ArmedThugs;
@@ -265,7 +348,8 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
         var hitChance = Math.Clamp(
             config.BaseHitChance
                 - guard * config.HitChancePerArmedThug
-                - extraFirepower * config.HitChancePerGuardFirepower,
+                - extraFirepower * config.HitChancePerGuardFirepower
+                - DistancePenalty(AttackMethods.DriveBy, travelTurns),
             Math.Clamp(config.MinHitChance, 0, 1),
             1);
 
@@ -287,13 +371,22 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
             0,
             Math.Clamp(config.MaxRideLossChance, 0, 1));
         var ridesLost = random.NextDouble() < rideLossChance ? 1 : 0;
+        // A pass that found nobody, a long way from home, is a car sitting in a strange street with
+        // people walking towards it. Rolled only on a failure and only away, because getting away
+        // cleanly is the thing distance takes from you - a bad pass in your own town is a fast drive
+        // home down roads you know.
+        if (ridesLost == 0 && !landed && travelTurns > 0
+            && random.NextDouble() < Math.Clamp(_options.Strikes.Distance.RideImpoundChanceOnFailure, 0, 1))
+            ridesLost = 1;
         attacker.Rides -= ridesLost;
 
         var summary = kills > 0
             ? $"{attacker.Name} shot up {defender.Name}'s street and left {kills:N0} thug(s) down."
             : $"{attacker.Name} shot up {defender.Name}'s street and hit nobody.";
         if (ridesLost > 0)
-            summary += " The car did not come back.";
+            summary += travelTurns > 0 && !landed
+                ? " The car never made it out of town."
+                : " The car did not come back.";
 
         return new Strike(
             kills > 0,
@@ -326,7 +419,7 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
     /// double-counting the same guard - and means a garage held by a pistol crew has exactly the odds it
     /// had before guns had tiers at all.
     /// </summary>
-    private Strike Jack(Player attacker, Player defender, StrikeDefence defence)
+    private Strike Jack(Player attacker, Player defender, StrikeDefence defence, int travelTurns)
     {
         var config = _options.Strikes.Jack;
         var guard = defence.ArmedThugs;
@@ -334,7 +427,8 @@ public sealed class StreetStrikeService(IOptionsSnapshot<GameOptions> options, I
         var chance = Math.Clamp(
             config.BaseChance
                 - guard * config.ChancePerArmedThug
-                - extraFirepower * config.ChancePerGuardFirepower,
+                - extraFirepower * config.ChancePerGuardFirepower
+                - DistancePenalty(AttackMethods.Jack, travelTurns),
             Math.Clamp(config.MinChance, 0, 1),
             1);
 

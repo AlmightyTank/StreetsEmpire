@@ -64,6 +64,11 @@ var tests = new (string Name, Action Test)[]
     ("stock is deposited and withdrawn against both ceilings", StockMovesAgainstBothCeilings),
     ("heat is drawn in the town each pile is standing in", HeatIsDrawnWhereEachPileStands),
     ("the whole gun rack answers to its own name", TheRackAnswersToItsOwnName),
+    ("a strike at a neighbour lands now and one down the road does not", DistanceDecidesWhetherAStrikeWaits),
+    ("a crew on the road meets whatever is standing when they get there", ALandingReadsTheHouseItFinds),
+    ("a trip that finds a shield turns round with the load", AShieldedLandingTurnsTheCrewRound),
+    ("what a crew are still carrying comes home with them", TheHaulComesHomeAtTheDoor),
+    ("a lookout buys notice and never detail", ALookoutBuysNoticeAndNeverDetail),
     ("an intelligence centre buys back the switches distance takes", IntelligenceBuysBackRemoteControl),
     ("crew are swept up, bailed out, or left inside", CrewAreSweptUpBailedOrLeftInside),
     ("a bond is refused late, short, or twice", ABondIsRefusedLateShortOrTwice),
@@ -8193,6 +8198,251 @@ static void IntelligenceBuysBackRemoteControl()
     deep.SetWrecked(HideoutRooms.Intelligence, DateTime.UtcNow);
     AssertTrue(!hideouts.CanControlLabsRemotely(deep), "there is nobody in a wrecked centre to take the call");
     AssertTrue(!hideouts.CanRepairRemotely(deep), "or to place one");
+}
+
+
+static PendingStrikeService CreatePendingStrikes(GameDbContext db, GameOptions options, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    var snapshot = Snapshot(resolved);
+    var hideouts = new HideoutService(snapshot);
+    var roll = random ?? new MinimumRandom();
+    var economy = CreateEconomy(resolved, roll);
+    return new PendingStrikeService(
+        db,
+        snapshot,
+        new StreetStrikeService(snapshot, roll, hideouts),
+        hideouts,
+        new TerritoryService(db, snapshot),
+        new AllianceService(db, snapshot, economy));
+}
+
+static GameDbContext NewStrikeWorld()
+    => new(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"strike-{Guid.NewGuid()}")
+        .Options);
+
+/// <summary>
+/// A house across town is answered on the spot; a house across the country is a drive.
+///
+/// The asymmetry the whole mechanic rests on, and the reason it is worth having: the people nearest
+/// you cannot be seen coming, and the people far from you can.
+/// </summary>
+static void DistanceDecidesWhetherAStrikeWaits()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options, rides: 2);
+    var neighbour = Defender(options, rides: 2);
+    var distant = Defender(options, rides: 2);
+    distant.City = "Los Angeles";
+    distant.Hideout!.City = "Los Angeles";
+
+    AssertEqual(0, pending.TravelTurnsBetween(attacker, neighbour));
+    // Distance is the target's own remoteness, exactly as it is for travel and for mule runs. There is
+    // no matrix on this map and there does not need to be: what makes Los Angeles far is Los Angeles.
+    AssertEqual(options.CityMarkets.TravelTurns("Los Angeles"), pending.TravelTurnsBetween(attacker, distant));
+
+    var turnsBefore = attacker.Turns;
+    var road = pending.LaunchAsync(attacker, distant, Strike(distant, AttackMethods.DriveBy), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    // The car left with them and the clock is running. Nothing has happened to anybody yet.
+    AssertEqual(PendingStrikeStatus.Outbound, road.Status);
+    AssertEqual(1, road.CommittedRides);
+    AssertEqual(1, attacker.Rides);
+    AssertEqual("Los Angeles", road.TargetCity);
+    AssertTrue(road.ArrivesAtUtc > now, "a drive takes time");
+    AssertTrue(road.ReturnsAtUtc > road.ArrivesAtUtc, "and the way back takes as long again");
+    AssertEqual(10, distant.Thugs);
+
+    // The drive is paid for in turns on top of the job, and in cash on top of that.
+    var strikes = new StreetStrikeService(Snapshot(options), new MinimumRandom(), new HideoutService(Snapshot(options)));
+    AssertTrue(road.TurnsSpent > strikes.TurnCostOf(AttackMethods.DriveBy), "the drive costs turns of its own");
+    AssertEqual(turnsBefore - road.TurnsSpent, attacker.Turns);
+    AssertTrue(road.Fare > 0, "and petrol and plates cost money");
+
+    // Nothing at all is due yet, so the tick leaves it alone.
+    AssertEqual(0, pending.ResolveDueAsync(now.AddMinutes(1), default).GetAwaiter().GetResult());
+    AssertEqual(PendingStrikeStatus.Outbound, road.Status);
+}
+
+/// <summary>
+/// The crew are decided against the house they find, not the one they left. This is the whole value of
+/// the warning: a defender who spends the notice on a bigger guard is answered by a harder strike.
+/// </summary>
+static void ALandingReadsTheHouseItFinds()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options, new AlwaysRandom());
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    // An infestation, because it is the one strike whose answer has no dice in it at all: what the
+    // medicine saves is arithmetic. So this measures the house rather than the roll - and buying
+    // medicine is precisely what a warning is for.
+    var attacker = Attacker(options);
+    attacker.Poison = 50;
+    var target = Defender(options);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    target.Hoes = 20;
+    target.Medicine = 0;
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.Infest), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(50, road.CommittedPoison);
+    AssertEqual(0, attacker.Poison);
+
+    // While the crew are on the road, the target spends the warning on the answer.
+    target.Medicine = 40;
+
+    var settled = pending.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertTrue(settled > 0, "a trip whose clock has run out is settled");
+    AssertEqual(PendingStrikeStatus.Returning, road.Status);
+    // Every hoe treated, because the medicine bought during the flight is the medicine they met.
+    AssertEqual(20, target.Hoes);
+    AssertTrue(target.Medicine < 40, "and the crates were spent doing it");
+    AssertTrue(db.CombatLogs.Any(x => x.AttackerId == attacker.Id), "written down like any other attack");
+
+    // Unused doses are still the attacker's, and drive home with the crew rather than evaporating.
+    AssertTrue(road.ReturningPoison > 0, "what they did not use is still theirs");
+    AssertEqual(0, attacker.Poison);
+    pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertTrue(attacker.Poison > 0, "and it is back on the shelf once they are");
+}
+
+/// <summary>
+/// Somebody else got there first. Not a bad roll and not the attacker's fault, so the load goes back in
+/// the boot - they keep the turns and the fare, which is what the trip actually cost.
+/// </summary>
+static void AShieldedLandingTurnsTheCrewRound()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options, coke: 500);
+    var target = Defender(options);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var perHoe = options.Strikes.Poach.CokePerHoe;
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.Poach, perHoe * 4), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(perHoe * 4, road.CommittedCoke);
+    AssertEqual(500 - perHoe * 4, attacker.Coke);
+
+    // Somebody else hits the house while the crew are driving.
+    target.StrikeProtectionUntilUtc = road.ArrivesAtUtc.AddMinutes(5);
+
+    pending.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual("Aborted", road.Outcome);
+    AssertEqual(perHoe * 4, road.ReturningCoke);
+    // Still on the road, not back in the store: it comes home when they do.
+    AssertEqual(500 - perHoe * 4, attacker.Coke);
+
+    pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(PendingStrikeStatus.Done, road.Status);
+    // Every unit of it, even though the store is nowhere near big enough to have accepted it as new
+    // stock. It was never new stock: it went out of that door and came back in the same week.
+    AssertEqual(500, attacker.Coke);
+    AssertEqual(20, target.Hoes);
+}
+
+/// <summary>
+/// What a crew took has to be driven home. A jacked car appearing in the garage the instant it was
+/// taken would be exactly the teleport the hideout's town exists to close.
+/// </summary>
+static void TheHaulComesHomeAtTheDoor()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    // A roll of nought lands every chance in the game, so the jacking succeeds and takes what it can.
+    var pending = CreatePendingStrikes(db, options, new AlwaysRandom());
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options);
+    var target = Defender(options, rides: 3);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    target.Thugs = 0;
+    target.Armoury = Armoury.Empty;
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.Jack), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    pending.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual("Victory", road.Outcome);
+    AssertTrue(road.ReturningRides > 0, "they got a car");
+    // Taken from the target's garage, but not yet parked in the attacker's - it is on a road somewhere.
+    AssertTrue(target.Rides < 3, "and it is gone from the target's garage");
+    AssertEqual(0, attacker.Rides);
+
+    pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(PendingStrikeStatus.Done, road.Status);
+    AssertTrue(attacker.Rides > 0, "and now it is home");
+}
+
+/// <summary>
+/// The lookout's second job. It buys notice and never detail, which is what keeps the warning a
+/// decision rather than an instruction: medicine, a bigger guard and a better cut are three different
+/// purchases and the warning does not say which one is wanted.
+/// </summary>
+static void ALookoutBuysNoticeAndNeverDetail()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options, rides: 2);
+    var target = Defender(options);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.DriveBy), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    // Blind by default. A house with no lookout never sees anybody coming, at any distance.
+    AssertEqual(0, pending.WarningMinutesFor(target.Hideout));
+    AssertTrue(!pending.AnythingInboundAsync(target, now, default).GetAwaiter().GetResult(),
+        "a house with no eyes on the street sees nothing");
+
+    // With eyes, the level is the lead time: nothing to see until they are close enough.
+    target.Hideout!.LookoutLevel = 1;
+    var notice = pending.WarningMinutesFor(target.Hideout);
+    AssertTrue(notice > 0, "a lookout is worth some notice");
+    AssertTrue(!pending.AnythingInboundAsync(target, now, default).GetAwaiter().GetResult(),
+        "a crew still hours out is nobody's problem yet");
+    AssertTrue(pending.AnythingInboundAsync(target, road.ArrivesAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult(),
+        "but a crew almost at the door is seen");
+
+    // A deeper room sees further, and a wrecked one sees nothing at all - which is most of why a raider
+    // wants to break it.
+    target.Hideout.LookoutLevel = 3;
+    AssertTrue(pending.WarningMinutesFor(target.Hideout) > notice, "a deeper room looks further down the road");
+    target.Hideout.SetWrecked(HideoutRooms.Lookout, now);
+    AssertEqual(0, pending.WarningMinutesFor(target.Hideout));
+    AssertTrue(!pending.AnythingInboundAsync(target, road.ArrivesAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult(),
+        "there is nobody in a wrecked lookout to do the watching");
 }
 
 static Player Rookie(GameOptions options) => new()

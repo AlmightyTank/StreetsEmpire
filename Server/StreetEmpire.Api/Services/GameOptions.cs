@@ -379,6 +379,64 @@ public sealed class StrikeOptions
     public JackOptions Jack { get; set; } = new();
     public InfestOptions Infest { get; set; } = new();
     public PoachOptions Poach { get; set; } = new();
+
+    /// <summary>What throwing one at a house in another town costs.</summary>
+    public StrikeDistanceOptions Distance { get; set; } = new();
+}
+
+/// <summary>
+/// The price of throwing a strike across the country.
+///
+/// Distance here is a town's own remoteness rather than a pair of towns, exactly as it is for travel
+/// and for mule runs: this map has no matrix and does not need one, because what makes New York far is
+/// New York. So the cost of hitting a place is a property of the place, and everybody pays the same to
+/// reach it.
+///
+/// The turn cost is deliberately mild. A cross-country drive-by should not approach the price of a
+/// raid - the thing that makes distance expensive is the clock and the warning it hands the target,
+/// not the turn bank.
+/// </summary>
+public sealed class StrikeDistanceOptions
+{
+    /// <summary>Whether a strike can leave its own town at all. Off makes every strike local.</summary>
+    public bool Allowed { get; set; } = true;
+
+    /// <summary>Extra turns per turn of distance, on top of the method's own cost.</summary>
+    public double TurnCostPerTravelTurn { get; set; } = 0.5;
+
+    /// <summary>
+    /// Petrol, plates, and somewhere to wait. Per turn of distance, and small: this is the cost that
+    /// stops a broke player throwing punches across the country, not the one that stops a rich one.
+    /// The clock does that.
+    /// </summary>
+    public long FarePerTravelTurn { get; set; } = 2_500;
+
+    /// <summary>
+    /// How many can be on the road at once. A cap rather than a crew commitment, because a strike does
+    /// not assign a crew the way a raid does and inventing one would make it a small raid.
+    /// </summary>
+    public int MaxInFlight { get; set; } = 3;
+
+    /// <summary>
+    /// How much of a loud strike's chance is lost per turn of distance. Strange streets, no bolt-hole,
+    /// and plates nobody recognises.
+    ///
+    /// Only the loud ones pay it - see <see cref="LoudMethods"/>. An infestation is one person being
+    /// quiet and a poach is money talking, and neither cares how far it drove.
+    /// </summary>
+    public double HitChancePenaltyPerTravelTurn { get; set; } = 0.03;
+
+    /// <summary>
+    /// The share of a failed away job that costs the car outright rather than risking it. A drive-by
+    /// that goes wrong in your own town is a fast drive home; one that goes wrong four states away is a
+    /// car left behind.
+    /// </summary>
+    public double RideImpoundChanceOnFailure { get; set; } = 0.5;
+
+    /// <summary>The strikes that suffer for the distance. The quiet ones are not on it.</summary>
+    public IReadOnlyList<string> LoudMethods => [AttackMethods.DriveBy, AttackMethods.Jack];
+
+    public bool IsLoud(string method) => LoudMethods.Contains(AttackMethods.Normalize(method));
 }
 
 public sealed class DriveByOptions
@@ -1248,9 +1306,13 @@ public sealed class HideoutOptions
         if (Lookout.Count == 0)
             Lookout =
             [
-                new LookoutLevelOptions { Level = 1, MinTier = 1, BustChanceReductionPercent = 25, UpgradeCost = 100_000 },
-                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, UpgradeCost = 390_000 },
-                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, UpgradeCost = 1_750_000 }
+                // The warning ladder is read against the map: a trip runs 12 to 36 minutes, so four
+                // minutes is a scramble at any distance, eight covers the near towns, and fifteen sees
+                // most of the country coming. Nobody ever gets the whole flight, because a room that
+                // guaranteed a full night's notice would end the decision it exists to create.
+                new LookoutLevelOptions { Level = 1, MinTier = 1, BustChanceReductionPercent = 25, WarningMinutes = 4, UpgradeCost = 100_000 },
+                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, WarningMinutes = 8, UpgradeCost = 390_000 },
+                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, WarningMinutes = 15, UpgradeCost = 1_750_000 }
             ];
 
         if (Intelligence.Count == 0)
@@ -2737,6 +2799,19 @@ public sealed class LookoutLevelOptions
 
     /// <summary>How much of an hour's raid chance the warning takes off. Never all of it.</summary>
     public int BustChanceReductionPercent { get; set; }
+
+    /// <summary>
+    /// How much notice the room gives of a crew coming in from out of town, in minutes.
+    ///
+    /// The lookout's second job, and the reason it stopped being the room nobody buys. It buys notice
+    /// and never detail: a player is told something is on its way and nothing else - not who, not what
+    /// kind - so the answer they reach for is a guess. Medicine, a bigger guard and a better cut are
+    /// three different purchases and only one of them is the right one.
+    ///
+    /// A ladder of minutes rather than a chance to spot it. A warning that sometimes does not arrive is
+    /// a warning nobody can plan around, and the whole value here is being able to plan.
+    /// </summary>
+    public int WarningMinutes { get; set; }
 
     public long UpgradeCost { get; set; }
 }

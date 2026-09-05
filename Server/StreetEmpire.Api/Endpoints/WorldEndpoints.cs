@@ -121,10 +121,12 @@ internal static class WorldEndpoints
         app.MapGet("/api/world/titles", async (
             TitleService titles,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             return Results.Ok(await titles.BoardAsync(now, ct));
         }).RequireAuthorization();
 
@@ -182,11 +184,13 @@ internal static class WorldEndpoints
             GameDbContext db,
             EconomyService economy,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             IOptionsSnapshot<GameOptions> gameOptions,
             CancellationToken ct) =>
         {
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
 
             var options = gameOptions.Value.WorldNews;
             var since = now.AddHours(-Math.Max(1, options.WindowHours));

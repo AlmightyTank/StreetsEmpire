@@ -84,6 +84,7 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();
 builder.Services.AddScoped<CombatService>();
 builder.Services.AddScoped<StreetStrikeService>();
+builder.Services.AddScoped<PendingStrikeService>();
 builder.Services.AddScoped<PrayerService>();
 builder.Services.AddScoped<TitleService>();
 builder.Services.AddScoped<AllianceService>();

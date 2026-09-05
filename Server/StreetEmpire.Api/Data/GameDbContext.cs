@@ -17,6 +17,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CombatMission> CombatMissions => Set<CombatMission>();
     public DbSet<CombatMissionEvent> CombatMissionEvents => Set<CombatMissionEvent>();
     public DbSet<Hideout> Hideouts => Set<Hideout>();
+    public DbSet<PendingStrike> PendingStrikes => Set<PendingStrike>();
     public DbSet<Pimp> Pimps => Set<Pimp>();
     public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
     public DbSet<GameSetting> GameSettings => Set<GameSetting>();
@@ -435,6 +436,39 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PendingStrike>(entity =>
+        {
+            // What the tick asks, every time anybody touches the game: whose trips are due. Status
+            // leads because the overwhelming majority of rows are finished ones nobody will read again.
+            entity.HasIndex(x => new { x.Status, x.ArrivesAtUtc });
+            entity.HasIndex(x => new { x.Status, x.ReturnsAtUtc });
+            // And what a lookout asks: is anything pointed at me.
+            entity.HasIndex(x => new { x.DefenderId, x.Status });
+            entity.Property(x => x.Method).HasMaxLength(16);
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.Outcome).HasMaxLength(16);
+            entity.Property(x => x.OriginCity).HasMaxLength(32);
+            entity.Property(x => x.TargetCity).HasMaxLength(32);
+            entity.Property(x => x.Summary).HasMaxLength(512);
+            entity.Property(x => x.CommittedCokePurity).HasPrecision(5, 4);
+            entity.Property(x => x.ReturningCokePurity).HasPrecision(5, 4);
+            entity.Ignore(x => x.IsInbound);
+            entity.Ignore(x => x.IsOut);
+
+            entity.HasOne(x => x.Attacker)
+                .WithMany()
+                .HasForeignKey(x => x.AttackerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The defender's leaving must not cascade into the attacker's rows twice over - Postgres
+            // refuses two cascade paths to one table - so a trip aimed at somebody who has gone is left
+            // to be tidied by the tick rather than deleted underneath it.
+            entity.HasOne(x => x.Defender)
+                .WithMany()
+                .HasForeignKey(x => x.DefenderId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<MarketListing>(entity =>

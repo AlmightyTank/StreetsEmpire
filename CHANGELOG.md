@@ -3,6 +3,41 @@
 ## 0.3.0
 
 ### Changed
+- **A strike can cross the country, and the drive is the mechanic.** Splitting the hideout out gave
+  every house a town, which left the four strikes hitting places their crew could not have reached.
+  They can reach them now, and what distance costs is not really the price - it is the warning.
+
+  A strike at a neighbour is what it always was: instant, and unanswerable. One at a house in another
+  town is a drive. The crew leave with what they need, arrive twelve to thirty-six minutes later
+  depending on how far the town is, and drive home again after that. Turns and a fare pay for the
+  road; what actually makes it a different thing is that the target has that long.
+
+  So the map has a shape now. Living among your rivals is dangerous - everyone can hit you the moment
+  they decide to. Living somewhere remote is safer and lonelier: you get notice, and every punch you
+  throw costs you a round trip.
+
+  What arrives is decided against the house it finds, not the house it left. A defender who spends
+  the warning on medicine is answered by an infestation that cures itself. Somebody who got there
+  first, an alliance formed mid-flight, or a target who has fallen out of your weight class all turn
+  the crew round at the door with the load still in the boot - they keep the turns and the fare,
+  because a wasted trip caused by somebody else's timing is not a bad roll.
+
+  Loud work suffers for the distance and quiet work does not. A drive-by and a jacking lose odds on
+  streets nobody knows, and a drive-by that goes wrong away from home is a car left behind rather than
+  a fast drive back. An infestation is one person being quiet and a poach is money talking, and
+  neither cares how far it came. And what a crew took has to be driven home: a jacked car is on a
+  motorway until they are back at their own door.
+
+  Heat is charged where the crime happened rather than where the criminal lives. Loud things in New
+  York are noticed by New York, wherever you are standing.
+
+- **The lookout stopped being the room nobody buys.** It shaves police odds as before, and now it also
+  watches the road. It buys notice and never detail: a player is told something is coming and nothing
+  else - not who, not what kind, not how long. Medicine, a bigger armed guard and a better cut answer
+  three different strikes and only one of them is right, so the guess is the decision. The level is
+  how far down the road it can see, from four minutes to fifteen; a house without one is blind, and so
+  is one whose lookout has been put through a wall.
+
 - **Travel moves the player, not the empire.** A hideout has a town of its own now. It used to have
   none at all, which meant it was implicitly wherever its owner was standing - so a flight to Las
   Vegas quietly carried the building, the shelves, the safe and the crew along with it, and looking at

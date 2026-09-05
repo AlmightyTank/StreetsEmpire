@@ -3057,6 +3057,8 @@ function OverviewPage(ctx: PageContext) {
   const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
     <div className="d-grid gap-3 align-items-start">
+      <InboundStrikePanel dashboard={dashboard} />
+      <StrikesOutPanel dashboard={dashboard} />
       <section className="card p-3 hero-panel d-grid align-content-between">
         <span className="eyebrow">Empire Snapshot</span>
         <h2 className="fs-1 my-2 mb-3">{dashboard.name}</h2>
@@ -8779,6 +8781,61 @@ function alertClass(alert: Alert) {
   return alert.isUnread ? `${base} bg-body-secondary` : base
 }
 
+/**
+ * Somebody is coming, and that is all anybody is telling you.
+ *
+ * The lookout's second job, and the panel is deliberately thin because the room is: it buys notice and
+ * never detail. Not who, not what kind, not how long. The four strikes have three different answers -
+ * medicine, a bigger guard, a better cut - and none of them is cheap, so which one to reach for is a
+ * guess and the guess is the whole decision.
+ *
+ * A house with no lookout never draws this at all. Blind is the default, and the room is what a player
+ * buys to stop being it.
+ */
+function InboundStrikePanel({ dashboard }: { dashboard: Dashboard }) {
+  if (!dashboard.strikeInbound) return null
+  return <section className="card p-3 border-danger" data-area="inbound">
+    <div className="panel-title"><h2>Somebody is coming</h2><span>Your lookout</span></div>
+    <p className="mb-0">
+      A crew you do not recognise is on the road into {dashboard.hideout.city}, and close. Your lookout
+      cannot tell you who they are or what they want &mdash; only that they are nearly here.
+    </p>
+    <p className="small text-body-secondary mb-0 mt-2">
+      Medicine answers an infestation, a bigger armed guard answers a drive-by or a jacking, and a
+      better cut answers a poach. There is not time for all four.
+    </p>
+  </section>
+}
+
+/**
+ * Your own crews on the road. Out is the half that has not happened yet; coming back is the half whose
+ * haul is still on a motorway somewhere rather than in your garage.
+ */
+function StrikesOutPanel({ dashboard }: { dashboard: Dashboard }) {
+  const out = dashboard.strikesOut ?? []
+  if (out.length === 0) return null
+  return <section className="card p-3" data-area="strikes-out">
+    <div className="panel-title">
+      <h2>On the road</h2>
+      <span>{out.length === 1 ? 'One crew' : `${number.format(out.length)} crews`} out</span>
+    </div>
+    <div className="d-grid gap-2">
+      {out.map(trip => <div key={trip.id} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded p-2">
+        <div className="min-w-0">
+          <strong className="text-capitalize">{trip.methodLabel}</strong>
+          <span className="text-body-secondary"> on {trip.targetName} in {trip.targetCity}</span>
+          <div className="small text-body-secondary">{trip.summary}</div>
+        </div>
+        <em className={trip.status === 'Outbound' ? 'text-warning' : 'text-body-secondary'}>
+          {trip.status === 'Outbound'
+            ? `Arrives in ${timeUntil(trip.arrivesAtUtc)}`
+            : `Home in ${timeUntil(trip.returnsAtUtc)}`}
+        </em>
+      </div>)}
+    </div>
+  </section>
+}
+
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
   return <section className="status-strip tnum d-grid gap-2 mb-3" data-area="status">
     <Stat label="Cash" value={money.format(dashboard.cash)} />
@@ -9634,12 +9691,19 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   // have thrown rather than a second opinion the page arrived at on its own.
   const strikeBlocker = method && profile ? profile.strikeBlockers?.[method.key] : undefined
   const isRaid = method?.key === 'raid'
+  // The drive, priced by the server against this exact pairing. Null when they are on your own
+  // streets, which is how the page tells a strike from a road trip without knowing the rule.
+  const trip = !isRaid ? profile?.strikeTrip ?? null : null
+  // A trip's turn price is the method's plus the drive, so the local number under the button is the
+  // wrong one the moment a target is out of town.
+  const strikeTurnCost = trip && method ? trip.turnCosts[method.key] ?? method.turnCost : method?.turnCost ?? 0
   // A strike is gated by the method's own requirements, which the server has already worked out, plus
   // the turns it costs. A raid is gated by crew, which only it commits.
   const methodBlocker = firstReason(
     !method && 'Pick how you want to hit them first.',
     method?.blockedReason,
-    !!method && dashboard.turns < method.turnCost && `${method.label} costs ${method.turnCost} turns and you have ${dashboard.turns}.`,
+    !!method && dashboard.turns < strikeTurnCost && `${method.label}${trip ? ` in ${trip.targetCity}` : ''} costs ${strikeTurnCost} turns and you have ${dashboard.turns}.`,
+    !!trip && spendable(dashboard) < trip.fare && `Getting a crew to ${trip.targetCity} and back costs ${money.format(trip.fare)} in petrol and plates.`,
     isRaid && raidBlocker,
     // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
     method?.key === 'poach' && poachCoke <= 0 && 'Set how much coke to put on the table first.',
@@ -9665,6 +9729,21 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   )
   return <div className="card p-3 gcol-full">
     <div className="panel-title" data-area="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
+    {/* A strike at a neighbour lands the moment it is pressed. One at a house across the country is a
+        drive, and a drive is a commitment now and an outcome later - which the page has to say before
+        the button rather than after it. */}
+    {trip && method && <div className="alert alert-warning d-grid gap-1 mb-3">
+      <strong>{trip.targetCity} is a drive.</strong>
+      <span className="small">
+        Your crew leave now and arrive in about {trip.minutesEachWay} minute(s), and are home again
+        {' '}{trip.minutesEachWay * 2} minute(s) after that. {strikeTurnCost} turns and
+        {' '}{money.format(trip.fare)} in petrol and plates.
+        {trip.hitChancePenaltyPercent > 0 && ` A ${method.label.toLowerCase()} is ${trip.hitChancePenaltyPercent}% harder on streets nobody knows.`}
+      </span>
+      <span className="small text-body-secondary">
+        Whatever is standing in that house when they get there is what they meet, not what is standing now.
+      </span>
+    </div>}
     <form className="d-grid gtc-1 gtc-md-1-auto-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
       <label className="field">Search<input className="form-control" value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
       <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY}>Search</Button>

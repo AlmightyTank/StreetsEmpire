@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, BlackjackBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, BlackjackAction, BlackjackBoard, BlackjackRound, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3920,12 +3920,33 @@ function CasinoGames({ game, onPick }: { game: CasinoGame, onPick: (game: Casino
   </div>
 }
 
-/** A card, in the two colours a deck comes in. */
-function PlayingCard({ card }: { card: string }) {
+const cardPips: Record<string, string> = { S: '\u2660', H: '\u2665', D: '\u2666', C: '\u2663' }
+
+/**
+ * A card off the shoe, drawn as a card.
+ *
+ * It deals itself in rather than appearing: the position in the hand sets a delay, so a hand arrives
+ * left to right the way the reels come down and the wheel comes round. The dealer's second card turns
+ * over instead, because that is the one card in the game whose arrival is the answer.
+ */
+function PlayingCard({ card, index = 0, flip = false, small = false }: {
+  card: string
+  index?: number
+  flip?: boolean
+  small?: boolean
+}) {
   const suit = card[1]
-  const pip = suit === 'S' ? '\u2660' : suit === 'H' ? '\u2665' : suit === 'D' ? '\u2666' : '\u2663'
-  return <span className={`playing-card ${suit === 'H' || suit === 'D' ? 'is-red' : 'is-black'}`}>
-    <strong>{card[0]}</strong><span aria-hidden="true">{pip}</span>
+  // A ten is written as one character in the shoe and two on a card.
+  const rank = card[0] === 'T' ? '10' : card[0]
+  const red = suit === 'H' || suit === 'D'
+  return <span
+    className={`playing-card ${red ? 'is-red' : 'is-black'} ${flip ? 'is-turning' : 'is-dealt'} ${small ? 'is-small' : ''}`}
+    // Capped, so the fourth card of a hand does not sit waiting three quarters of a second.
+    style={{ animationDelay: `${Math.min(index, 3) * 70}ms` }}
+    aria-label={`${rank} of ${suit === 'S' ? 'spades' : suit === 'H' ? 'hearts' : suit === 'D' ? 'diamonds' : 'clubs'}`}
+  >
+    <span className="playing-card-rank">{rank}</span>
+    <span className="playing-card-pip" aria-hidden="true">{cardPips[suit]}</span>
   </span>
 }
 
@@ -3941,6 +3962,10 @@ function BlackjackPanel(ctx: PageContext) {
   const [board, setBoard] = useState<BlackjackBoard | null>(null)
   const [tableKey, setTableKey] = useState('')
   const [bet, setBet] = useState(0)
+  // The board only ever carries a round that is still live, so the moment one settles it stops being
+  // there - and the hand would vanish at exactly the point the player wants to look at it. The last
+  // round an action returned is kept here and shown until the next deal replaces it.
+  const [finished, setFinished] = useState<BlackjackRound | null>(null)
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
@@ -3958,17 +3983,27 @@ function BlackjackPanel(ctx: PageContext) {
   }, [dashboard.playerId])
 
   const table = board?.tables.find(t => t.key === tableKey) ?? board?.tables.find(t => !t.locked) ?? board?.tables[0]
-  const round = board?.round ?? null
+  const round = board?.round ?? finished
 
-  const run = async (call: () => Promise<{ board: BlackjackBoard }>) => {
-    let next: { board: BlackjackBoard } | null = null
+  // Counted out once the dealer is done, the same way a slot win is. Nothing to read while the round
+  // is still live, so the target is nothing.
+  const settledRound = round && !round.inPlay ? round : null
+  const countedPayout = useCountUp(settledRound?.payout ?? 0, settledRound?.bet ?? 0, settledRound?.id ?? 0)
+  const countedNet = settledRound ? countedPayout - settledRound.bet : 0
+
+  const run = async (call: () => Promise<BlackjackAction>) => {
+    let next: BlackjackAction | null = null
     await act(async () => {
       const result = await call()
       next = result
       return result
     })
-    const settled = next as { board: BlackjackBoard } | null
-    if (settled) setBoard(settled.board)
+    const done = next as BlackjackAction | null
+    if (done) {
+      setBoard(done.board)
+      // A live round comes back on the board; a settled one only ever comes back here.
+      setFinished(done.round.inPlay ? null : done.round)
+    }
     await refresh()
   }
 
@@ -4028,15 +4063,18 @@ function BlackjackPanel(ctx: PageContext) {
 
       {round
         ? <div className="d-grid gap-3">
-            <div className="d-grid gap-1">
-              <small className="text-body-tertiary">
-                Dealer{round.inPlay ? ' shows' : ''} <strong>{round.dealerBest}</strong>{round.inPlay && ' and one down'}
-              </small>
-              <div className="d-flex flex-wrap gap-1 align-items-center">
-                {round.dealerCards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
-                {round.inPlay && <span className="playing-card is-down" aria-label="Face down" />}
+            <div className="blackjack-felt d-grid gap-3 rounded p-3">
+              <div className="d-grid gap-1">
+                <small className="text-body-tertiary">
+                  Dealer{round.inPlay ? ' shows' : ''} <strong>{round.dealerBest}</strong>{round.inPlay && ' and one down'}
+                </small>
+                <div className="d-flex flex-wrap gap-1 align-items-center">
+                  {round.dealerCards.map((card, i) =>
+                    // The hole card is the one that turns over, and it only ever mounts at the reveal.
+                    <PlayingCard card={card} index={i} flip={!round.inPlay && i === 1} key={`${card}-${i}`} />)}
+                  {round.inPlay && <span className="playing-card is-down" aria-label="Face down" />}
+                </div>
               </div>
-            </div>
 
             {/* One hand usually, several after a split, and the one being played is ringed. */}
             <div className="d-grid gap-2">
@@ -4054,7 +4092,7 @@ function BlackjackPanel(ctx: PageContext) {
                   </span>}
                 </small>
                 <div className="d-flex flex-wrap gap-1">
-                  {hand.cards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
+                  {hand.cards.map((card, i) => <PlayingCard card={card} index={i} key={`${card}-${i}`} />)}
                 </div>
 
                 {hand.isActive && <div className="control-row mt-1">
@@ -4072,15 +4110,16 @@ function BlackjackPanel(ctx: PageContext) {
                   >Split {money.format(hand.bet)}</Button>}
                 </div>}
               </div>)}
+              </div>
             </div>
 
             {!round.inPlay && <div className={`border rounded p-3 ${round.netResult > 0 ? 'border-success' : 'border-secondary'}`}>
               <div className="d-flex justify-content-between gap-3 align-items-baseline">
                 <strong>{round.hands.length > 1 ? `${round.hands.length} hands` : verdictOf(round.status)}</strong>
-                <span className={`tnum ${round.netResult > 0 ? 'text-success' : 'text-body-secondary'}`}>{signedMoney(round.netResult)}</span>
+                <span className={`tnum ${round.netResult > 0 ? 'text-success' : 'text-body-secondary'}`}>{signedMoney(countedNet)}</span>
               </div>
               <small className="text-body-tertiary">
-                Dealer {round.dealerBest} against {round.hands.map(h => h.best).join(', ')}. {money.format(round.bet)} down, {money.format(round.payout)} back.
+                Dealer {round.dealerBest} against {round.hands.map(h => h.best).join(', ')}. {money.format(round.bet)} down, {money.format(countedPayout)} back.
               </small>
             </div>}
           </div>
@@ -4117,10 +4156,10 @@ function BlackjackPanel(ctx: PageContext) {
                 {board.recent.map(row => <tr key={row.id}>
                   <td>{row.tableName}</td>
                   <td><span className="d-grid gap-1">{row.hands.map((h, hi) => <span className="d-inline-flex gap-1 align-items-center" key={hi}>
-                    {h.cards.map((c, i) => <PlayingCard card={c} key={i} />)}
+                    {h.cards.map((c, i) => <PlayingCard card={c} small key={i} />)}
                     <span className="text-body-tertiary ms-1">{h.best}</span>
                   </span>)}</span></td>
-                  <td><span className="d-inline-flex gap-1 align-items-center">{row.dealerCards.map((c, i) => <PlayingCard card={c} key={i} />)}<span className="text-body-tertiary ms-1">{row.dealerBest}</span></span></td>
+                  <td><span className="d-inline-flex gap-1 align-items-center">{row.dealerCards.map((c, i) => <PlayingCard card={c} small key={i} />)}<span className="text-body-tertiary ms-1">{row.dealerBest}</span></span></td>
                   <td>{row.status.replace('_', ' ')}</td>
                   <td>{money.format(row.bet)}</td>
                   <td className={row.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(row.netResult)}</td>

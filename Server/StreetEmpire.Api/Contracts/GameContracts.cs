@@ -28,6 +28,69 @@ public sealed record SlotSpinRequest(string? MachineKey, long Bet, int Paylines 
 
 public sealed record ClaimCompRequest(string? RewardKey);
 
+public sealed record BlackjackDealRequest(string? TableKey, long Bet);
+
+/// <param name="DealerCards">
+/// What the dealer is showing. While a hand is live this is the up card alone - the hole card is dealt
+/// at the same time as everything else and simply never leaves the server until the hand is over.
+/// </param>
+/// <param name="DealerBest">Read off the cards above, so it gives nothing away either.</param>
+public sealed record BlackjackHandView(
+    long Id,
+    string TableKey,
+    long Bet,
+    IReadOnlyList<string> PlayerCards,
+    int PlayerBest,
+    bool PlayerSoft,
+    IReadOnlyList<string> DealerCards,
+    int DealerBest,
+    bool InPlay,
+    string Status,
+    long Payout,
+    long NetResult,
+    bool CanDouble);
+
+public sealed record BlackjackTableResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    long MinBet,
+    long MaxBet,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record BlackjackRowResponse(
+    long Id,
+    string TableKey,
+    string TableName,
+    IReadOnlyList<string> PlayerCards,
+    int PlayerBest,
+    IReadOnlyList<string> DealerCards,
+    int DealerBest,
+    string Status,
+    long Bet,
+    long Payout,
+    long NetResult,
+    DateTime SettledAtUtc);
+
+public sealed record BlackjackBoardResponse(
+    bool Enabled,
+    IReadOnlyList<BlackjackTableResponse> Tables,
+    int HandTurnCost,
+    bool DealerHitsSoft17,
+    int BlackjackPaysNumerator,
+    int BlackjackPaysDenominator,
+    BlackjackHandView? Hand,
+    IReadOnlyList<BlackjackRowResponse> Recent);
+
+public sealed record BlackjackActionResponse(
+    BlackjackHandView Hand,
+    long Cash,
+    long Turns,
+    BlackjackBoardResponse Board);
+
 public sealed record RouletteBetRequest(string Kind, string? Value, long Amount);
 
 public sealed record RouletteSpinRequest(string? TableKey, IReadOnlyList<RouletteBetRequest>? Bets);

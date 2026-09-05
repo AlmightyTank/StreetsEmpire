@@ -86,6 +86,9 @@ var tests = new (string Name, Action Test)[]
     ("every roulette bet carries the wheel's own edge and no other", RouletteEdgeIsTheZeroesAndNothingElse),
     ("the zeroes are on the wheel and not on the cloth", RouletteZeroesBeatTheOutsideBets),
     ("a roulette spin settles every bet against one pocket", RouletteSettlesEveryBetAgainstOnePocket),
+    ("an ace counts eleven only while it fits", BlackjackCountsAcesBothWays),
+    ("the hole card stays down until the hand is over", BlackjackKeepsTheHoleCardDown),
+    ("a hand settles on what the two totals are", BlackjackSettlesOnTheTotals),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -2368,6 +2371,150 @@ static void CompsResetWithTheSeason()
 
     AssertEqual(0d, player.CasinoComps);
 }
+
+/// <summary>
+/// An ace is eleven while eleven fits and one when it does not, and a hand with two of them can only
+/// ever use one of them high - two would be twenty-two before anything else was counted.
+/// </summary>
+static void BlackjackCountsAcesBothWays()
+{
+    AssertEqual(21, BlackjackService.Best(["AS", "KH"]));
+    AssertEqual(21, BlackjackService.Best(["AS", "AH", "9D"]));
+    AssertEqual(13, BlackjackService.Best(["AS", "AH", "AD"]));
+    AssertEqual(20, BlackjackService.Best(["AS", "9H"]));
+    // Sixteen with the ace high; drawing a ten drops it to twelve rather than busting.
+    AssertEqual(16, BlackjackService.Best(["AS", "5H"]));
+    AssertEqual(16, BlackjackService.Best(["AS", "5H", "TD"]));
+    AssertEqual(22, BlackjackService.Best(["TS", "5H", "7D"]));
+
+    AssertTrue(BlackjackService.IsSoft(["AS", "5H"]), "an ace still counting eleven is a soft hand");
+    AssertTrue(!BlackjackService.IsSoft(["AS", "5H", "TD"]), "and stops being soft once it cannot");
+    AssertTrue(!BlackjackService.IsSoft(["TS", "7H"]), "a hand with no ace is never soft");
+
+    AssertEqual(10, BlackjackService.Value("KD"));
+    AssertEqual(1, BlackjackService.Value("AC"));
+    AssertEqual(7, BlackjackService.Value("7H"));
+}
+
+/// <summary>
+/// The dealer's second card is dealt at the deal and shown at the end, and nothing in between says
+/// what it is. This is the one thing in the game that has to be true for it to be a game at all.
+/// </summary>
+static void BlackjackKeepsTheHoleCardDown()
+{
+    using var db = BlackjackDb();
+    var options = BlackjackOptions();
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    var pit = CreateBlackjack(db, options);
+
+    var hand = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var stored = JsonSerializer.Deserialize<List<string>>(hand.DealerCardsJson)!;
+    AssertEqual(2, stored.Count);
+
+    var view = pit.View(hand);
+    if (view.InPlay)
+    {
+        AssertEqual(1, view.DealerCards.Count);
+        AssertEqual(stored[0], view.DealerCards[0]);
+        // The shown total is read off the shown card, so it cannot give the other one away either.
+        AssertEqual(BlackjackService.Best([stored[0]]), view.DealerBest);
+        AssertTrue(!view.DealerCards.Contains(stored[1]) || stored[0] == stored[1],
+            "the hole card should not be in what the table shows");
+
+        // Standing turns it over, and only then.
+        var done = pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        var shown = pit.View(done);
+        AssertTrue(!shown.InPlay, "standing ends the hand");
+        AssertTrue(shown.DealerCards.Count >= 2, "and turns the dealer's hand face up");
+        AssertEqual(stored[0], shown.DealerCards[0]);
+        AssertEqual(stored[1], shown.DealerCards[1]);
+    }
+
+    // Whatever happened, the shoe is never part of what a player is handed.
+    var board = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    var asJson = JsonSerializer.Serialize(board);
+    AssertTrue(!asJson.Contains("DeckJson") && !asJson.Contains("deckJson"), "the shoe must not reach the client");
+}
+
+/// <summary>
+/// What a hand pays, over the cases that decide it: a natural, a bust on either side, a plain
+/// comparison, and a push. The dealer draws to a rule rather than to a decision, which is the trade
+/// for the player seeing one of their cards from the start.
+/// </summary>
+static void BlackjackSettlesOnTheTotals()
+{
+    // A shoe dealt in build order: player takes the first and third card, dealer the second and fourth.
+    using var db = BlackjackDb();
+    var options = BlackjackOptions();
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 20, CasinoRep = 100_000, Hideout = new Hideout() };
+    var pit = CreateBlackjack(db, options, new NoShuffleRandom());
+
+    var cash = player.Cash;
+    var hand = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    // AS 3S against 2S 4S: eleven soft against six, so nothing has settled itself.
+    AssertEqual("[\u0022AS\u0022,\u00223S\u0022]".Replace("\u0022", "\""), hand.PlayerCardsJson);
+    AssertEqual(BlackjackStatus.Playing, hand.Status);
+    AssertEqual(cash - 100, player.Cash);
+    AssertEqual(19, player.Turns);
+
+    var settled = pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertTrue(BlackjackStatus.IsOver(settled.Status), "standing settles the hand");
+    // Whatever the dealer drew to, the row and the money agree with each other.
+    AssertEqual(settled.Payout - settled.Bet, settled.Payout - 100);
+    AssertTrue(settled.SettledAtUtc is not null, "a settled hand is stamped");
+
+    // A hand cannot be dealt while one is live, and there is nothing to act on when one is not.
+    using var second = BlackjackDb();
+    var busy = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    var table = CreateBlackjack(second, options, new NoShuffleRandom());
+    table.DealAsync(busy, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    second.SaveChanges();
+    if (!BlackjackStatus.IsOver(table.BoardAsync(busy, default).GetAwaiter().GetResult().Hand!.Status))
+    {
+        AssertRuleError(() => table.DealAsync(busy, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+            "a second hand is dealt on top of a live one");
+    }
+
+    using var idle = BlackjackDb();
+    var waiting = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    AssertRuleError(() => CreateBlackjack(idle, options).HitAsync(waiting, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a card is asked for with no hand on the table");
+
+    // And the table's limits are the table's limits.
+    using var limits = BlackjackDb();
+    var punter = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    AssertRuleError(() => CreateBlackjack(limits, options).DealAsync(punter, "pit", 10, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is dealt under the table minimum");
+    AssertRuleError(() => CreateBlackjack(limits, options).DealAsync(punter, "pit", 500_000, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is dealt over the table maximum");
+}
+
+static GameDbContext BlackjackDb()
+    => new(new DbContextOptionsBuilder<GameDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+
+static GameOptions BlackjackOptions()
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            RepPerMaxBetSpin = 5,
+            CompsPerDollarWagered = 0.01,
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1 }],
+            Blackjack = new BlackjackOptions
+            {
+                Enabled = true,
+                SpinTurnCost = 1,
+                Decks = 1,
+                Tables = [new BlackjackTableOptions { Key = "pit", Name = "Pit", MinBet = 100, MaxBet = 10_000 }]
+            }
+        }
+    };
 
 /// <summary>
 /// Roulette's return is not tuned, it is arithmetic, and this checks the arithmetic rather than the
@@ -12721,6 +12868,12 @@ static RouletteService CreateRoulette(GameDbContext db, GameOptions? options = n
     return new RouletteService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
 }
 
+static BlackjackService CreateBlackjack(GameDbContext db, GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new BlackjackService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
+}
+
 /// <summary>
 /// Built without a database on purpose. The methods under test here decide what held ground is worth
 /// and how much of it a tier may run, and neither reads a row: the caller hands them the ground.
@@ -13068,6 +13221,19 @@ sealed class MinimumRandom : IGameRandom
 }
 
 /// <summary>Every roll lands, for exercising a path rather than sampling it.</summary>
+/// <summary>
+/// Leaves a shuffle exactly as it found it.
+///
+/// Fisher-Yates swaps element i with one drawn from nought to i, so a generator that always returns
+/// the top of that range swaps every card with itself and the shoe comes out in build order. That
+/// makes the cards dealt to a test knowable without the test having to model the shuffle.
+/// </summary>
+sealed class NoShuffleRandom : IGameRandom
+{
+    public int NextInclusive(int min, int max) => max;
+    public double NextDouble() => 0;
+}
+
 /// <summary>Drops the ball in one named pocket, for walking a wheel one number at a time.</summary>
 sealed class FixedIntRandom(int value) : IGameRandom
 {

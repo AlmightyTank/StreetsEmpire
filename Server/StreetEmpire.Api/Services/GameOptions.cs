@@ -1925,6 +1925,7 @@ public sealed class CasinoOptions
     public CasinoJackpotOptions Jackpot { get; set; } = new();
     public CasinoFreeSpinOptions FreeSpins { get; set; } = new();
     public RouletteOptions Roulette { get; set; } = new();
+    public BlackjackOptions Blackjack { get; set; } = new();
     public List<CasinoRepLevelOptions> Levels { get; set; } = [];
     public List<SlotMachineOptions> SlotMachines { get; set; } = [];
     public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
@@ -2101,6 +2102,7 @@ public sealed class CasinoOptions
         }
 
         Roulette.ApplyDefaultsWhereEmpty();
+        Blackjack.ApplyDefaultsWhereEmpty();
 
         if (SlotSymbols.Count == 0)
         {
@@ -2223,6 +2225,84 @@ public sealed class RouletteOptions
             }
         ];
     }
+}
+
+/// <summary>
+/// The pit.
+///
+/// Blackjack is the only game here that can be played badly, and therefore the only one whose return
+/// is a range rather than a number: somewhere near 99.5% played correctly and a good deal worse
+/// otherwise. That makes it the best thing on the floor for anybody willing to learn it, which is the
+/// reason it sits behind the most standing of any game in the casino.
+/// </summary>
+public sealed class BlackjackOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>What a hand costs in turns, charged on the deal rather than on each card.</summary>
+    public int SpinTurnCost { get; set; } = 1;
+
+    /// <summary>How many decks go in the shoe. Shuffled fresh every hand, so counting them is idle.</summary>
+    public int Decks { get; set; } = 6;
+
+    /// <summary>
+    /// Whether the dealer takes another card on a seventeen that still counts an ace as eleven.
+    /// Worth about two tenths of a percent to the house, and the difference between the two rules
+    /// most tables in the world advertise on the felt.
+    /// </summary>
+    public bool DealerHitsSoft17 { get; set; }
+
+    /// <summary>
+    /// What a natural pays, as a fraction. Three to two is the honest number; the six to five a lot of
+    /// real floors quietly moved to costs a player over a percent and is why it is configuration.
+    /// </summary>
+    public int BlackjackPaysNumerator { get; set; } = 3;
+    public int BlackjackPaysDenominator { get; set; } = 2;
+
+    public List<BlackjackTableOptions> Tables { get; set; } = [];
+
+    public BlackjackTableOptions? Table(string? key)
+        => Tables.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (Tables.Count > 0) return;
+
+        Tables =
+        [
+            new BlackjackTableOptions
+            {
+                Key = "pit",
+                Name = "The Pit",
+                Blurb = "Six decks, a dealer who stands on everything, and no help at all.",
+                MinBet = 100,
+                MaxBet = 10_000,
+                MinCasinoRepLevel = 2,
+                MinNetWorth = 50_000
+            },
+            new BlackjackTableOptions
+            {
+                Key = "high",
+                Name = "The High Table",
+                Blurb = "One hand at a time and nobody watching the clock.",
+                MinBet = 5_000,
+                MaxBet = 250_000,
+                MinCasinoRepLevel = 4,
+                MinNetWorth = 2_500_000
+            }
+        ];
+    }
+}
+
+public sealed class BlackjackTableOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+    public long MinBet { get; set; } = 100;
+    public long MaxBet { get; set; } = 10_000;
+    public int MinCasinoRepLevel { get; set; } = 1;
+    public long MinNetWorth { get; set; }
 }
 
 public sealed class RouletteTableOptions

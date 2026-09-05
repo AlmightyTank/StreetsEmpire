@@ -73,6 +73,7 @@ builder.Services.AddScoped<TraderJobService>();
 builder.Services.AddScoped<TraderShelfService>();
 builder.Services.AddScoped<CasinoService>();
 builder.Services.AddScoped<RouletteService>();
+builder.Services.AddScoped<BlackjackService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 // Singleton for the same reason the standings gate is: it exists to stop every request in a busy

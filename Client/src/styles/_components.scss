@@ -1259,6 +1259,32 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
+// A card off the shoe. Small enough that a settled hand fits in a table row.
+.playing-card {
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 1px;
+  min-inline-size: 30px;
+  padding: .15rem .3rem;
+  border: 1px solid $line;
+  border-radius: $border-radius-sm;
+  background: $ink;
+  color: $void;
+  font-size: .78rem;
+  line-height: 1.2;
+
+  &.is-red { color: $bad; }
+  &.is-black { color: $void; }
+
+  // The one the dealer has not turned over.
+  &.is-down {
+    min-block-size: 22px;
+    background: repeating-linear-gradient(45deg, rgba($gold, .3) 0 3px, $surface-deep 3px 6px);
+    border-color: rgba($gold, .4);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // The wheel
 // -----------------------------------------------------------------------------

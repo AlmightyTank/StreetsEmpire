@@ -3,6 +3,24 @@
 ## 0.3.0
 
 ### Added
+- **Blackjack, in a pit of two tables.** Hit, stand and double against a dealer who draws to a rule
+  rather than a decision. Six decks, shuffled fresh every hand so there is nothing to count, a natural
+  paying three to two, and a dealer standing on a soft seventeen - all of it configuration, because
+  the six-to-five a lot of real floors quietly moved to costs a player over a percent and that should
+  be visible rather than assumed.
+
+  It is the only game on the floor that can be played badly, and so the only one whose return is a
+  range rather than a number: a shade under 100% played correctly and a good deal worse otherwise.
+  That makes it the best thing in the casino for anybody willing to learn it, which is why the cheap
+  table wants Regular and the high one wants House Name.
+
+  A hand lives in the database while it is live, because everything that decides it - the shoe and the
+  card the dealer has face down - has to sit somewhere the player cannot read. The hole card is dealt
+  at the deal and simply never leaves the server until the hand is over; even the dealer's total is
+  read off the card that is showing.
+
+  No splitting, insurance or surrender yet. Hit, stand and double is the game with its decisions in
+  it; the rest are refinements on top.
 - **Roulette, on two wheels.** A cloth with every number on it, the outside bets down the side, and as
   many chips on it at once as the croupier will take. Every bet settles against one pocket, which is
   what makes covering the board a way to lose steadily rather than a clever idea.

@@ -5,7 +5,7 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, BlackjackBoard, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -3384,7 +3384,7 @@ function CasinoPage(ctx: PageContext) {
   const [anticipating, setAnticipating] = useState(false)
   const spinning = stoppedColumns < slotColumns
   const [compNote, setCompNote] = useState('')
-  const [game, setGame] = useState<'slots' | 'roulette'>('slots')
+  const [game, setGame] = useState<CasinoGame>('slots')
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
@@ -3534,9 +3534,9 @@ function CasinoPage(ctx: PageContext) {
   // Richest first off the paytable, so an idle reel shows the room's own faces.
   const activeFaces = active.paytable.map(pay => pay.label)
 
-  if (game === 'roulette') return <div className="d-grid gap-3">
+  if (game !== 'slots') return <div className="d-grid gap-3">
     <CasinoGames game={game} onPick={setGame} />
-    <RoulettePanel {...ctx} />
+    {game === 'roulette' ? <RoulettePanel {...ctx} /> : <BlackjackPanel {...ctx} />}
   </div>
 
   return <div className="d-grid gtc-1 gtc-xl-split-135 gap-3 align-items-start">
@@ -3898,17 +3898,212 @@ function RouletteWheel({ order, red, rotation, turning }: {
   </div>
 }
 
-function CasinoGames({ game, onPick }: { game: 'slots' | 'roulette', onPick: (game: 'slots' | 'roulette') => void }) {
+type CasinoGame = 'slots' | 'roulette' | 'blackjack'
+
+const casinoGameNames: Record<CasinoGame, string> = {
+  slots: 'Slots',
+  roulette: 'Roulette',
+  blackjack: 'Blackjack',
+}
+
+function CasinoGames({ game, onPick }: { game: CasinoGame, onPick: (game: CasinoGame) => void }) {
   return <div className="btn-group" role="group" aria-label="Casino games">
-    {(['slots', 'roulette'] as const).map(key =>
+    {(['slots', 'roulette', 'blackjack'] as const).map(key =>
       <button
         className={`btn ${game === key ? 'btn-primary' : 'btn-secondary'}`}
         type="button"
         onClick={() => onPick(key)}
         key={key}
       >
-        {key === 'slots' ? 'Slots' : 'Roulette'}
+        {casinoGameNames[key]}
       </button>)}
+  </div>
+}
+
+/** A card, in the two colours a deck comes in. */
+function PlayingCard({ card }: { card: string }) {
+  const suit = card[1]
+  const pip = suit === 'S' ? '\u2660' : suit === 'H' ? '\u2665' : suit === 'D' ? '\u2666' : '\u2663'
+  return <span className={`playing-card ${suit === 'H' || suit === 'D' ? 'is-red' : 'is-black'}`}>
+    <strong>{card[0]}</strong><span aria-hidden="true">{pip}</span>
+  </span>
+}
+
+/**
+ * The pit.
+ *
+ * The only screen in the casino where the game waits on the player rather than the other way round, so
+ * the whole of it is about which buttons are live: what the table will let you do with the hand in
+ * front of you is the game.
+ */
+function BlackjackPanel(ctx: PageContext) {
+  const { dashboard, busy, refresh, act } = ctx
+  const [board, setBoard] = useState<BlackjackBoard | null>(null)
+  const [tableKey, setTableKey] = useState('')
+  const [bet, setBet] = useState(0)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let live = true
+    void api.blackjack()
+      .then(next => {
+        if (!live) return
+        setBoard(next)
+        const open = next.tables.find(t => !t.locked) ?? next.tables[0]
+        if (open) { setTableKey(open.key); setBet(open.minBet) }
+        setLoadError('')
+      })
+      .catch(error => { if (live) setLoadError((error as Error).message) })
+    return () => { live = false }
+  }, [dashboard.playerId])
+
+  const table = board?.tables.find(t => t.key === tableKey) ?? board?.tables.find(t => !t.locked) ?? board?.tables[0]
+  const hand = board?.hand ?? null
+
+  const run = async (call: () => Promise<{ board: BlackjackBoard }>) => {
+    let next: { board: BlackjackBoard } | null = null
+    await act(async () => {
+      const result = await call()
+      next = result
+      return result
+    })
+    const settled = next as { board: BlackjackBoard } | null
+    if (settled) setBoard(settled.board)
+    await refresh()
+  }
+
+  if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Blackjack</h2><span>Closed</span></div><p>{loadError}</p></section>
+  if (!board || !table) return <section className="card p-3"><div className="panel-title"><h2>Blackjack</h2><span>Loading</span></div><p>The dealer is breaking a new shoe.</p></section>
+  if (!board.enabled) return <section className="card p-3"><div className="panel-title"><h2>Blackjack</h2><span>Shut</span></div><p>The blackjack pit is shut.</p></section>
+
+  const clamped = Math.min(Math.max(bet, table.minBet), table.maxBet)
+  const dealBlocked = firstReason(
+    busy && BUSY,
+    hand?.inPlay && 'Finish the hand in front of you.',
+    table.locked && (table.lockedReason ?? 'That table is closed to you.'),
+    dashboard.turns < board.handTurnCost && `A hand is ${board.handTurnCost} turn${board.handTurnCost === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
+    dashboard.cash < clamped && `You are carrying ${money.format(dashboard.cash)}.`,
+  )
+
+  const verdict = !hand || hand.inPlay ? null
+    : hand.status === 'blackjack' ? 'Blackjack'
+    : hand.status === 'bust' ? 'Bust'
+    : hand.status === 'dealer_bust' ? 'Dealer bust'
+    : hand.status === 'won' ? 'You take it'
+    : hand.status === 'push' ? 'Push'
+    : 'The house takes it'
+
+  return <div className="d-grid gap-3">
+    <section className="card p-3">
+      <div className="panel-title"><h2>Blackjack</h2><span>{dashboard.city}</span></div>
+      <p className="text-body-secondary mb-0">
+        The only game here you can play badly, and so the only one worth learning. The dealer
+        {board.dealerHitsSoft17 ? ' hits' : ' stands on'} a soft seventeen, a natural pays
+        {' '}{board.blackjackPaysNumerator} to {board.blackjackPaysDenominator}, and the shoe is
+        shuffled every hand so there is nothing to count.
+      </p>
+      <div className="d-grid gtc-fill-220 gap-2 mt-3">
+        {board.tables.map(t => <button
+          className={`tile d-grid gap-1 text-start border rounded p-2 ${t.key === table.key ? 'active border-primary' : 'bg-body-tertiary'} ${t.locked ? 'opacity-75' : ''}`}
+          type="button"
+          disabled={busy || !!hand?.inPlay}
+          onClick={() => { setTableKey(t.key); setBet(t.minBet) }}
+          key={t.key}
+        >
+          <strong className="text-body">{t.name}</strong>
+          <small className="text-body-tertiary small">{money.format(t.minBet)}-{money.format(t.maxBet)}</small>
+          {t.locked
+            ? <small className="text-warning small">{t.lockedReason}</small>
+            : <small className="text-primary small">{t.blurb}</small>}
+        </button>)}
+      </div>
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>{table.name}</h2><span>{money.format(table.minBet)} min</span></div>
+
+      {hand
+        ? <div className="d-grid gap-3">
+            <div className="d-grid gap-1">
+              <small className="text-body-tertiary">
+                Dealer{hand.inPlay ? ' shows' : ''} <strong>{hand.dealerBest}</strong>{hand.inPlay && ' and one down'}
+              </small>
+              <div className="d-flex flex-wrap gap-1 align-items-center">
+                {hand.dealerCards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
+                {hand.inPlay && <span className="playing-card is-down" aria-label="Face down" />}
+              </div>
+            </div>
+
+            <div className="d-grid gap-1">
+              <small className="text-body-tertiary">
+                You have <strong>{hand.playerBest}</strong>{hand.playerSoft && ' soft'} for {money.format(hand.bet)}
+              </small>
+              <div className="d-flex flex-wrap gap-1">
+                {hand.playerCards.map((card, i) => <PlayingCard card={card} key={`${card}-${i}`} />)}
+              </div>
+            </div>
+
+            {hand.inPlay
+              ? <div className="control-row">
+                  <Button className="btn btn-primary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('hit'))}>Hit</Button>
+                  <Button className="btn btn-secondary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('stand'))}>Stand</Button>
+                  <Button
+                    className="btn btn-secondary"
+                    blocked={firstReason(busy && BUSY, !hand.canDouble && 'Doubling is for the first two cards.', dashboard.cash < hand.bet && `Doubling is another ${money.format(hand.bet)}.`)}
+                    onClick={() => void run(() => api.blackjackMove('double'))}
+                  >Double {money.format(hand.bet)}</Button>
+                </div>
+              : <div className={`border rounded p-3 ${hand.netResult > 0 ? 'border-success' : hand.netResult === 0 ? 'border-secondary' : 'border-secondary'}`}>
+                  <div className="d-flex justify-content-between gap-3 align-items-baseline">
+                    <strong>{verdict}</strong>
+                    <span className={`tnum ${hand.netResult > 0 ? 'text-success' : 'text-body-secondary'}`}>{signedMoney(hand.netResult)}</span>
+                  </div>
+                  <small className="text-body-tertiary">You {hand.playerBest}, dealer {hand.dealerBest}.</small>
+                </div>}
+          </div>
+        : <p className="text-body-tertiary">Nothing dealt. Put a bet up and the dealer will take it.</p>}
+
+      {!hand?.inPlay && <div className="control-row mt-3">
+        <label className="field">Bet
+          <input
+            className="form-control"
+            type="number"
+            min={table.minBet}
+            max={table.maxBet}
+            step={table.minBet}
+            value={bet}
+            onChange={event => setBet(Number(event.target.value))}
+          />
+        </label>
+        <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(table.minBet)}>Min</button>
+        <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(Math.min(table.maxBet, dashboard.cash))}>Max</button>
+        <Button className="btn btn-primary" blocked={dealBlocked} onClick={() => void run(() => api.blackjackDeal(table.key, clamped))}>
+          Deal {money.format(clamped)}{board.handTurnCost > 0 && ` / ${board.handTurnCost}t`}
+        </Button>
+      </div>}
+    </section>
+
+    <section className="card p-3">
+      <div className="panel-title"><h2>Pit Ledger</h2><span>Recent hands</span></div>
+      {board.recent.length === 0
+        ? <p className="text-body-tertiary mb-0">No hands yet.</p>
+        : <div className="table-responsive">
+            <table className="table table-sm game-table align-middle mb-0">
+              <thead><tr><th>Table</th><th>You</th><th>Dealer</th><th>Result</th><th>Bet</th><th>Net</th><th>When</th></tr></thead>
+              <tbody>
+                {board.recent.map(row => <tr key={row.id}>
+                  <td>{row.tableName}</td>
+                  <td><span className="d-inline-flex gap-1 align-items-center">{row.playerCards.map((c, i) => <PlayingCard card={c} key={i} />)}<span className="text-body-tertiary ms-1">{row.playerBest}</span></span></td>
+                  <td><span className="d-inline-flex gap-1 align-items-center">{row.dealerCards.map((c, i) => <PlayingCard card={c} key={i} />)}<span className="text-body-tertiary ms-1">{row.dealerBest}</span></span></td>
+                  <td>{row.status.replace('_', ' ')}</td>
+                  <td>{money.format(row.bet)}</td>
+                  <td className={row.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(row.netResult)}</td>
+                  <td>{new Date(row.settledAtUtc).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>}
+    </section>
   </div>
 }
 

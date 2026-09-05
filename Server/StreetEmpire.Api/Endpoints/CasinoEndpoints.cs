@@ -77,6 +77,90 @@ internal static class CasinoEndpoints
             }
         }).RequireAuthorization();
 
+        app.MapGet("/api/game/casino/blackjack", async (
+            CurrentPlayerService current,
+            BlackjackService blackjack,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            return player is null
+                ? Results.Unauthorized()
+                : Results.Ok(await blackjack.BoardAsync(player, ct));
+        }).RequireAuthorization();
+
+        // Deal, hit, stand and double all end the same way: save, then hand back the hand as the table
+        // shows it. Only the deal takes a stake and a turn, so only it needs the clock advanced first.
+        app.MapPost("/api/game/casino/blackjack/deal", async (
+            BlackjackDealRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            BlackjackService blackjack,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var hand = await blackjack.DealAsync(player, request.TableKey, request.Bet, now, ct);
+                AddLog(db, player, before, "CASINO", 0, $"Sat down at {hand.TableKey} blackjack for {request.Bet:C0}.", now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new BlackjackActionResponse(
+                    blackjack.View(hand), player.Cash, player.Turns, await blackjack.BoardAsync(player, ct)));
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+        foreach (var move in new[] { "hit", "stand", "double" })
+        {
+            var chosen = move;
+            app.MapPost($"/api/game/casino/blackjack/{chosen}", async (
+                CurrentPlayerService current,
+                GameDbContext db,
+                BlackjackService blackjack,
+                CancellationToken ct) =>
+            {
+                var player = await current.GetAsync(ct);
+                if (player is null) return Results.Unauthorized();
+
+                var now = DateTime.UtcNow;
+                var before = Snapshot(player);
+                try
+                {
+                    var hand = chosen switch
+                    {
+                        "hit" => await blackjack.HitAsync(player, now, ct),
+                        "double" => await blackjack.DoubleAsync(player, now, ct),
+                        _ => await blackjack.StandAsync(player, now, ct)
+                    };
+
+                    // Only worth a line in the log once it is settled - a card at a time is not news.
+                    if (hand.SettledAtUtc is not null)
+                    {
+                        var summary = hand.Payout > hand.Bet
+                            ? $"Played a {hand.TableKey} blackjack hand for {hand.Bet:C0} and took {hand.Payout:C0}."
+                            : $"Played a {hand.TableKey} blackjack hand for {hand.Bet:C0} and lost it.";
+                        AddLog(db, player, before, "CASINO", 0, summary, now);
+                    }
+
+                    await db.SaveChangesAsync(ct);
+                    return Results.Ok(new BlackjackActionResponse(
+                        blackjack.View(hand), player.Cash, player.Turns, await blackjack.BoardAsync(player, ct)));
+                }
+                catch (GameRuleException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+            }).RequireAuthorization();
+        }
+
         app.MapGet("/api/game/casino/roulette", async (
             CurrentPlayerService current,
             RouletteService roulette,

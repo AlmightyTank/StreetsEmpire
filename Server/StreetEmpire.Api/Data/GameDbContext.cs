@@ -45,6 +45,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<SeasonResult> SeasonResults => Set<SeasonResult>();
     public DbSet<CasinoTransaction> CasinoTransactions => Set<CasinoTransaction>();
     public DbSet<CasinoJackpotDrop> CasinoJackpotDrops => Set<CasinoJackpotDrop>();
+    public DbSet<BlackjackHand> BlackjackHands => Set<BlackjackHand>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -276,6 +277,22 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Outcome).HasMaxLength(240);
             // A dozen bets with their odds and payouts, and room for the shape to grow.
             entity.Property(x => x.DetailJson).HasMaxLength(2_000);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BlackjackHand>(entity =>
+        {
+            // Every read of this table asks the same question: has this player got a hand going?
+            entity.HasIndex(x => new { x.PlayerId, x.Status });
+            entity.Property(x => x.TableKey).HasMaxLength(32);
+            entity.Property(x => x.Status).HasMaxLength(24);
+            // Six decks of three-character cards with quotes and commas, and room to spare.
+            entity.Property(x => x.DeckJson).HasMaxLength(4_000);
+            entity.Property(x => x.PlayerCardsJson).HasMaxLength(400);
+            entity.Property(x => x.DealerCardsJson).HasMaxLength(400);
             entity.HasOne(x => x.Player)
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)

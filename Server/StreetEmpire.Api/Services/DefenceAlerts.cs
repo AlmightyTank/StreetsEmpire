@@ -172,6 +172,40 @@ public static class DefenceAlerts
         };
     }
 
+    /// <summary>One lab report, with the money it made, for folding a run of them into a single alert.</summary>
+    public sealed record LabReport(long Id, string Summary, DateTime CreatedAtUtc, long Earned);
+
+    /// <summary>
+    /// The whole run of lab reports as one alert, newest first, or null when there were none.
+    ///
+    /// The labs pay out on the hour whether or not anybody is watching, so a player who was away
+    /// overnight came back to twelve identical rows that pushed everything that actually happened to
+    /// them off the bottom of the list. They are the same event repeated, and a list of them is not
+    /// twelve pieces of news - it is one, with a number on it.
+    ///
+    /// Folded here rather than written differently, because the rows themselves are right: the log is
+    /// the record of what the labs did each hour, the activity list reads it that way, and the money
+    /// has to be attributable to the hour that earned it. What was wrong was showing a record as a
+    /// feed. The newest sentence leads, since it is the one describing the hour just gone.
+    /// </summary>
+    public static AlertResponse? FoldLabs(IReadOnlyList<LabReport> reports, DateTime? seenAtUtc)
+    {
+        if (reports.Count == 0)
+            return null;
+
+        var newest = reports.OrderByDescending(x => x.CreatedAtUtc).ThenByDescending(x => x.Id).First();
+        var unread = seenAtUtc is null || reports.Any(x => x.CreatedAtUtc > seenAtUtc);
+        if (reports.Count == 1)
+            return new AlertResponse($"log-{newest.Id}", "labs", "Your labs kept working", newest.Summary, "good", unread, newest.CreatedAtUtc);
+
+        // Every row's own earnings, not just the ones since the last look: the sentence is describing
+        // the whole run it is standing in for.
+        var earned = reports.Sum(x => x.Earned);
+        var detail = $"{newest.Summary} That is {reports.Count:N0} shifts of it"
+                     + (earned > 0 ? $", {earned:C0} in all." : ".");
+        return new AlertResponse($"log-{newest.Id}", "labs", "Your labs kept working", detail, "good", unread, newest.CreatedAtUtc);
+    }
+
     private static AlertResponse CrewNotice(long logId, string summary, bool unread, DateTime createdAtUtc)
     {
         var (headline, tone) = summary switch

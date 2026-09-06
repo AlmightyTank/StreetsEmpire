@@ -304,6 +304,7 @@ var tests = new (string Name, Action Test)[]
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
     ("the Discord alert sweep says what the bell says, once", TheDiscordAlertSweepSaysWhatTheBellSaysOnce),
     ("news the game only ever worked out is written down", NewsTheGameOnlyEverWorkedOutIsWrittenDown),
+    ("a night of lab shifts is one alert, not twelve", ANightOfLabShiftsIsOneAlert),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
     ("announcement delivery sends Discord embeds", AnnouncementDeliverySendsDiscordEmbeds),
@@ -5422,6 +5423,41 @@ static void DiscordDmsAreOptInAndSentByTheBot()
     AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "your own machinery is not DMd unasked");
     gameQuiet.DiscordMachineNotices = true;
     AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "and can be opted into");
+}
+
+static void ANightOfLabShiftsIsOneAlert()
+{
+    var now = new DateTime(2026, 9, 6, 15, 0, 0, DateTimeKind.Utc);
+    var seen = now.AddHours(-5);
+
+    // Nothing to fold.
+    AssertEqual(null, DefenceAlerts.FoldLabs([], seen));
+
+    // One shift reads exactly as it always did - no count, no total, no change for somebody who was
+    // only away an hour.
+    var single = DefenceAlerts.FoldLabs(
+        [new DefenceAlerts.LabReport(7, "Your labs sold 7 weed as it was made, for $660.", now, 660)], seen)!;
+    AssertEqual("labs", single.Kind);
+    AssertEqual("Your labs sold 7 weed as it was made, for $660.", single.Detail);
+    AssertTrue(!single.Detail.Contains("shifts"), "one shift should not be counted at the reader");
+
+    // A night away. Twelve rows in the log, one line on the bell: the newest sentence, then the size
+    // of the run it stands for.
+    var overnight = Enumerable.Range(0, 12)
+        .Select(i => new DefenceAlerts.LabReport(100 + i, $"Your labs sold 7 weed as it was made, for $660. #{i}", now.AddHours(-i), 660))
+        .ToList();
+    var folded = DefenceAlerts.FoldLabs(overnight, seen)!;
+    AssertTrue(folded.Detail.StartsWith("Your labs sold 7 weed as it was made, for $660. #0"),
+        "the newest shift leads, because it describes the hour just gone");
+    AssertTrue(folded.Detail.Contains("12 shifts"), "and says how many it is standing in for");
+    AssertTrue(folded.Detail.Contains("$7,920"), "with what the whole run earned, not just the newest hour");
+    AssertEqual(now, folded.CreatedAtUtc);
+    AssertEqual("log-100", folded.Id);
+
+    // Unread if any shift in the run is newer than the last look, so a fold cannot quietly clear a
+    // badge that a single row would have raised.
+    AssertTrue(folded.IsUnread, "a run with new shifts in it is unread");
+    AssertTrue(!DefenceAlerts.FoldLabs(overnight, now.AddHours(1))!.IsUnread, "and read once it has all been seen");
 }
 
 static void NewsTheGameOnlyEverWorkedOutIsWrittenDown()

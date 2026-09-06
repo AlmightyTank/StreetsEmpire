@@ -460,7 +460,7 @@ internal static class CombatEndpoints
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .ThenByDescending(x => x.Id)
                 .Take(25)
-                .Select(x => new { x.Id, x.Action, x.Summary, x.CreatedAtUtc })
+                .Select(x => new { x.Id, x.Action, x.Summary, x.CreatedAtUtc, x.CashDelta })
                 .ToListAsync(ct);
 
             // Filtered here rather than in the two queries above, because the switch is per category and
@@ -475,12 +475,23 @@ internal static class CombatEndpoints
                 _ => true,
             };
 
+            // The labs report every hour on their own clock, so a night away is a dozen identical rows.
+            // They are folded into one before anything is ranked, or they crowd out the things that
+            // happened once and mattered.
+            var labs = DefenceAlerts.FoldLabs(
+                notices.Where(x => x.Action == "LAB")
+                    .Select(x => new DefenceAlerts.LabReport(x.Id, x.Summary, x.CreatedAtUtc, x.CashDelta))
+                    .ToList(),
+                player.CombatAlertsSeenAtUtc);
+
             var alerts = logs
                 .Select(x => DefenceAlerts.ToAlert(DefenceAlerts.Describe(x, player.CombatAlertsSeenAtUtc)))
                 .Concat(notices
+                    .Where(x => x.Action != "LAB")
                     .Select(x => DefenceAlerts.ToAlert(x.Id, x.Action, x.Summary, x.CreatedAtUtc, player.CombatAlertsSeenAtUtc))
                     .Where(x => x is not null)
                     .Select(x => x!))
+                .Concat(labs is null ? [] : new[] { labs })
                 .Where(x => wanted(DefenceAlerts.CategoryOf(x.Kind)))
                 .OrderByDescending(x => x.CreatedAtUtc)
                 .Take(25)

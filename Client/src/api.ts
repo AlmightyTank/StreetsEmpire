@@ -8,6 +8,353 @@ export type Activity = {
   createdAtUtc: string
 }
 
+export type CasinoMachine = {
+  key: string
+  name: string
+  blurb: string
+  minBet: number
+  maxBet: number
+  /** The most the paytable can pay on one lane at this machine's top stake. */
+  topAward: number
+  /** What this machine hands back over a long enough evening, worked out from its own reel. */
+  returnPercent: number
+  /** What each symbol pays here, richest first. */
+  paytable: SlotSymbolPay[]
+  /** What the machine's progressive stands at right now, seed included. */
+  progressive: number
+  maxPaylines: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type SlotSymbolPay = {
+  label: string
+  pair: number
+  triple: number
+  quad: number
+  quint: number
+}
+
+export type BlackjackTable = {
+  key: string
+  name: string
+  blurb: string
+  minBet: number
+  maxBet: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  /** Whether this table lets a hand be given up for half the stake. */
+  allowsSurrender: boolean
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type BlackjackHand = {
+  index: number
+  cards: string[]
+  best: number
+  soft: boolean
+  bet: number
+  status: string
+  payout: number
+  netResult: number
+  /** Whether the table is waiting on this hand. */
+  isActive: boolean
+  canDouble: boolean
+  canSplit: boolean
+  canSurrender: boolean
+}
+
+export type BlackjackRound = {
+  id: number
+  tableKey: string
+  bet: number
+  /** One hand unless somebody splits, and they are played in this order. */
+  hands: BlackjackHand[]
+  /** While the round is live this is the up card alone. The hole card never leaves the server. */
+  dealerCards: string[]
+  dealerBest: number
+  inPlay: boolean
+  status: string
+  payout: number
+  netResult: number
+  /** The dealer is showing an ace and nothing can be decided until this is answered. */
+  awaitingInsurance: boolean
+  insuranceCost: number
+  canInsure: boolean
+  /** What went up on insurance, which is nothing when it was declined. */
+  insuranceBet: number
+  insurancePayout: number
+}
+
+export type BlackjackRowHand = {
+  cards: string[]
+  best: number
+  bet: number
+  status: string
+  netResult: number
+}
+
+export type BlackjackRow = {
+  id: number
+  tableKey: string
+  tableName: string
+  hands: BlackjackRowHand[]
+  dealerCards: string[]
+  dealerBest: number
+  status: string
+  bet: number
+  payout: number
+  netResult: number
+  settledAtUtc: string
+}
+
+export type BlackjackBoard = {
+  enabled: boolean
+  tables: BlackjackTable[]
+  handTurnCost: number
+  dealerHitsSoft17: boolean
+  blackjackPaysNumerator: number
+  blackjackPaysDenominator: number
+  maxSplits: number
+  insuranceEnabled: boolean
+  round?: BlackjackRound | null
+  recent: BlackjackRow[]
+}
+
+export type BlackjackAction = {
+  round: BlackjackRound
+  cash: number
+  turns: number
+  board: BlackjackBoard
+}
+
+export type RouletteTable = {
+  key: string
+  name: string
+  blurb: string
+  /** One or two. The only thing that separates the tables, and the whole of the house edge. */
+  zeroes: number
+  pockets: number
+  /** Exact, not measured: 36 back for every pocket on the wheel. */
+  returnPercent: number
+  minBet: number
+  maxBet: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type RouletteBetKind = {
+  key: string
+  name: string
+  /** What it pays to one, on top of the stake coming back. */
+  odds: number
+  blurb: string
+  /** Whether it needs a value with it - a pocket, a dozen, a column. */
+  takesNumber: boolean
+}
+
+export type RouletteSettledBet = {
+  kind: string
+  label: string
+  value: string
+  amount: number
+  payout: number
+}
+
+export type RouletteSpinRow = {
+  id: number
+  tableKey: string
+  tableName: string
+  pocket: string
+  colour: string
+  bets: RouletteSettledBet[]
+  staked: number
+  payoutAmount: number
+  netResult: number
+  createdAtUtc: string
+}
+
+export type RouletteBoard = {
+  enabled: boolean
+  tables: RouletteTable[]
+  betKinds: RouletteBetKind[]
+  /** Which pockets are red. Not derivable from the number, so the server says. */
+  redPockets: number[]
+  spinTurnCost: number
+  maxBetsPerSpin: number
+  recent: RouletteSpinRow[]
+}
+
+export type RouletteSpin = {
+  spin: RouletteSpinRow
+  pocket: string
+  colour: string
+  cash: number
+  turns: number
+  turnsSpent: number
+  repEarned: number
+  compsEarned: number
+  board: RouletteBoard
+}
+
+/** One bet going onto the cloth. */
+export type RouletteStake = { kind: string, value: string | null, amount: number }
+
+export type SlotWin = {
+  paylineIndex: number
+  paylineName: string
+  symbol: string
+  /** How many cells from the left actually matched. Two of a kind is a win two cells wide. */
+  run: number
+  /** Exactly the cells it ran across, so only those are lit. */
+  cells: number[]
+  payout: number
+}
+
+export type SlotPayline = {
+  index: number
+  name: string
+  cells: number[]
+}
+
+export type CasinoReputation = {
+  rep: number
+  level: number
+  levelName: string
+  nextLevel?: number | null
+  nextLevelName?: string | null
+  nextLevelRep?: number | null
+  repToNextLevel: number
+  progressPercent: number
+  /** Standing earned by a spin that buys every lane at the machine's top stake. */
+  repPerFullTicket: number
+}
+
+export type CasinoStats = {
+  /** Every stake taken on the floor, cards and wheel included. */
+  plays: number
+  wagered: number
+  won: number
+  net: number
+}
+
+export type CasinoTransaction = {
+  id: number
+  gameType: string
+  machineKey: string
+  machineName: string
+  paylines: number
+  winningPaylines: number
+  betAmount: number
+  payoutAmount: number
+  netResult: number
+  symbols: string[]
+  /** Whether the house staked this one. Its net is the payout, because nothing went in. */
+  isFreeSpin: boolean
+  wins: SlotWin[]
+  /** Whether a lane paid the machine's top multiplier. */
+  jackpot: boolean
+  /** The progressive this spin took, or zero. */
+  jackpotAmount: number
+  createdAtUtc: string
+}
+
+export type CasinoJackpotRules = {
+  enabled: boolean
+  symbolLabel: string
+  symbolsRequired: number
+  requireAllPaylines: boolean
+  contributionPercent: number
+}
+
+export type CasinoJackpotDrop = {
+  machineKey: string
+  machineName: string
+  playerName: string
+  amount: number
+  wonAtUtc: string
+}
+
+export type CasinoBoard = {
+  slotMachines: CasinoMachine[]
+  paylines: SlotPayline[]
+  reputation: CasinoReputation
+  stats: CasinoStats
+  recent: CasinoTransaction[]
+  jackpotRules: CasinoJackpotRules
+  recentJackpots: CasinoJackpotDrop[]
+  spinTurnCost: number
+  comps: CasinoComps
+  freeSpins: CasinoFreeSpins
+}
+
+export type CasinoFreeSpins = {
+  enabled: boolean
+  /** How many the house still owes. */
+  owed: number
+  machineKey?: string | null
+  machineName?: string | null
+  /** The ticket they replay: per-lane stake, lanes, and what that would have cost. */
+  bet: number
+  paylines: number
+  ticketValue: number
+}
+
+export type CasinoComps = {
+  balance: number
+  /** What a dollar of comps costs in play. */
+  dollarsWageredPerComp: number
+  rewards: CompReward[]
+}
+
+export type CompReward = {
+  key: string
+  name: string
+  blurb: string
+  cost: number
+  turns: number
+  cash: number
+  heat: number
+  minRepLevel: number
+  minRepLevelName?: string | null
+  locked: boolean
+  lockedReason?: string | null
+}
+
+export type ClaimedComp = {
+  summary: string
+  turnsGranted: number
+  cashPaid: number
+  heatCleared: number
+  turns: number
+  cash: number
+  heat: number
+  board: CasinoBoard
+}
+
+export type SlotSpin = {
+  transaction: CasinoTransaction
+  symbols: string[]
+  cash: number
+  bankCash: number
+  turns: number
+  turnsSpent: number
+  repEarned: number
+  compsEarned: number
+  reputation: CasinoReputation
+  stats: CasinoStats
+  wasFreeSpin: boolean
+  freeSpinsAwarded: number
+  freeSpinsLeft: number
+  /** The whole floor as it stands after the spin, so the meters move without a second fetch. */
+  board: CasinoBoard
+}
+
 export type StoreItem = {
   key: string
   name: string
@@ -289,6 +636,83 @@ export type Hideout = {
   damage: HideoutDamage[]
   /** The room the crew are in right now. One at a time, so one room rather than a list. */
   repair?: HideoutRepair | null
+  /** The town the house is in, which is not necessarily the town the player is in. */
+  city: string
+  /** Whether the player is standing in it, and can therefore touch anything here. */
+  atHideout: boolean
+  /** What is in the safe. It stays in `city` and cannot be spent from anywhere else. */
+  safeCash: number
+  /** Every good, on the shelves and in the bag, with the room left on each side. */
+  stash: StashLine[]
+}
+
+/** One good in both places at once. What the deposit and withdraw panel is drawn from. */
+export type StashLine = {
+  key: string
+  label: string
+  carried: number
+  carryCapacity: number
+  stored: number
+  storageCapacity: number
+}
+
+/** One pile of goods, or one set of limits on a pile. */
+export type Stash = {
+  condoms: number
+  beer: number
+  weapons: number
+  weaponRack: WeaponTier[]
+  medicine: number
+  poison: number
+  weed: number
+  coke: number
+  moonshine: number
+  cut: number
+  cokePurityPercent: number
+}
+
+/**
+ * Where the player is against where their empire is.
+ *
+ * The page reads `blockedHere` rather than working the rules out for itself, because a client that
+ * infers what the server will allow is a client that will eventually disagree with it - and the
+ * disagreement is only ever found by somebody clicking a button that then refuses them.
+ */
+/** What it costs to send a crew to a house in another town. Null for a neighbour. */
+export type StrikeTrip = {
+  targetCity: string
+  travelTurns: number
+  /** One leg. They arrive after this and are home again after twice it. */
+  minutesEachWay: number
+  fare: number
+  /** The full turn price per method, the drive included. */
+  turnCosts: Record<string, number>
+  hitChancePenaltyPercent: number
+  /** The odds the drive home goes wrong, for a crew carrying something that is not theirs. */
+  returnRiskPercent: number
+}
+
+/** One of your crews on the road. */
+export type PendingStrike = {
+  id: number
+  method: string
+  methodLabel: string
+  targetName: string
+  targetCity: string
+  status: 'Outbound' | 'Returning' | 'Done'
+  arrivesAtUtc: string
+  returnsAtUtc: string
+  summary: string
+  outcome: string | null
+}
+
+export type PlayerLocation = {
+  playerCity: string
+  hideoutCity: string
+  atHideout: boolean
+  blockedHere: string[]
+  canControlLabsRemotely: boolean
+  canRepairRemotely: boolean
 }
 
 export type HideoutDamage = {
@@ -411,7 +835,9 @@ export type Dashboard = {
   isAdmin: boolean
   /** The opening walkthrough has not been finished yet, on this account rather than in this browser. */
   walkthroughDue: boolean
+  /** The town the player is standing in. Their operation's town is on `location`. */
   city: string
+  location: PlayerLocation
   currentMarket: CityMarket
   cityMarkets: CityMarket[]
   travel: TravelStatus
@@ -452,6 +878,17 @@ export type Dashboard = {
   coke: number
   moonshine: number
   cut: number
+  /**
+   * What the player is physically carrying, which is a different pile from every count above it.
+   *
+   * The counts above are the hideout's shelves, in the hideout's town: what feeds the crew and arms
+   * the thugs. This is what is in their hands and on the plane with them.
+   */
+  carried: Stash
+  /** What one person can carry, before anything is on them. */
+  carryCapacity: Stash
+  /** The gun on their hip, or null. Always one of the guns in `carried`. */
+  equippedWeapon: string | null
   weedSellPrice: number
   cokeSellPrice: number
   cokePurityPercent: number
@@ -463,6 +900,16 @@ export type Dashboard = {
   fallenCrew: Pimp[]
   combatCrew: CombatCrew
   combatStatus: CombatStatus
+  /**
+   * Whether the lookout can see anybody coming in off the road, and nothing more than that.
+   *
+   * A bare yes or no on purpose: not who, not what kind, not how long. Three different purchases
+   * answer the four strikes and the warning does not say which one is wanted, so having to guess is
+   * the decision. Always false for a house with no lookout, or one with a wrecked one.
+   */
+  strikeInbound: boolean
+  /** Your own crews on the road, out and coming back. */
+  strikesOut: PendingStrike[]
   unreadDefenceAlerts: number
   store: StoreItem[]
   storeRep: StoreRep
@@ -1056,6 +1503,8 @@ export type Intel = {
 export type PlayerProfile = PlayerTarget & {
   /** Why each strike cannot be thrown at this person, keyed by method. Absent when it can. */
   strikeBlockers: Record<string, string | undefined>
+  /** The drive to this person's door, or null when they are on your own streets. */
+  strikeTrip: StrikeTrip | null
   profileBanner: ProfileBanner
   /** When they started. Only on the profile somebody opened, never on a leaderboard row. */
   joinedAtUtc: string
@@ -1101,7 +1550,7 @@ export type WorldNewsEntry = {
   playerName: string
   city: string
   action: string
-  category: 'combat' | 'build' | 'arrival' | 'crew' | 'money'
+  category: 'combat' | 'build' | 'arrival' | 'crew' | 'money' | 'ground' | 'casino'
   summary: string
   turnsSpent: number
   createdAtUtc: string
@@ -1369,16 +1818,52 @@ export type BotAutomationStatus = {
  * again in eight seconds. Both used to arrive as the same bare Error.
  */
 export class RequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly retryAfterSeconds?: number) {
     super(message)
     this.name = 'RequestError'
   }
 
-  /** The server understood and said no, rather than never having answered at all. */
-  get refused() { return this.status >= 400 && this.status < 500 && this.status !== 401 }
+  /**
+   * The server understood and said no for good, rather than never having answered at all.
+   *
+   * 409 and 429 are deliberately not refusals even though they are both 4xx. A 409 is two of your own
+   * requests having landed on the same second - the server wrote nothing and the same call will work
+   * on the next tick - and a 429 is being asked to come back shortly. Treating either as final is how
+   * a window that was only ever busy gets closed as though it had been deleted.
+   */
+  get refused() {
+    return this.status >= 400 && this.status < 500
+      && this.status !== 401 && this.status !== 409 && this.status !== 429
+  }
+}
+
+/*
+  When the server has asked us to come back later, and when that stops being true.
+
+  The game is played by polling - missions every five seconds, chat every eight, a fistful of calls
+  after every action - so being rate limited is the one failure that gets worse by being ignored. The
+  timers do not know they were refused, so they fire again on schedule, and a client that answers
+  "slow down" by asking again at the same rate is the reason it stays limited. The server has been
+  saying exactly how long to wait since the limiter was written; nothing was reading it.
+
+  Module-level rather than per-caller because the limit is per player, not per screen: every timer in
+  the app is behind one bucket on the server, so there is no point in each of them finding out
+  separately. One of them takes the 429 and the rest wait with it.
+*/
+let quietUntilMs = 0
+
+/** Seconds still owed to the server, or 0 when nothing is. */
+function quietFor(): number {
+  return Math.max(0, Math.ceil((quietUntilMs - Date.now()) / 1000))
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  // Refused here rather than sent and refused there. The answer would be the same 429, and asking
+  // anyway is precisely the behaviour the limiter is trying to stop.
+  const owed = quietFor()
+  if (owed > 0)
+    throw new RequestError(`Too many requests. Try again in ${owed}s.`, 429, owed)
+
   const uploadingForm = options?.body instanceof FormData
   const response = await fetch(url, {
     credentials: 'include',
@@ -1394,7 +1879,17 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       const body = await response.json()
       if (body?.error) message = body.error
     } catch { /* empty */ }
-    throw new RequestError(message, response.status)
+
+    let retryAfter: number | undefined
+    if (response.status === 429) {
+      // Capped both ways. A header that never arrives still has to back something off, or the loop
+      // carries on at full speed; a header that arrives absurd must not lock the app up for an hour.
+      const asked = Number(response.headers.get('Retry-After'))
+      retryAfter = Number.isFinite(asked) && asked > 0 ? Math.min(asked, 60) : 5
+      quietUntilMs = Date.now() + retryAfter * 1000
+    }
+
+    throw new RequestError(message, response.status, retryAfter)
   }
 
   if (response.status === 204) return undefined as T
@@ -1588,6 +2083,8 @@ export type Account = {
   discordCombatNotices: boolean
   discordCrewNotices: boolean
   discordMarketNotices: boolean
+  /** Your own machinery - labs, builds, mules - over DM. Off unless asked for, unlike the bell. */
+  discordMachineNotices: boolean
   /** False when the server has no Discord credentials, which hides the connect button entirely. */
   discordConfigured: boolean
   discordLinkRewardClaimedAtUtc: string | null
@@ -1709,6 +2206,7 @@ export const api = {
     discordCombatNotices: boolean,
     discordCrewNotices: boolean,
     discordMarketNotices: boolean,
+    discordMachineNotices: boolean,
     noticeCombat: boolean,
     noticeCrew: boolean,
     noticeMarket: boolean) =>
@@ -1723,6 +2221,7 @@ export const api = {
         discordCombatNotices,
         discordCrewNotices,
         discordMarketNotices,
+        discordMachineNotices,
         noticeCombat,
         noticeCrew,
         noticeMarket,
@@ -1980,8 +2479,51 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ amount }),
   }),
+  casino: () => request<CasinoBoard>('/api/game/casino'),
+  roulette: () => request<RouletteBoard>('/api/game/casino/roulette'),
+  blackjack: () => request<BlackjackBoard>('/api/game/casino/blackjack'),
+  blackjackDeal: (tableKey: string, bet: number) => request<BlackjackAction>('/api/game/casino/blackjack/deal', {
+    method: 'POST',
+    body: JSON.stringify({ tableKey, bet }),
+  }),
+  blackjackMove: (move: 'hit' | 'stand' | 'double' | 'split' | 'surrender' | 'insure' | 'decline') =>
+    request<BlackjackAction>(`/api/game/casino/blackjack/${move}`, { method: 'POST' }),
+  spinRoulette: (tableKey: string, bets: RouletteStake[]) => request<RouletteSpin>('/api/game/casino/roulette/spin', {
+    method: 'POST',
+    body: JSON.stringify({ tableKey, bets }),
+  }),
+  claimComp: (rewardKey: string) => request<ClaimedComp>('/api/game/casino/comps/claim', {
+    method: 'POST',
+    body: JSON.stringify({ rewardKey }),
+  }),
+  spinSlots: (machineKey: string, bet: number, paylines: number) => request<SlotSpin>('/api/game/casino/slots/spin', {
+    method: 'POST',
+    body: JSON.stringify({ machineKey, bet, paylines }),
+  }),
   /** Marks the opening walkthrough done, or false to put it back in front of the player. */
   /** Switches one lab on or off, and whether it sells what it makes. */
+  /**
+   * Moving one good across the hideout's threshold. A negative quantity is the same move the other
+   * way, because there is one rule here - something can only move if where it is going has room - and
+   * two endpoints would be two chances for the halves to disagree about guns.
+   */
+  moveStock: (item: string, quantity: number) => request<ActionResult>('/api/game/hideout/stash', {
+    method: 'POST',
+    body: JSON.stringify({ item, quantity })
+  }),
+
+  /** Money in and out of the safe. Free, unlike the bank, and only reachable from the doorstep. */
+  moveSafeCash: (amount: number) => request<ActionResult>('/api/game/hideout/safe', {
+    method: 'POST',
+    body: JSON.stringify({ amount })
+  }),
+
+  /** The gun on the player's hip, out of what they are carrying. Null to carry nothing. */
+  equip: (weapon: string | null) => request<ActionResult>('/api/game/equip', {
+    method: 'PUT',
+    body: JSON.stringify({ weapon })
+  }),
+
   setLab: (product: 'weed' | 'coke', running: boolean, autoSell: boolean) => request<ActionResult>('/api/game/hideout/lab', {
     method: 'PUT',
     body: JSON.stringify({ product, running, autoSell }),
@@ -2296,6 +2838,9 @@ export type TerritoryBoard = {
   allianceCityControl?: AllianceCityControl | null
   developmentLadder: TerritoryDevelopmentRung[]
   territories: Territory[]
+  // Your own ground in other towns. Not part of `territories`, which is the whole of the town you are
+  // standing in, rivals included. Empty for anybody who has never left a piece behind.
+  away: Territory[]
 }
 
 export type AdminBotHealth = {
@@ -2494,6 +3039,9 @@ export type AdminConfigEntry = {
   effectiveValue: string
   overrideValue?: string | null
   isOverridden: boolean
+  /** Set only where the setting has a real limit - a database column, a share of one, a percentage. */
+  minimum?: string | null
+  maximum?: string | null
 }
 
 export type AdminConfig = {

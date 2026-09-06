@@ -549,6 +549,8 @@ internal static class AccountEndpoints
                 current.DiscordCrewNotices = discordCrew && current.DiscordUserId is not null;
             if (request.DiscordMarketNotices is { } discordMarket)
                 current.DiscordMarketNotices = discordMarket && current.DiscordUserId is not null;
+            if (request.DiscordMachineNotices is { } discordMachine)
+                current.DiscordMachineNotices = discordMachine && current.DiscordUserId is not null;
 
             if (request.NoticeCombat is { } noticeCombat)
                 current.NoticeCombat = noticeCombat;
@@ -881,6 +883,7 @@ internal static class AccountEndpoints
             account.DiscordCombatNotices,
             account.DiscordCrewNotices,
             account.DiscordMarketNotices,
+            account.DiscordMachineNotices,
             discord.Options.IsConfigured,
             account.DiscordLinkRewardClaimedAtUtc,
             account.CreatedAtUtc);

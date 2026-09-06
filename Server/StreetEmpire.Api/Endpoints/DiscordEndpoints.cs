@@ -269,7 +269,11 @@ internal static class DiscordEndpoints
                 }
             }, CancellationToken.None);
 
-            return Results.Json(DiscordGuildIntegration.DeferredInteractionResponse());
+            // Read here rather than in the worker above: Discord settles who may see the answer from this
+            // deferral, and the worker is still running when it goes out. Reading the name is a property
+            // lookup on a document already parsed, so it costs nothing against the three-second deadline.
+            var ephemeral = DiscordGuildIntegration.AnswersEphemerally(DiscordGuildIntegration.CommandName(document));
+            return Results.Json(DiscordGuildIntegration.DeferredInteractionResponse(ephemeral));
         }).DisableRateLimiting();
     }
 }

@@ -41,7 +41,14 @@ public sealed class DiscordDirectMessages(
         await SendAsync(account.DiscordUserId!, text, ct);
     }
 
-    public async Task TellGameAlertAsync(PlayerAccount account, AlertCategory category, string headline, string detail, DateTime whenUtc, CancellationToken ct)
+    public async Task TellGameAlertAsync(
+        PlayerAccount account,
+        AlertCategory category,
+        string headline,
+        string detail,
+        DateTime whenUtc,
+        CancellationToken ct,
+        IReadOnlyList<object>? components = null)
     {
         if (!WantsGameDm(account, category)) return;
 
@@ -55,7 +62,7 @@ public sealed class DiscordDirectMessages(
 
             {whenUtc:HH:mm 'UTC' on d MMMM yyyy}
             """;
-        await SendAsync(account.DiscordUserId!, text, ct);
+        await SendAsync(account.DiscordUserId!, text, components, ct);
     }
 
     internal static bool WantsAccountDm(PlayerAccount account)
@@ -71,35 +78,78 @@ public sealed class DiscordDirectMessages(
             AlertCategory.Combat => account.DiscordCombatNotices,
             AlertCategory.Crew => account.DiscordCrewNotices,
             AlertCategory.Market => account.DiscordMarketNotices,
+            // The in-game feed lets this one through unasked, and for a panel that is right. Here it
+            // needs its own switch: the bell is somewhere you go and look, a DM is something that finds
+            // you. Off until somebody says otherwise.
+            AlertCategory.Always => account.DiscordMachineNotices,
             _ => false
         };
     }
 
+    /// <summary>
+    /// Posts into a channel the bot already knows the id of - a crew room, or wherever the floor is
+    /// told about a jackpot.
+    ///
+    /// Not a DM, despite the company it keeps: it lives here because opening a DM is only "find a
+    /// channel id first", and everything after that point was already this method. The DM rules above
+    /// do not apply and must not be borrowed - a channel has no opt-in switch to check, so the caller
+    /// is the one that has to be sure the room asked for this.
+    ///
+    /// Returns whether Discord took it, because a crew room can be deleted from under the stored map
+    /// and a caller may want to stop trying.
+    /// </summary>
+    public async Task<bool> PostToChannelAsync(string channelId, string text, IReadOnlyList<object>? components, CancellationToken ct)
+    {
+        var token = await BotTokenAsync(ct);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(channelId)) return false;
+        return await PostAsync(token, channelId, text, components, "channel", channelId, ct);
+    }
+
     private async Task SendAsync(string discordUserId, string text, CancellationToken ct)
+        => await SendAsync(discordUserId, text, null, ct);
+
+    private async Task SendAsync(string discordUserId, string text, IReadOnlyList<object>? components, CancellationToken ct)
     {
         var token = await BotTokenAsync(ct);
         if (string.IsNullOrWhiteSpace(token)) return;
 
+        var channelId = await OpenDmChannelAsync(token, discordUserId, ct);
+        if (string.IsNullOrWhiteSpace(channelId)) return;
+
+        await PostAsync(token, channelId, text, components, "DM to", discordUserId, ct);
+    }
+
+    /// <summary>One message into one channel, whoever is on the other end of it.</summary>
+    private async Task<bool> PostAsync(
+        string token,
+        string channelId,
+        string text,
+        IReadOnlyList<object>? components,
+        string what,
+        string who,
+        CancellationToken ct)
+    {
         try
         {
-            var channelId = await OpenDmChannelAsync(token, discordUserId, ct);
-            if (string.IsNullOrWhiteSpace(channelId)) return;
-
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiRoot}/channels/{Uri.EscapeDataString(channelId)}/messages");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bot", token);
             request.Content = JsonContent.Create(new
             {
                 content = OneLine(text, 1900),
+                components = components ?? [],
                 allowed_mentions = new { parse = Array.Empty<string>() }
             }, options: JsonOptions);
 
             using var response = await http.SendAsync(request, ct);
-            if (!response.IsSuccessStatusCode)
-                logger.LogWarning("Discord refused a DM to {DiscordUserId} with {Status} {Reason}.", discordUserId, (int)response.StatusCode, response.ReasonPhrase);
+            if (response.IsSuccessStatusCode) return true;
+
+            logger.LogWarning("Discord refused a {What} {Who} with {Status} {Reason}.", what, who, (int)response.StatusCode, response.ReasonPhrase);
+            return false;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            logger.LogWarning(ex, "Could not send Discord DM to {DiscordUserId}.", discordUserId);
+            logger.LogWarning(ex, "Could not send a Discord {What} {Who}.", what, who);
+            return false;
         }
     }
 

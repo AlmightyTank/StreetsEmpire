@@ -25,6 +25,11 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
     /// </summary>
     public async Task<PlayerTick> AdvanceAsync(Player player, DateTime nowUtc, GameDbContext? db = null, CancellationToken ct = default)
     {
+        // A gun that is no longer being carried comes off the hip. A rack empties in a dozen ways - a
+        // fight, a stop on the road, a deposit, a season - and none of them should have to remember
+        // that a hip exists, so it is settled here where every player passes through.
+        HideoutService.SettleEquipped(player);
+
         var built = hideouts.CompleteBuild(player.Hideout, nowUtc);
         if (db is not null && built)
             AddLog(db, player, Snapshot(player), "HIDEOUT", 0, $"The {hideouts.TierName(player.Hideout!.Tier)} is finished.", nowUtc);
@@ -63,6 +68,11 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         {
             player.TravelArrivesAtUtc = null;
             landed = true;
+            // Written as news rather than left implicit. The flight was the action; the landing happens
+            // on the clock, usually while the player is somewhere else entirely - which is the whole
+            // definition of a notification here, and it is the one alert people asked for by name.
+            if (db is not null)
+                AddLog(db, player, Snapshot(player), "TRAVEL", 0, $"You have landed in {player.City}.", nowUtc);
         }
 
         // Not owed to this player - a war belongs to two crews - but this is the one call the game

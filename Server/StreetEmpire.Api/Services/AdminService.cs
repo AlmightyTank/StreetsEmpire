@@ -43,7 +43,14 @@ public sealed class AdminService(
         // Standing, in whole points. Adjustable because it gates weapons: a support ticket about a
         // purchase that took the money and not the rep has no other answer, and the fractions rep
         // accrues in are not something anybody is going to type into an admin form.
-        ["rep"] = new(p => (long)Math.Floor(p.StoreRep), (p, v) => p.StoreRep = v, int.MaxValue)
+        ["rep"] = new(p => (long)Math.Floor(p.StoreRep), (p, v) => p.StoreRep = v, int.MaxValue),
+        ["casinoRep"] = new(p => (long)Math.Floor(p.CasinoRep), (p, v) => p.CasinoRep = v, int.MaxValue),
+        // Comps are held in cents and adjusted in dollars, because dollars are what the cage prices
+        // its menu in and what an admin reading a support ticket is being told.
+        ["casinoComps"] = new(
+            p => CasinoService.CompDollars(p.CasinoCompsCents),
+            (p, v) => p.CasinoCompsCents = (long)v * 100,
+            int.MaxValue)
     };
 
     public static IReadOnlyCollection<string> AdjustableResources => Resources.Keys.ToList();

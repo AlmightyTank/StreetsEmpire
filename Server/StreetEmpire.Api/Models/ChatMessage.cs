@@ -42,6 +42,17 @@ public sealed class ChatMessage
     public long? ConversationId { get; set; }
     public Conversation? Conversation { get; set; }
 
+    /// <summary>
+    /// How long a line can be in the database, which is not the same number as how long the game lets
+    /// one be. <see cref="Services.ChatOptions.MaxLength"/> is the rule and is tunable; this is the
+    /// column, and it sits above the rule with room to spare.
+    ///
+    /// A constant because the two have to be able to see each other. The rule is editable at runtime
+    /// by an admin, and an admin who raised it past the column would not find out from a validation
+    /// message - they would find out from every long message in the game becoming a 500.
+    /// </summary>
+    public const int MaxBodyLength = 400;
+
     public string Body { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

@@ -388,7 +388,9 @@ internal static class AdminOpsEndpoints
                     x.Type,
                     x.CurrentValue,
                     active.TryGetValue(x.Path, out var value) ? value : null,
-                    active.ContainsKey(x.Path)))
+                    active.ContainsKey(x.Path),
+                    x.Minimum,
+                    x.Maximum))
                 .ToList();
 
             return Results.Ok(new AdminConfigResponse(overrides.Version, active.Count, settings));
@@ -574,6 +576,7 @@ internal static class AdminOpsEndpoints
             AdminService admins,
             CombatSchedule schedule,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var admin = await current.GetAsync(ct);
@@ -599,6 +602,7 @@ internal static class AdminOpsEndpoints
 
             schedule.Invalidate();
             var updates = await combatResolver.ResolveDueAsync(DateTime.UtcNow, ct);
+            await pendingStrikes.ResolveDueAsync(DateTime.UtcNow, ct);
             return Results.Ok(new ActionResultResponse($"Pushed mission {missionId} through the resolver ({updates:N0} update(s)).", admin.Turns));
         }).RequireAuthorization();
 

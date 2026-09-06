@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
@@ -80,7 +81,12 @@ public sealed class TraderJobOptions
     /// How often a coke buyer cares about strength, what they insist on, and what they pay for it.
     /// Sometimes rather than always: a floor on every job would make stretching pointless rather than a
     /// trade.
+    ///
+    /// A fraction of one, rolled against directly. At one every buyer insists, which is the "always"
+    /// this setting exists to avoid; above one it would be the same thing while reading as though it
+    /// were still sometimes.
     /// </summary>
+    [Range(0, 1)]
     public double PurityConditionChance { get; set; } = 0.4;
     public int MinimumPurityFloorPercent { get; set; } = 60;
     public int PurityPremiumPercent { get; set; } = 25;

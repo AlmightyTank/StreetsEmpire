@@ -1124,7 +1124,475 @@ input:focus-visible, textarea:focus-visible {
 // A tile in a picker: a district to work, a way to attack. Five of them rather
 // than a dropdown, because each carries its own copy and that copy is the whole
 // reason the choice exists.
-.tile { cursor: pointer; }
+// A tile is a plain <button>, and picking one swaps bg-body-tertiary for .active
+// - which is a state, not a colour. With no background utility left on it the
+// element falls back to the user agent's own button face, which under a dark
+// colour-scheme is a mid grey: $ink-faint detail on that measured 1.29:1, so the
+// selected machine on the casino floor was the one tile nobody could read.
+//
+// Same trap the rail and the admin strip are dug out of further down, and the
+// same answer: .active decides that a thing is chosen, it does not decide what
+// chosen looks like, so the tile says so itself and never leaves the background
+// to the browser. $surface rather than something lighter because $ink-faint is
+// documented at 4.54:1 on exactly that, and the gold border is already carrying
+// the selection - a chosen tile does not need to shout twice.
+.tile {
+  cursor: pointer;
+  background-color: $surface-deep;
+
+  &.active { background-color: $surface; }
+}
+
+// Three fixed reels, because slot labels change length every pull and the
+// machine should feel solid instead of resizing under the player's hand.
+.slot-reels {
+  position: relative;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  // margin rather than justify-self: the card these sit in is a flex container,
+  // and justify-self does nothing to a flex item. It computed to "center" and
+  // was quietly ignored, so a 360px machine sat flush left in an 814px card with
+  // 437px of nothing beside it. An auto margin centres under flex and block both.
+  margin-inline: auto;
+  width: 100%;
+  max-inline-size: 560px;
+  // Smaller than it was: five columns in the width three used to have.
+  --slot-face-size: clamp(26px, 5vw, 40px);
+  // Both have to be known numbers for the payline overlay below to place itself,
+  // and --slot-gap has to agree with the gap-2 utility the markup sets.
+  --slot-gap: #{$spacer * .5};
+  --slot-label-block: 1.3125rem;
+}
+
+.slot-reel {
+  position: relative;
+  z-index: 1;
+  min-height: 92px;
+  aspect-ratio: 1 / 1;
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
+  align-items: center;
+  overflow: hidden;
+  padding: $spacer * .5;
+
+  &.is-spinning {
+    border-color: rgba($gold, .45) !important;
+  }
+
+  // A reel the machine is waiting on. It turns harder and sits inside a warmer edge, so the reason
+  // it has not dropped yet is visible rather than just felt as a pause.
+  &.is-anticipating {
+    border-color: rgba($gold, .8) !important;
+    box-shadow: inset 0 0 0 1px rgba($gold, .3), 0 0 1rem rgba($gold, .28);
+
+    .slot-reel-strip { animation-duration: 260ms !important; }
+  }
+
+  &.is-winning {
+    border-color: rgba($gold, .78) !important;
+    background: rgba($gold, .1) !important;
+    box-shadow: inset 0 0 0 1px rgba($gold, .18), 0 0 .75rem rgba($gold, .16);
+  }
+}
+
+.slot-reel-window {
+  position: relative;
+  display: grid;
+  inline-size: var(--slot-face-size);
+  block-size: var(--slot-face-size);
+  overflow: hidden;
+  border: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
+  border-radius: 50%;
+  background: rgba($gold, .08);
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    z-index: 1;
+    block-size: 34%;
+    pointer-events: none;
+  }
+
+  &::before {
+    inset-block-start: 0;
+    background: linear-gradient(to bottom, var(--#{$prefix}body-bg), rgba($black, 0));
+  }
+
+  &::after {
+    inset-block-end: 0;
+    background: linear-gradient(to top, var(--#{$prefix}body-bg), rgba($black, 0));
+  }
+}
+
+.slot-reel-strip {
+  display: grid;
+  transform: translateY(0);
+}
+
+.slot-reel.is-spinning .slot-reel-strip {
+  animation-name: slot-reel-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.slot-reel-face {
+  display: grid;
+  place-items: center;
+  min-block-size: var(--slot-face-size);
+
+  span {
+    display: grid;
+    place-items: center;
+    inline-size: min(44px, calc(var(--slot-face-size) - 8px));
+    block-size: min(44px, calc(var(--slot-face-size) - 8px));
+    border-radius: 50%;
+    background: rgba($gold, .16);
+    color: $gold;
+  }
+
+  // Short of the disc's edge on purpose: a glyph that fills its circle reads as a
+  // button rather than as something sitting on a reel.
+  svg {
+    inline-size: 58%;
+    block-size: 58%;
+  }
+}
+
+// The felt. A table rather than a list of cards, which is most of what makes
+// the pit read as a pit.
+.blackjack-felt {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba($good, .12), rgba($good, .04) 60%, rgba(0, 0, 0, 0) 100%),
+    $surface-deep;
+  border: 1px solid rgba($good, .25);
+}
+
+// A card off the shoe, drawn as a card: rank in the corner, pip in the middle.
+.playing-card {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  inline-size: 46px;
+  block-size: 64px;
+  padding: .2rem .3rem;
+  border: 1px solid rgba($void, .35);
+  border-radius: 5px;
+  background: linear-gradient(160deg, #fdfbf6, #e8e2d6);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .45);
+  font-weight: $font-weight-bolder;
+  line-height: 1;
+
+  &.is-red { color: #b3242b; }
+  &.is-black { color: #14100c; }
+
+  // A hand in a ledger row is a note about a hand rather than a hand.
+  &.is-small {
+    inline-size: 26px;
+    block-size: 36px;
+    padding: .1rem .15rem;
+    border-radius: 3px;
+    box-shadow: none;
+
+    .playing-card-rank { font-size: .6rem; }
+    .playing-card-pip { font-size: .72rem; }
+  }
+
+  // The one the dealer has not turned over.
+  &.is-down {
+    background:
+      repeating-linear-gradient(45deg, rgba($gold, .32) 0 4px, rgba($void, .9) 4px 8px);
+    border-color: rgba($gold, .45);
+    box-shadow: inset 0 0 0 2px rgba($void, .5), 0 2px 5px rgba(0, 0, 0, .45);
+  }
+}
+
+.playing-card-rank {
+  font-size: .78rem;
+  justify-self: start;
+}
+
+.playing-card-pip {
+  font-size: 1.1rem;
+  justify-self: end;
+}
+
+// Dealt in rather than appearing, off the edge of the table.
+.playing-card.is-dealt {
+  animation: card-dealt 260ms ease-out both;
+}
+
+@keyframes card-dealt {
+  from { opacity: 0; transform: translate(14px, -18px) rotate(8deg); }
+  to { opacity: 1; transform: none; }
+}
+
+// The hole card, turning over. The one card in the game whose arrival is the answer.
+.playing-card.is-turning {
+  animation: card-turned 420ms ease-out both;
+}
+
+@keyframes card-turned {
+  from { transform: rotateY(90deg) scaleX(.4); }
+  to { transform: none; }
+}
+
+[data-motion="reduced"] .playing-card.is-dealt,
+[data-motion="reduced"] .playing-card.is-turning {
+  animation: none;
+}
+
+// -----------------------------------------------------------------------------
+// The wheel
+// -----------------------------------------------------------------------------
+// The cloth is twelve columns because the board is: three rows of twelve, read
+// down. The zeroes sit across the top the way they do on a real layout.
+.roulette-cloth {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.roulette-spot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-block-size: 34px;
+  border: 1px solid $line;
+  border-radius: $border-radius-sm;
+  font-size: .82rem;
+  font-weight: $font-weight-bold;
+  color: $ink;
+  cursor: pointer;
+
+  &.is-red { background: rgba($bad, .28); }
+  &.is-black { background: rgba($black, .55); }
+  &.is-green { background: rgba($good, .22); }
+
+  &:disabled { cursor: default; opacity: .7; }
+
+  // A spot with money on it is ringed rather than recoloured: the colour is the
+  // pocket's own and repainting it would be hiding the thing being bet on.
+  &.is-backed {
+    border-color: $gold;
+    box-shadow: inset 0 0 0 1px rgba($gold, .5);
+  }
+}
+
+// The chip sits on the spot the way it does on a table.
+.roulette-chip {
+  position: absolute;
+  inset-block-end: -6px;
+  inset-inline-end: -4px;
+  padding-inline: .25rem;
+  border-radius: 999px;
+  background: $gold;
+  color: $void;
+  font-size: .6rem;
+  line-height: 1.5;
+}
+
+// The wheel. Sized off the panel rather than fixed, so it has room on a desk and
+// still fits a phone.
+.roulette-wheel {
+  inline-size: min(320px, 80vw);
+
+  svg { display: block; inline-size: 100%; block-size: auto; }
+}
+
+.roulette-wheel-rim {
+  fill: none;
+  stroke: rgba($gold, .45);
+  stroke-width: 3;
+}
+
+.roulette-wheel-hub {
+  fill: $surface-deep;
+  stroke: rgba($gold, .35);
+  stroke-width: 2;
+}
+
+.roulette-arc {
+  stroke: rgba($black, .55);
+  stroke-width: .6;
+
+  &.is-red { fill: rgba($bad, .62); }
+  &.is-black { fill: rgba($black, .82); }
+  &.is-green { fill: rgba($good, .55); }
+}
+
+.roulette-arc-label {
+  fill: $ink;
+  font-size: 8px;
+  font-weight: $font-weight-bold;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.roulette-pointer { fill: $gold; }
+
+.roulette-ball {
+  fill: $ink;
+  stroke: rgba($black, .6);
+  stroke-width: 1;
+}
+
+// Where the ball stopped, in the pocket's own colour.
+.roulette-pocket {
+  display: grid;
+  place-items: center;
+  inline-size: 46px;
+  block-size: 46px;
+  border-radius: 50%;
+  border: 2px solid rgba($gold, .5);
+  font-size: 1.15rem;
+  font-weight: $font-weight-bolder;
+  color: $ink;
+
+  &.is-red { background: rgba($bad, .5); }
+  &.is-black { background: rgba($black, .7); }
+  &.is-green { background: rgba($good, .4); }
+
+  &.is-small {
+    inline-size: 28px;
+    block-size: 28px;
+    border-width: 1px;
+    font-size: .78rem;
+  }
+}
+
+// A whole pull in a table cell. Small enough that the row still reads as a row,
+// with the cells that paid lit so the win is findable without counting.
+.slot-mini {
+  display: inline-grid;
+  gap: 2px;
+
+  > span {
+    display: grid;
+    place-items: center;
+    inline-size: 16px;
+    block-size: 16px;
+    border-radius: 50%;
+    background: rgba($gold, .09);
+    color: rgba($gold, .55);
+
+    svg { inline-size: 70%; block-size: 70%; }
+  }
+
+  .is-lit {
+    background: rgba($gold, .28);
+    color: $gold;
+  }
+}
+
+// The same face at text size, so the paytable teaches the reel rather than
+// restating the name it is printed next to.
+.slot-pay-glyph {
+  inline-size: 1.15em;
+  block-size: 1.15em;
+  vertical-align: -.2em;
+  margin-inline-end: .35rem;
+  color: $gold;
+}
+
+.slot-reel-label {
+  font-size: .72rem;
+  // Pinned rather than left to the font's own metrics, because the payline
+  // overlay measures itself against this and a label that is 21px on one machine
+  // and 23px on another would move the lines off the symbols by the difference.
+  line-height: var(--slot-label-block);
+  block-size: var(--slot-label-block);
+  text-align: center;
+  padding-inline: .25rem;
+}
+
+// A winning line should run through the middle of the symbols it is drawing a
+// line through. This used to be stretched over the whole grid against a synthetic
+// 3x3 viewBox, which put each endpoint at the centre of a *cell* - and a cell is
+// a symbol with a label underneath it, so its centre sits below the symbol's by
+// half the label. The row gaps then skewed the top and bottom rows a further
+// third of a gap apart in opposite directions. Measured: 13px low on the top row,
+// 10px on the middle, 8px on the bottom.
+//
+// So the box is inset to span exactly symbol-centre to symbol-centre instead,
+// which makes a cell's column and row index its coordinates outright. The insets
+// are half a cell on each side: with N columns a cell is (100% - (N-1) gaps) / N
+// wide, so half of one is that over 2N - a tenth of the span for five columns,
+// a sixth of it for three rows.
+.slot-payline-overlay {
+  position: absolute;
+  inset-inline: calc((100% - var(--slot-gap) * 4) / 10);
+  inset-block:
+    calc((100% - var(--slot-gap) * 2) / 6 - var(--slot-label-block) / 2)
+    calc((100% - var(--slot-gap) * 2) / 6 + var(--slot-label-block) / 2);
+  z-index: 4;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.slot-payline-hit {
+  fill: none;
+  stroke: $gold;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: .08;
+  filter: drop-shadow(0 0 .14rem rgba($gold, .72));
+  animation: slot-payline-hit 720ms ease-out both;
+}
+
+@keyframes slot-reel-spin {
+  to { transform: translateY(calc(var(--slot-face-size) * -7)); }
+}
+
+@keyframes slot-payline-hit {
+  0% {
+    opacity: 0;
+    stroke-width: .02;
+  }
+  40% {
+    opacity: 1;
+    stroke-width: .12;
+  }
+  100% {
+    opacity: 1;
+    stroke-width: .08;
+  }
+}
+
+[data-motion="reduced"] .slot-reel.is-spinning .slot-reel-strip {
+  animation: none;
+}
+
+[data-motion="reduced"] .slot-payline-hit {
+  animation: none;
+}
+
+.casino-jackpot {
+  background: rgba($gold, .08);
+  animation: casino-jackpot-pulse 900ms ease-out 1;
+}
+
+@keyframes casino-jackpot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba($gold, .45); }
+  100% { box-shadow: 0 0 0 .8rem rgba($gold, 0); }
+}
+
+[data-motion="reduced"] .casino-jackpot {
+  animation: none;
+}
+
+// The pot on the machine you are stood at. It is the one number on the page that belongs to everybody
+// rather than to this player, so it gets a slow breath of its own to say it is still building.
+.casino-meter {
+  animation: casino-meter-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes casino-meter-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba($gold, 0); }
+  50% { box-shadow: 0 0 .5rem .1rem rgba($gold, .35); }
+}
+
+[data-motion="reduced"] .casino-meter {
+  animation: none;
+}
 
 // The opening ladder. A tick column, then the rung.
 .ladder-row {

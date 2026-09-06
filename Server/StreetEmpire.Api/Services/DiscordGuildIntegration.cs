@@ -1,10 +1,8 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using Chaos.NaCl;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StreetEmpire.Api.Contracts;
@@ -27,15 +25,84 @@ public sealed class DiscordIntegrationOptions
     public string CrewRoleMap { get; set; } = string.Empty;
     public string CrewChannelMap { get; set; } = string.Empty;
     public string TitleRoleMap { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Where the game itself lives, so a Discord message can offer a way back into it.
+    ///
+    /// Every link the bot writes is built from this, and nothing else on the server knows the public
+    /// address. The OAuth ReturnUrl is the closest thing and it is the wrong answer: that is where a
+    /// sign-in is put down, not where the game is, and the two stop agreeing the moment sign-in moves.
+    ///
+    /// Blank means the bot writes no buttons at all. A button pointing at somebody else's localhost is
+    /// worse than no button, because it looks like it works.
+    /// </summary>
+    public string PublicUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The channel a jackpot climbing past a notable number is announced in. Blank means it is not.
+    ///
+    /// Config only for now, unlike the role maps: this is one id that changes when a server is set up
+    /// and never again, and putting it in the admin panel would mean a column, a contract and a form
+    /// field for a value nobody edits twice.
+    /// </summary>
+    public string AnnounceChannelId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How much the progressive has to climb before the floor is told again, in whole dollars.
+    ///
+    /// A step rather than a single threshold, so one number covers a jackpot at five million and the
+    /// same jackpot at fifty. Zero - the default - means the bot never announces a jackpot at all,
+    /// which is the right behaviour for a server that has not asked for it.
+    /// </summary>
+    public long JackpotAnnounceStep { get; set; }
+
+    /// <summary>
+    /// How often a crew report is posted into each crew's own channel, in hours. Zero - the default -
+    /// means never.
+    ///
+    /// Off unless asked for, because this is the only thing the bot does that nobody triggered: every
+    /// other message answers a command or an event the reader's own empire produced. A room that fills
+    /// up with unasked-for reports is a room people mute, and a muted crew room takes the alerts that
+    /// mattered down with it.
+    /// </summary>
+    public int CrewReportHours { get; set; }
+
+    /// <summary>
+    /// How long each line of the bot's status is shown before the next, in seconds. Zero - the default
+    /// - leaves it on "Playing Street Empire" and never changes it.
+    ///
+    /// Clamped to a floor by the gateway whatever is set here: Discord rate-limits presence updates,
+    /// and a status flicking every second would cost the session rather than the status.
+    /// </summary>
+    public int PresenceRotateSeconds { get; set; }
 }
 
-public sealed class DiscordGuildIntegration(
+/// <summary>
+/// Everything the bot does against one guild: reading the settings row, keeping roles and crew rooms
+/// in step with the game, and every raw call to Discord.
+///
+/// Partial across three files, because one file had grown to the point where the role sync and the
+/// slash commands were each something you scrolled past to reach the other:
+///
+/// <list type="bullet">
+///   <item>this file - settings, role sync, crew channels, and the HTTP underneath them;</item>
+///   <item><c>DiscordCommands.cs</c> - what the slash commands are and how an answer is shaped;</item>
+///   <item><c>DiscordSettingsText.cs</c> - the static parsers turning admin typing into ids and maps.</item>
+/// </list>
+///
+/// One class rather than three, because all of it needs the same bot token, the same settings row and
+/// the same HttpClient. Splitting the type would have meant threading those through three constructors
+/// to buy nothing the file split does not already give.
+/// </summary>
+public sealed partial class DiscordGuildIntegration(
     HttpClient http,
     GameDbContext db,
     IOptions<DiscordIntegrationOptions> options,
     IOptionsSnapshot<GameOptions> gameOptions,
     EconomyService economy,
     TitleService titles,
+    CasinoService casino,
+    SeasonService seasons,
     DiscordGatewayState gatewayState,
     ILogger<DiscordGuildIntegration> logger)
 {
@@ -71,6 +138,15 @@ public sealed class DiscordGuildIntegration(
             row.UpdatedAtUtc,
             row.UpdatedBy);
     }
+
+    /// <summary>
+    /// The Discord channel each crew has, by crew name.
+    ///
+    /// Exposed so the sweep can post into these rooms without learning how the settings row layers
+    /// over configuration - which is this class's job and nobody else's.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> CrewChannelsAsync(CancellationToken ct)
+        => Effective(await SettingsRowAsync(ct)).CrewChannels;
 
     public async Task<string?> GatewayBotTokenAsync(CancellationToken ct)
     {
@@ -314,249 +390,6 @@ public sealed class DiscordGuildIntegration(
             now);
     }
 
-    public async Task<DiscordCommandRegistrationResponse> RegisterSlashCommandsAsync(CancellationToken ct)
-    {
-        var row = await SettingsRowAsync(ct);
-        var settings = Effective(row);
-        if (!settings.BotConfigured || string.IsNullOrWhiteSpace(settings.ApplicationId))
-            throw new GameRuleException("Add a bot token, application id, and guild id before registering slash commands.");
-
-        var commands = new[]
-        {
-            new
-            {
-                name = "profile",
-                type = 1,
-                description = "Look up a Street Empire profile.",
-                options = new[] { StringOption("player", "Player name. Leave blank to use your linked empire.", required: false) }
-            },
-            new
-            {
-                name = "rank",
-                type = 1,
-                description = "Show a Street Empire rank and net worth.",
-                options = new[] { StringOption("player", "Player name. Leave blank to use your linked empire.", required: false) }
-            },
-            new
-            {
-                name = "market",
-                type = 1,
-                description = "Show city market prices and travel risk.",
-                options = new[] { StringOption("city", "City name. Leave blank to use your linked city.", required: false) }
-            },
-            new
-            {
-                name = "streetwire",
-                type = 1,
-                description = "Show the latest Street Empire update.",
-                options = Array.Empty<object>()
-            },
-        };
-
-        foreach (var command in commands)
-        {
-            var response = await SendBotJsonAsync(
-                settings,
-                HttpMethod.Post,
-                $"/applications/{settings.ApplicationId}/guilds/{settings.GuildId}/commands",
-                command,
-                ct);
-            if (!response.IsSuccessStatusCode)
-                throw new GameRuleException($"Discord refused slash command registration with {(int)response.StatusCode} {response.ReasonPhrase}.");
-        }
-
-        var now = DateTime.UtcNow;
-        row.DiscordCommandsRegisteredAtUtc = now;
-        row.UpdatedAtUtc = now;
-        await db.SaveChangesAsync(ct);
-        return new DiscordCommandRegistrationResponse(commands.Length, now);
-    }
-
-    public async Task<bool> VerifyInteractionSignatureAsync(HttpRequest request, string body, CancellationToken ct)
-    {
-        var settings = Effective(await SettingsRowAsync(ct));
-        if (string.IsNullOrWhiteSpace(settings.PublicKey))
-            return false;
-
-        var signatureHeader = request.Headers["X-Signature-Ed25519"].ToString();
-        var timestamp = request.Headers["X-Signature-Timestamp"].ToString();
-        if (string.IsNullOrWhiteSpace(signatureHeader) || string.IsNullOrWhiteSpace(timestamp))
-            return false;
-
-        try
-        {
-            var signature = Convert.FromHexString(signatureHeader);
-            var publicKey = Convert.FromHexString(settings.PublicKey);
-            var signed = Encoding.UTF8.GetBytes(timestamp + body);
-            return signature.Length == Ed25519.SignatureSizeInBytes
-                && publicKey.Length == Ed25519.PublicKeySizeInBytes
-                && Ed25519.Verify(signature, signed, publicKey);
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
-
-    public async Task<object> HandleInteractionAsync(JsonDocument document, CancellationToken ct)
-    {
-        var root = document.RootElement;
-        var type = root.TryGetProperty("type", out var typeElement) ? typeElement.GetInt32() : 0;
-        if (type == 1)
-            return PongInteractionResponse();
-
-        if (type != 2 || !root.TryGetProperty("data", out var data))
-            return InteractionResponse(Ephemeral("Street Empire did not understand that Discord interaction."));
-
-        var name = data.GetProperty("name").GetString()?.Trim().ToLowerInvariant();
-        var discordUserId = DiscordUserId(root);
-        var options = CommandOptions(data);
-        var content = name switch
-        {
-            "profile" => await ProfileCommandAsync(options.GetValueOrDefault("player"), discordUserId, ct),
-            "rank" => await RankCommandAsync(options.GetValueOrDefault("player"), discordUserId, ct),
-            "market" => await MarketCommandAsync(options.GetValueOrDefault("city"), discordUserId, ct),
-            "streetwire" => await StreetWireCommandAsync(ct),
-            _ => Ephemeral("Street Empire does not have that command yet.")
-        };
-
-        return InteractionResponse(content);
-    }
-
-    public async Task EditOriginalInteractionResponseAsync(string applicationId, string interactionToken, object interactionResponse, CancellationToken ct)
-    {
-        var content = InteractionMessagePayload(interactionResponse);
-        using var request = new HttpRequestMessage(
-            HttpMethod.Patch,
-            $"{ApiRoot}/webhooks/{Uri.EscapeDataString(applicationId)}/{Uri.EscapeDataString(interactionToken)}/messages/@original")
-        {
-            Content = JsonContent.Create(content, options: JsonOptions)
-        };
-
-        using var response = await http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
-            logger.LogWarning("Discord refused original interaction edit with {Status} {Reason}.", (int)response.StatusCode, response.ReasonPhrase);
-    }
-
-    public static object PongInteractionResponse() => new { type = 1 };
-
-    /// <summary>
-    /// Always ephemeral. The deferral is sent before the command name is parsed, so there is no way to
-    /// know yet whether the answer wants to be public - and a private reply shown to the whole channel is
-    /// the worse of the two mistakes. Discord fixes ephemerality at the deferral: the follow-up edit
-    /// cannot widen it later, so every slash command answers the caller alone.
-    /// </summary>
-    public static object DeferredInteractionResponse()
-        => new
-        {
-            type = 5,
-            data = new
-            {
-                flags = 64,
-                allowed_mentions = new { parse = Array.Empty<string>() }
-            }
-        };
-
-    public static bool TryReadInteractionCallback(JsonDocument document, out int type, out string applicationId, out string token)
-    {
-        var root = document.RootElement;
-        type = root.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.Number
-            ? typeElement.GetInt32()
-            : 0;
-        applicationId = root.TryGetProperty("application_id", out var appElement) ? appElement.GetString() ?? string.Empty : string.Empty;
-        token = root.TryGetProperty("token", out var tokenElement) ? tokenElement.GetString() ?? string.Empty : string.Empty;
-        return !string.IsNullOrWhiteSpace(applicationId) && !string.IsNullOrWhiteSpace(token);
-    }
-
-    public static string? NormalizeSnowflake(string? value, int max = 32)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var trimmed = value.Trim();
-        if (trimmed.Length > max || trimmed.Any(ch => ch is < '0' or > '9'))
-            throw new GameRuleException("Discord ids must be numbers copied from Discord developer mode.");
-        return trimmed;
-    }
-
-    public static string? NormalizePublicKey(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var trimmed = value.Trim();
-        if (trimmed.Length != 64 || trimmed.Any(ch => !Uri.IsHexDigit(ch)))
-            throw new GameRuleException("Discord public key must be the 64-character hex key from the application page.");
-        return trimmed.ToLowerInvariant();
-    }
-
-    public static string? NormalizeBotToken(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var trimmed = value.Trim();
-        if (trimmed.Length is < 32 or > 256)
-            throw new GameRuleException("Discord bot token length does not look right.");
-        return trimmed;
-    }
-
-    public static Dictionary<string, string> ParseCityRoleMap(string? value)
-        => ParseNamedRoleMap(value, "City", "City roles use one mapping per line, like Chicago=123456789.");
-
-    public static Dictionary<string, string> ParseCrewRoleMap(string? value)
-        => ParseNamedRoleMap(value, "Crew", "Crew roles use one mapping per line, like The Eastside Table=123456789.");
-
-    public static Dictionary<string, string> ParseCrewChannelMap(string? value)
-        => ParseNamedRoleMap(value, "Crew channel", "Crew channels use one mapping per line, like The Eastside Table=123456789.");
-
-    public static Dictionary<string, string> ParseTitleRoleMap(string? value)
-        => ParseNamedRoleMap(value, "Title", "Title roles use one mapping per line, like killer=123456789.");
-
-    private static Dictionary<string, string> ParseNamedRoleMap(string? value, string label, string formatError)
-    {
-        var roles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(value))
-            return roles;
-
-        var trimmed = value.Trim();
-        if (trimmed.StartsWith("{", StringComparison.Ordinal))
-        {
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(trimmed, JsonOptions) ?? [];
-            foreach (var pair in parsed)
-                AddNamedRole(roles, pair.Key, pair.Value, label);
-            return roles;
-        }
-
-        foreach (var line in trimmed.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
-        {
-            var clean = line.Trim();
-            if (clean.Length == 0) continue;
-            var separator = clean.IndexOf('=');
-            if (separator < 0) separator = clean.IndexOf(':');
-            if (separator < 0)
-                throw new GameRuleException(formatError);
-            AddNamedRole(roles, clean[..separator], clean[(separator + 1)..], label);
-        }
-
-        return roles;
-    }
-
-    public static string CityRoleMapJson(string? value)
-        => RoleMapJson(ParseCityRoleMap(value));
-
-    public static string CrewRoleMapJson(string? value)
-        => RoleMapJson(ParseCrewRoleMap(value));
-
-    public static string CrewChannelMapJson(string? value)
-        => RoleMapJson(ParseCrewChannelMap(value));
-
-    public static string TitleRoleMapJson(string? value)
-        => RoleMapJson(ParseTitleRoleMap(value));
-
-    private static string RoleMapJson(IReadOnlyDictionary<string, string> roles)
-        => roles.Count == 0 ? string.Empty : JsonSerializer.Serialize(roles, JsonOptions);
-
-    public static string CityRoleMapText(IReadOnlyDictionary<string, string> roles)
-        => RoleMapText(roles);
-
-    public static string RoleMapText(IReadOnlyDictionary<string, string> roles)
-        => string.Join('\n', roles.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Select(x => $"{x.Key}={x.Value}"));
-
     internal static IReadOnlyList<AutomaticRoleTarget> AutomaticRoleTargets(
         GameOptions options,
         IReadOnlyList<string> crewNames,
@@ -608,173 +441,6 @@ public sealed class DiscordGuildIntegration(
 
         var name = builder.ToString().TrimEnd('-');
         return name.Length <= 90 ? name : name[..90].TrimEnd('-');
-    }
-
-    private static void AddNamedRole(Dictionary<string, string> roles, string nameValue, string roleValue, string label)
-    {
-        var name = nameValue.Trim();
-        if (name.Length is < 2 or > 64)
-            throw new GameRuleException($"{label} names in the Discord role map must be 2-64 characters.");
-        roles[name] = NormalizeSnowflake(roleValue) ?? throw new GameRuleException($"Every {label.ToLowerInvariant()} role needs a Discord role id.");
-    }
-
-    private async Task<DiscordCommandText> ProfileCommandAsync(string? playerName, string? discordUserId, CancellationToken ct)
-    {
-        var player = await ResolvePlayerAsync(playerName, discordUserId, ct);
-        if (player is null)
-            return NeedPlayer(playerName);
-
-        var rank = await RankOfAsync(player, ct);
-        var netWorth = economy.CalculateNetWorth(player);
-        var crew = player.Alliance is null
-            ? "Independent"
-            : $"{player.Alliance.Name} ({AllianceRanks.Label(player.AllianceRank)})";
-        return Public($"{player.Name} runs {player.City}. Rank #{rank:N0}, worth {netWorth:C0}. Crew: {crew}.");
-    }
-
-    private async Task<DiscordCommandText> RankCommandAsync(string? playerName, string? discordUserId, CancellationToken ct)
-    {
-        var player = await ResolvePlayerAsync(playerName, discordUserId, ct);
-        if (player is null)
-            return NeedPlayer(playerName);
-
-        var rank = await RankOfAsync(player, ct);
-        return Public($"{player.Name} is #{rank:N0} in Street Empire with {economy.CalculateNetWorth(player):C0} net worth.");
-    }
-
-    private async Task<DiscordCommandText> MarketCommandAsync(string? requestedCity, string? discordUserId, CancellationToken ct)
-    {
-        var city = requestedCity;
-        if (string.IsNullOrWhiteSpace(city) && !string.IsNullOrWhiteSpace(discordUserId))
-            city = await db.Players.AsNoTracking()
-                .Where(x => x.Account.DiscordUserId == discordUserId)
-                .Select(x => x.City)
-                .SingleOrDefaultAsync(ct);
-
-        var markets = gameOptions.Value.CityMarkets;
-        gameOptions.Value.Territory.ApplyDefaultsWhereEmpty();
-        markets.ApplyDefaultsWhereEmpty(gameOptions.Value.Territory.Cities());
-        var resolved = markets.ResolveCity(city) ?? markets.ProfileFor(null).City;
-        var weed = markets.ProductPrice(resolved, "weed", gameOptions.Value.WeedSellPrice);
-        var coke = markets.ProductPrice(resolved, "coke", gameOptions.Value.CokeSellPrice);
-        return Public($"{resolved} market: weed {weed:C0}, coke {coke:C0}. Travel {markets.TravelTurns(resolved):N0} turn(s), bust risk {markets.BustChancePercent(resolved)}%.");
-    }
-
-    private async Task<DiscordCommandText> StreetWireCommandAsync(CancellationToken ct)
-    {
-        var now = DateTime.UtcNow;
-        var post = await db.GameAnnouncements.AsNoTracking()
-            .Where(x => !x.IsDraft
-                && x.ArchivedAtUtc == null
-                && x.PublishedAtUtc <= now
-                && (x.ExpiresAtUtc == null || x.ExpiresAtUtc > now))
-            .OrderByDescending(x => x.IsPinned)
-            .ThenByDescending(x => x.PublishedAtUtc)
-            .ThenByDescending(x => x.Id)
-            .FirstOrDefaultAsync(ct);
-        if (post is null)
-            return Public("Street Wire is quiet right now.");
-
-        var version = string.IsNullOrWhiteSpace(post.Version) ? string.Empty : $" [{post.Version}]";
-        return Public($"{post.Title}{version}: {OneLine(post.Body, 280)}");
-    }
-
-    private async Task<Player?> ResolvePlayerAsync(string? playerName, string? discordUserId, CancellationToken ct)
-    {
-        var query = db.Players.AsNoTracking()
-            .Include(x => x.Account)
-            .Include(x => x.Alliance)
-            .Include(x => x.Hideout);
-        if (!string.IsNullOrWhiteSpace(playerName))
-        {
-            var wanted = playerName.Trim();
-            return await query.SingleOrDefaultAsync(x => x.Name.ToLower() == wanted.ToLowerInvariant(), ct);
-        }
-
-        if (string.IsNullOrWhiteSpace(discordUserId))
-            return null;
-        return await query.SingleOrDefaultAsync(x => x.Account.DiscordUserId == discordUserId, ct);
-    }
-
-    private async Task<int> RankOfAsync(Player player, CancellationToken ct)
-    {
-        var netWorth = economy.CalculateNetWorth(player);
-        var contenders = await db.Players.AsNoTracking()
-            .Where(economy.RanksAbove(netWorth, player.CreatedAtUtc))
-            .Select(economy.StandingExpression())
-            .ToListAsync(ct);
-        return EconomyService.RankOf(new PlayerStanding(netWorth, player.CreatedAtUtc), contenders);
-    }
-
-    private static DiscordCommandText NeedPlayer(string? playerName)
-        => string.IsNullOrWhiteSpace(playerName)
-            ? Ephemeral("Link Discord from your Street Empire account, or pass a player name.")
-            : Ephemeral($"No Street Empire player named {playerName.Trim()}.");
-
-    private static DiscordCommandText Public(string text) => new(text, false);
-    private static DiscordCommandText Ephemeral(string text) => new(text, true);
-
-    private static object InteractionResponse(DiscordCommandText content)
-        => new
-        {
-            type = 4,
-            data = new
-            {
-                content = content.Text,
-                flags = content.Ephemeral ? 64 : 0,
-                allowed_mentions = new { parse = Array.Empty<string>() }
-            }
-        };
-
-    private static object InteractionMessagePayload(object interactionResponse)
-    {
-        using var document = JsonDocument.Parse(JsonSerializer.Serialize(interactionResponse, JsonOptions));
-        if (document.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
-        {
-            var content = data.TryGetProperty("content", out var contentElement) ? contentElement.GetString() ?? string.Empty : string.Empty;
-            return new
-            {
-                content,
-                allowed_mentions = new { parse = Array.Empty<string>() }
-            };
-        }
-
-        return new
-        {
-            content = "Street Empire could not answer that command.",
-            allowed_mentions = new { parse = Array.Empty<string>() }
-        };
-    }
-
-    private static Dictionary<string, string> CommandOptions(JsonElement data)
-    {
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (!data.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array)
-            return values;
-
-        foreach (var option in options.EnumerateArray())
-        {
-            var name = option.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
-            if (string.IsNullOrWhiteSpace(name) || !option.TryGetProperty("value", out var valueElement))
-                continue;
-            values[name] = valueElement.ValueKind == JsonValueKind.String
-                ? valueElement.GetString() ?? string.Empty
-                : valueElement.ToString();
-        }
-
-        return values;
-    }
-
-    private static string? DiscordUserId(JsonElement root)
-    {
-        if (root.TryGetProperty("member", out var member)
-            && member.TryGetProperty("user", out var memberUser)
-            && memberUser.TryGetProperty("id", out var memberUserId))
-            return memberUserId.GetString();
-        if (root.TryGetProperty("user", out var user)
-            && user.TryGetProperty("id", out var userId))
-            return userId.GetString();
-        return null;
     }
 
     private static IEnumerable<string> ManagedRoleIds(EffectiveDiscordSettings settings)
@@ -1046,19 +712,10 @@ public sealed class DiscordGuildIntegration(
             ParseTitleRoleMap(titleMap));
     }
 
-    private static object StringOption(string name, string description, bool required)
-        => new { name, description, type = 3, required };
-
     private static string? First(string? stored, string? configured)
         => !string.IsNullOrWhiteSpace(stored) ? stored.Trim()
             : !string.IsNullOrWhiteSpace(configured) ? configured.Trim()
             : null;
-
-    private static string OneLine(string value, int max)
-    {
-        var clean = string.Join(' ', value.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
-        return clean.Length <= max ? clean : clean[..Math.Max(0, max - 1)] + "...";
-    }
 
     internal sealed record EffectiveDiscordSettings(
         string? BotToken,
@@ -1094,7 +751,6 @@ public sealed class DiscordGuildIntegration(
         public static readonly DiscordMemberRolesResult MemberMissing = new(false, true, [], null);
     }
 
-    private sealed record DiscordCommandText(string Text, bool Ephemeral);
     private sealed record DiscordGuildRole(string Id, string Name);
     private sealed record DiscordGuildChannel(string Id, string Name, int Type);
 }

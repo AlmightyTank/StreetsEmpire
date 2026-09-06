@@ -5,7 +5,32 @@ import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, Requ
 import { applyPreferences, loadPreferences, savePreferences, systemPrefersReducedMotion, watchSystemMotion, type Preferences } from './preferences'
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
-import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, BlackjackAction, BlackjackBoard, BlackjackRound, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
+import { clampText, compactDateTime, money, number, signedMoney, wait } from './format'
+import { ActivityList, AdminMetric, betaKeyStatusClass, BUSY, Button, copyToClipboard,
+  DismissibleMessage, firstReason, percent, StatusRow, updateCategories, updateCategoryClass,
+  bannerClass, countdown, PlayerAvatar, PlayerName, ProfileBadgeStrip, profileAccentClass, secondsUntil, timeUntil, updateSeverities,
+  useSecondHand, SectionTabs, timeLeft,
+  updateSeverityClass, useRouteTab, useSecondsTicker, WORKING, type Blocked } from './ui'
+import { awayFromHideout, flowPage, flowTarget, goToFlow, pageMeta, primaryPages, spendable,
+  type AppPage, type GoTo, type PageContext, type RefreshScope } from './pagecontext'
+
+/*
+  The casino, fetched when somebody walks onto the floor rather than shipped to everybody who loads
+  the sign-in page. It is the largest room in the game and most sessions never open it, so it is the
+  first thing worth not sending by default.
+*/
+const CasinoPage = React.lazy(() => import('./pages/Casino').then(m => ({ default: m.CasinoPage })))
+
+/* The admin desk, for the handful of accounts that can open it. */
+const AdminPage = React.lazy(() => import('./pages/Admin').then(m => ({ default: m.AdminPage })))
+
+/* Settings: opened rarely, and never in the middle of a move. */
+const AccountPage = React.lazy(() => import('./pages/Account').then(m => ({ default: m.AccountPage })))
+
+/* The crew room and the season shelf: real pages, but not the loop anybody plays in. */
+const AlliancePage = React.lazy(() => import('./pages/Alliance').then(m => ({ default: m.AlliancePage })))
+const SeasonsPage = React.lazy(() => import('./pages/Seasons').then(m => ({ default: m.SeasonsPage })))
 import './styles/main.scss'
 /*
   Bootstrap's JavaScript. Imported as a namespace rather than for a side effect, for two reasons:
@@ -33,38 +58,10 @@ declare global {
 }
 window.bootstrap = bootstrap
 
-const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-const number = new Intl.NumberFormat('en-US')
 
-async function copyToClipboard(value: string) {
-  if (navigator.clipboard) {
-    await navigator.clipboard.writeText(value)
-    return
-  }
 
-  const area = document.createElement('textarea')
-  area.value = value
-  area.setAttribute('readonly', '')
-  area.style.position = 'fixed'
-  area.style.left = '-9999px'
-  document.body.appendChild(area)
-  area.select()
-  document.execCommand('copy')
-  document.body.removeChild(area)
-}
 
-function compactDateTime(iso: string | null | undefined) {
-  return iso ? new Date(iso).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Never'
-}
 
-/** Three states and no fourth: a key is waiting, spent, or taken back. It never goes off on its own. */
-function betaKeyStatusClass(status: AccountInviteKey['status'] | AdminBetaKey['status']) {
-  return status === 'Available'
-    ? 'text-bg-success'
-    : status === 'Used'
-      ? 'text-bg-primary'
-      : 'text-bg-secondary'
-}
 
 /*
   Why a button will not go.
@@ -82,74 +79,13 @@ function betaKeyStatusClass(status: AccountInviteKey['status'] | AdminBetaKey['s
   the way a disabled one did, refuses the click and the Enter key that would have submitted its
   form, and gives the reason up to a hover, a tab stop or a tap.
 */
-type Blocked = string | false | null | undefined
 
-/**
- * The first reason that applies, or null when the button is good to go.
- *
- * Written to be fed `condition && 'why not'` in the order the player would think of them, so the
- * one thing they are told is the first thing standing in the way rather than the last:
- *
- *   blocked={firstReason(
- *     busy && BUSY,
- *     turns < cost && `That run wants ${cost} turns and you have ${turns}.`,
- *   )}
- */
-function firstReason(...reasons: Blocked[]): string | null {
-  return reasons.find((reason): reason is string => typeof reason === 'string' && reason !== '') ?? null
-}
 
 // The reason almost every button in the game can give, because almost every one of them waits on the
-// same in-flight request.
-const BUSY = 'Hold on - your last move is still going through.'
 
-// The same thing said behind the admin desk, where the buttons act on the game rather than play it.
-const WORKING = 'Hold on - the last request is still going through.'
 
-function Button({ blocked, className, title, onClick, children, ...rest }: {
-  blocked?: Blocked
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>) {
-  const button = useRef<HTMLButtonElement>(null)
-  const reason = firstReason(blocked)
 
-  /*
-    Bootstrap's tooltip rather than the browser's title bubble: the browser's waits the best part of a
-    second, is styled by the operating system rather than by this game, and never appears for someone
-    arriving by keyboard. Constructed by hand because tooltips are the one Bootstrap plugin that stays
-    opt-in under the data-attribute API, and disposed on the way out so a button that unmounts while
-    the bubble is up does not leave it behind on the page.
-  */
-  useEffect(() => {
-    if (!button.current || !reason) return
-    const tip = new bootstrap.Tooltip(button.current, {
-      title: reason,
-      trigger: 'hover focus',
-      customClass: 'blocked-reason',
-      // On the body, so a reason raised from inside a dialog or the chat dock is not clipped by it.
-      container: 'body',
-    })
-    return () => tip.dispose()
-  }, [reason])
 
-  return <button
-    {...rest}
-    ref={button}
-    className={reason ? `${className ?? ''} is-blocked` : className}
-    // Not the disabled attribute: this button keeps its place in the tab order precisely so that
-    // someone who never touches a mouse can land on it and be told why it is off.
-    aria-disabled={reason ? true : undefined}
-    title={reason ? undefined : title}
-    onClick={event => {
-      if (reason) {
-        // Stops the click, and with it the submit that a button inside a form would otherwise fire -
-        // including the one the browser sends here when Enter is pressed in a text field.
-        event.preventDefault()
-        return
-      }
-      onClick?.(event)
-    }}
-  >{children}</button>
-}
 
 function LandingView({ stats }: { stats: PublicStats | null }) {
   const leaders = stats?.leaders ?? []
@@ -234,111 +170,15 @@ function LandingView({ stats }: { stats: PublicStats | null }) {
   </section>
 }
 
-type AppPage = 'overview' | 'street' | 'crew' | 'market' | 'recon' | 'seasons' | 'updates' | 'alliance' | 'account' | 'admin'
 
 // Quick grants for the selected player. Every one goes through the audited adjust endpoint, so
-// unlike the old self-only cheats these work on anybody and leave a record with a reason.
-const adjustPresets: { label: string, resource: string, delta: number }[] = [
-  { label: '+$10k cash', resource: 'cash', delta: 10_000 },
-  { label: '+$10k bank', resource: 'bank', delta: 10_000 },
-  { label: '+50 turns', resource: 'turns', delta: 50 },
-  { label: '+5 pimps', resource: 'pimps', delta: 5 },
-  { label: '+25 hoes', resource: 'hoes', delta: 25 },
-  { label: '+10 thugs', resource: 'thugs', delta: 10 },
-  { label: '+100 condoms', resource: 'condoms', delta: 100 },
-  { label: '+100 beer', resource: 'beer', delta: 100 },
-  // Pistols rather than "weapons": the adjust endpoint takes a tier, and there has been no such column
-  // since guns split into four. The button answered 400 to every press.
-  { label: '+10 pistols', resource: 'pistols', delta: 10 },
-  { label: '+250 weed', resource: 'weed', delta: 250 },
-  { label: '+100 coke', resource: 'coke', delta: 100 },
-]
 
-/**
- * The pages that keep a permanent slot in the phone's bottom bar. A tab bar stops being navigation
- * somewhere around five items - past that the targets get too narrow to hit and the labels too short
- * to read - so the rest live behind More. These four are the loop the ladder itself teaches: work the
- * streets, staff the crew, sell what you made, and a home to see it from.
- */
-const primaryPages: AppPage[] = ['overview', 'street', 'crew', 'market']
 
-const pageMeta: Record<AppPage, { label: string, short: string, kicker: string }> = {
-  overview: { label: 'Overview', short: 'OV', kicker: 'Command centre' },
-  street: { label: 'Street', short: 'ST', kicker: 'Turns and cash' },
-  crew: { label: 'Crew', short: 'CR', kicker: 'Morale, rooms and craft' },
-  market: { label: 'Business', short: 'BZ', kicker: 'Shop, market and runs' },
-  recon: { label: 'Raids & Map', short: 'RM', kicker: 'Targets and territory' },
-  seasons: { label: 'Seasons', short: 'SN', kicker: 'The clock and the record' },
-  updates: { label: 'Updates', short: 'UP', kicker: 'Patch notes and events' },
-  alliance: { label: 'Alliance', short: 'AL', kicker: 'Who you run with' },
-  account: { label: 'Account', short: 'AC', kicker: 'How you get in' },
-  admin: { label: 'Admin', short: 'AD', kicker: 'Control centre' },
-}
 
-const updateCategories: GameAnnouncement['category'][] = ['Info', 'Patch', 'Balance', 'Event', 'Maintenance']
-const updateSeverities: GameAnnouncement['severity'][] = ['Info', 'Warning', 'Event', 'Maintenance']
 
-/**
- * Somewhere to send a player: a page, the tab on it, and the panel on that.
- *
- * All three, because all three are the address. A page was never enough, a tab is not either: the
- * Business page is four screens tall and the crew page longer, so "we took you to the right tab" can
- * still mean the thing you were sent for is off the bottom of the screen with nothing pointing at it.
- */
-type GoTo = (page: AppPage, tab?: string, area?: string) => void
 
-/**
- * Turns a name written elsewhere into somewhere to go.
- *
- * The server names a thing rather than a screen. Guidance says "hideout" when it wants a room upgraded
- * and "bank" when it wants cash put away, and an announcement's action link is a path somebody typed
- * into an admin form. None of those know which page a section lives on, or should have to: this is the
- * single place that does, and the only thing that has to move when a section does.
- *
- * Which is what makes it worth reading as a list. Every row is a promise that a name means a place, and
- * two of them have already been quietly broken by things moving underneath: "sell product" pointed at
- * Business for as long as the panel has existed, and selling has not been on Business since the bench
- * took it over - so the one move the game makes when your store is full sent people to a page with no
- * way to sell anything on it.
- */
-function flowTarget(name: string): { page: AppPage, tab?: string, area?: string } {
-  // The crew, and the three things you do to it.
-  if (name === 'crew') return { page: 'crew', tab: 'roster', area: 'crew' }
-  if (name === 'crew-hiring') return { page: 'crew', tab: 'roster', area: 'crew-hiring' }
-  if (name === 'arrests') return { page: 'crew', tab: 'roster', area: 'arrests' }
 
-  // The building. Rooms are what "hideout" has always meant; recovery is a room's other use.
-  if (name === 'hideout') return { page: 'crew', tab: 'hideout', area: 'rooms' }
-  if (name === 'recovery') return { page: 'crew', tab: 'hideout', area: 'recovery' }
 
-  // The bench, which makes, produces and sells. Three verbs on one panel, so one destination.
-  if (name === 'production') return { page: 'crew', tab: 'production', area: 'craft-queue' }
-
-  // The counter and the money.
-  if (name === 'store') return { page: 'market', tab: 'trade', area: 'store' }
-  if (name === 'standing') return { page: 'market', tab: 'trade', area: 'standing' }
-  if (name === 'bank') return { page: 'market', tab: 'trade', area: 'bank' }
-  if (name === 'market') return { page: 'market', tab: 'trade' }
-  if (name === 'flea') return { page: 'market', tab: 'flea' }
-  if (name === 'mules') return { page: 'market', tab: 'routes' }
-
-  if (name === 'street') return { page: 'street', area: 'street-action' }
-  if (name === 'supplies') return { page: 'street', area: 'supplies' }
-  if (name === 'territory') return { page: 'recon', tab: 'ground' }
-  if (name === 'patch-notes' || name === 'news') return { page: 'updates' }
-  return { page: name in pageMeta ? name as AppPage : 'overview' }
-}
-
-/** The same answer for the places that only need the page, like the callout deciding it is on it. */
-function flowPage(name: string): AppPage {
-  return flowTarget(name).page
-}
-
-/** Sends somebody at a name. The one call every "take me there" button should be making. */
-function goToFlow(onPage: GoTo, name: string): void {
-  const { page, tab, area } = flowTarget(name)
-  onPage(page, tab, area)
-}
 
 /**
  * Navigation for a phone.
@@ -1440,6 +1280,28 @@ function App() {
     }
   }
 
+  /**
+   * The numbers in the header, and nothing else.
+   *
+   * A full refresh is seven requests: both ladders, world news, the target list, combat history and
+   * the mission list. Almost nothing moves any of them. An action that only moves money and turns can
+   * say so, and the casino is where that matters - it is the one room where somebody takes an action
+   * every second or two, and it was spending fifteen requests on each one.
+   */
+  const refreshDashboard = async () => {
+    try {
+      const d = await api.dashboard()
+      setDashboard(d)
+      setTickSeconds(d.secondsUntilNextTurnTick)
+      setHoeCut(d.hoeCutPercent)
+      setError('')
+    } catch (e) {
+      // Being signed out needs the whole teardown, which lives in refresh rather than twice.
+      if ((e as Error).message === 'Unauthorized') await refresh()
+      else setError((e as Error).message)
+    }
+  }
+
   // A boolean, not the mission array: depending on the array rebuilt the interval on every poll.
   const hasActiveMission = combatMissions.some(mission => mission.status !== 'Complete')
   const hadActiveMission = useRef(false)
@@ -1680,13 +1542,14 @@ function App() {
     void api.discardDiscordTicket().catch(() => {})
   }
 
-  const act = async (fn: () => Promise<ActionResult | unknown>) => {
+  const act = async (fn: () => Promise<ActionResult | unknown>, after: RefreshScope = 'full') => {
     setBusy(true); setError(''); setNotice(''); setLastBreakdown(null)
     try {
       const result = await fn() as ActionResult | undefined
       if (result?.summary) setNotice(result.summary)
       if (result?.breakdown) setLastBreakdown(result.breakdown)
-      await refresh()
+      if (after === 'full') await refresh()
+      else if (after === 'dashboard') await refreshDashboard()
     } catch (e) { setError((e as Error).message) }
     finally { setBusy(false) }
   }
@@ -1983,6 +1846,7 @@ function App() {
   const visiblePages = (Object.keys(pageMeta) as AppPage[]).filter(page => page !== 'admin' || adminOverview)
   const contentContext: PageContext = {
     dashboard,
+    refreshDashboard,
     adminOverview,
     leaders,
     cityLeaders,
@@ -2156,70 +2020,27 @@ function App() {
   </main>
 }
 
-type PageContext = {
-  /** Opens the walkthrough at its first step. A shell control, like setActivePage beside it. */
-  openTour: () => void
-  dashboard: Dashboard
-  adminOverview: AdminOverview | null
-  leaders: LeaderboardEntry[]
-  cityLeaders: LeaderboardEntry[]
-  targets: PlayerTarget[]
-  selectedTarget: PlayerProfile | null
-  worldNews: WorldNews
-  combatLogs: CombatLog[]
-  combatMissions: CombatMission[]
-  targetQuery: string
-  busy: boolean
-  streetTurns: number
-  autoBuySupplies: boolean
-  productionTurns: number
-  hoeCut: number
-  bankAmount: number
-  crewQty: Record<'pimps' | 'hoes' | 'thugs', number>
-  attackCrew: { thugs: number, weapons: number }
-  commanderId: number | null
-  attackMethod: AttackMethodKey
-  poachCoke: number
-  borrowedThugs: number
-  district: string
-  storeQty: Record<string, number>
-  sellQty: Record<'weed' | 'coke', number>
-  nextTurn: string
-  totalCrew: number
-  weaponCoverage: number
-  managementCapacity: number
-  setActivePage: GoTo
-  refresh: () => Promise<void>
-  setTargetQuery: (query: string) => void
-  setStreetTurns: (turns: number) => void
-  setAutoBuySupplies: (enabled: boolean) => void
-  setProductionTurns: (turns: number) => void
-  setHoeCut: (cut: number) => void
-  setBankAmount: (amount: number) => void
-  setCrewQty: React.Dispatch<React.SetStateAction<Record<'pimps' | 'hoes' | 'thugs', number>>>
-  setAttackCrew: React.Dispatch<React.SetStateAction<{ thugs: number, weapons: number }>>
-  setAttackMethod: (method: AttackMethodKey) => void
-  setPoachCoke: (coke: number) => void
-  setBorrowedThugs: (thugs: number) => void
-  setDistrict: (district: string) => void
-  setCommanderId: (id: number | null) => void
-  setStoreQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
-  setSellQty: React.Dispatch<React.SetStateAction<Record<'weed' | 'coke', number>>>
-  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
-  searchTargets: (event: FormEvent<HTMLFormElement>) => void
-  inspectTarget: (playerId: string) => void
-  attackTarget: (defenderId: string) => void
-  cancelMission: (missionId: number) => void
-  seedBots: (count: number) => void
-  runBots: (rounds: number) => void
-  setBotAutomation: (enabled: boolean, timing?: { tickSeconds?: number, roundsPerTick?: number, resetTiming?: boolean }) => void
+
+/**
+ * The page itself, inside the boundary its loading needs.
+ *
+ * The pages that are fetched on demand suspend on their first render, and a suspending component with
+ * nothing above it to catch it takes the whole app down. The fallback is deliberately quiet: these
+ * chunks arrive in a few milliseconds over a warm connection, and a spinner that flashes on every
+ * first visit to a page is worse than a moment of nothing.
+ */
+function renderPage(page: AppPage, ctx: PageContext) {
+  return <React.Suspense fallback={<p className="text-body-tertiary small">Loading.</p>}>
+    {pageBody(page, ctx)}
+  </React.Suspense>
 }
 
-function renderPage(page: AppPage, ctx: PageContext) {
+function pageBody(page: AppPage, ctx: PageContext) {
   switch (page) {
     case 'street': return <StreetPage {...ctx} />
     case 'crew': return <CrewPage {...ctx} />
     case 'market': return <MarketPage {...ctx} />
+    case 'casino': return <CasinoPage {...ctx} />
     case 'recon': return <CombatPage {...ctx} />
     case 'seasons': return <SeasonsPage {...ctx} />
     case 'updates': return <UpdatesPage {...ctx} />
@@ -2292,18 +2113,6 @@ function SeasonPanel({ onPage }: { onPage: (page: AppPage) => void }) {
   </section>
 }
 
-/**
- * A second hand, so a countdown moves while somebody is looking at it rather than only when something
- * else happens to redraw the page.
- */
-function useSecondHand(active: boolean) {
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    if (!active) return
-    const timer = window.setInterval(() => setTick(value => value + 1), 1000)
-    return () => window.clearInterval(timer)
-  }, [active])
-}
 
 /**
  * Seasons, in the round: the clock everybody is playing against, the board they are playing on, and
@@ -2318,394 +2127,14 @@ function useSecondHand(active: boolean) {
  * now, how did the ones before it end, and what have I got to show for any of it - and trying to
  * answer all three in one card on the dashboard is how it ended up answering none of them.
  */
-const SEASON_TABS = ['now', 'past', 'you'] as const
 
-function SeasonsPage(ctx: PageContext) {
-  const [tab, setTab] = useRouteTab('seasons', SEASON_TABS, 'now')
-  const [season, setSeason] = useState<Season | null>(null)
-  const [shelf, setShelf] = useState<SeasonArchiveEntry[] | null>(null)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    let live = true
-    void Promise.all([api.season(), api.seasons()])
-      .then(([current, all]) => { if (!live) return; setSeason(current); setShelf(all) })
-      .catch(() => { if (live) setFailed(true) })
-    return () => { live = false }
-  }, [])
-
-  return <div className="d-grid gap-3">
-    <SectionTabs
-      label="Season sections"
-      active={tab}
-      onActive={setTab}
-      tabs={[
-        { key: 'now', label: 'This Season' },
-        { key: 'past', label: 'Finished' },
-        { key: 'you', label: 'Your Record' },
-      ]}
-    />
-    {failed && <p className="alert alert-danger mb-0">The season record would not load. The standings are live either way.</p>}
-    {tab === 'now' && <ThisSeasonTab ctx={ctx} season={season} now={shelf?.find(entry => entry.running) ?? null} />}
-    {tab === 'past' && <FinishedSeasonsTab shelf={shelf} you={ctx.dashboard.playerId} />}
-    {tab === 'you' && <YourRecordTab season={season} name={ctx.dashboard.name} />}
-  </div>
-}
-
-/*
-  What a roll does, said as two lists rather than as a paragraph.
-
-  The rule is one sentence - the empire goes and the person stays - and somebody about to lose a month
-  of work does not want the sentence, they want the inventory. Held here rather than inline because the
-  two columns are the same shape, and the whole point of them is being read against each other.
-*/
-const SEASON_KEEPS = [
-  'Your account and how you sign in',
-  'Your player name and your town',
-  'Your alliance and who you run with',
-  'Every honour you have ever won',
-  'Every season result ever recorded',
-]
-
-const SEASON_TAKES = [
-  'Cash and bank',
-  'Your pimps, hoes, thugs, and named roster reset to the starting crew',
-  'The building and every room in it',
-  'All stock, at whatever it was worth',
-  'All held ground, and the work put into it',
-  'Every combat clock and shield',
-  'The alliance treasury and its thug pool',
-]
-
-function ThisSeasonTab({ ctx, season, now }: {
-  ctx: PageContext
-  season: Season | null
-  now: SeasonArchiveEntry | null
-}) {
-  const { dashboard } = ctx
-  const yourRaidRow = season?.currentStandings.find(row => row.playerId === dashboard.playerId && row.raidScore > 0) ?? null
-  useSecondHand(season?.enabled === true)
-
-  return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
-    <div className="d-grid gap-3 align-items-start">
-      {season && <section className="card p-3">
-        <div className="panel-title">
-          <h2>{season.name}</h2>
-          <span>{season.enabled ? `${timeLeft(season.endsAtUtc)} left` : 'No end date'}</span>
-        </div>
-
-        {season.enabled
-          ? <>
-            <SeasonProgress season={season} />
-            <div className="tnum d-grid gtc-fill-140 gap-2 mt-3">
-              <AdminMetric label="Day" value={`${dayOfSeason(season)} of ${season.lengthDays}`} />
-              <AdminMetric
-                label="Ends"
-                value={new Date(season.endsAtUtc).toLocaleDateString([], { day: 'numeric', month: 'short' })}
-                sub={new Date(season.endsAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              />
-              <AdminMetric label="Empires in it" value={now ? number.format(now.players) : '-'} />
-              <AdminMetric
-                label="Your raid rank"
-                value={yourRaidRow ? `#${yourRaidRow.rank}` : 'Unranked'}
-                sub={yourRaidRow ? `${money.format(yourRaidRow.raidScore)} taken` : 'No raid of yours has scored yet'}
-              />
-            </div>
-          </>
-          : <p className="text-body-tertiary mt-3 mb-0">
-            Seasons are not running on this world. Nothing resets, the date on the clock is only a
-            marker, and the raid board is only a record of what has happened so far.
-          </p>}
-      </section>}
-
-      <section className="card p-3">
-        <div className="panel-title"><h2>What a roll does</h2><span>The empire goes, the person stays</span></div>
-        <div className="d-grid gtc-1 gtc-md-2 gap-3 mt-3">
-          <div className="d-grid gap-1 align-content-start">
-            <strong className="text-success-emphasis small">Comes through untouched</strong>
-            {SEASON_KEEPS.map(item => <small className="text-body-secondary border-top py-1" key={item}>{item}</small>)}
-          </div>
-          <div className="d-grid gap-1 align-content-start">
-            <strong className="text-danger-emphasis small">Goes back to day one</strong>
-            {SEASON_TAKES.map(item => <small className="text-body-secondary border-top py-1" key={item}>{item}</small>)}
-          </div>
-        </div>
-      </section>
-
-      {season && <section className="card p-3">
-        <div className="panel-title"><h2>What finishing well is worth</h2><span>Opening cash, next season</span></div>
-        <StatusRow label="Champion" value={money.format(season.championHeadStart)} />
-        <StatusRow label="Top three" value={money.format(season.topThreeHeadStart)} />
-        <StatusRow label="Top ten" value={money.format(season.topTenHeadStart)} />
-        {/* The run itself, which is the part worth protecting and the reason to keep playing a season
-            you have already won. Only shown to somebody who has one - a zero here is noise. */}
-        {season.yourTopTenStreak > 0 && <div className="d-grid gap-1 mt-3 border border-primary rounded bg-body-tertiary px-3 py-2">
-          <span className="eyebrow text-primary">Your run</span>
-          <strong className="fs-5">{money.format(season.yourHeadStart)}</strong>
-          <small className="text-body-secondary lh-sm">
-            Stacked over {number.format(season.yourTopTenStreak)} season
-            {season.yourTopTenStreak === 1 ? '' : 's'} running in the top ten. Finish in the top ten
-            again and this season's prize is added to it. Finish outside it, even once, and all of it
-            goes.
-          </small>
-        </div>}
-        <p className="text-body-tertiary small mt-3 mb-0">
-          These stack. Finish in the top ten and what you won is added to whatever your last run was
-          worth, season after season - and the whole pile is emptied the first time you finish outside
-          it, whether you came eleventh or last. A long run is the biggest prize in the game and it is
-          never more than one ordinary season from nothing.
-        </p>
-      </section>}
-    </div>
-
-    {/* The live board: this season's raid table, and the table it will finish on. */}
-    <section className="card p-3">
-      <SeasonRaidBoard rows={season?.currentStandings ?? []} you={dashboard.playerId} />
-    </section>
-  </div>
-}
-
-/** <param name="you">Your player id. Rows are matched on it, never on a name two empires can share.</param> */
-function SeasonRaidBoard({ rows, you }: { rows: SeasonStanding[], you: string }) {
-  const scored = rows.filter(row => row.raidScore > 0)
-  return <>
-    <div className="panel-title">
-      <h2>Raid Take</h2>
-      <span>{scored.length > 0 ? 'Cash and product stolen' : 'No raids scored yet'}</span>
-    </div>
-    {scored.length === 0
-      ? <p className="text-body-tertiary small mt-3 mb-0">No completed raids have put money or product on the season board yet.</p>
-      : <div className="leaderboard tnum d-grid overflow-y-auto mt-3">
-        {scored.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerId === you} />)}
-      </div>}
-  </>
-}
-
-/** How far through the season is, as a bar rather than two dates to subtract in your head. */
-function SeasonProgress({ season }: { season: Season }) {
-  const start = new Date(season.startedAtUtc).getTime()
-  const end = new Date(season.endsAtUtc).getTime()
-  const percent = end <= start ? 100 : Math.min(100, Math.max(0, ((Date.now() - start) / (end - start)) * 100))
-  return <div
-    className="progress mt-3"
-    role="progressbar"
-    aria-label="Season progress"
-    aria-valuenow={Math.round(percent)}
-    aria-valuemin={0}
-    aria-valuemax={100}
-  >
-    <div className="progress-bar bg-primary" style={{ width: `${Math.max(2, percent)}%` }} />
-  </div>
-}
-
-/** Day one is the day it opened, not day zero. Capped, because a season can sit past its end date. */
-function dayOfSeason(season: Season) {
-  const elapsed = Date.now() - new Date(season.startedAtUtc).getTime()
-  return Math.min(season.lengthDays, Math.max(1, Math.floor(elapsed / 86_400_000) + 1))
-}
-
-/**
- * The seasons that have ended, and one of them in full.
- *
- * A list beside a table rather than a table per season down one column: the archive only ever grows,
- * and the question is nearly always about one particular season.
- */
-/** <param name="you">Your player id, passed down to the table so a row knows whether it is yours.</param> */
-function FinishedSeasonsTab({ shelf, you }: { shelf: SeasonArchiveEntry[] | null, you: string }) {
-  const [picked, setPicked] = useState<number | null>(null)
-  const [table, setTable] = useState<SeasonTable | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const finished = (shelf ?? []).filter(entry => !entry.running)
-  const chosen = picked ?? finished[0]?.number ?? null
-
-  useEffect(() => {
-    if (chosen === null) return
-    let live = true
-    setLoading(true)
-    void api.seasonTable(chosen)
-      .then(value => { if (live) setTable(value) })
-      .catch(() => { if (live) setTable(null) })
-      .finally(() => { if (live) setLoading(false) })
-    return () => { live = false }
-  }, [chosen])
-
-  if (shelf === null) return <p className="text-body-tertiary mb-0">Reading the record.</p>
-
-  if (finished.length === 0) return <section className="card p-3">
-    <div className="panel-title"><h2>Nothing has finished yet</h2><span>The world is on its first</span></div>
-    <p className="mt-3 mb-0">
-      When this season ends, everybody in it gets a line here - where they came, what they took in raids,
-      what town they did it in and what the season was called. Written for everybody rather than only
-      the top, because a season somebody came fortieth in is still a season they played.
-    </p>
-  </section>
-
-  return <div className="d-grid gtc-1 gtc-xl-split-280 gap-3 align-items-start">
-    <section className="card p-3">
-      <div className="panel-title"><h2>Seasons</h2><span>{finished.length} finished</span></div>
-      <div className="d-grid gap-2 mt-3">
-        {finished.map(entry => <button
-          className={`btn btn-secondary d-grid gap-1 text-start ${chosen === entry.number ? 'border-primary text-primary' : ''}`}
-          key={entry.number}
-          type="button"
-          aria-current={chosen === entry.number ? 'true' : undefined}
-          onClick={() => setPicked(entry.number)}
-        >
-          <span className="d-flex justify-content-between align-items-baseline gap-2">
-            <strong className="min-w-0 text-truncate">{entry.name}</strong>
-            <small className="text-body-tertiary flex-shrink-0">
-              {entry.endedAtUtc ? new Date(entry.endedAtUtc).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-            </small>
-          </span>
-          <small className="text-body-tertiary text-truncate">
-            {entry.championName ? `${entry.championName} took ${money.format(entry.championRaidScore)}` : 'Nobody was in it'} / {number.format(entry.players)} finished
-          </small>
-          {/* The line that makes the archive worth opening for somebody who never came top ten. */}
-          {typeof entry.yourRank === 'number' && <small className={entry.yourHonour ? 'text-warning-emphasis' : 'text-body-secondary'}>
-            You finished #{entry.yourRank}{entry.yourHonour ? ` - ${entry.yourHonour}` : ''}
-          </small>}
-        </button>)}
-      </div>
-    </section>
-
-    <section className="card p-3">
-      {table
-        ? <SeasonFinalTable table={table} you={you} />
-        : <p className="text-body-tertiary mb-0">{loading ? 'Reading the table.' : 'That season has no table on the record.'}</p>}
-    </section>
-  </div>
-}
-
-function SeasonFinalTable({ table, you }: { table: SeasonTable, you: string }) {
-  const rows = table.table
-  const yours = table.you
-
-  return <>
-    <div className="panel-title">
-      <h2>{table.name}</h2>
-      <span>{table.endedAtUtc ? `Ended ${new Date(table.endedAtUtc).toLocaleDateString()}` : 'Still running'}</span>
-    </div>
-
-    <div className="tnum d-grid gtc-fill-140 gap-2 mt-3">
-      <AdminMetric label="Finished" value={number.format(table.players)} sub="empires in it" />
-      <AdminMetric
-        label="Won by"
-        value={rows[0]?.playerName ?? '-'}
-        sub={rows[0] ? money.format(rows[0].raidScore) : undefined}
-      />
-      <AdminMetric
-        label="You"
-        value={yours ? `#${yours.rank}` : '-'}
-        sub={yours ? (yours.honour ?? 'a season played') : 'you were not in this one'}
-      />
-    </div>
-
-    {rows.length === 0
-      ? <p className="text-body-tertiary small mt-3 mb-0">No table was written for this one.</p>
-      : <div className="leaderboard tnum d-grid overflow-y-auto mt-3">
-        {rows.map(row => <SeasonRow key={row.rank} row={row} mine={row.playerId === you} />)}
-      </div>}
-
-    {/* The page stops at a hundred; the record does not. Somebody past it still gets their own line. */}
-    {yours && !rows.some(row => row.rank === yours.rank) && <div className="mt-3">
-      <strong className="d-block text-body-secondary small">Your line, past the end of the table above</strong>
-      <div className="tnum d-grid"><SeasonRow row={yours} mine /></div>
-    </div>}
-
-    {rows.length >= 100 && <p className="text-body-tertiary small mt-2 mb-0">
-      The first hundred of {number.format(table.players)}. Every finish is on the record whether or not
-      it is on this page.
-    </p>}
-  </>
-}
-
-function SeasonRow({ row, mine }: { row: SeasonStanding, mine: boolean }) {
-  return <div className={`leader d-grid gap-2 p-2 border-top ${mine ? 'bg-success-subtle' : ''}`}>
-    <span className="text-body-secondary">#{row.rank}</span>
-    <span className="d-grid min-w-0">
-      <strong className="min-w-0 text-truncate">{row.playerName}</strong>
-      <small className="text-body-tertiary text-truncate">{row.crewName ? `${row.crewName} / ` : ''}{row.city}</small>
-    </span>
-    <span className="d-grid justify-items-end gap-1">
-      <span className="text-body-secondary">{money.format(row.raidScore)}</span>
-      <small className="text-body-tertiary">{raidTake(row)}</small>
-      <HonourBadge honour={row.honour} />
-    </span>
-  </div>
-}
-
-function raidTake(row: SeasonStanding) {
-  return `${money.format(row.raidCashTaken)} / ${number.format(row.raidWeedTaken)} weed / ${number.format(row.raidCokeTaken)} coke`
-}
-
-/**
- * The three finishes worth a name, and nothing for the rest.
- *
- * Kept few on purpose: an honour everybody has is a participation sticker, and the point of these is
- * that they are the only thing a reset does not take.
- */
-function HonourBadge({ honour }: { honour?: string | null }) {
-  if (!honour) return null
-  const tone = honour === 'Champion'
-    ? 'text-bg-warning'
-    : honour === 'Top Three' ? 'text-bg-light border' : 'border text-body-secondary'
-  return <span className={`badge rounded-pill ${tone}`}>{honour}</span>
-}
-
-/** What somebody has to show for every season they have been through. The half of the game that lasts. */
-function YourRecordTab({ season, name }: { season: Season | null, name: string }) {
-  if (!season) return <p className="text-body-tertiary mb-0">Reading the record.</p>
-
-  const honours = season.honours
-  const best = honours.reduce<number | null>((low, x) => low === null || x.rank < low ? x.rank : low, null)
-  const championships = honours.filter(x => x.honour === 'Champion').length
-  const topTens = honours.filter(x => x.rank <= 10).length
-
-  return <div className="d-grid gap-3">
-    <section className="card p-3">
-      <div className="panel-title">
-        <h2>{name}</h2>
-        <span>{honours.length === 0 ? 'No seasons finished' : `${honours.length} season${honours.length === 1 ? '' : 's'} finished`}</span>
-      </div>
-      {honours.length === 0
-        ? <p className="mt-3 mb-0">
-          You have not been through a roll yet. When this season ends you get a line here - where you
-          came, what you took in raids, and what it was called - and it stays there through every season
-          after it, which is more than anything else you own can say.
-        </p>
-        : <div className="tnum d-grid gtc-fill-140 gap-2 mt-3">
-          <AdminMetric label="Seasons" value={number.format(honours.length)} />
-          <AdminMetric label="Best finish" value={best === null ? '-' : `#${best}`} />
-          <AdminMetric label="Championships" value={number.format(championships)} />
-          <AdminMetric label="Top ten finishes" value={number.format(topTens)} />
-        </div>}
-    </section>
-
-    {honours.length > 0 && <section className="card p-3">
-      <div className="panel-title"><h2>Every finish</h2><span>Newest first</span></div>
-      <div className="d-grid mt-3">
-        {honours.map(honour => <div className="d-flex justify-content-between align-items-baseline gap-2 border-top py-2" key={honour.number}>
-          <span className="d-grid min-w-0">
-            <strong className="min-w-0 text-truncate">{honour.name}</strong>
-            <small className="text-body-tertiary">
-              #{honour.rank}{honour.endedAtUtc ? ` / ended ${new Date(honour.endedAtUtc).toLocaleDateString()}` : ''}
-            </small>
-          </span>
-          <span className="d-grid justify-items-end gap-1 flex-shrink-0">
-            <span className="tnum text-body-secondary">{money.format(honour.raidScore)}</span>
-            <HonourBadge honour={honour.honour} />
-          </span>
-        </div>)}
-      </div>
-    </section>}
-  </div>
-}
 
 function OverviewPage(ctx: PageContext) {
   const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
     <div className="d-grid gap-3 align-items-start">
+      <InboundStrikePanel dashboard={dashboard} />
+      <StrikesOutPanel dashboard={dashboard} />
       <section className="card p-3 hero-panel d-grid align-content-between">
         <span className="eyebrow">Empire Snapshot</span>
         <h2 className="fs-1 my-2 mb-3">{dashboard.name}</h2>
@@ -2718,6 +2147,7 @@ function OverviewPage(ctx: PageContext) {
           <button className="btn btn-primary" onClick={() => setActivePage('street')}>Work Streets</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('crew')}>Manage Crew</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('market')}>Open Business</button>
+          <button className="btn btn-secondary" onClick={() => setActivePage('casino')}>Hit Casino</button>
           <button className="btn btn-secondary" onClick={() => setActivePage('recon')}>Raids & Map</button>
         </div>
       </section>
@@ -2999,9 +2429,6 @@ function updateActionPage(url: string): AppPage | null {
   return name === null ? null : flowPage(name)
 }
 
-function clampText(value: string, max: number) {
-  return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1)).trimEnd()}...`
-}
 
 function updateSections(update: GameAnnouncement) {
   return [
@@ -3012,27 +2439,8 @@ function updateSections(update: GameAnnouncement) {
   ].flatMap(([label, value]) => typeof value === 'string' && value.trim().length > 0 ? [{ label, value }] : [])
 }
 
-function updateCategoryClass(category: GameAnnouncement['category']) {
-  return category === 'Patch'
-    ? 'text-bg-primary'
-    : category === 'Balance'
-      ? 'text-bg-warning'
-      : category === 'Event'
-        ? 'text-bg-success'
-        : category === 'Maintenance'
-          ? 'text-bg-danger'
-          : 'text-bg-secondary'
-}
 
-function updateSeverityClass(severity: GameAnnouncement['severity']) {
-  return severity === 'Warning'
-    ? 'text-bg-warning'
-    : severity === 'Event'
-      ? 'text-bg-success'
-      : severity === 'Maintenance'
-        ? 'text-bg-danger'
-        : 'text-bg-light border'
-}
+
 
 function StreetPage(ctx: PageContext) {
   const { dashboard, combatMissions, busy, streetTurns, autoBuySupplies, hoeCut, bankAmount, storeQty, district, setActivePage, setStreetTurns, setAutoBuySupplies, setHoeCut, setBankAmount, setStoreQty, setDistrict, act } = ctx
@@ -3080,6 +2488,7 @@ function StreetPage(ctx: PageContext) {
         )} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</Button>
         <Button className="btn btn-primary" blocked={firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Working a shift'),
           !!pendingOutgoingAttack && 'Your crew is out on a job. Nobody is left to work a shift.',
           maxStreetTurns < 1 && 'Your storage cannot supply even a 1-turn street shift for this crew.',
           streetTurns < 1 && 'Set the shift to at least one turn.',
@@ -3177,7 +2586,9 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hirePimpCost}
           cash={dashboard.cash}
           busy={busy}
-          fireBlocked={dashboard.pimps - crewQty.pimps < 1 && 'Somebody has to run the house. You cannot let your last pimp go.'}
+          hireBlocked={awayFromHideout(dashboard, 'Taking somebody on')}
+          fireBlocked={awayFromHideout(dashboard, 'Letting somebody go')
+            || (dashboard.pimps - crewQty.pimps < 1 && 'Somebody has to run the house. You cannot let your last pimp go.')}
           onQuantity={quantity => setCrewQty(value => ({ ...value, pimps: quantity }))}
           onHire={() => void act(() => api.hireCrew('pimps', crewQty.pimps))}
           onFire={() => void act(() => api.fireCrew('pimps', crewQty.pimps))}
@@ -3190,9 +2601,11 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hireHoeCost}
           cash={dashboard.cash}
           busy={busy}
-          hireBlocked={dashboard.hoeHappiness < dashboard.crewReport.minHoeMoraleToHire
+          hireBlocked={awayFromHideout(dashboard, 'Taking somebody on')
+            || dashboard.hoeHappiness < dashboard.crewReport.minHoeMoraleToHire
             && `Nobody new signs on to an unhappy house. Morale is ${dashboard.hoeHappiness.toFixed(0)}% and hiring wants ${dashboard.crewReport.minHoeMoraleToHire.toFixed(0)}%.`}
-          fireBlocked={dashboard.hoes < crewQty.hoes && `You are letting ${number.format(crewQty.hoes)} go and you have ${number.format(dashboard.hoes)}.`}
+          fireBlocked={awayFromHideout(dashboard, 'Letting somebody go')
+            || (dashboard.hoes < crewQty.hoes && `You are letting ${number.format(crewQty.hoes)} go and you have ${number.format(dashboard.hoes)}.`)}
           onQuantity={quantity => setCrewQty(value => ({ ...value, hoes: quantity }))}
           onHire={() => void act(() => api.hireCrew('hoes', crewQty.hoes))}
           onFire={() => void act(() => api.fireCrew('hoes', crewQty.hoes))}
@@ -3211,9 +2624,11 @@ function CrewCorePage(ctx: PageContext) {
           hireCost={dashboard.crewReport.hireThugCost}
           cash={dashboard.cash}
           busy={busy}
-          hireBlocked={dashboard.thugHappiness < dashboard.crewReport.minThugMoraleToHire
+          hireBlocked={awayFromHideout(dashboard, 'Taking somebody on')
+            || dashboard.thugHappiness < dashboard.crewReport.minThugMoraleToHire
             && `Nobody new signs on to an unhappy house. Morale is ${dashboard.thugHappiness.toFixed(0)}% and hiring wants ${dashboard.crewReport.minThugMoraleToHire.toFixed(0)}%.`}
-          fireBlocked={dashboard.thugs < crewQty.thugs && `You are letting ${number.format(crewQty.thugs)} go and you have ${number.format(dashboard.thugs)}.`}
+          fireBlocked={awayFromHideout(dashboard, 'Letting somebody go')
+            || (dashboard.thugs < crewQty.thugs && `You are letting ${number.format(crewQty.thugs)} go and you have ${number.format(dashboard.thugs)}.`)}
           onQuantity={quantity => setCrewQty(value => ({ ...value, thugs: quantity }))}
           onHire={() => void act(() => api.hireCrew('thugs', crewQty.thugs))}
           onFire={() => void act(() => api.fireCrew('thugs', crewQty.thugs))}
@@ -3251,6 +2666,25 @@ function HideoutPage(ctx: PageContext) {
   }, [repairing?.completesAtUtc])
 
   return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
+    {/* Before anything else, because it changes what every panel below it means. The page deliberately
+        does not disappear when the player is elsewhere - watching your labs run and your timers tick
+        from another town is most of what an operation is - but nothing on it can be touched, and
+        saying that once at the top is better than eleven buttons each refusing separately. */}
+    {!hideout.atHideout && <section className="card p-3 gcol-full border-warning" data-area="away">
+      <div className="panel-title">
+        <h2>You are not here</h2>
+        <span>{dashboard.city} &rarr; {hideout.city}</span>
+      </div>
+      <p className="mb-2">
+        Your hideout is in {hideout.city} and you are in {dashboard.city}. Everything below is still
+        running - the labs, the timers, the lookout - and you can watch all of it. Touching any of it
+        needs you to be standing there.
+      </p>
+      <ul className="small text-body-secondary mb-0">
+        {dashboard.location.blockedHere.map(what => <li key={what}>{what}</li>)}
+      </ul>
+    </section>}
+
     {/* Above the capacity bars on purpose. A house with three dark rooms has one decision in it and
         this is it, and a player who has to scroll past their storage graph to find out why the mules
         will not leave has been told last. Absent entirely when nothing is broken, rather than an
@@ -3278,7 +2712,9 @@ function HideoutPage(ctx: PageContext) {
             busy && BUSY,
             repairing?.room === room.room && `The crew are in there now. Working again in ${timeUntil(repairing.completesAtUtc)}.`,
             !!repairing && repairing.room !== room.room && `Your crew are in the ${repairing.name} for another ${timeUntil(repairing.completesAtUtc)}.`,
-            dashboard.cash + dashboard.bankCash < room.repairCost && `That costs ${money.format(room.repairCost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+            !dashboard.hideout.atHideout && !dashboard.location.canRepairRemotely
+              && `Starting a repair from ${dashboard.city} needs a bigger intelligence centre. Your hideout is in ${dashboard.hideout.city}.`,
+            spendable(dashboard) < room.repairCost && `That costs ${money.format(room.repairCost)} and you have ${money.format(spendable(dashboard))} across your cash, safe and bank.`,
           )} onClick={() => repair(room.room)}>
             {repairing?.room === room.room ? 'Being fixed' : `Repair ${money.format(room.repairCost)}`}
           </Button>
@@ -3287,14 +2723,18 @@ function HideoutPage(ctx: PageContext) {
     </section>}
 
     <section className="card p-3 gcol-full" data-area="capacity">
-      <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier}</span></div>
-      <p>Everything you can hold is decided here. Crew the place has no room for walks away, goods the store cannot take are left in the street, and cash the safe cannot hold goes to the bank.</p>
+      <div className="panel-title"><h2>Storage and Capacity</h2><span>{hideout.tierName} / tier {hideout.tier} in {hideout.city}</span></div>
+      <p>
+        Everything the house can hold is decided here. Crew the place has no room for walks away, and
+        goods the store cannot take are left in the street. What you are carrying is a separate and
+        much smaller pile - it is below, and it is the only part that travels with you.
+      </p>
       <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-3">
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
         <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
         <CapacityBar label="Thugs" used={dashboard.thugs} cap={hideout.maxThugs} />
-        <CapacityBar label="Garage" used={dashboard.rides} cap={hideout.maxRides} />
-        <CapacityBar label="Cash on hand" used={dashboard.cash} cap={hideout.maxCash} money />
+        <CapacityBar label={`Garage (${hideout.city})`} used={dashboard.rides} cap={hideout.maxRides} />
+        <CapacityBar label="Safe" used={hideout.safeCash} cap={hideout.maxCash} money />
         <CapacityBar label="Condoms" used={dashboard.condoms} cap={hideout.maxCondoms} />
         <CapacityBar label="Beer" used={dashboard.beer} cap={hideout.maxBeer} />
         <CapacityBar label="Weapons" used={dashboard.weapons} cap={hideout.maxWeapons} />
@@ -3307,6 +2747,8 @@ function HideoutPage(ctx: PageContext) {
       </div>
     </section>
 
+    <StashPanel {...ctx} />
+
     <HideoutTierPanel dashboard={dashboard} busy={busy} act={act} />
 
     <section className="card p-3 gcol-full" data-area="rooms">
@@ -3317,17 +2759,20 @@ function HideoutPage(ctx: PageContext) {
           level={hideout.storageLevel}
           detail={`Holds ${number.format(hideout.maxCondoms)} condoms, ${number.format(hideout.maxBeer)} beer, ${number.format(hideout.maxWeapons)} weapons, ${number.format(hideout.maxWeed)} weed, ${number.format(hideout.maxCoke)} coke`}
           upgrade={hideout.storageUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
+          repairBlocked={!dashboard.location.canRepairRemotely && awayFromHideout(dashboard, 'Starting a repair')}
           onUpgrade={() => void act(() => api.upgradeHideout('storage'))}
         />
         <RoomRow
           name="Safe"
           level={hideout.safeLevel}
-          detail={`Holds ${money.format(hideout.maxCash)} cash on hand`}
+          detail={`Holds ${money.format(hideout.maxCash)}, in ${hideout.city}, out of a mugger's reach and inside a raider's`}
           upgrade={hideout.safeUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('safe'))}
         />
         <RoomRow
@@ -3337,8 +2782,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Grows weed on its own while you are out, and stretches a shift further when you are in.'
             : `Active +${hideout.weedLabYieldBonusPercent}% per production turn, and ${number.format(hideout.weedLabPassivePerHour)} weed an hour on its own.`}
           upgrade={hideout.weedLabUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('weedlab'))}
           damage={broken('weedlab')}
           repairing={repairing}
@@ -3352,6 +2798,7 @@ function HideoutPage(ctx: PageContext) {
             minSellLevel={hideout.minLabLevelForAutoSell}
             busy={busy}
             act={act}
+            remote={!dashboard.location.canControlLabsRemotely && awayFromHideout(dashboard, 'Switching a lab')}
           />
         </RoomRow>
         <RoomRow
@@ -3361,8 +2808,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Cooks coke on its own while you are out, and stretches a shift further when you are in.'
             : `Active +${hideout.cokeLabYieldBonusPercent}% per production turn, and ${number.format(hideout.cokeLabPassivePerHour)} coke an hour on its own.`}
           upgrade={hideout.cokeLabUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('cokelab'))}
           damage={broken('cokelab')}
           repairing={repairing}
@@ -3376,6 +2824,7 @@ function HideoutPage(ctx: PageContext) {
             minSellLevel={hideout.minLabLevelForAutoSell}
             busy={busy}
             act={act}
+            remote={!dashboard.location.canControlLabsRemotely && awayFromHideout(dashboard, 'Switching a lab')}
           />
         </RoomRow>
         {workshop && <RoomRow
@@ -3385,8 +2834,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Unlocks crafting for guns, moonshine, cut, medicine and poison.'
             : `Crafts run at ${number.format(workshop.perTurn)} unit${workshop.perTurn === 1 ? '' : 's'} a turn before each recipe's own rate.`}
           upgrade={workshop.upgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('workshop'))}
           damage={broken('workshop')}
           repairing={repairing}
@@ -3400,8 +2850,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Someone on the street watching for the law, so a raid is less likely to land.'
             : `Cuts the odds of a raid by ${hideout.bustRiskReductionPercent}%`}
           upgrade={hideout.lookoutUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('lookout'))}
           damage={broken('lookout')}
           repairing={repairing}
@@ -3414,8 +2865,9 @@ function HideoutPage(ctx: PageContext) {
             ? 'Not built. Makes nothing. Lets you run mules out of town, and knows the routes they take.'
             : `${hideout.concurrentRunCap} mule run(s) out at once, on routes you already know`}
           upgrade={hideout.intelligenceUpgrade}
-          funds={dashboard.cash + dashboard.bankCash}
+          funds={spendable(dashboard)}
           busy={busy}
+          blocked={awayFromHideout(dashboard, 'Building')}
           onUpgrade={() => void act(() => api.upgradeHideout('intelligence'))}
           damage={broken('intelligence')}
           repairing={repairing}
@@ -3588,6 +3040,7 @@ function MulePage(ctx: PageContext) {
           className="btn btn-primary"
           blocked={firstReason(
             busy && BUSY,
+            awayFromHideout(dashboard, 'Briefing a run'),
             !pimpId && 'Nobody is free to lead the run. Every pimp you have is already away.',
             board.runsOut >= board.concurrentRunCap && `You already have ${board.runsOut} run${board.runsOut === 1 ? '' : 's'} out, which is all your hideout can keep track of.`,
             hoes > board.hoesAvailable && `You are sending ${hoes} and only ${board.hoesAvailable} ${board.hoesAvailable === 1 ? 'is' : 'are'} free to go.`,
@@ -3650,6 +3103,121 @@ function muleSupplyLabel(quote: MuleQuote) {
 
 function muleSupplyNeedLabel(quote: MuleQuote) {
   return `${number.format(quote.condomsNeeded)} condoms and ${number.format(quote.beerNeeded)} beer or moonshine`
+}
+
+
+/**
+ * The threshold: what is on the shelves, what is in your hands, and the two buttons between them.
+ *
+ * One table with both columns rather than two panels, because every question anybody has here is a
+ * comparison - is this in the right pile, will the rest fit, what am I about to get on a plane with -
+ * and two panels is two things to hold in your head while you decide.
+ *
+ * The safe sits at the top of it rather than in its own card for the same reason: money is stock, it
+ * has exactly the same two sides and the same one rule, and separating it would suggest otherwise.
+ */
+function StashPanel({ dashboard, busy, act }: PageContext) {
+  const hideout = dashboard.hideout
+  const home = hideout.atHideout
+  const [amount, setAmount] = useState('')
+  const safeRoom = Math.max(0, hideout.maxCash - hideout.safeCash)
+
+  // Only the rows worth showing. A shelf list with fourteen zeroes on it is a list nobody reads, so a
+  // good appears once there is some of it somewhere - and the goods a player has never touched stay
+  // out of the way until the day they buy one.
+  const lines = (hideout.stash ?? []).filter(line => line.carried > 0 || line.stored > 0)
+  const away = !home && `Your storage is in ${hideout.city} and you are in ${dashboard.city}.`
+  const move = (item: string, quantity: number) => void act(() => api.moveStock(item, quantity))
+
+  const cash = Math.max(0, Math.floor(Number(amount.replace(/[^0-9]/g, '')) || 0))
+  const moveCash = (sign: 1 | -1) => {
+    if (cash <= 0) return
+    void act(() => api.moveSafeCash(sign * cash))
+    setAmount('')
+  }
+
+  return <section className="card p-3 gcol-full" data-area="stash">
+    <div className="panel-title">
+      <h2>Storage and what you carry</h2>
+      <span>{home ? `At the door in ${hideout.city}` : `Locked: ${hideout.city}`}</span>
+    </div>
+    <p>
+      The shelves and the safe stay in {hideout.city}. What you are carrying goes where you go, and it
+      is the only thing a stop on the road can take - just as it is the only thing a raid on the house
+      cannot. Deciding what to put in your hands before you fly is the whole of it.
+    </p>
+
+    <div className="d-flex flex-wrap align-items-end gap-2 border rounded p-2 mt-2">
+      <div className="min-w-0 flex-grow-1">
+        <span className="eyebrow">Safe</span>
+        <div className="tnum"><strong>{money.format(hideout.safeCash)}</strong> / {money.format(hideout.maxCash)}</div>
+        <div className="small text-body-secondary">
+          Free to use and costs no turns, unlike the bank &mdash; but a raid on the house opens it.
+        </div>
+      </div>
+      <input
+        className="form-control w-auto tnum"
+        inputMode="numeric"
+        placeholder="Amount"
+        value={amount}
+        onChange={event => setAmount(event.target.value)}
+        aria-label="Amount to move in or out of the safe"
+      />
+      <Button className="btn btn-outline-secondary btn-sm" blocked={firstReason(
+        busy && BUSY,
+        away,
+        cash <= 0 && 'Say how much.',
+        cash > dashboard.cash && `You are carrying ${money.format(dashboard.cash)}.`,
+        safeRoom <= 0 && 'The safe is full. A bigger one holds more.',
+      )} onClick={() => moveCash(1)}>Put in</Button>
+      <Button className="btn btn-outline-secondary btn-sm" blocked={firstReason(
+        busy && BUSY,
+        away,
+        cash <= 0 && 'Say how much.',
+        cash > hideout.safeCash && `The safe is holding ${money.format(hideout.safeCash)}.`,
+      )} onClick={() => moveCash(-1)}>Take out</Button>
+    </div>
+
+    {lines.length === 0
+      ? <p className="small text-body-secondary mb-0 mt-3">Nothing on the shelves and nothing in your hands.</p>
+      : <div className="table-responsive mt-3">
+        <table className="table table-sm align-middle tnum mb-0">
+          <thead>
+            <tr>
+              <th scope="col">Good</th>
+              <th scope="col" className="text-end">On the shelf</th>
+              <th scope="col" className="text-end">Carried</th>
+              <th scope="col" className="text-end">Move</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map(line => <tr key={line.key}>
+              <th scope="row" className="fw-normal">{line.label}</th>
+              <td className="text-end">{number.format(line.stored)} <span className="text-body-secondary">/ {number.format(line.storageCapacity)}</span></td>
+              <td className="text-end">{number.format(line.carried)} <span className="text-body-secondary">/ {number.format(line.carryCapacity)}</span></td>
+              <td className="text-end">
+                <div className="btn-group btn-group-sm">
+                  <Button className="btn btn-outline-secondary" blocked={firstReason(
+                    busy && BUSY,
+                    away,
+                    line.carried <= 0 && `You are not carrying any ${line.label.toLowerCase()}.`,
+                    line.stored >= line.storageCapacity && 'The shelf is full.',
+                  )} onClick={() => move(line.key, Math.min(line.carried, line.storageCapacity - line.stored))}
+                    title={`Put ${line.label.toLowerCase()} on the shelf`}>Store</Button>
+                  <Button className="btn btn-outline-secondary" blocked={firstReason(
+                    busy && BUSY,
+                    away,
+                    line.stored <= 0 && `There is no ${line.label.toLowerCase()} on the shelf.`,
+                    line.carried >= line.carryCapacity && 'Your hands are full.',
+                  )} onClick={() => move(line.key, -Math.min(line.stored, line.carryCapacity - line.carried))}
+                    title={`Carry ${line.label.toLowerCase()}`}>Carry</Button>
+                </div>
+              </td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>}
+  </section>
 }
 
 function CapacityBar({ label, used, cap, money: asMoney = false }: { label: string, used: number, cap: number, money?: boolean }) {
@@ -3816,6 +3384,7 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
         // thing standing in the way rather than the last.
         const whyNot = firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Working the labs'),
           !!activeCraft && `The bench is busy making ${activeCraft.label.toLowerCase()}, ready in ${timeUntil(activeCraft.completesAtUtc)}.`,
           workUnits < 1 && 'Set the batch to at least one work unit.',
           workUnits > dashboard.maxActionTurns && `You can spend ${dashboard.maxActionTurns} turns at a time at most.`,
@@ -3884,6 +3453,7 @@ function WorkshopCraftPanel({ dashboard, busy, act, sellQty, setSellQty }: {
         const totalCost = station.costPerUnit * quantity
         const whyNot = firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Working the bench'),
           !!activeCraft && `The bench is busy making ${activeCraft.label.toLowerCase()}, ready in ${timeUntil(activeCraft.completesAtUtc)}.`,
           runTurns < 1 && 'Set the run to at least one work unit.',
           runTurns > dashboard.maxActionTurns && `You can spend ${dashboard.maxActionTurns} turns at a time at most.`,
@@ -4011,6 +3581,7 @@ function CutCokePanel({ dashboard, busy, act }: { dashboard: Dashboard, busy: bo
         className="btn btn-primary btn-sm"
         blocked={firstReason(
           busy && BUSY,
+          awayFromHideout(dashboard, 'Stretching a batch'),
           blocked,
           batch <= 0 && 'There is nothing to stretch at this size.',
           turnsNeeded > dashboard.turns && `That batch wants ${turnsNeeded} turn${turnsNeeded === 1 ? '' : 's'} and you have ${dashboard.turns}.`,
@@ -4030,7 +3601,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
   // Cash and bank together, matching what the server charges. Checking cash on hand alone greyed the
   // button out for exactly the players who could afford it, since a tier costs more than any safe below
   // it holds and the rest of their money is necessarily in the bank.
-  const canAffordTier = !next || dashboard.cash + dashboard.bankCash >= next.cost
+  const canAffordTier = !next || spendable(dashboard) >= next.cost
 
   // The panel keeps its own second hand. The app-wide one stops once turns are maxed, which would
   // otherwise freeze the countdown for exactly the players most likely to be building something.
@@ -4088,7 +3659,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
               <strong>{next.name}</strong>
               <span>
                 {money.format(next.cost)} and {next.turns} turns. Takes {next.buildMinutes} minutes to build.
-                Paid from the bank first, then cash on hand.
+                Paid from the bank first, then the safe, then cash on hand.
               </span>
             </div>
             <em>Tier {next.level}</em>
@@ -4096,7 +3667,8 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
               className="btn btn-primary"
               blocked={firstReason(
                 busy && BUSY,
-                !canAffordTier && `The ${next.name} costs ${money.format(next.cost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+                awayFromHideout(dashboard, 'Building'),
+                !canAffordTier && `The ${next.name} costs ${money.format(next.cost)} and you have ${money.format(spendable(dashboard))} across your cash, safe and bank.`,
                 dashboard.turns < next.turns && `Starting the build costs ${next.turns} turns and you have ${dashboard.turns}.`,
               )}
               onClick={() => void act(() => api.upgradeHideout('tier'))}
@@ -4131,7 +3703,7 @@ function HideoutTierPanel({ dashboard, busy, act }: { dashboard: Dashboard, busy
  * out of a raider's reach, which product never can. It costs the spread, since it takes the local
  * price the hour it is made rather than whatever it would fetch somewhere worth carrying it to.
  */
-function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, act }: {
+function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, act, remote }: {
   product: 'weed' | 'coke'
   level: number
   running: boolean
@@ -4139,6 +3711,8 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
   minSellLevel: number
   busy: boolean
   act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+  /** Why the switches cannot be reached from here, or false when they can. */
+  remote?: Blocked
 }) {
   if (level <= 0) return null
   const canSell = level >= minSellLevel
@@ -4146,13 +3720,14 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
   return <div className="d-flex flex-wrap align-items-center gap-2 mt-1">
     <Button
       className={`btn btn-sm ${running ? 'btn-secondary' : 'btn-primary'}`}
-      blocked={busy && BUSY}
+      blocked={firstReason(busy && BUSY, remote)}
       onClick={() => void act(() => api.setLab(product, !running, autoSell))}
     >{running ? 'Switch off' : 'Switch on'}</Button>
     <Button
       className={`btn btn-sm ${autoSell ? 'btn-primary' : 'btn-secondary'}`}
       blocked={firstReason(
         busy && BUSY,
+        remote,
         !running && 'A lab that is switched off has nothing to sell.',
         !canSell && `Selling its own output needs level ${minSellLevel}. This one is level ${level}.`,
       )}
@@ -4162,7 +3737,7 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
       {!running
         ? 'Off. It makes nothing, and the hours it is off are gone rather than owed.'
         : autoSell
-          ? 'Sold at this town’s price as it is made, so nothing sits drawing heat.'
+          ? 'Sold at the hideout town’s price as it is made, so nothing sits drawing heat.'
           : canSell
             ? 'Shelved, where it draws the law and a raid can take it.'
             : `Shelved. Level ${minSellLevel} can sell it instead.`}
@@ -4170,7 +3745,7 @@ function LabSwitches({ product, level, running, autoSell, minSellLevel, busy, ac
   </div>
 }
 
-function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair, children }: {
+function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage, repairing, onRepair, children, blocked, repairBlocked }: {
   name: string
   level: number
   detail: string
@@ -4178,6 +3753,14 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage,
   funds: number
   busy: boolean
   onUpgrade: () => void
+  /**
+   * Why this room cannot be built from here, or false when it can. Separate from the repair reason
+   * below because the two are not the same rule: a wall is signed off on site and never by telephone,
+   * while a repair can be placed from another town by somebody with a big enough intelligence centre.
+   */
+  blocked?: Blocked
+  /** Why a repair cannot be started from here, or false when it can. */
+  repairBlocked?: Blocked
   damage?: HideoutDamage | null
   repairing?: HideoutRepair | null
   onRepair?: () => void
@@ -4222,19 +3805,21 @@ function RoomRow({ name, level, detail, upgrade, funds, busy, onUpgrade, damage,
     {damage
       ? <Button className="btn btn-danger" blocked={firstReason(
         busy && BUSY,
+        repairBlocked,
         underway && `The crew are already in the ${damage.name}. They are out in ${timeUntil(repairing!.completesAtUtc)}.`,
         elsewhere && `Your crew are in the ${repairing!.name} until ${timeUntil(repairing!.completesAtUtc)} from now. They can only be in one room at a time.`,
-        funds < damage.repairCost && `Putting it back costs ${money.format(damage.repairCost)} and you have ${money.format(funds)} between cash and the bank.`,
+        funds < damage.repairCost && `Putting it back costs ${money.format(damage.repairCost)} and you have ${money.format(funds)} across your cash, safe and bank.`,
       )} onClick={() => onRepair?.()}>
         {underway ? 'Being fixed' : `Repair ${money.format(damage.repairCost)}`}
       </Button>
       : <Button className="btn btn-primary" blocked={firstReason(
         busy && BUSY,
+        blocked,
         !upgrade && `The ${name.toLowerCase()} is at its highest level. There is nothing left to buy here.`,
         tierLocked && workshopLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better and a level ${upgrade!.requiredWorkshopLevel} workshop.`,
         tierLocked && `Level ${upgrade!.level} wants the ${upgrade!.requiredTierName} or better. Move the building up first.`,
         workshopLocked && `Level ${upgrade!.level} wants a level ${upgrade!.requiredWorkshopLevel} workshop first.`,
-        !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} between cash and the bank.`,
+        !!upgrade && funds < upgrade.cost && `That level costs ${money.format(upgrade.cost)} and you have ${money.format(funds)} across your cash, safe and bank.`,
       )} onClick={onUpgrade}>
         {!upgrade ? 'Maxed' : locked ? 'Locked' : `Upgrade ${money.format(upgrade.cost)}`}
       </Button>}
@@ -4289,6 +3874,9 @@ function TerritoryPage(ctx: PageContext) {
         Each piece holds up to {board.maxGarrisonThugs}, and a raid can send up to {board.maxRaidThugs}.
         You have <strong>{number.format(board.freeThugs)}</strong> free of {number.format(dashboard.thugs)}.
         Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
+        {/* The cap counts every town and this map shows one, so a holder with ground elsewhere would
+            otherwise read a number that does not match what is in front of them. */}
+        {board.away.length > 0 && <> Your {board.held} counts {board.away.length} piece(s) standing in other towns, listed below.</>}
       </p>
       {anyEffect
         ? <div className="d-flex flex-wrap gap-2 mt-3">
@@ -4301,6 +3889,51 @@ function TerritoryPage(ctx: PageContext) {
         : <p className="text-body-tertiary small mt-3">You hold no ground yet, so nothing out there is working for you.</p>}
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
     </section>
+
+    {board.away.length > 0 && <section className="card p-3 gcol-full">
+      <div className="panel-title">
+        <h2>Held Out Of Town</h2>
+        <span>{board.away.length} piece(s)</span>
+      </div>
+      {/* The map above is one town, so ground left standing elsewhere would otherwise be invisible -
+          and invisible ground is still holding thugs off your roster and still worth raiding. This is
+          the only place it can be seen from here, and giving it up is the only thing that can be done
+          to it without flying back. */}
+      <p>
+        You left these standing when you left town. They stay yours and they stay worth taking, but they
+        pay you nothing until you are back in their city, and the thugs on them are away from home the
+        whole time. Fly back to reinforce or work them up; from here you can only walk away.
+      </p>
+      <div className="d-grid gtc-fill-268 gap-2 mt-3">
+        {board.away.map(t => <div
+          className="d-grid gap-1 align-content-start border rounded bg-body-tertiary p-3 border-start-thick border-start-success"
+          key={t.id}
+        >
+          <div className="d-flex justify-content-between align-items-baseline gap-2">
+            <strong className="text-body">{t.name}</strong>
+            <em className="eyebrow fst-normal">{t.city}</em>
+          </div>
+          <span className="text-body-secondary small">
+            {t.typeLabel}, {number.format(t.garrisonThugs)} thug(s) on it
+          </span>
+          {t.garrisonPimpName && <span className="text-success-emphasis small">
+            Run by {t.garrisonPimpName}{t.garrisonBonusPercent > 0 ? ` (+${t.garrisonBonusPercent}% defence)` : ''}
+          </span>}
+          {t.developmentLevel > 0 && <span className="text-info-emphasis small">
+            {t.developmentName} ground{t.developmentDefencePercent > 0 ? `, +${t.developmentDefencePercent}% to whoever holds it` : ''}
+          </span>}
+          {t.developing && <small className="text-warning small">
+            Work under way: {t.developing.name} in {timeUntil(t.developing.completesAtUtc)}
+          </small>}
+          <div className="territory-actions d-flex flex-wrap align-items-end gap-1 mt-1">
+            {/* Walking away razes whatever is in the ground, same as it does at home, so it says so. */}
+            <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY}
+              title={`Gives up ${t.name} and loses the work in it.`}
+              onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</Button>
+          </div>
+        </div>)}
+      </div>
+    </section>}
 
     <section className="card p-3 gcol-full">
       <div className="panel-title">
@@ -4399,7 +4032,7 @@ function TerritoryPage(ctx: PageContext) {
               blocked={firstReason(
                 busy && BUSY,
                 t.nextDevelopment.tierLocked && `Working ${t.name} up to ${t.nextDevelopment.name} wants the ${t.nextDevelopment.requiredTierName} behind you first.`,
-                dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost && `The work costs ${money.format(t.nextDevelopment.cost)} and you have ${money.format(dashboard.cash + dashboard.bankCash)} between cash and the bank.`,
+                spendable(dashboard) < t.nextDevelopment.cost && `The work costs ${money.format(t.nextDevelopment.cost)} and you have ${money.format(spendable(dashboard))} across your cash, safe and bank.`,
                 dashboard.turns < t.nextDevelopment.turns && `The work costs ${t.nextDevelopment.turns} turns and you have ${dashboard.turns}.`,
               )}
               title={`${t.nextDevelopment.effectNow}% now, ${t.nextDevelopment.effectAfter}% once it lands`}
@@ -4407,7 +4040,7 @@ function TerritoryPage(ctx: PageContext) {
             >
               {t.nextDevelopment.tierLocked
                 ? `${t.nextDevelopment.name} needs the ${t.nextDevelopment.requiredTierName}`
-                : dashboard.cash + dashboard.bankCash < t.nextDevelopment.cost
+                : spendable(dashboard) < t.nextDevelopment.cost
                   ? `${t.nextDevelopment.name}: ${money.format(t.nextDevelopment.cost)}`
                   : dashboard.turns < t.nextDevelopment.turns
                     ? `${t.nextDevelopment.turns} turns and you have ${dashboard.turns}`
@@ -4557,72 +4190,10 @@ function TradingPanel(ctx: PageContext) {
   </>
 }
 
-/**
- * A tab that survives a reload.
- *
- * Ordinary useState with the address bar underneath it: the same pair back, so every call site keeps
- * reading like the useState it replaced. The page it belongs to is passed in rather than read back,
- * because a tab is only ever meaningful under one page - 'hideout' means nothing on the Account page,
- * and a tab restored under the wrong one would be a tab nobody could see to close.
- *
- * Anything the hash asks for that this page does not have falls back silently. The address bar is
- * typed into, shared, and left over from an older build, so it is a request rather than an
- * instruction, and a stale link should open the page rather than an error.
- */
-function useRouteTab<T extends string>(page: AppPage, allowed: readonly T[], fallback: T): [T, (next: T) => void] {
-  const [tab, setTab] = useState<T>(() => {
-    const asked = routeTab(page) as T
-    return allowed.includes(asked) ? asked : fallback
-  })
-
-  // Written from an effect rather than from the click, so that a tab arrived at any other way - the
-  // Fix this button on the account warning, a page opened straight onto its default - is written down
-  // too. A player who cannot see how the address bar got there can still reload onto it.
-  useEffect(() => { writeRoute(page, tab) }, [page, tab])
-
-  /*
-    And read back, for the tab somebody else asked for.
-
-    Arriving from another page needs none of this: the strip unmounts with the page it was on and the
-    new one reads the address as it mounts. This is the other half - a link that names a tab on the page
-    already open, where nothing remounts and the initial read has long since happened. Without it,
-    "upgrade the storage room" on the Crew page would move nothing, because the destination is the tab
-    next door.
-
-    Guarded on the page and the list, so one strip cannot be moved by an address meant for another, and
-    a tab this page has no branch for is ignored rather than opening a blank. The allowed list is a
-    module constant at every call site, so it is deliberately not a dependency: adding it would rebuild
-    the subscription on a value that never changes.
-  */
-  useEffect(() => onRouteChange((written, asked) => {
-    if (written === page && (allowed as readonly string[]).includes(asked)) setTab(asked as T)
-  }), [page])
-
-  return [tab, setTab]
-}
 
 // Generic over the tab keys so the strip and the state that answers it cannot drift: a key listed
 // here that the page has no branch for is now a compile error rather than a tab that opens nothing.
 // NoInfer keeps the list from widening T back to string - the keys are decided by the state, and the
-// strip only draws them.
-function SectionTabs<T extends string>({ label, tabs, active, onActive }: {
-  label: string
-  tabs: { key: NoInfer<T>, label: string }[]
-  active: T
-  onActive: (key: T) => void
-}) {
-  return <nav className="nav nav-pills gap-2" aria-label={label}>
-    {tabs.map(tab => <button
-      className={`nav-link ${active === tab.key ? 'active' : ''}`}
-      type="button"
-      key={tab.key}
-      aria-current={active === tab.key ? 'page' : undefined}
-      onClick={() => onActive(tab.key)}
-    >
-      {tab.label}
-    </button>)}
-  </nav>
-}
 
 const MARKET_TABS = ['trade', 'flea', 'routes'] as const
 
@@ -5377,1661 +4948,6 @@ function MissionCard({ mission, currentPlayerId, compact = false, busy = false, 
   </div>
 }
 
-const ADMIN_TABS = ['overview', 'players', 'keys', 'ai', 'config', 'titles', 'updates', 'liveops', 'audit'] as const
-type AdminTab = typeof ADMIN_TABS[number]
-
-const ADMIN_TAB_META: Record<AdminTab, { label: string, kicker: string }> = {
-  overview: { label: 'Overview', kicker: 'Totals and distribution' },
-  players: { label: 'Players', kicker: 'Search and enforcement' },
-  keys: { label: 'Keys', kicker: 'Mint and revoke' },
-  ai: { label: 'AI Rivals', kicker: 'Seed, run, automate' },
-  config: { label: 'Tuning', kicker: 'Runtime values' },
-  titles: { label: 'Titles', kicker: 'Create earned names' },
-  updates: { label: 'Updates', kicker: 'Patch notes and events' },
-  liveops: { label: 'Live Ops', kicker: 'Maintenance and banners' },
-  audit: { label: 'Audit', kicker: 'Who changed what' }
-}
-
-/**
- * One tab at a time rather than six stacked panels. The Admin Control Center used to sit at the bottom
- * holding whatever had no other home: headline totals, a read-only economy dump, and the AI controls.
- * Those are three different jobs, so they now live with the things they belong to.
- */
-function AdminPage(ctx: PageContext & { overview: AdminOverview }) {
-  const [tab, setTab] = useRouteTab('admin', ADMIN_TABS, 'overview')
-  /*
-    One column, said once.
-
-    This read `gtc-1 gtc-md-2 ... gtc-md-1` - somebody wanting a single column and appending gtc-md-1
-    to force it. Utilities are generated from a map in value order, so .gtc-md-2 is written to the
-    stylesheet after .gtc-md-1; both carry !important and the same specificity, so the later one wins
-    whatever order the class attribute lists them in. The override never did anything, on any of the
-    five elements that had it.
-
-    Here it showed: the tab strip and every panel under it sat in the first of two columns, 619px of a
-    1278px page, with the second column empty and the six tabs folded into three columns of two rows
-    with their descriptions wrapping.
-  */
-  return <div className="d-grid gtc-1 gap-3 align-items-start">
-    <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
-      {ADMIN_TABS.map(name => <button
-        key={name}
-        type="button"
-        className={`admin-tab btn d-grid gap-1 text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
-        aria-current={tab === name ? 'page' : undefined}
-        onClick={() => setTab(name)}
-      >
-        <strong>{ADMIN_TAB_META[name].label}</strong>
-        {/* Inherits the button's colour so it stays legible once the tab fills in. */}
-        <span className="small opacity-75">{ADMIN_TAB_META[name].kicker}</span>
-      </button>)}
-    </nav>
-    {tab === 'overview' && <AdminOverviewTab overview={ctx.overview} busy={ctx.busy} />}
-    {tab === 'players' && <AdminPlayersPanel busy={ctx.busy} onChanged={() => void ctx.act(async () => undefined)} />}
-    {tab === 'keys' && <AdminKeysPanel busy={ctx.busy} />}
-    {tab === 'ai' && <AdminAiTab ctx={ctx} />}
-    {tab === 'config' && <><AdminConfigPanel busy={ctx.busy} /><AdminEconomyReadout overview={ctx.overview} /></>}
-    {tab === 'titles' && <AdminTitlesPanel busy={ctx.busy} />}
-    {tab === 'updates' && <AdminUpdatesPanel busy={ctx.busy} />}
-    {tab === 'liveops' && <AdminLiveOpsPanel busy={ctx.busy} />}
-    {tab === 'audit' && <AdminAuditPanel />}
-  </div>
-}
-
-function AdminOverviewTab({ overview, busy }: { overview: AdminOverview, busy: boolean }) {
-  return <>
-    <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>The World</h2><span>As of {new Date(overview.generatedAtUtc).toLocaleTimeString()}</span></div>
-      <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
-        <AdminMetric label="Accounts" value={number.format(overview.totalAccounts)} />
-        <AdminMetric label="Admins" value={number.format(overview.adminAccounts)} />
-        <AdminMetric label="AI rivals" value={number.format(overview.botAccounts)} />
-        <AdminMetric label="AI auto" value={overview.botAutomation.enabled ? 'On' : 'Off'} />
-        <AdminMetric label="Players" value={number.format(overview.totalPlayers)} />
-        <AdminMetric label="Liquid cash" value={money.format(overview.totalLiquidCash)} />
-        <AdminMetric label="Net worth" value={money.format(overview.totalNetWorth)} />
-        <AdminMetric label="Turns banked" value={number.format(overview.totalTurnsBanked)} />
-        <AdminMetric label="Avg hoe morale" value={`${overview.averageHoeMorale.toFixed(0)}%`} />
-        <AdminMetric label="Avg thug morale" value={`${overview.averageThugMorale.toFixed(0)}%`} />
-      </div>
-    </section>
-    <AdminOversightPanel busy={busy} />
-  </>
-}
-
-function AdminEconomyReadout({ overview }: { overview: AdminOverview }) {
-  const game = overview.economy
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>In Effect Now</h2><span>Read-only summary</span></div>
-    <div className="mt-3 border-top">
-      <StatusRow label="Turns" value={`+${game.turnsPerTick} / ${game.turnTickMinutes}m, cap ${game.maxTurns}`} />
-      <StatusRow label="Action limit" value={`${game.maxActionTurns} turns`} />
-      <StatusRow label="Store prices" value={`Condom ${money.format(game.condomPrice)}, beer ${money.format(game.beerPrice)}, weapon ${money.format(game.weaponPrice)}`} />
-      <StatusRow label="Product prices" value={`Weed ${money.format(game.weedSellPrice)}, coke ${money.format(game.cokeSellPrice)}`} />
-      <StatusRow label="Crew hire costs" value={`P ${money.format(game.crew.hirePimpCost)} / H ${money.format(game.crew.hireHoeCost)} / T ${money.format(game.crew.hireThugCost)}`} />
-      <StatusRow label="Recruit odds" value={`P ${percent(game.streetAction.pimpRecruitChance)} / H ${percent(game.streetAction.hoeRecruitChance)} / T ${percent(game.streetAction.thugRecruitChance)}`} />
-      <StatusRow label="Production" value={`Weed ${money.format(game.production.weed.costPerTurn)} ${game.production.weed.unitsMin}-${game.production.weed.unitsMax}, coke ${money.format(game.production.coke.costPerTurn)} ${game.production.coke.unitsMin}-${game.production.coke.unitsMax}`} />
-      <StatusRow label="Morale rules" value={`${game.morale.hoesManagedPerPimp} hoes/pimp, desertion below ${game.morale.desertionThreshold}%`} />
-      <StatusRow label="Combat" value={`${game.combat.attackTurnCost} turns, ${game.combat.attackTravelSecondsMin}-${game.combat.attackTravelSecondsMax}s travel, ${game.combat.attackCooldownMinutes}m cooldown`} />
-    </div>
-  </section>
-}
-
-function AdminKeysPanel({ busy }: { busy: boolean }) {
-  const [keys, setKeys] = useState<AdminBetaKey[]>([])
-  const [total, setTotal] = useState(0)
-  const [query, setQuery] = useState('')
-  const [label, setLabel] = useState('')
-  const [count, setCount] = useState(10)
-  const [maxUses, setMaxUses] = useState(1)
-  const [reason, setReason] = useState('')
-  const [minted, setMinted] = useState<AdminBetaKey[]>([])
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
-  const [working, setWorking] = useState(false)
-
-  const load = async (nextQuery = query) => {
-    try {
-      const board = await adminApi.betaKeys(nextQuery.trim())
-      setKeys(board.keys)
-      setTotal(board.total)
-    } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load('') }, [])
-
-  const mint = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const created = await adminApi.mintBetaKeys({
-        count,
-        label: label.trim() || null,
-        maxUses,
-        reason: reason.trim() || null,
-      })
-      setMinted(created.keys)
-      setMessage(`Minted ${number.format(created.keys.length)} beta key${created.keys.length === 1 ? '' : 's'}.`)
-      await load()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const revoke = async (key: AdminBetaKey) => {
-    if (!window.confirm(`Revoke ${key.displayCode}?`)) return
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const updated = await adminApi.revokeBetaKey(key.id, reason.trim() || undefined)
-      setKeys(current => current.map(item => item.id === updated.id ? updated : item))
-      setMessage(`${updated.displayCode} revoked.`)
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const copy = async (value: string, said: string) => {
-    try {
-      await copyToClipboard(value)
-      setMessage(said)
-    } catch { setError('Could not copy to the clipboard.') }
-  }
-
-  const mintedBlock = minted.map(key => key.displayCode).join('\n')
-
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Beta Keys</h2><span>{total > keys.length ? `${keys.length} of ${total}` : `${keys.length}`}</span></div>
-    {(error || message) && <div className="d-grid gap-2 mb-3">
-      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-      {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
-    </div>}
-
-    <div className="d-grid gtc-1 gtc-xl-2 gap-3 align-items-start">
-      <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={mint}>
-        <div className="panel-title mb-0"><h3 className="h5 mb-0">Mint</h3><span>Admin pool</span></div>
-        <div className="d-grid gtc-1 gtc-md-3 gap-3">
-          <label className="field">
-            Count
-            <input
-              className="form-control"
-              type="number"
-              min={1}
-              max={500}
-              value={count}
-              onChange={event => setCount(Math.max(1, Math.min(500, Number(event.target.value) || 1)))}
-            />
-          </label>
-          <label className="field">
-            Uses
-            <input
-              className="form-control"
-              type="number"
-              min={1}
-              max={1000}
-              value={maxUses}
-              onChange={event => setMaxUses(Math.max(1, Math.min(1000, Number(event.target.value) || 1)))}
-            />
-          </label>
-        </div>
-        <label className="field">
-          Label
-          <input
-            className="form-control"
-            maxLength={120}
-            value={label}
-            placeholder="Optional batch label"
-            onChange={event => setLabel(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          Audit reason
-          <input
-            className="form-control"
-            value={reason}
-            placeholder="Optional"
-            onChange={event => setReason(event.target.value)}
-          />
-        </label>
-        <Button className="btn btn-primary" blocked={firstReason(busy && WORKING, working && 'The keys are being minted now.')}>
-          {working ? 'Working...' : 'Mint Keys'}
-        </Button>
-      </form>
-
-      <div className="d-grid gap-3">
-        <form className="d-flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void load(query) }}>
-          <input
-            className="form-control flex-fill"
-            value={query}
-            placeholder="Search code, label, player, username"
-            onChange={event => setQuery(event.target.value)}
-          />
-          <Button className="btn btn-secondary" type="submit" blocked={working && WORKING}>Search</Button>
-          <button className="btn btn-link text-body-secondary" type="button" onClick={() => { setQuery(''); void load('') }}>
-            Clear
-          </button>
-        </form>
-        {minted.length > 0 && <div className="border rounded bg-body-secondary p-3">
-          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <strong>Fresh keys</strong>
-            <button
-              className="btn btn-outline-primary btn-sm"
-              type="button"
-              onClick={() => void copy(mintedBlock, 'Fresh keys copied.')}
-            >Copy Block</button>
-          </div>
-          <pre className="tnum mb-0 small">{mintedBlock}</pre>
-        </div>}
-      </div>
-    </div>
-
-    <div className="table-responsive mt-3">
-      <table className="table table-sm align-middle mb-0">
-        <thead>
-          <tr>
-            <th>Key</th>
-            <th>Status</th>
-            <th>Uses</th>
-            <th>Chain</th>
-            <th>Dates</th>
-            <th className="text-end">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {keys.length === 0 && <tr><td colSpan={6} className="text-body-tertiary">No beta keys found.</td></tr>}
-          {keys.map(key => {
-            const issuedTo = key.issuedToPlayerName ?? key.issuedToUsername ?? 'Admin pool'
-            const redeemedBy = key.redeemedByPlayerName ?? key.redeemedByUsername ?? 'Not redeemed'
-            return <tr key={key.id}>
-              <td className="tnum">
-                <strong>{key.displayCode}</strong>
-                {key.label && <small className="d-block text-body-tertiary text-truncate">{key.label}</small>}
-              </td>
-              <td><span className={`badge ${betaKeyStatusClass(key.status)}`}>{key.status}</span></td>
-              <td className="tnum">{key.uses} / {key.maxUses}<small className="d-block text-body-tertiary">{key.usesLeft} left</small></td>
-              <td className="small">
-                <strong>{issuedTo}</strong>
-                <span className="d-block text-body-tertiary">to {redeemedBy}</span>
-              </td>
-              <td className="small">
-                <span className="d-block">Made {compactDateTime(key.createdAtUtc)}</span>
-                <span className="d-block text-body-tertiary">Redeemed {compactDateTime(key.redeemedAtUtc)}</span>
-              </td>
-              <td className="text-end">
-                <div className="btn-group btn-group-sm">
-                  <button className="btn btn-outline-secondary" type="button" onClick={() => void copy(key.displayCode, 'Key copied.')}>
-                    Copy
-                  </button>
-                  <Button className="btn btn-outline-danger" type="button" blocked={firstReason(
-                    working && WORKING,
-                    key.status === 'Revoked' && 'This key is already revoked.',
-                  )} onClick={() => void revoke(key)}>
-                    Revoke
-                  </Button>
-                </div>
-              </td>
-            </tr>
-          })}
-        </tbody>
-      </table>
-    </div>
-  </section>
-}
-
-function AdminTitlesPanel({ busy }: { busy: boolean }) {
-  const [titles, setTitles] = useState<AdminCustomTitle[]>([])
-  const [criteria, setCriteria] = useState<CustomTitleCriteria[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [draft, setDraft] = useState<AdminCustomTitleDraft>(() => emptyCustomTitleDraft())
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [working, setWorking] = useState(false)
-  const selected = titles.find(title => title.id === selectedId) ?? null
-  const selectedCriteria = criteria.find(x => x.key === draft.criteria) ?? criteria[0]
-
-  const load = async () => {
-    try {
-      const board = await opsApi.customTitles()
-      setTitles(board.titles)
-      setCriteria(board.criteria)
-      setDraft(current => current.criteria ? current : { ...current, criteria: board.criteria[0]?.key ?? 'net-worth-at-least' })
-    } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [])
-
-  const edit = (title: AdminCustomTitle) => {
-    setSelectedId(title.id)
-    setDraft({
-      key: title.key,
-      title: title.title,
-      detail: title.detail,
-      criteria: title.criteria,
-      threshold: title.threshold,
-      textValue: title.textValue ?? '',
-      isActive: title.isActive,
-      reason: '',
-    })
-    setMessage('')
-    setError('')
-  }
-
-  const reset = () => {
-    setSelectedId(null)
-    setDraft(emptyCustomTitleDraft(criteria[0]?.key))
-    setMessage('')
-    setError('')
-  }
-
-  const save = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const body = {
-        ...draft,
-        key: draft.key?.trim() || null,
-        title: draft.title?.trim() || null,
-        detail: draft.detail?.trim() || null,
-        textValue: draft.textValue?.trim() || null,
-        threshold: selectedCriteria?.needsThreshold ? Number(draft.threshold ?? 0) : 0,
-        reason: draft.reason?.trim() || null,
-      }
-      const saved = selected
-        ? await opsApi.updateCustomTitle(selected.id, body)
-        : await opsApi.createCustomTitle(body)
-      setSelectedId(saved.id)
-      setDraft({
-        key: saved.key,
-        title: saved.title,
-        detail: saved.detail,
-        criteria: saved.criteria,
-        threshold: saved.threshold,
-        textValue: saved.textValue ?? '',
-        isActive: saved.isActive,
-        reason: '',
-      })
-      setMessage(selected ? 'Title saved.' : 'Title created.')
-      await load()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const locked = busy || working
-  return <div className="d-grid gtc-1 gtc-xl-split-60 gap-3 align-items-start gcol-full">
-    <section className="card p-3">
-      <div className="panel-title"><h2>Custom Titles</h2><span>{titles.length} defined</span></div>
-      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-      {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
-      <div className="d-flex flex-wrap gap-2 mb-3">
-        <button className="btn btn-primary btn-sm" type="button" onClick={reset}>New title</button>
-        <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void load()}>Refresh</Button>
-      </div>
-      <div className="d-grid gap-1">
-        {titles.length === 0 && <p className="text-body-tertiary small mb-0">No custom titles yet.</p>}
-        {titles.map(title => <button
-          className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${selectedId === title.id ? 'active border-primary' : ''}`}
-          type="button"
-          key={title.id}
-          onClick={() => edit(title)}
-        >
-          <span className="d-flex flex-wrap gap-2 align-items-center min-w-0">
-            <strong className="text-truncate">{title.title}</strong>
-            <span className="badge rounded-pill text-bg-secondary">{title.key}</span>
-            <span className={`badge rounded-pill ${title.isActive ? 'text-bg-success' : 'text-bg-light border'}`}>{title.isActive ? 'Active' : 'Paused'}</span>
-          </span>
-          <small className="text-body-tertiary text-truncate">{title.criteria}{title.threshold > 0 ? ` ${number.format(title.threshold)}` : ''}{title.textValue ? ` ${title.textValue}` : ''}</small>
-        </button>)}
-      </div>
-    </section>
-
-    <section className="card p-3">
-      <div className="panel-title"><h2>{selected ? 'Edit Title' : 'New Title'}</h2><span>{draft.key || 'achievement'}</span></div>
-      <form className="d-grid gap-3" onSubmit={save}>
-        <div className="d-grid gtc-1 gtc-md-2 gap-3">
-          <label className="field">
-            Key
-            <input className="form-control" maxLength={32} value={draft.key ?? ''} onChange={event => setDraft({ ...draft, key: event.target.value })} placeholder="millionaire" required />
-          </label>
-          <label className="field">
-            Title
-            <input className="form-control" maxLength={64} value={draft.title ?? ''} onChange={event => setDraft({ ...draft, title: event.target.value })} placeholder="Millionaire" required />
-          </label>
-        </div>
-        <label className="field">
-          Detail
-          <input className="form-control" maxLength={240} value={draft.detail ?? ''} onChange={event => setDraft({ ...draft, detail: event.target.value })} placeholder="Reached $1,000,000 net worth." />
-        </label>
-        <div className="d-grid gtc-1 gtc-md-2 gap-3">
-          <label className="field">
-            Earned by
-            <select className="form-select" value={draft.criteria ?? criteria[0]?.key ?? ''} onChange={event => setDraft({ ...draft, criteria: event.target.value })}>
-              {criteria.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
-            </select>
-          </label>
-          {selectedCriteria?.needsThreshold
-            ? <label className="field">
-              Threshold
-              <input className="form-control" type="number" min={1} step={1} value={draft.threshold ?? 0} onChange={event => setDraft({ ...draft, threshold: Number(event.target.value) })} />
-            </label>
-            : selectedCriteria?.needsText
-            ? <label className="field">
-              Name
-              <input className="form-control" maxLength={64} value={draft.textValue ?? ''} onChange={event => setDraft({ ...draft, textValue: event.target.value })} placeholder={draft.criteria === 'city-is' ? 'Chicago' : 'The Eastside Table'} />
-            </label>
-            : <div className="d-flex align-items-end"><small className="text-body-tertiary">No extra value needed.</small></div>}
-        </div>
-        <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
-          <input className="form-check-input" type="checkbox" checked={draft.isActive ?? true} onChange={event => setDraft({ ...draft, isActive: event.target.checked })} />
-          <span>Active</span>
-        </label>
-        <label className="field">
-          Audit reason
-          <input className="form-control" value={draft.reason ?? ''} onChange={event => setDraft({ ...draft, reason: event.target.value })} placeholder="Added a new milestone title" />
-        </label>
-        <div className="d-flex flex-wrap gap-2">
-          <Button className="btn btn-primary" blocked={locked && WORKING}>{locked ? 'Working...' : selected ? 'Save Title' : 'Create Title'}</Button>
-          {selected && <Button className="btn btn-secondary" type="button" blocked={locked && WORKING} onClick={reset}>Clear Form</Button>}
-        </div>
-      </form>
-    </section>
-  </div>
-}
-
-function AdminUpdatesPanel({ busy }: { busy: boolean }) {
-  const [posts, setPosts] = useState<AdminGameAnnouncement[]>([])
-  const [delivery, setDelivery] = useState<AnnouncementDeliverySettings | null>(null)
-  const [discord, setDiscord] = useState<DiscordIntegrationSettings | null>(null)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [draft, setDraft] = useState<AdminGameAnnouncementDraft>(() => emptyAnnouncementDraft())
-  const [includeArchived, setIncludeArchived] = useState(false)
-  const [discordWebhookUrl, setDiscordWebhookUrl] = useState('')
-  const [discordUsername, setDiscordUsername] = useState('')
-  const [discordBotToken, setDiscordBotToken] = useState('')
-  const [discordPublicKey, setDiscordPublicKey] = useState('')
-  const [discordApplicationId, setDiscordApplicationId] = useState('')
-  const [discordGuildId, setDiscordGuildId] = useState('')
-  const [discordLinkedRoleId, setDiscordLinkedRoleId] = useState('')
-  const [discordTopTenRoleId, setDiscordTopTenRoleId] = useState('')
-  const [discordCrewBossRoleId, setDiscordCrewBossRoleId] = useState('')
-  const [discordCityRoleMap, setDiscordCityRoleMap] = useState('')
-  const [discordCrewRoleMap, setDiscordCrewRoleMap] = useState('')
-  const [discordCrewChannelMap, setDiscordCrewChannelMap] = useState('')
-  const [discordTitleRoleMap, setDiscordTitleRoleMap] = useState('')
-  const [discordConsole, setDiscordConsole] = useState<string[]>([])
-  const [reason, setReason] = useState('')
-  const [deliveryReason, setDeliveryReason] = useState('')
-  const [discordReason, setDiscordReason] = useState('')
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [working, setWorking] = useState(false)
-  const selected = posts.find(post => post.id === selectedId) ?? null
-  const discordInviteUrl = discordBotInviteUrl(discord, discordApplicationId, discordGuildId)
-
-  const load = async () => {
-    try { setPosts(await opsApi.updates(includeArchived)) } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [includeArchived])
-
-  const loadDelivery = async () => {
-    try {
-      const next = await opsApi.updateDelivery()
-      setDelivery(next)
-      setDiscordUsername(next.discordUsername)
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }
-  useEffect(() => { void loadDelivery() }, [])
-
-  const applyDiscordSettings = (next: DiscordIntegrationSettings) => {
-    setDiscord(next)
-    setDiscordApplicationId(next.applicationId ?? '')
-    setDiscordGuildId(next.guildId ?? '')
-    setDiscordLinkedRoleId(next.linkedRoleId ?? '')
-    setDiscordTopTenRoleId(next.topTenRoleId ?? '')
-    setDiscordCrewBossRoleId(next.crewBossRoleId ?? '')
-    setDiscordCityRoleMap(next.cityRoleMap ?? '')
-    setDiscordCrewRoleMap(next.crewRoleMap ?? '')
-    setDiscordCrewChannelMap(next.crewChannelMap ?? '')
-    setDiscordTitleRoleMap(next.titleRoleMap ?? '')
-  }
-
-  const logDiscord = (line: string, issues: string[] = []) => {
-    const stamp = new Date().toLocaleTimeString()
-    setDiscordConsole(previous => [`${stamp} ${line}`, ...issues.map(issue => `${stamp} ! ${issue}`), ...previous].slice(0, 10))
-  }
-
-  const loadDiscord = async () => {
-    try { applyDiscordSettings(await opsApi.discordIntegration()) } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void loadDiscord() }, [])
-
-  const edit = (post: AdminGameAnnouncement) => {
-    setSelectedId(post.id)
-    setDraft(draftFromAnnouncement(post))
-    setReason('')
-    setMessage('')
-    setError('')
-  }
-
-  const reset = () => {
-    setSelectedId(null)
-    setDraft(emptyAnnouncementDraft())
-    setReason('')
-    setMessage('')
-    setError('')
-  }
-
-  const save = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const body = announcementPayload(draft, reason)
-      const saved = selected
-        ? await opsApi.updatePost(selected.id, body)
-        : await opsApi.createUpdate(body)
-      setSelectedId(saved.id)
-      setDraft(draftFromAnnouncement(saved))
-      setReason('')
-      setMessage(saved.isDraft ? 'Draft saved.' : selected ? 'Update saved.' : 'Update published.')
-      await load()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const archive = async (archived: boolean) => {
-    if (!selected) return
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const saved = await opsApi.archiveUpdate(selected.id, archived, reason)
-      setReason('')
-      setMessage(archived ? 'Update archived.' : 'Update restored.')
-      await load()
-      setSelectedId(saved.id)
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const saveDelivery = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const next = await opsApi.setUpdateDelivery({
-        discordWebhookUrl: discordWebhookUrl.trim() || null,
-        discordUsername: discordUsername.trim() || null,
-        reason: deliveryReason.trim() || null,
-      })
-      setDelivery(next)
-      setDiscordWebhookUrl('')
-      setDiscordUsername(next.discordUsername)
-      setDeliveryReason('')
-      setMessage('Discord announcement settings saved.')
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const clearDeliveryWebhook = async () => {
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const next = await opsApi.setUpdateDelivery({
-        clearDiscordWebhook: true,
-        discordUsername: discordUsername.trim() || null,
-        reason: deliveryReason.trim() || null,
-      })
-      setDelivery(next)
-      setDiscordWebhookUrl('')
-      setDiscordUsername(next.discordUsername)
-      setDeliveryReason('')
-      setMessage('Saved webhook cleared.')
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const saveDiscord = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const next = await opsApi.setDiscordIntegration({
-        botToken: discordBotToken.trim() || null,
-        publicKey: discordPublicKey.trim() || null,
-        applicationId: discordApplicationId.trim() || null,
-        guildId: discordGuildId.trim() || null,
-        linkedRoleId: discordLinkedRoleId.trim() || null,
-        topTenRoleId: discordTopTenRoleId.trim() || null,
-        crewBossRoleId: discordCrewBossRoleId.trim() || null,
-        cityRoleMap: discordCityRoleMap,
-        crewRoleMap: discordCrewRoleMap,
-        crewChannelMap: discordCrewChannelMap,
-        titleRoleMap: discordTitleRoleMap,
-        reason: discordReason.trim() || null,
-      })
-      applyDiscordSettings(next)
-      setDiscordBotToken('')
-      setDiscordPublicKey('')
-      setDiscordReason('')
-      logDiscord('Saved Discord bot settings.')
-      setMessage('Discord integration settings saved.')
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const clearDiscordSecret = async (kind: 'token' | 'key') => {
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const next = await opsApi.setDiscordIntegration({
-        clearBotToken: kind === 'token',
-        clearPublicKey: kind === 'key',
-        reason: discordReason.trim() || null,
-      })
-      applyDiscordSettings(next)
-      if (kind === 'token') setDiscordBotToken('')
-      if (kind === 'key') setDiscordPublicKey('')
-      setDiscordReason('')
-      logDiscord(kind === 'token' ? 'Cleared the saved bot token.' : 'Cleared the saved public key.')
-      setMessage(kind === 'token' ? 'Discord bot token cleared.' : 'Discord public key cleared.')
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const registerDiscordCommands = async () => {
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const result = await opsApi.registerDiscordCommands()
-      logDiscord(`Registered ${result.registered} slash command${result.registered === 1 ? '' : 's'}.`)
-      setMessage(`Registered ${result.registered} slash command${result.registered === 1 ? '' : 's'} in Discord.`)
-      await loadDiscord()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const syncDiscordRoles = async () => {
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const result: DiscordRoleSyncResult = await opsApi.syncDiscordRoles()
-      const tail = result.errors.length > 0 ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} reported.` : ''
-      logDiscord(`Synced roles for ${result.syncedPlayers}/${result.linkedPlayers} linked members: +${result.rolesAdded} / -${result.rolesRemoved}.`, result.errors)
-      setMessage(`Synced ${result.syncedPlayers} linked member${result.syncedPlayers === 1 ? '' : 's'}: +${result.rolesAdded} / -${result.rolesRemoved}.${tail}`)
-      await loadDiscord()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const ensureDiscordRoles = async () => {
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const result = await opsApi.ensureDiscordRoles()
-      const tail = result.errors.length > 0 ? ` ${result.errors.length} role${result.errors.length === 1 ? '' : 's'} could not be created.` : ''
-      logDiscord(`Role maps ready: ${result.cityRoles} city, ${result.crewRoles} crew, ${result.titleRoles} title. Created ${result.createdRoles}, reused ${result.reusedRoles}.`, result.errors)
-      setMessage(`Role maps ready: ${result.cityRoles} city, ${result.crewRoles} crew, ${result.titleRoles} title. Created ${result.createdRoles}, reused ${result.reusedRoles}.${tail}`)
-      await loadDiscord()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const syncDiscordCrewChannels = async () => {
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const result: DiscordCrewChannelSyncResult = await opsApi.syncDiscordCrewChannels()
-      const tail = result.errors.length > 0 ? ` ${result.errors.length} issue${result.errors.length === 1 ? '' : 's'} reported.` : ''
-      logDiscord(`Crew channels synced: ${result.channels}/${result.crews} mapped. Created ${result.createdChannels}, reused ${result.reusedChannels}, updated ${result.updatedChannels}.`, result.errors)
-      setMessage(`Crew channels synced: ${result.channels}/${result.crews} mapped. Created ${result.createdChannels}, reused ${result.reusedChannels}, updated ${result.updatedChannels}.${tail}`)
-      await loadDiscord()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const locked = busy || working
-  return <div className="d-grid gtc-1 gtc-xl-split-80 gap-3 align-items-start gcol-full">
-    {/*
-      Two columns, and the left one is a stack rather than two cells of the same grid.
-
-      The list, the webhook and the editor were three children of a two-column grid, so they laid out
-      row by row: the list beside the webhook, and the editor underneath on its own. With the rows
-      sized to their tallest cell, that left the short list sitting at the top of a row as tall as the
-      webhook form, and several hundred pixels of nothing under it before the editor began.
-
-      The list and the editor belong together anyway - you pick an update in one and edit it in the
-      other - and the webhook is a setting that happens to live on this page.
-    */}
-    <div className="d-grid gap-3 align-content-start">
-      <section className="card p-3">
-        <div className="panel-title">
-          <h2>Updates</h2>
-          <span>{posts.length} shown</span>
-        </div>
-        {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-        {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
-        <div className="d-flex flex-wrap gap-2 mb-3">
-          <button className="btn btn-primary btn-sm" type="button" onClick={reset}>New update</button>
-          <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
-            <input className="form-check-input" type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} />
-            <span className="small">Include archived</span>
-          </label>
-        </div>
-        <div className="d-grid gap-1">
-          {posts.length === 0 && <p className="text-body-tertiary small mb-0">No updates posted yet.</p>}
-          {posts.map(post => <button
-            className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${selectedId === post.id ? 'active border-primary' : ''}`}
-            type="button"
-            key={post.id}
-            onClick={() => edit(post)}
-          >
-            <span className="d-flex flex-wrap gap-2 align-items-center min-w-0">
-              <strong className="text-truncate">{post.title}</strong>
-              <span className={`badge rounded-pill ${updateCategoryClass(post.category)}`}>{post.category}</span>
-              <span className={`badge rounded-pill ${updateSeverityClass(post.severity)}`}>{post.severity}</span>
-              {post.version && <span className="badge rounded-pill text-bg-secondary">{post.version}</span>}
-              {post.isPinned && <span className="badge rounded-pill text-bg-primary">Pinned</span>}
-              {post.showOnce && <span className="badge rounded-pill text-bg-warning">Login</span>}
-              {post.isDraft && <span className="badge rounded-pill text-bg-light border">Draft</span>}
-              {!post.isDraft && !post.archivedAtUtc && <span className="badge rounded-pill text-bg-success">Live</span>}
-              {post.sendToDiscord && <span className={`badge rounded-pill ${post.discordSentAtUtc ? 'text-bg-info' : 'text-bg-light border'}`}>Discord</span>}
-              {post.archivedAtUtc && <span className="badge rounded-pill text-bg-secondary">Archived</span>}
-            </span>
-            <small className="text-body-tertiary text-truncate">
-              {post.isDraft ? 'Draft publish time ' : 'Published '}
-              {new Date(post.publishedAtUtc).toLocaleString()}
-            </small>
-          </button>)}
-        </div>
-      </section>
-
-      <section className="card p-3">
-        <div className="panel-title"><h2>{selected ? 'Edit Update' : 'New Update'}</h2><span>{draft.version || draft.category}</span></div>
-        <form className="d-grid gap-3" onSubmit={save}>
-          <div className="d-grid gtc-1 gtc-md-2 gap-2">
-            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
-              <input
-                className="form-check-input"
-                type="checkbox"
-                checked={!draft.isDraft}
-                onChange={event => setDraft({ ...draft, isDraft: !event.target.checked })}
-              />
-              <span>{draft.isDraft ? 'Save as draft' : 'Publish to players'}</span>
-            </label>
-            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
-              <input className="form-check-input" type="checkbox" checked={Boolean(draft.isPinned)} onChange={event => setDraft({ ...draft, isPinned: event.target.checked })} />
-              <span>Pin in Street Wire</span>
-            </label>
-            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
-              <input className="form-check-input" type="checkbox" checked={Boolean(draft.showOnce)} onChange={event => setDraft({ ...draft, showOnce: event.target.checked })} />
-              <span>Show once on login</span>
-            </label>
-            <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
-              <input className="form-check-input" type="checkbox" checked={Boolean(draft.sendToDiscord)} onChange={event => setDraft({ ...draft, sendToDiscord: event.target.checked })} />
-              <span>Send to Discord</span>
-            </label>
-          </div>
-          <label className="field">
-            Title
-            <input className="form-control" maxLength={96} value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} required />
-          </label>
-          <label className="field">
-            Body
-            <textarea className="form-control" rows={7} maxLength={4000} value={draft.body} onChange={event => setDraft({ ...draft, body: event.target.value })} required />
-          </label>
-          <div className="d-grid gtc-1 gtc-md-3 gap-3">
-            <label className="field">
-              Category
-              <select className="form-select" value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value as GameAnnouncement['category'] })}>
-                {updateCategories.map(category =>
-                  <option key={category} value={category}>{category}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              Severity
-              <select className="form-select" value={draft.severity} onChange={event => setDraft({ ...draft, severity: event.target.value as GameAnnouncement['severity'] })}>
-                {updateSeverities.map(severity =>
-                  <option key={severity} value={severity}>{severity}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              Version
-              <input className="form-control" maxLength={32} value={draft.version ?? ''} onChange={event => setDraft({ ...draft, version: event.target.value })} placeholder={__APP_VERSION__} />
-            </label>
-          </div>
-          <div className="d-grid gtc-1 gtc-md-2 gap-3">
-            <label className="field">
-              Starts at
-              <input className="form-control" type="datetime-local" value={draft.publishedAtUtc ?? ''} onChange={event => setDraft({ ...draft, publishedAtUtc: event.target.value || null })} />
-            </label>
-            <label className="field">
-              Ends at
-              <input className="form-control" type="datetime-local" value={draft.expiresAtUtc ?? ''} onChange={event => setDraft({ ...draft, expiresAtUtc: event.target.value || null })} />
-            </label>
-          </div>
-          <div className="d-grid gtc-1 gtc-md-2 gap-3">
-            <label className="field">
-              Added
-              <textarea className="form-control" rows={3} maxLength={2000} value={draft.added ?? ''} onChange={event => setDraft({ ...draft, added: event.target.value })} />
-            </label>
-            <label className="field">
-              Changed
-              <textarea className="form-control" rows={3} maxLength={2000} value={draft.changed ?? ''} onChange={event => setDraft({ ...draft, changed: event.target.value })} />
-            </label>
-            <label className="field">
-              Fixed
-              <textarea className="form-control" rows={3} maxLength={2000} value={draft.fixed ?? ''} onChange={event => setDraft({ ...draft, fixed: event.target.value })} />
-            </label>
-            <label className="field">
-              Known issues
-              <textarea className="form-control" rows={3} maxLength={2000} value={draft.knownIssues ?? ''} onChange={event => setDraft({ ...draft, knownIssues: event.target.value })} />
-            </label>
-          </div>
-          <div className="d-grid gtc-1 gtc-md-2 gap-3">
-            <label className="field">
-              Action label
-              <input className="form-control" maxLength={40} value={draft.actionLabel ?? ''} onChange={event => setDraft({ ...draft, actionLabel: event.target.value })} placeholder="Optional" />
-            </label>
-            <label className="field">
-              Action URL
-              <input className="form-control" maxLength={240} value={draft.actionUrl ?? ''} onChange={event => setDraft({ ...draft, actionUrl: event.target.value })} placeholder="/account" />
-            </label>
-          </div>
-          <label className="field">
-            Audit reason
-            <input className="form-control" value={reason} onChange={event => setReason(event.target.value)} placeholder="Why this is being posted or changed" />
-          </label>
-          <div className="d-flex flex-wrap gap-2">
-            <Button className="btn btn-primary" blocked={locked && WORKING}>
-              {locked ? 'Working...' : draft.isDraft ? 'Save Draft' : selected ? 'Save and Publish' : 'Publish Update'}
-            </Button>
-            {selected && <Button className="btn btn-secondary" type="button" blocked={locked && WORKING} onClick={reset}>Clear Form</Button>}
-            {selected && <Button
-              className="btn btn-outline-danger"
-              type="button"
-              blocked={locked && WORKING}
-              onClick={() => void archive(!selected.archivedAtUtc)}
-            >{selected.archivedAtUtc ? 'Restore' : 'Archive'}</Button>}
-          </div>
-        </form>
-      </section>
-    </div>
-
-    <div className="d-grid gap-3 align-content-start">
-      <section className="card p-3">
-        <div className="panel-title">
-          <h2>Discord Webhook</h2>
-          <span>{delivery?.discordConfigured ? delivery.discordUsesStoredWebhook ? 'Saved in admin' : 'From config' : 'Not set'}</span>
-        </div>
-        <form className="d-grid gap-3" onSubmit={saveDelivery}>
-          <div className="d-flex flex-wrap gap-2">
-            <span className={`badge rounded-pill ${delivery?.discordConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>
-              {delivery?.discordConfigured ? 'Discord broadcast on' : 'Discord broadcast off'}
-            </span>
-            {delivery?.discordWebhookHost && <span className="badge rounded-pill text-bg-light border">{delivery.discordWebhookHost}</span>}
-          </div>
-          <label className="field">
-            New webhook URL
-            <input
-              className="form-control"
-              type="password"
-              value={discordWebhookUrl}
-              onChange={event => setDiscordWebhookUrl(event.target.value)}
-              placeholder={delivery?.discordConfigured ? 'Paste a replacement webhook' : 'https://discord.com/api/webhooks/...'}
-              autoComplete="off"
-            />
-            <small className="form-text">Saved URLs are not shown again. Leave blank to keep the current webhook.</small>
-          </label>
-          <label className="field">
-            Webhook name
-            <input className="form-control" maxLength={80} value={discordUsername} onChange={event => setDiscordUsername(event.target.value)} placeholder="Street Empire" />
-          </label>
-          <label className="field">
-            Audit reason
-            <input className="form-control" value={deliveryReason} onChange={event => setDeliveryReason(event.target.value)} placeholder="Moved announcements to #updates" />
-          </label>
-          <div className="d-flex flex-wrap gap-2">
-            <Button className="btn btn-primary btn-sm" blocked={locked && WORKING}>{locked ? 'Working...' : 'Save Webhook Settings'}</Button>
-            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void loadDelivery()}>Refresh</Button>
-            <Button className="btn btn-outline-danger btn-sm" type="button" blocked={firstReason(
-              locked && WORKING,
-              !delivery?.discordUsesStoredWebhook && 'There is no saved webhook to clear.',
-            )} onClick={() => void clearDeliveryWebhook()}>
-              Clear saved webhook
-            </Button>
-          </div>
-          {delivery && <small className="text-body-tertiary">
-            Last changed {new Date(delivery.updatedAtUtc).toLocaleString()}{delivery.updatedBy ? ` by ${delivery.updatedBy}` : ''}.
-          </small>}
-        </form>
-      </section>
-
-      <section className="card p-3">
-        <div className="panel-title">
-          <h2>Discord Bot</h2>
-          <span>{discord?.gatewayConnected ? 'Online' : discord?.botConfigured ? 'Starting' : 'Needs setup'}</span>
-        </div>
-        <form className="d-grid gap-3" onSubmit={saveDiscord}>
-          <div className="d-flex flex-wrap gap-2">
-            <span className={`badge rounded-pill ${discord?.botConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.botConfigured ? 'Bot configured' : 'No bot'}</span>
-            <span className={`badge rounded-pill ${discord?.gatewayConnected ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.gatewayConnected ? 'Gateway online' : 'Gateway offline'}</span>
-            <span className={`badge rounded-pill ${discord?.slashCommandsConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.slashCommandsConfigured ? 'Slash ready' : 'Slash off'}</span>
-            <span className={`badge rounded-pill ${discord?.roleSyncConfigured ? 'text-bg-success' : 'text-bg-secondary'}`}>{discord?.roleSyncConfigured ? 'Role sync ready' : 'Roles off'}</span>
-            {discord?.usesStoredBotToken && <span className="badge rounded-pill text-bg-light border">Token saved</span>}
-            {discord?.publicKeyConfigured && <span className="badge rounded-pill text-bg-light border">Public key saved</span>}
-          </div>
-          {discord?.gatewayError && <small className="text-body-tertiary">{discord.gatewayError}</small>}
-          <label className="field">
-            Interaction endpoint
-            <input className="form-control" readOnly value={`${window.location.origin}/api/discord/interactions`} />
-          </label>
-          <div className="d-flex flex-wrap gap-2">
-            {discordInviteUrl
-              ? <a className="btn btn-outline-primary btn-sm" href={discordInviteUrl} target="_blank" rel="noreferrer">
-                  Add bot to Discord
-                </a>
-              : <Button className="btn btn-outline-secondary btn-sm" type="button" blocked="Fill in the application ID and server ID below and save, and the invite link appears here.">Add bot to Discord</Button>}
-          </div>
-          <label className="field">
-            Bot token
-            <input className="form-control" type="password" value={discordBotToken} onChange={event => setDiscordBotToken(event.target.value)} placeholder={discord?.botConfigured ? 'Paste a replacement token' : 'Discord bot token'} autoComplete="off" />
-            <small className="form-text">Saved tokens are not shown again. Leave blank to keep the current one.</small>
-          </label>
-          <div className="d-grid gtc-1 gtc-md-2 gap-3">
-            <label className="field">
-              Application ID
-              <input className="form-control" value={discordApplicationId} onChange={event => setDiscordApplicationId(event.target.value)} placeholder="123456789012345678" />
-            </label>
-            <label className="field">
-              Guild ID
-              <input className="form-control" value={discordGuildId} onChange={event => setDiscordGuildId(event.target.value)} placeholder="123456789012345678" />
-            </label>
-          </div>
-          <label className="field">
-            Public key
-            <input className="form-control" type="password" value={discordPublicKey} onChange={event => setDiscordPublicKey(event.target.value)} placeholder={discord?.publicKeyConfigured ? 'Paste a replacement public key' : '64-character application public key'} autoComplete="off" />
-          </label>
-          <div className="d-grid gtc-1 gtc-md-3 gap-3">
-            <label className="field">
-              Linked role
-              <input className="form-control" value={discordLinkedRoleId} onChange={event => setDiscordLinkedRoleId(event.target.value)} placeholder="Role ID" />
-            </label>
-            <label className="field">
-              Top ten role
-              <input className="form-control" value={discordTopTenRoleId} onChange={event => setDiscordTopTenRoleId(event.target.value)} placeholder="Role ID" />
-            </label>
-            <label className="field">
-              Crew boss role
-              <input className="form-control" value={discordCrewBossRoleId} onChange={event => setDiscordCrewBossRoleId(event.target.value)} placeholder="Role ID" />
-            </label>
-          </div>
-          <label className="field">
-            City roles
-            <textarea className="form-control" rows={5} value={discordCityRoleMap} onChange={event => setDiscordCityRoleMap(event.target.value)} placeholder={'Chicago=123456789012345678\nMiami=234567890123456789'} />
-          </label>
-          <label className="field">
-            Crew roles
-            <textarea className="form-control" rows={5} value={discordCrewRoleMap} onChange={event => setDiscordCrewRoleMap(event.target.value)} placeholder={'The Eastside Table=123456789012345678\nThe Southside Table=234567890123456789'} />
-          </label>
-          <label className="field">
-            Crew channels
-            <textarea className="form-control" rows={5} value={discordCrewChannelMap} onChange={event => setDiscordCrewChannelMap(event.target.value)} placeholder={'The Eastside Table=123456789012345678\nThe Southside Table=234567890123456789'} />
-            <small className="form-text">Run crew channel sync to let the bot create and fill this map.</small>
-          </label>
-          <label className="field">
-            Title roles
-            <textarea className="form-control" rows={5} value={discordTitleRoleMap} onChange={event => setDiscordTitleRoleMap(event.target.value)} placeholder={'killer=123456789012345678\nwheelman=234567890123456789\ndiscord-connected=345678901234567890'} />
-          </label>
-          <label className="field">
-            Audit reason
-            <input className="form-control" value={discordReason} onChange={event => setDiscordReason(event.target.value)} placeholder="Added Discord role sync" />
-          </label>
-          <div className="d-flex flex-wrap gap-2">
-            <Button className="btn btn-primary btn-sm" blocked={locked && WORKING}>{locked ? 'Working...' : 'Save Bot Settings'}</Button>
-            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void registerDiscordCommands()}>Register slash commands</Button>
-            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void ensureDiscordRoles()}>Create role maps</Button>
-            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void syncDiscordCrewChannels()}>Sync crew channels</Button>
-            <Button className="btn btn-secondary btn-sm" type="button" blocked={locked && WORKING} onClick={() => void syncDiscordRoles()}>Sync roles now</Button>
-            <Button className="btn btn-outline-danger btn-sm" type="button" blocked={firstReason(
-              locked && WORKING,
-              !discord?.usesStoredBotToken && 'There is no saved bot token to clear.',
-            )} onClick={() => void clearDiscordSecret('token')}>Clear token</Button>
-            <Button className="btn btn-outline-danger btn-sm" type="button" blocked={firstReason(
-              locked && WORKING,
-              !discord?.publicKeyConfigured && 'There is no saved public key to clear.',
-            )} onClick={() => void clearDiscordSecret('key')}>Clear key</Button>
-          </div>
-          <div className="border rounded bg-body-secondary p-2 d-grid gap-1">
-            <strong className="small">Discord Console</strong>
-            {discordConsole.length === 0
-              ? <small className="text-body-tertiary">No bot actions have run in this browser session.</small>
-              : discordConsole.map((line, index) => <small className="font-monospace text-body-tertiary" key={`${line}-${index}`}>{line}</small>)}
-          </div>
-          {discord && <small className="text-body-tertiary">
-            Commands {discord.commandsRegisteredAtUtc ? new Date(discord.commandsRegisteredAtUtc).toLocaleString() : 'not registered'}.
-            {' '}Crew channels {discord.crewChannelsSyncedAtUtc ? new Date(discord.crewChannelsSyncedAtUtc).toLocaleString() : 'not synced'}.
-            {' '}Roles {discord.rolesSyncedAtUtc ? new Date(discord.rolesSyncedAtUtc).toLocaleString() : 'not synced'}.
-            {' '}Gateway {discord.gatewayHeartbeatAtUtc ? `heartbeat ${new Date(discord.gatewayHeartbeatAtUtc).toLocaleString()}` : 'no heartbeat yet'}.
-          </small>}
-        </form>
-      </section>
-    </div>
-  </div>
-}
-
-function emptyCustomTitleDraft(criteria = 'net-worth-at-least'): AdminCustomTitleDraft {
-  return {
-    key: '',
-    title: '',
-    detail: '',
-    criteria,
-    threshold: 1,
-    textValue: '',
-    isActive: true,
-    reason: '',
-  }
-}
-
-function emptyAnnouncementDraft(): AdminGameAnnouncementDraft {
-  return {
-    title: '',
-    body: '',
-    category: 'Info',
-    severity: 'Info',
-    version: __APP_VERSION__,
-    actionLabel: '',
-    actionUrl: '',
-    isDraft: true,
-    isPinned: false,
-    showOnce: false,
-    sendToDiscord: false,
-    publishedAtUtc: '',
-    expiresAtUtc: '',
-    added: '',
-    changed: '',
-    fixed: '',
-    knownIssues: '',
-  }
-}
-
-function discordBotInviteUrl(settings: DiscordIntegrationSettings | null, applicationId: string, guildId: string) {
-  const clientId = (applicationId.trim() || settings?.applicationId || '').trim()
-  if (!/^\d+$/.test(clientId)) return null
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    scope: 'bot applications.commands',
-    permissions: '268435472',
-  })
-  const guild = (guildId.trim() || settings?.guildId || '').trim()
-  if (/^\d+$/.test(guild)) {
-    params.set('guild_id', guild)
-    params.set('disable_guild_select', 'true')
-  }
-  return `https://discord.com/oauth2/authorize?${params.toString()}`
-}
-
-function draftFromAnnouncement(post: AdminGameAnnouncement): AdminGameAnnouncementDraft {
-  return {
-    title: post.title,
-    body: post.body,
-    category: post.category,
-    severity: post.severity,
-    version: post.version ?? '',
-    actionLabel: post.actionLabel ?? '',
-    actionUrl: post.actionUrl ?? '',
-    isDraft: post.isDraft,
-    isPinned: post.isPinned,
-    showOnce: post.showOnce,
-    sendToDiscord: post.sendToDiscord,
-    publishedAtUtc: toLocalDateTimeInput(post.publishedAtUtc),
-    expiresAtUtc: post.expiresAtUtc ? toLocalDateTimeInput(post.expiresAtUtc) : '',
-    added: post.added ?? '',
-    changed: post.changed ?? '',
-    fixed: post.fixed ?? '',
-    knownIssues: post.knownIssues ?? '',
-  }
-}
-
-function announcementPayload(draft: AdminGameAnnouncementDraft, reason: string): AdminGameAnnouncementDraft {
-  return {
-    title: draft.title.trim(),
-    body: draft.body.trim(),
-    category: draft.category,
-    severity: draft.severity,
-    version: draft.version?.trim() || null,
-    actionLabel: draft.actionLabel?.trim() || null,
-    actionUrl: draft.actionUrl?.trim() || null,
-    isDraft: draft.isDraft ?? false,
-    isPinned: draft.isPinned ?? false,
-    showOnce: draft.showOnce ?? false,
-    sendToDiscord: draft.sendToDiscord ?? false,
-    publishedAtUtc: draft.publishedAtUtc ? new Date(draft.publishedAtUtc).toISOString() : null,
-    expiresAtUtc: draft.expiresAtUtc ? new Date(draft.expiresAtUtc).toISOString() : null,
-    added: draft.added?.trim() || null,
-    changed: draft.changed?.trim() || null,
-    fixed: draft.fixed?.trim() || null,
-    knownIssues: draft.knownIssues?.trim() || null,
-    reason: reason.trim() || null,
-  }
-}
-
-function toLocalDateTimeInput(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 16)
-}
-
-function AdminLiveOpsPanel({ busy }: { busy: boolean }) {
-  const [ops, setOps] = useState<LiveOps | null>(null)
-  const [announcement, setAnnouncement] = useState('')
-  const [maintenanceMessage, setMaintenanceMessage] = useState('')
-  const [error, setError] = useState('')
-  const [working, setWorking] = useState(false)
-
-  const load = async () => {
-    try {
-      const next = await opsApi.liveOps()
-      setOps(next)
-      setAnnouncement(next.announcement ?? '')
-      setMaintenanceMessage(next.maintenanceMessage ?? '')
-    } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [])
-
-  const apply = async (body: Parameters<typeof opsApi.setLiveOps>[0]) => {
-    setWorking(true); setError('')
-    try {
-      const next = await opsApi.setLiveOps(body)
-      setOps(next)
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  const locked = busy || working
-  return <section className={`card p-3 gcol-full ${ops?.maintenanceMode ? 'border-warning' : ''}`}>
-    <div className="panel-title">
-      <h2>Live Operations</h2>
-      <span>{ops?.maintenanceMode ? 'Maintenance is ON' : 'Game is open'}</span>
-    </div>
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-    <p>Maintenance blocks every gameplay action for players while leaving reads and admin access open, so you can verify a deploy before letting anyone back in.</p>
-    <div className="control-row">
-      <Button
-        className={ops?.maintenanceMode ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-        blocked={locked && WORKING}
-        onClick={() => void apply({ maintenanceMode: !ops?.maintenanceMode })}
-      >
-        {ops?.maintenanceMode ? 'End maintenance' : 'Start maintenance'}
-      </Button>
-      <label className="field">Maintenance notice<input className="form-control" value={maintenanceMessage} onChange={e => setMaintenanceMessage(e.target.value)} placeholder="Back in 10 minutes" /></label>
-      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
-        onClick={() => void apply({ maintenanceMessage })}>Save notice</Button>
-    </div>
-    <div className="control-row">
-      <label className="grow">Announcement banner<input className="form-control" value={announcement} onChange={e => setAnnouncement(e.target.value)} placeholder="Shown to every player" /></label>
-      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
-        onClick={() => void apply({ announcement })}>Save banner</Button>
-      <Button className="btn btn-secondary btn-sm" blocked={firstReason(
-        locked && WORKING,
-        !ops?.announcement && 'There is no banner up to clear.',
-      )} onClick={() => void apply({ announcement: '' })}>Clear</Button>
-    </div>
-    {ops && <small className="d-block mt-2 text-body-tertiary small">Last changed {new Date(ops.updatedAtUtc).toLocaleString()}{ops.updatedBy ? ` by ${ops.updatedBy}` : ''}.</small>}
-  </section>
-}
-
-/**
- * Live tuning. Values here take effect on the next request, without a restart, because the services
- * read configuration per scope. Table-shaped settings (storage levels, lab tiers) stay in appsettings.
- */
-function AdminConfigPanel({ busy }: { busy: boolean }) {
-  const [config, setConfig] = useState<AdminConfig | null>(null)
-  const [filter, setFilter] = useState('')
-  const [edits, setEdits] = useState<Record<string, string>>({})
-  const [reason, setReason] = useState('')
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [working, setWorking] = useState(false)
-  const [showAll, setShowAll] = useState(false)
-
-  const load = async () => {
-    try { setConfig(await configApi.get()) } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [])
-
-  const run = async (label: string, fn: () => Promise<ActionResult>) => {
-    if (reason.trim().length < 3) {
-      setError('Give a reason first. Tuning changes are audited.')
-      return
-    }
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const result = await fn()
-      setMessage(`${label}: ${result.summary}`)
-      setEdits({})
-      await load()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  if (!config) return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Tuning</h2><span>Live config</span></div>
-    {error ? <div className="alert alert-danger"><span>{error}</span></div> : <p className="text-body-tertiary small mt-3 mb-0">Loading.</p>}
-  </section>
-
-  const needle = filter.trim().toLowerCase()
-  const matches = config.settings.filter(entry =>
-    (!showAll ? entry.isOverridden || needle.length > 0 : true)
-    && (needle.length === 0 || entry.path.toLowerCase().includes(needle)))
-  const locked = busy || working
-
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title">
-      <h2>Tuning</h2>
-      <span>{config.overrideCount} override{config.overrideCount === 1 ? '' : 's'} live</span>
-    </div>
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-    {message && <div className="alert alert-success"><span>{message}</span></div>}
-    <p>Changes apply on the next request, no restart. Overrides are stored in the database and layered over appsettings, so clearing one falls back to the shipped value. Table-shaped settings like storage levels are not editable here.</p>
-
-    <label className="field">Reason (recorded in the audit trail)
-      <input className="form-control" value={reason} onChange={e => setReason(e.target.value)} placeholder="Why are you retuning this?" />
-    </label>
-
-    <div className="control-row">
-      <label className="grow">Filter<input className="form-control" value={filter} onChange={e => setFilter(e.target.value)} placeholder="combat, morale, price..." /></label>
-      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING} onClick={() => setShowAll(value => !value)}>
-        {showAll ? 'Show overrides only' : `Show all ${config.settings.length}`}
-      </Button>
-    </div>
-
-    <div className="d-grid gap-1 mt-3 config-list">
-      {matches.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">
-        {showAll ? 'Nothing matches that filter.' : 'No overrides yet. Filter or show all to change something.'}
-      </p>}
-      {matches.map(entry => <ConfigRow
-        key={entry.path}
-        entry={entry}
-        draft={edits[entry.path] ?? entry.effectiveValue}
-        locked={locked}
-        onDraft={value => setEdits(current => ({ ...current, [entry.path]: value }))}
-        onSave={() => void run('Set', () => configApi.set(entry.path, edits[entry.path] ?? entry.effectiveValue, reason))}
-        onClear={() => void run('Cleared', () => configApi.clear(entry.path, reason))}
-      />)}
-    </div>
-  </section>
-}
-
-function ConfigRow({ entry, draft, locked, onDraft, onSave, onClear }: {
-  entry: AdminConfigEntry
-  draft: string
-  locked: boolean
-  onDraft: (value: string) => void
-  onSave: () => void
-  onClear: () => void
-}) {
-  const dirty = draft.trim() !== entry.effectiveValue.trim()
-  return <div className={`config-row d-grid gap-2 align-items-center border-top py-2 ${entry.isOverridden ? 'border-primary' : ''}`}>
-    <div className="config-copy d-grid gap-1 min-w-0">
-      <strong>{entry.path}</strong>
-      <span>{entry.type}{entry.isOverridden ? ' / overridden' : ' / from appsettings'}</span>
-    </div>
-    <input className="form-control" value={draft} onChange={e => onDraft(e.target.value)} />
-    <Button className="btn btn-primary btn-sm" blocked={firstReason(
-      locked && WORKING,
-      !dirty && 'Nothing has been changed here.',
-    )} onClick={onSave}>Save</Button>
-    <Button className="btn btn-secondary btn-sm" blocked={firstReason(
-      locked && WORKING,
-      !entry.isOverridden && 'This one is still the value from appsettings. There is no override to reset.',
-    )} onClick={onClear}>Reset</Button>
-  </div>
-}
-
-function AdminOversightPanel({ busy }: { busy: boolean }) {
-  const [data, setData] = useState<AdminOversight | null>(null)
-  const [error, setError] = useState('')
-  const [working, setWorking] = useState(false)
-
-  const load = async () => {
-    try { setData(await opsApi.oversight()) } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [])
-
-  const resolve = async (missionId: number) => {
-    setWorking(true); setError('')
-    try { await opsApi.forceResolve(missionId); await load() }
-    catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  if (!data) return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Oversight</h2><span>Economy and combat</span></div>
-    {error ? <div className="alert alert-danger"><span>{error}</span></div> : <p className="text-body-tertiary small mt-3 mb-0">Loading.</p>}
-  </section>
-
-  const overdue = data.activeMissions.filter(mission => mission.isOverdue)
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Oversight</h2><span>Economy and combat</span></div>
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-    <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
-      <AdminMetric label="Median net worth" value={money.format(data.medianNetWorth)} />
-      <AdminMetric label="Richest" value={money.format(data.topNetWorth)} />
-      <AdminMetric label="Concentration" value={`${data.giniPercent.toFixed(1)}% Gini`} />
-      <AdminMetric label="Active missions" value={number.format(data.activeMissions.length)} />
-      <AdminMetric label="Stuck missions" value={number.format(overdue.length)} />
-    </div>
-
-    <div className="control-block">
-      <strong>Wealth spread</strong>
-      <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
-        {data.wealthBands.map(band => <AdminMetric key={band.label} label={band.label} value={`${number.format(band.players)} / ${money.format(band.totalNetWorth)}`} />)}
-      </div>
-      <small>Gini runs 0 (everyone equal) to 100 (one player holds everything).</small>
-    </div>
-
-    <div className="control-block">
-      <strong>Fastest movers, last 24h</strong>
-      <div className="d-grid gap-1">
-        {data.fastestMovers.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No logged activity in the last day.</p>}
-        {data.fastestMovers.map(mover => <div className="audit-row d-grid gap-1 border-top py-2" key={mover.playerId}>
-          <div>
-            <strong>{mover.name}{mover.isBot ? ' (AI)' : ''}</strong>
-            <span>{money.format(mover.cashGained24h)} in {number.format(mover.actionsLast24h)} actions</span>
-          </div>
-          <p>Net worth {money.format(mover.netWorth)}</p>
-        </div>)}
-      </div>
-      <small>Approximated from logged cash and bank deltas; the game keeps no net worth history to diff.</small>
-    </div>
-
-    <div className="control-block">
-      <strong>In-flight missions</strong>
-      <div className="d-grid gap-1">
-        {data.activeMissions.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nothing in flight.</p>}
-        {data.activeMissions.map(mission => <div className={`audit-row d-grid gap-1 border-top py-2 ${mission.isOverdue ? 'border-primary' : ''}`} key={mission.missionId}>
-          <div>
-            <strong>{mission.status}{mission.isOverdue ? ' / STUCK' : ''}</strong>
-            <span>round {mission.currentRound}/{mission.maxRounds}</span>
-          </div>
-          <p>{mission.commanderName ?? 'A pimp'} ({mission.attackerName}) vs {mission.defenderName}</p>
-          <div className="control-row">
-            <em>{mission.nextEventAtUtc ? `next ${new Date(mission.nextEventAtUtc).toLocaleTimeString()}` : 'no timer'}</em>
-            <Button className="btn btn-secondary btn-sm" blocked={firstReason(busy && WORKING, working && WORKING)}
-              onClick={() => void resolve(mission.missionId)}>Force resolve</Button>
-          </div>
-        </div>)}
-      </div>
-    </div>
-
-    <div className="control-block">
-      <strong>AI health</strong>
-      <div className="d-grid gap-1">
-        {data.bots.map(bot => <div className="audit-row d-grid gap-1 border-top py-2" key={bot.playerId}>
-          <div>
-            <strong>{bot.name}</strong>
-            <span>{bot.personality}</span>
-          </div>
-          <p>{money.format(bot.netWorth)} / {botPresence(bot)}</p>
-        </div>)}
-      </div>
-    </div>
-  </section>
-}
-
-/**
- * Player administration. Owns its own state and talks to the admin API directly rather than threading
- * a dozen fields through PageContext, matching how AdminPanel already handles its local controls.
- */
-function AdminPlayersPanel({ busy, onChanged }: { busy: boolean, onChanged: () => void }) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<AdminPlayerSummary[]>([])
-  const [detail, setDetail] = useState<AdminPlayerDetail | null>(null)
-  const [reason, setReason] = useState('')
-  const [resource, setResource] = useState('cash')
-  const [delta, setDelta] = useState(10000)
-  const [renameTo, setRenameTo] = useState('')
-  const [suspendHours, setSuspendHours] = useState(24)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
-  const [working, setWorking] = useState(false)
-
-  const search = async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault()
-    setError('')
-    try {
-      setResults(await adminApi.searchPlayers(query))
-    } catch (e) { setError((e as Error).message) }
-  }
-
-  const open = async (playerId: string) => {
-    setError(''); setMessage('')
-    try {
-      const next = await adminApi.playerDetail(playerId)
-      setDetail(next)
-      setRenameTo(next.summary.name)
-    } catch (e) { setError((e as Error).message) }
-  }
-
-  // Every mutation needs a reason: it is what makes the audit trail worth having.
-  const run = async (label: string, fn: () => Promise<ActionResult>, requireReason = true) => {
-    if (requireReason && reason.trim().length < 3) {
-      setError('Give a reason first. It goes in the audit trail.')
-      return
-    }
-    setWorking(true); setError(''); setMessage('')
-    try {
-      const result = await fn()
-      setMessage(`${label}: ${result.summary}`)
-      if (detail) await open(detail.summary.playerId)
-      await search()
-      onChanged()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  useEffect(() => { void search() }, [])
-  const locked = busy || working
-  const target = detail?.summary
-
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Players</h2><span>Find and fix</span></div>
-    <form className="d-grid gtc-1 gtc-md-1-auto gap-2 align-items-end mb-3" onSubmit={search}>
-      <label className="field">Search<input className="form-control" value={query} onChange={e => setQuery(e.target.value)} placeholder="Player, username, or city" /></label>
-      <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}>Search</Button>
-    </form>
-
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-    {message && <div className="alert alert-success"><span>{message}</span></div>}
-
-    <div className="d-grid gtc-1 gtc-lg-split-280 gap-3 mt-3">
-      <div className="admin-player-list d-grid gap-1 align-content-start overflow-y-auto">
-        {results.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No players matched.</p>}
-        {results.map(player => <Button
-          className={`btn admin-player-row d-grid gap-1 column-gap-2 align-items-center text-start border rounded bg-body-secondary p-2 ${target?.playerId === player.playerId ? 'active border-primary' : ''}`}
-          key={player.playerId}
-          type="button"
-          blocked={locked && WORKING}
-          onClick={() => void open(player.playerId)}
-        >
-          <strong>{player.name}</strong>
-          <small>
-            {player.username}{player.isBot ? ' / AI' : ''}{player.isAdmin ? ' / admin' : ''}
-            {/* Marked in the list, so a search that matched on identity shows why without a click. */}
-            {player.discordUsername && ` / ${player.discordUsername}`}
-            {player.emailVerified && ' / ✉'}
-          </small>
-          <em>{enforcementLabel(player)}</em>
-          <b>{money.format(player.netWorth)}</b>
-        </Button>)}
-      </div>
-
-      {detail && target && <div className="d-grid gap-3 align-content-start border rounded bg-body-tertiary p-3">
-        <div className="d-flex justify-content-between align-items-start gap-3">
-          <div className="d-grid gap-1">
-            <strong className="text-body fs-6">{target.name}</strong>
-            <span className="text-body-secondary small">{target.username} / {target.city}</span>
-          </div>
-          <b className={`badge ${target.isBanned ? 'text-bg-danger' : 'text-bg-success'}`}>{enforcementLabel(target)}</b>
-        </div>
-        <div className="tnum d-grid gtc-2 gtc-md-3 gtc-xl-5 gap-2">
-          <AdminMetric label="Net worth" value={money.format(target.netWorth)} />
-          <AdminMetric label="Cash" value={money.format(target.cash)} />
-          <AdminMetric label="Bank" value={money.format(target.bankCash)} />
-          <AdminMetric label="Turns" value={number.format(target.turns)} />
-          <AdminMetric label="Crew" value={`${target.pimps} P / ${target.hoes} H / ${target.thugs} T`} />
-          <AdminMetric label="Morale" value={`${detail.hoeHappiness.toFixed(0)}% / ${detail.thugHappiness.toFixed(0)}%`} />
-          <AdminMetric label="Hideout" value={`${detail.hideout.tierName} S${detail.hideout.storageLevel}/V${detail.hideout.safeLevel}`} />
-          <AdminMetric label="Joined" value={new Date(target.createdAtUtc).toLocaleDateString()} />
-        </div>
-
-        {/*
-          Who this account actually is, rather than what it owns.
-
-          A moderator handling a returning ban evader is asking one question - is this the same person -
-          and the panel could not previously answer it at all. A username is the first thing somebody
-          changes on the way to a second account; a Discord snowflake is the last, which is why it is
-          shown as well as the handle and why both are searchable.
-        */}
-        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
-          <AdminMetric
-            label="Email"
-            value={target.email ?? '—'}
-            sub={target.email ? (target.emailVerified ? 'Confirmed' : 'Not confirmed') : 'None set'}
-          />
-          <AdminMetric label="Discord" value={target.discordUsername ?? '—'} sub={target.discordUsername ? 'Connected' : 'Not connected'} />
-          <AdminMetric label="Discord ID" value={target.discordUserId ?? '—'} sub="Survives a rename" />
-        </div>
-
-        <label className="field">Reason (recorded in the audit trail)
-          <input className="form-control" value={reason} onChange={e => setReason(e.target.value)} placeholder="Why are you doing this?" />
-        </label>
-
-        <div className="control-block">
-          <strong>Quick grants</strong>
-          <div className="d-grid gtc-1 gtc-md-4 gap-2">
-            {adjustPresets.map(preset => <Button
-              className="btn btn-secondary btn-sm"
-              key={preset.label}
-              blocked={locked && WORKING}
-              onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, preset.resource, preset.delta, reason))}
-            >{preset.label}</Button>)}
-            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
-              onClick={() => void run('Morale set', () => adminApi.setMorale(target.playerId, 100, reason))}>Morale 100%</Button>
-          </div>
-        </div>
-
-        <div className="control-block">
-          <strong>Adjust a resource</strong>
-          <div className="control-row">
-            <label className="field">Resource<select className="form-select" value={resource} onChange={e => setResource(e.target.value)}>
-              {detail.adjustableResources.map(key => <option key={key} value={key}>{key}</option>)}
-            </select></label>
-            <label className="field">Change<input className="form-control" type="number" value={delta} onChange={e => setDelta(Number(e.target.value))} /></label>
-            <Button className="btn btn-primary btn-sm" blocked={firstReason(
-              locked && WORKING,
-              delta === 0 && 'A change of zero does nothing. Set an amount first.',
-            )} onClick={() => void run('Adjusted', () => adminApi.adjust(target.playerId, resource, delta, reason))}>
-              Apply
-            </Button>
-          </div>
-          <small>Negative values take resources away. Nothing drops below zero.</small>
-        </div>
-
-        <div className="control-block">
-          <strong>Account</strong>
-          <div className="control-row">
-            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
-              onClick={() => void run('Banned', () => adminApi.enforcement(target.playerId, 'ban', null, reason))}>
-              Ban
-            </Button>
-            <label className="field">Suspend hours<input className="form-control" type="number" min={1} value={suspendHours} onChange={e => setSuspendHours(Number(e.target.value))} /></label>
-            <Button className="btn btn-secondary btn-sm" blocked={firstReason(
-              locked && WORKING,
-              suspendHours < 1 && 'A suspension has to run for at least an hour.',
-            )} onClick={() => void run('Suspended', () => adminApi.enforcement(
-                target.playerId,
-                'suspend',
-                new Date(Date.now() + suspendHours * 3600_000).toISOString(),
-                reason))}>
-              Suspend
-            </Button>
-            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
-              onClick={() => void run('Cleared', () => adminApi.enforcement(target.playerId, 'clear', null, reason))}>
-              Lift
-            </Button>
-            <Button className="btn btn-secondary btn-sm" blocked={locked && WORKING}
-              onClick={() => void run('Logged out', () => adminApi.forceLogout(target.playerId, reason))}>
-              Force logout
-            </Button>
-          </div>
-        </div>
-
-        <div className="control-block">
-          <strong>Identity and rights</strong>
-          <div className="control-row">
-            <label className="field">Name<input className="form-control" value={renameTo} onChange={e => setRenameTo(e.target.value)} minLength={3} maxLength={32} /></label>
-            <Button className="btn btn-secondary btn-sm" blocked={firstReason(
-              locked && WORKING,
-              renameTo.trim() === target.name && `They are already called ${target.name}.`,
-            )} onClick={() => void run('Renamed', () => adminApi.rename(target.playerId, renameTo, reason))}>
-              Rename
-            </Button>
-            <Button className="btn btn-secondary btn-sm" blocked={firstReason(
-              locked && WORKING,
-              target.isBot && 'A rival run by the game cannot be given admin rights.',
-            )} onClick={() => void run('Rights changed', () => adminApi.setAdminRights(target.playerId, !target.isAdmin, reason))}>
-              {target.isAdmin ? 'Revoke admin' : 'Grant admin'}
-            </Button>
-          </div>
-        </div>
-
-        <div className="control-block">
-          <strong>Recent activity</strong>
-          <ActivityList entries={detail.recentActivity.slice(0, 6)} />
-        </div>
-
-        {detail.auditTrail.length > 0 && <div className="control-block">
-          <strong>Admin history for this player</strong>
-          <AuditList entries={detail.auditTrail} />
-        </div>}
-      </div>}
-    </div>
-  </section>
-}
-
-function AdminAuditPanel() {
-  const [entries, setEntries] = useState<AdminAuditEntry[]>([])
-  const [error, setError] = useState('')
-  useEffect(() => {
-    void (async () => {
-      try { setEntries(await adminApi.audit()) } catch (e) { setError((e as Error).message) }
-    })()
-  }, [])
-
-  return <section className="card p-3 gcol-full">
-    <div className="panel-title"><h2>Audit Trail</h2><span>Every admin action</span></div>
-    {error && <div className="alert alert-danger"><span>{error}</span></div>}
-    {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No admin actions recorded yet.</p>}
-    <AuditList entries={entries.slice(0, 30)} />
-  </section>
-}
-
-function AuditList({ entries }: { entries: AdminAuditEntry[] }) {
-  return <div className="d-grid gap-1">
-    {entries.map(entry => <div className="audit-row d-grid gap-1 border-top py-2" key={entry.id}>
-      <div>
-        <strong>{entry.action}</strong>
-        <span>{entry.actorUsername}{entry.targetName ? ` -> ${entry.targetName}` : ''}</span>
-      </div>
-      <p>{entry.summary}</p>
-      {entry.reason && <small>"{entry.reason}"</small>}
-      <em>{new Date(entry.createdAtUtc).toLocaleString()}</em>
-    </div>)}
-  </div>
-}
-
-function enforcementLabel(player: AdminPlayerSummary) {
-  if (player.isBanned) return 'Banned'
-  if (player.suspendedUntilUtc && new Date(player.suspendedUntilUtc) > new Date()) return 'Suspended'
-  return 'Active'
-}
-
-/**
- * Defence alerts. Opening the panel marks everything read by moving the server-side watermark, then
- * refreshes so the badge clears. The count itself rides on the dashboard, so the bell costs no extra
- * request until it is opened.
- */
-// Shown once on arrival and only when something actually happened. A popup that says the world stood
-// still while you were out is an interruption with nothing behind it.
 function CatchUpDialog({ news, onClose }: { news: CatchUp, onClose: () => void }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -7134,24 +5050,65 @@ function AlertBell({ unread, onRead }: { unread: number, onRead: () => void }) {
  * played in sessions: one quiet for four hours is asleep, not stuck, and the admin needs to be able
  * to tell those apart at a glance.
  */
-function botPresence(bot: AdminBotHealth) {
-  if (bot.isInSession) return `playing, ${number.format(bot.sessionActionsLeft)} left`
-  if (!bot.nextSessionAtUtc) return 'due to play'
-  const minutes = Math.round((new Date(bot.nextSessionAtUtc).getTime() - Date.now()) / 60000)
-  if (minutes <= 0) return 'due to play'
-  return minutes < 90 ? `back in ${minutes}m` : `back in ${Math.round(minutes / 60)}h`
-}
-
-// Only a rival that is meant to be playing and is not counts as stale, so a sleeper is not flagged.
-function rivalRowClass(bot: AdminBotHealth) {
-  if (bot.isPaused) return 'paused'
-  return bot.isInSession && bot.minutesIdle > 30 ? 'stale' : ''
-}
-
 function alertClass(alert: Alert) {
   // The stripe says what happened, the fill says whether you have seen it.
   const base = alert.tone === 'bad' ? 'border-start-danger' : 'border-start-success'
   return alert.isUnread ? `${base} bg-body-secondary` : base
+}
+
+/**
+ * Somebody is coming, and that is all anybody is telling you.
+ *
+ * The lookout's second job, and the panel is deliberately thin because the room is: it buys notice and
+ * never detail. Not who, not what kind, not how long. The four strikes have three different answers -
+ * medicine, a bigger guard, a better cut - and none of them is cheap, so which one to reach for is a
+ * guess and the guess is the whole decision.
+ *
+ * A house with no lookout never draws this at all. Blind is the default, and the room is what a player
+ * buys to stop being it.
+ */
+function InboundStrikePanel({ dashboard }: { dashboard: Dashboard }) {
+  if (!dashboard.strikeInbound) return null
+  return <section className="card p-3 border-danger" data-area="inbound">
+    <div className="panel-title"><h2>Somebody is coming</h2><span>Your lookout</span></div>
+    <p className="mb-0">
+      A crew you do not recognise is on the road into {dashboard.hideout.city}, and close. Your lookout
+      cannot tell you who they are or what they want &mdash; only that they are nearly here.
+    </p>
+    <p className="small text-body-secondary mb-0 mt-2">
+      Medicine answers an infestation, a bigger armed guard answers a drive-by or a jacking, and a
+      better cut answers a poach. There is not time for all four.
+    </p>
+  </section>
+}
+
+/**
+ * Your own crews on the road. Out is the half that has not happened yet; coming back is the half whose
+ * haul is still on a motorway somewhere rather than in your garage.
+ */
+function StrikesOutPanel({ dashboard }: { dashboard: Dashboard }) {
+  const out = dashboard.strikesOut ?? []
+  if (out.length === 0) return null
+  return <section className="card p-3" data-area="strikes-out">
+    <div className="panel-title">
+      <h2>On the road</h2>
+      <span>{out.length === 1 ? 'One crew' : `${number.format(out.length)} crews`} out</span>
+    </div>
+    <div className="d-grid gap-2">
+      {out.map(trip => <div key={trip.id} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded p-2">
+        <div className="min-w-0">
+          <strong className="text-capitalize">{trip.methodLabel}</strong>
+          <span className="text-body-secondary"> on {trip.targetName} in {trip.targetCity}</span>
+          <div className="small text-body-secondary">{trip.summary}</div>
+        </div>
+        <em className={trip.status === 'Outbound' ? 'text-warning' : 'text-body-secondary'}>
+          {trip.status === 'Outbound'
+            ? `Arrives in ${timeUntil(trip.arrivesAtUtc)}`
+            : `Home in ${timeUntil(trip.returnsAtUtc)}`}
+        </em>
+      </div>)}
+    </div>
+  </section>
 }
 
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
@@ -7175,7 +5132,18 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
       title={dashboard.hideout.heatNote}
     />
     <Stat label="Rank" value={`#${dashboard.rank}`} />
-    <Stat label="City" value={dashboard.city} />
+    {/* Two towns rather than one, and the second only when they differ. A player at home has one
+        location and a strip that says it twice is a strip that stops being read; a player who is
+        away has two, and which is which is the single most load-bearing fact on the page. */}
+    <Stat
+      label="You are in"
+      value={dashboard.city}
+      sub={dashboard.location.atHideout ? 'At your hideout' : `Hideout: ${dashboard.location.hideoutCity}`}
+      tone={dashboard.location.atHideout ? undefined : 'border-warning'}
+      title={dashboard.location.atHideout
+        ? undefined
+        : `Your crew, your storage and your safe are in ${dashboard.location.hideoutCity}. Only what you are carrying is here.`}
+    />
   </section>
 }
 
@@ -7597,8 +5565,9 @@ function HideoutMoralePanel({ dashboard, busy, act }: {
 
   // The buttons carry these rather than printing them underneath. Said in both places at once, the
   // sentence appeared twice on screen the moment anybody hovered the thing it was about.
-  const restBlocked = firstReason(busy && BUSY, restReason)
-  const partyBlocked = firstReason(busy && BUSY, partyReason)
+  const away = awayFromHideout(dashboard, 'Looking after the crew')
+  const restBlocked = firstReason(busy && BUSY, away, restReason)
+  const partyBlocked = firstReason(busy && BUSY, away, partyReason)
 
   return <section className="card p-3 gcol-full" data-area="recovery">
     <div className="panel-title"><h2>Recovery</h2><span>{dashboard.hideout.tierName} morale</span></div>
@@ -7656,24 +5625,6 @@ const NOT_SCOUTED = 'You have not looked inside. Scout them to find out what is 
  */
 const INTEL = { fightingWeight: 1, armoury: 2, stock: 3, morale: 4 }
 
-function PlayerName({ playerId, children, className }: {
-  playerId: string | null | undefined
-  children: ReactNode
-  className?: string
-}) {
-  // Anything the game said rather than a player has no id, and stays plain text.
-  if (!playerId) return <>{children}</>
-
-  return <button
-    type="button"
-    className={`btn btn-link p-0 border-0 align-baseline text-start lh-inherit ${className ?? ''}`}
-    onClick={event => {
-      // The row underneath is often clickable too. This is the more specific intent.
-      event.stopPropagation()
-      window.dispatchEvent(new CustomEvent('street-empire:profile', { detail: { playerId } }))
-    }}
-  >{children}</button>
-}
 
 /**
  * That dialog. Fetched when it opens rather than held ready, because it is the same call the combat
@@ -7733,15 +5684,6 @@ function PlayerProfileDialog({ playerId, currentPlayerId, onClose }: {
   </>
 }
 
-function ProfileBadgeStrip({ badges }: { badges: PlayerProfile['profileBadges'] }) {
-  if (badges.length === 0) return null
-  return <div className="d-flex flex-wrap gap-1 mt-1">
-    {badges.map(badge => <span className="badge text-bg-secondary d-inline-flex align-items-center gap-1" title={badge.detail} key={badge.key}>
-      {badge.key === 'discord-connected' && <i className="bi bi-discord" aria-hidden="true" />}
-      {badge.label}
-    </span>)}
-  </div>
-}
 
 /**
  * One player, as everybody else sees them.
@@ -7997,12 +5939,19 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   // have thrown rather than a second opinion the page arrived at on its own.
   const strikeBlocker = method && profile ? profile.strikeBlockers?.[method.key] : undefined
   const isRaid = method?.key === 'raid'
+  // The drive, priced by the server against this exact pairing. Null when they are on your own
+  // streets, which is how the page tells a strike from a road trip without knowing the rule.
+  const trip = !isRaid ? profile?.strikeTrip ?? null : null
+  // A trip's turn price is the method's plus the drive, so the local number under the button is the
+  // wrong one the moment a target is out of town.
+  const strikeTurnCost = trip && method ? trip.turnCosts[method.key] ?? method.turnCost : method?.turnCost ?? 0
   // A strike is gated by the method's own requirements, which the server has already worked out, plus
   // the turns it costs. A raid is gated by crew, which only it commits.
   const methodBlocker = firstReason(
     !method && 'Pick how you want to hit them first.',
     method?.blockedReason,
-    !!method && dashboard.turns < method.turnCost && `${method.label} costs ${method.turnCost} turns and you have ${dashboard.turns}.`,
+    !!method && dashboard.turns < strikeTurnCost && `${method.label}${trip ? ` in ${trip.targetCity}` : ''} costs ${strikeTurnCost} turns and you have ${dashboard.turns}.`,
+    !!trip && spendable(dashboard) < trip.fare && `Getting a crew to ${trip.targetCity} and back costs ${money.format(trip.fare)} in petrol and plates.`,
     isRaid && raidBlocker,
     // Nothing to hand out means nobody to tempt, so the run is refused before it costs the turns.
     method?.key === 'poach' && poachCoke <= 0 && 'Set how much coke to put on the table first.',
@@ -8028,6 +5977,27 @@ function TargetReconPanel({ targets, selectedTarget, query, busy, currentPlayerI
   )
   return <div className="card p-3 gcol-full">
     <div className="panel-title" data-area="targets"><h2>Combat Targets</h2><span>Scout + launch</span></div>
+    {/* A strike at a neighbour lands the moment it is pressed. One at a house across the country is a
+        drive, and a drive is a commitment now and an outcome later - which the page has to say before
+        the button rather than after it. */}
+    {trip && method && <div className="alert alert-warning d-grid gap-1 mb-3">
+      <strong>{trip.targetCity} is a drive.</strong>
+      <span className="small">
+        Your crew leave now and arrive in about {trip.minutesEachWay} minute(s), and are home again
+        {' '}{trip.minutesEachWay * 2} minute(s) after that. {strikeTurnCost} turns and
+        {' '}{money.format(trip.fare)} in petrol and plates.
+        {trip.hitChancePenaltyPercent > 0 && ` A ${method.label.toLowerCase()} is ${trip.hitChancePenaltyPercent}% harder on streets nobody knows.`}
+      </span>
+      {/* Only the two verbs that carry something home are told about the road back, because only they
+          have anything on it that anybody would stop them for. */}
+      {trip.returnRiskPercent > 0 && (method.key === 'jack' || method.key === 'poach') && <span className="small">
+        And {trip.returnRiskPercent}% of the way back going wrong. What they took is what gets taken;
+        what they set out with is theirs either way.
+      </span>}
+      <span className="small text-body-secondary">
+        Whatever is standing in that house when they get there is what they meet, not what is standing now.
+      </span>
+    </div>}
     <form className="d-grid gtc-1 gtc-md-1-auto-auto gap-2 align-items-end mb-3" onSubmit={onSearch}>
       <label className="field">Search<input className="form-control" value={query} onChange={event => onQuery(event.target.value)} placeholder="Name or city" /></label>
       <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY}>Search</Button>
@@ -8310,7 +6280,7 @@ function ArrestPanel({ dashboard, busy, act }: {
               className="btn btn-primary"
               blocked={firstReason(
                 busy && BUSY,
-                !arrest.canAffordBail && `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)} between cash and the bank.`,
+                !arrest.canAffordBail && `Bail is ${money.format(arrest.bailAmount)} and you have ${money.format(board?.funds ?? 0)} across your cash, safe and bank.`,
               )}
               onClick={() => void act(async () => { const r = await api.bailArrest(arrest.id); await load(); return r })}>
               Bail out ({money.format(arrest.bailAmount)})
@@ -8442,694 +6412,6 @@ function TitleBoardPanel({ currentPlayerId }: { currentPlayerId: string }) {
  * the people listed here cannot rob you and you cannot rob them. Everything else - the treasury, the
  * rate, the board - is bookkeeping around that one fact.
  */
-function AlliancePage(ctx: PageContext) {
-  const { busy, act } = ctx
-  const [board, setBoard] = useState<AllianceBoard | null>(null)
-  const [name, setName] = useState('')
-  const [motto, setMotto] = useState('')
-
-  const load = async () => {
-    try {
-      setBoard(await api.alliances())
-    } catch {
-      // The page is readable without the board; an error banner over an empty list says nothing.
-    }
-  }
-  useEffect(() => { void load() }, [])
-
-  const run = (fn: () => Promise<ActionResult>) => void act(async () => {
-    const result = await fn()
-    await load()
-    return result
-  })
-
-  if (!board) return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start"><section className="card p-3"><p className="text-body-tertiary small mt-3 mb-0">Reading the board.</p></section></div>
-
-  const yours = board.yours
-  return <div className="d-grid gtc-1 gtc-md-2 gap-3 align-items-start gtc-xl-split-135">
-    {yours
-      ? <section className="card p-3 gcol-full">
-        <div className="panel-title"><h2>{yours.name}</h2><span>#{yours.rank} / {yours.members} of {yours.maxMembers}</span></div>
-        {yours.motto && <p className="fst-italic text-primary mb-2">{yours.motto}</p>}
-        <p>
-          Nobody on this list can attack you and you cannot attack them, by any method. That is what the{' '}
-          {yours.duesPercent}% off every shift is buying.
-        </p>
-        <div className="tnum d-grid gtc-1 gtc-md-3 gtc-xl-5 gap-2 mb-3">
-          <AdminMetric label="Crew worth" value={money.format(yours.netWorth)} />
-          <AdminMetric label="Treasury" value={money.format(board.treasury)} />
-          <AdminMetric label="Dues" value={`${yours.duesPercent}%`} />
-          <AdminMetric label="Pool" value={`${yours.offensiveThugs} off / ${yours.defensiveThugs} def`} />
-          <AdminMetric label="City control" value={yours.cityControlThugs > 0 ? `+${yours.cityControlThugs}` : 'None'} />
-          <AdminMetric label="You are" value={board.yourRank} />
-        </div>
-
-        <div className="d-grid gap-1 my-3">
-          {board.members.map(member => <AllianceMemberRow
-            key={member.playerId}
-            member={member}
-            board={board}
-            busy={busy}
-            onAct={run}
-          />)}
-        </div>
-
-        <AllianceRequestsPanel board={board} busy={busy} onAct={run} />
-
-        <AllianceAssistPanel board={board} ownPlayerId={ctx.dashboard.playerId} busy={busy} onAct={run} />
-
-        <AllianceWarPanel board={board} busy={busy} />
-
-        <AlliancePactsPanel board={board} busy={busy} onAct={run} />
-
-        <AlliancePoolPanel board={board} crew={yours} busy={busy} onAct={run} />
-
-        <AllianceTransfersPanel transfers={board.transfers} />
-
-        {board.yourRank === 'Boss' && <AllianceSettingsPanel crew={yours} board={board} maxDues={board.maxDuesPercent} busy={busy} onSave={run} />}
-
-        <div className="control-row">
-          <Button className="btn btn-secondary" blocked={busy && BUSY} onClick={() => run(() => api.leaveAlliance())}>
-            {yours.youFounded && yours.members > 1 ? 'Leave (throw everybody out first)' : 'Leave the crew'}
-          </Button>
-        </div>
-      </section>
-      : <section className="card p-3 gcol-full">
-        <div className="panel-title"><h2>Start a Crew</h2><span>{money.format(board.foundingCost)}</span></div>
-        {/*
-          Three sentences rather than one, and one of them says what the money is for.
-
-          "A crew is people who" works as a heading and grates as the opening of a paragraph - a
-          singular subject with a plural after it. The rest ran on through two "and"s and finished on
-          "a share into a shared pot", which repeats itself in five words and still leaves a player
-          deciding whether to spend the founding fee with no idea what the pot does.
-
-          The truce sentence is now word for word the one the in-crew panel already uses, since it is
-          the same promise and there is no reason for the game to phrase it twice.
-        */}
-        <p>
-          A crew is an agreement not to rob each other. Nobody in one can attack you and you cannot
-          attack them, by any method. It costs a cut of every shift any of you works, and that fills a
-          treasury the crew spends on thugs to send along on a raid or post at a member's house.
-        </p>
-        <div className="control-row">
-          <label className="field">Name<input className="form-control" value={name} maxLength={32} onChange={event => setName(event.target.value)} /></label>
-          <label className="field">Motto<input className="form-control" value={motto} maxLength={140} onChange={event => setMotto(event.target.value)} /></label>
-          <Button
-            className="btn btn-primary"
-            blocked={firstReason(
-              busy && BUSY,
-              name.trim().length < 3 && 'A crew needs a name of at least three characters.',
-            )}
-            onClick={() => run(() => api.foundAlliance(name.trim(), motto.trim()))}
-          >Found it</Button>
-        </div>
-      </section>}
-
-    {/* Spans, because the alliance page has exactly two children and the other one spans too - the
-        second column of this grid was being held open for something that never renders. */}
-    <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>The Board</h2><span>{board.board.length} crews</span></div>
-      {board.board.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">Nobody is running with anybody yet.</p>}
-      <div className="tnum d-grid gap-1 my-3">
-        {board.board.map(crew => <div className={`alliance-row d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${crew.yours ? 'border-primary' : ''}`} key={crew.id}>
-          <span>#{crew.rank}</span>
-          {/*
-            A stack, not two inline elements in a row. Both of these are inline and JSX eats the
-            newline between them, so they rendered welded together - "The Eastside TableOpen to
-            anyone". The name goes above the things attached to it, which is what the row's own
-            comment in the stylesheet says a crew is.
-          */}
-          <div className="d-grid">
-            <strong>{crew.name}</strong>
-            <small className="text-body-secondary">
-              {crew.doorLabel} / {crew.members} of {crew.maxMembers} / {crew.duesPercent}% dues
-              {crew.cityControlThugs > 0 ? ` / +${crew.cityControlThugs} city thugs` : ''}
-              {/* A record you cannot see from outside is not a reputation. */}
-              {crew.warsWon + crew.warsLost > 0 ? ` / ${crew.warsWon}-${crew.warsLost} in wars` : ''}
-            </small>
-            {crew.atWarWith && <small className="text-danger-emphasis">At war with {crew.atWarWith}</small>}
-          </div>
-          <b>{money.format(crew.netWorth)}</b>
-          {/*
-            Every control in one cell, however many there turn out to be.
-
-            They used to be siblings of the row itself, each taking a grid column of its own, and the
-            row declares four. Three are spoken for by the rank, the name and the money, which left
-            exactly one for the buttons - fine while there was only ever one, and there is only ever
-            one for a crew you are not in. From inside a crew there are two: ally with them, or
-            declare on them. The second had nowhere to go, so it fell into an implicit row and landed
-            in the rank column, and "War costs $250,000" was rendered a character at a time down a
-            42-pixel strip.
-
-            A cell that holds them means the row's column count stops depending on how many buttons a
-            particular crew happens to earn.
-          */}
-          <div className="alliance-row-actions d-flex flex-wrap align-items-center gap-2">
-            {/* One door, one thing an outsider can do about it. Offering a button the crew has said it
-                does not want is how a player learns a rule by being refused. */}
-            {!yours && crew.members >= crew.maxMembers && <em>Full</em>}
-            {!yours && crew.members < crew.maxMembers && crew.door === 'Open' && <Button
-              className="btn btn-secondary btn-sm"
-              blocked={busy && BUSY}
-              onClick={() => run(() => api.joinAlliance(crew.id))}
-            >Join</Button>}
-            {!yours && crew.members < crew.maxMembers && crew.door === 'Application' && <Button
-              className="btn btn-secondary btn-sm"
-              blocked={busy && BUSY}
-              onClick={() => run(() => api.applyToAlliance(crew.id))}
-            >Ask</Button>}
-            {!yours && crew.members < crew.maxMembers && crew.door === 'InviteOnly' && <em title={crew.doorDetail}>Invite only</em>}
-            {yours && !crew.yours && !hasPactWith(board, crew.id) && <Button
-              className="btn btn-secondary btn-sm"
-              blocked={busy && BUSY}
-              onClick={() => run(() => api.requestAlliancePact(crew.id))}
-            >Ally</Button>}
-            {/* Offered only where it could actually be pressed: your rank has to allow spending the
-                treasury, neither crew can already be in a war, and you cannot declare on people you
-                hold a truce with. Every one of those is refused by the server too - this is so nobody
-                learns the rules by being told no. */}
-            {yours && !crew.yours && board.warTerms.youCanDeclare && !hasPactWith(board, crew.id)
-              && !board.war && !crew.atWarWith && <Button
-                className="btn btn-outline-danger btn-sm text-nowrap"
-                blocked={firstReason(
-                  busy && BUSY,
-                  board.treasury < board.warTerms.stake && `A war stakes ${money.format(board.warTerms.stake)} and the treasury holds ${money.format(board.treasury)}.`,
-                )}
-                title={`${money.format(board.warTerms.stake)} out of the treasury, ${board.warTerms.durationHours} hours, winner takes the stake and ${board.warTerms.tributePercent}% of the losing treasury.`}
-                onClick={() => run(() => api.declareWar(crew.id))}
-              >{board.treasury < board.warTerms.stake ? `War costs ${money.format(board.warTerms.stake)}` : 'Declare war'}</Button>}
-          </div>
-        </div>)}
-      </div>
-    </section>
-  </div>
-}
-
-function hasPactWith(board: AllianceBoard, allianceId: number) {
-  return board.pacts.some(pact =>
-    pact.status !== 'Canceled'
-    && pact.status !== 'Declined'
-    && (pact.requestingAllianceId === allianceId || pact.targetAllianceId === allianceId))
-}
-
-/**
- * One name on the roster, with whatever this viewer is entitled to do about them.
- *
- * The buttons are drawn from the powers the server sent rather than from a guess about rank, so a crew
- * whose boss moved a line sees the change immediately and the client never has to know what the lines
- * currently are.
- */
-function AllianceMemberRow({ member, board, busy, onAct }: {
-  member: AllianceMember
-  board: AllianceBoard
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  const canExpel = board.powers.find(x => x.power === 'Expel')?.youHaveIt ?? false
-  const isBoss = board.yourRank === 'Boss'
-  const [item, setItem] = useState('cash')
-  const [quantity, setQuantity] = useState(1)
-  const [sendOpen, setSendOpen] = useState(false)
-  // Promotable ranks stop below the top: handing the crew over is its own move because it is the one
-  // that gives yours away.
-  const promotable = board.ranks.filter(x => x !== 'Boss')
-
-  return <div className={`alliance-member d-grid gap-2 align-items-center border rounded bg-body-tertiary p-2 ${member.isYou ? 'border-primary' : ''}`}>
-    <div className="min-w-0">
-      <strong className="d-block text-truncate"><PlayerName playerId={member.playerId}>{member.name}</PlayerName></strong>
-      <small className="d-block text-body-secondary">{member.rankLabel}{member.isFounder ? ' / founded it' : ''} - {member.city} / {member.pimps}P {member.hoes}H {member.thugs}T{member.defenders > 0 ? ` / ${member.defenders} posted` : ''}</small>
-    </div>
-    <b className="tnum">{money.format(member.netWorth)}</b>
-    {!member.isYou && <div className="alliance-member-actions d-flex flex-wrap align-items-center gap-1">
-      {isBoss && <select className="form-select"
-        value={member.rank === 'Boss' ? '' : member.rank}
-        disabled={busy || member.rank === 'Boss'}
-        onChange={event => onAct(() => api.setAllianceRank(member.playerId, event.target.value))}
-      >
-        {member.rank === 'Boss' && <option value="">Boss</option>}
-        {promotable.map(rank => <option key={rank} value={rank}>{rank}</option>)}
-      </select>}
-      {isBoss && <Button
-        className="btn btn-secondary btn-sm"
-        blocked={busy && BUSY}
-        onClick={() => onAct(() => api.handOverAlliance(member.playerId))}
-      >Hand over</Button>}
-      {canExpel && member.youOutrankThem && <Button
-        className="btn btn-secondary btn-sm"
-        blocked={busy && BUSY}
-        onClick={() => onAct(() => api.expelMember(member.playerId))}
-      >Throw out</Button>}
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={busy && BUSY}
-        onClick={() => setSendOpen(value => !value)}
-      >Send</Button>
-    </div>}
-    {!member.isYou && sendOpen && <div className="alliance-transfer-controls d-flex flex-wrap align-items-end gap-1">
-      <label className="field mb-0">Send
-        <select className="form-select" value={item} disabled={busy} onChange={event => setItem(event.target.value)}>
-          {allianceSendItems.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
-        </select>
-      </label>
-      <label className="field mb-0">Qty<input className="form-control" type="number" min={1} value={quantity} onChange={event => setQuantity(Number(event.target.value))} /></label>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={firstReason(
-          busy && BUSY,
-          quantity < 1 && 'Send at least one.',
-        )}
-        onClick={() => onAct(() => api.sendAllianceResource(member.playerId, item, quantity))}
-      >Confirm</Button>
-    </div>}
-  </div>
-}
-
-const allianceSendItems = [
-  { key: 'cash', label: 'Cash' },
-  { key: 'thugs', label: 'Thugs' },
-  { key: 'weed', label: 'Weed' },
-  { key: 'coke', label: 'Coke' },
-  { key: 'beer', label: 'Beer' },
-  { key: 'medicine', label: 'Medicine' },
-  { key: 'poison', label: 'Poison' },
-  { key: 'moonshine', label: 'Moonshine' },
-  { key: 'cut', label: 'Cut' },
-  { key: 'pistols', label: 'Pistols' },
-  { key: 'shotguns', label: 'Shotguns' },
-  { key: 'smgs', label: 'SMGs' },
-  { key: 'rifles', label: 'Rifles' },
-]
-
-/**
- * Who is waiting on somebody. Invitations to this player and applications to their crew sit in one
- * list, because from here they are the same thing: an ask with your name on the answer.
- */
-function AllianceRequestsPanel({ board, busy, onAct }: {
-  board: AllianceBoard
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  const answerable = board.requests.filter(x => x.yoursToAnswer)
-  // Asks the crew has sent and is still waiting to hear about. Nobody is waiting on you for these, but
-  // without them a boss can never see who has been asked or take an ask back.
-  const sent = board.requests.filter(x => !x.yoursToAnswer)
-  if (answerable.length === 0 && sent.length === 0) return null
-
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    {sent.length > 0 && <>
-      <strong className="d-block mb-1 text-primary small">Asked, waiting to hear</strong>
-      {sent.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
-        <div className="min-w-0">
-          <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.playerName : ask.allianceName}</strong>
-          <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'has not answered yet' : 'has not answered your application'}</small>
-        </div>
-        {ask.kind === 'Invitation'
-          ? <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.withdrawAllianceRequest(ask.id))}>Take it back</Button>
-          : <small className="text-body-secondary text-sm-end">Waiting on the crew</small>}
-      </div>)}
-    </>}
-    {answerable.length > 0 && <strong className="d-block mb-1 text-primary small">Waiting on you</strong>}
-    {answerable.map(ask => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={ask.id}>
-      <div className="min-w-0">
-        <strong className="d-block text-truncate">{ask.kind === 'Invitation' ? ask.allianceName : ask.playerName}</strong>
-        <small className="d-block text-body-secondary">{ask.kind === 'Invitation' ? 'asked you to run with them' : 'is asking for a place'}{ask.note ? ` - "${ask.note}"` : ''}</small>
-      </div>
-      <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, true))}>Accept</Button>
-      <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAllianceRequest(ask.id, false))}>Refuse</Button>
-    </div>)}
-  </div>
-}
-
-/**
- * The war, if there is one, and the record if there is not.
- *
- * A crew was a reason to exist and no reason to act - everything it carried was defensive, and two
- * crews could sit beside each other for a month with nothing to decide. This is the panel where that
- * stops being true, so it says the terms out loud whether or not a war is on: what the fights a crew
- * already fights are worth, what the clock is, and what changes hands at the end.
- */
-function AllianceWarPanel({ board, busy }: { board: AllianceBoard, busy: boolean }) {
-  const war = board.war
-  const terms = board.warTerms
-
-  // The panel keeps its own second hand, like the building does. The app-wide one stops once turns
-  // are maxed, which would freeze a war clock for exactly the crews who have stopped earning to fight.
-  const [, setNow] = useState(0)
-  useEffect(() => {
-    if (!war || war.settled) return
-    const timer = window.setInterval(() => setNow(value => value + 1), 1000)
-    return () => window.clearInterval(timer)
-  }, [war?.id, war?.settled])
-
-  if (!board.yours) return null
-
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    <strong className="d-block mb-1 text-danger small">Wars</strong>
-    {war
-      ? <div className="d-grid gap-1 border rounded border-danger p-3">
-        <div className="d-flex justify-content-between align-items-baseline gap-2">
-          <strong>Against {war.opponentName}</strong>
-          <em className="eyebrow fst-normal">{timeUntil(war.endsAtUtc)} left</em>
-        </div>
-        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2 my-2">
-          <AdminMetric label="You" value={`${war.yourScore}`} />
-          <AdminMetric label="Them" value={`${war.theirScore}`} />
-          <AdminMetric label="On the table" value={money.format(war.stake)} />
-        </div>
-        <span className="text-body-secondary small">
-          {war.youDeclared
-            ? `${war.declaredByName} declared it, and the stake is yours until somebody wins it.`
-            : `${war.opponentName} declared it. The stake is theirs, and it is yours if you beat them.`}
-          {' '}A raid won is {terms.pointsForRaidWon}, a raid turned away is {terms.pointsForDefenceHeld},
-          and taking ground is {terms.pointsForGroundTaken}. It takes {terms.minScoreToWin} to win
-          anything at all, and the winner takes the stake plus {terms.tributePercent}% of the losing
-          treasury.
-        </span>
-        <small className="text-body-tertiary">
-          Nothing about a war lifts a protection. The wealth floor, the ratio, the shield on somebody
-          who has just been hit and the falling haul on a repeat all still apply - so this is a reason
-          to fight, not a licence.
-        </small>
-      </div>
-      : <p className="text-body-secondary small mb-0">
-        No war on. Declaring costs the treasury {money.format(terms.stake)} and runs {terms.durationHours} hours;
-        the winner takes that back plus {terms.tributePercent}% of the losing crew's treasury, up to{' '}
-        {money.format(terms.maxTribute)}. {terms.youCanDeclare
-          ? 'Pick a crew off the board below.'
-          : 'Somebody who can spend the treasury has to call it.'}
-      </p>}
-    {board.warHistory.length > 0 && <div className="d-grid gap-1 mt-2">
-      {board.warHistory.map(past => <div key={past.id} className="d-flex justify-content-between align-items-baseline gap-2 border-top py-1">
-        <small className={past.youWon === true ? 'text-success-emphasis' : past.youWon === false ? 'text-danger-emphasis' : 'text-body-secondary'}>
-          {past.youWon === true ? 'Won' : past.youWon === false ? 'Lost' : 'Drew'} against {past.opponentName}
-        </small>
-        <small className="text-body-tertiary tnum">{past.yourScore}-{past.theirScore}</small>
-      </div>)}
-    </div>}
-    {busy && <small className="text-body-tertiary">Working.</small>}
-  </div>
-}
-
-function AlliancePactsPanel({ board, busy, onAct }: {
-  board: AllianceBoard
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  if (!board.yours || board.pacts.length === 0) return null
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    <strong className="d-block mb-1 text-primary small">Allied crews</strong>
-    {board.pacts.map(pact => <AlliancePactRow key={pact.id} pact={pact} ownAllianceId={board.yours?.id ?? 0} busy={busy} onAct={onAct} />)}
-  </div>
-}
-
-function AlliancePactRow({ pact, ownAllianceId, busy, onAct }: {
-  pact: AlliancePact
-  ownAllianceId: number
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  const other = pact.requestingAllianceId === ownAllianceId ? pact.targetAllianceName : pact.requestingAllianceName
-  return <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2">
-    <div className="min-w-0">
-      <strong className="d-block text-truncate">{other}</strong>
-      <small className="d-block text-body-secondary">{pact.status === 'Active' ? 'active pact' : 'waiting on an answer'}</small>
-    </div>
-    {pact.yoursToAnswer
-      ? <>
-        <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAlliancePact(pact.id, true))}>Accept</Button>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.answerAlliancePact(pact.id, false))}>Refuse</Button>
-      </>
-      : <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => onAct(() => api.cancelAlliancePact(pact.id))}>
-        {pact.status === 'Active' ? 'Break pact' : 'Take it back'}
-      </Button>}
-  </div>
-}
-
-function AllianceAssistPanel({ board, ownPlayerId, busy, onAct }: {
-  board: AllianceBoard
-  /** Passed through to the rows: only whoever sent help is offered the button to take it back. */
-  ownPlayerId: string
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  if (!board.yours) return null
-  /*
-    An `and`, not an `or`.
-
-    This read `status === 'Open' || missionStatus !== 'Complete'`, and since nothing ever closed a call,
-    an unanswered one on a fight that finished last week passed the first clause and stayed on the page
-    for good - offering to send help to a raid long over, and answering "that fight is no longer taking
-    help" to anybody who tried. The server closes them now, and this stops showing the closed ones.
-  */
-  const calls = board.assistCalls.filter(call => call.status !== 'Closed' && call.missionStatus !== 'Complete')
-  if (calls.length === 0) return null
-
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    <strong className="d-block mb-1 text-primary small">Assist calls</strong>
-    {calls.map(call => <AllianceAssistRow key={call.id} call={call} ownAllianceId={board.yours?.id ?? 0} ownPlayerId={ownPlayerId} busy={busy} onAct={onAct} />)}
-  </div>
-}
-
-function AllianceAssistRow({ call, ownAllianceId, ownPlayerId, busy, onAct }: {
-  call: AllianceAssistCall
-  ownAllianceId: number
-  /** Taking help back is personal: it goes to whoever sent it, not to whoever is looking at the page. */
-  ownPlayerId: string
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  const canAnswer = call.status === 'Open' && call.allyAllianceId === ownAllianceId && call.missionStatus !== 'Complete'
-  // Only the person who sent it, and only once the fight it was sent to has finished.
-  const canRecall = call.status === 'Answered'
-    && call.missionStatus === 'Complete'
-    && call.respondedByPlayerId === ownPlayerId
-  const [thugs, setThugs] = useState(0)
-  const [pistols, setPistols] = useState(0)
-  const [shotguns, setShotguns] = useState(0)
-  const [smgs, setSmgs] = useState(0)
-  const [rifles, setRifles] = useState(0)
-  const sentWeapons = call.pistolsSent + call.shotgunsSent + call.smgsSent + call.riflesSent
-
-  return <div className="d-grid gap-2 border-top py-2">
-    <div className="d-flex flex-wrap justify-content-between gap-2">
-      <div>
-        <strong>{call.defenderName} vs {call.attackerName}</strong>
-        <small>{call.defenderAllianceName} called {call.allyAllianceName} / {call.missionStatus}</small>
-      </div>
-      {call.status !== 'Open' && <em>{call.thugsSent} thugs / {sentWeapons} guns sent</em>}
-    </div>
-    {canRecall && <div className="d-flex flex-wrap align-items-center gap-2">
-      <span className="text-body-tertiary small">
-        The fight is over. What you sent still counts as theirs until you take it back, and whatever did
-        not survive it is gone.
-      </span>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={busy && BUSY}
-        onClick={() => onAct(() => api.recallAllianceAssist(call.id))}
-      >Take back what is left</Button>
-    </div>}
-    {canAnswer && <div className="d-grid gtc-2 gtc-md-fill-120 gap-2">
-      <label className="field">Thugs<input className="form-control" type="number" min={0} value={thugs} onChange={event => setThugs(Number(event.target.value))} /></label>
-      <label className="field">Pistols<input className="form-control" type="number" min={0} value={pistols} onChange={event => setPistols(Number(event.target.value))} /></label>
-      <label className="field">Shotguns<input className="form-control" type="number" min={0} value={shotguns} onChange={event => setShotguns(Number(event.target.value))} /></label>
-      <label className="field">SMGs<input className="form-control" type="number" min={0} value={smgs} onChange={event => setSmgs(Number(event.target.value))} /></label>
-      <label className="field">Rifles<input className="form-control" type="number" min={0} value={rifles} onChange={event => setRifles(Number(event.target.value))} /></label>
-      <Button
-        className="btn btn-primary btn-sm align-self-end"
-        blocked={firstReason(
-          busy && BUSY,
-          thugs + pistols + shotguns + smgs + rifles < 1 && 'Put something in the boxes above. Help with nothing in it is not help.',
-        )}
-        onClick={() => onAct(() => api.answerAllianceAssist(call.id, thugs, pistols, shotguns, smgs, rifles))}
-      >Send help</Button>
-    </div>}
-  </div>
-}
-
-function AllianceTransfersPanel({ transfers }: { transfers: AllianceTransfer[] }) {
-  if (transfers.length === 0) return null
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    <strong className="d-block mb-1 text-primary small">Recent sends</strong>
-    {transfers.slice(0, 6).map(transfer => <div className="alliance-ask d-grid gap-2 align-items-center border-top py-2" key={transfer.id}>
-      <div>
-        <strong>
-          <PlayerName playerId={transfer.fromPlayerId}>{transfer.fromPlayerName}</PlayerName>
-          {' to '}
-          <PlayerName playerId={transfer.toPlayerId}>{transfer.toPlayerName}</PlayerName>
-        </strong>
-        <small>{transfer.quantity.toLocaleString()} {transfer.label.toLowerCase()}</small>
-      </div>
-      <em>{new Date(transfer.createdAtUtc).toLocaleString()}</em>
-    </div>)}
-  </div>
-}
-
-/**
- * The shared pool: what the crew has bought, and what this member may borrow of it.
- *
- * The borrow limit is stated on the panel rather than discovered by being refused, because it is the
- * rule that makes the pool interesting - you can bring as many as you brought yourself, so the crew
- * doubles you rather than replacing you.
- */
-function AlliancePoolPanel({ board, crew, busy, onAct }: {
-  board: AllianceBoard
-  crew: AllianceSummary
-  busy: boolean
-  onAct: (fn: () => Promise<ActionResult>) => void
-}) {
-  const [buy, setBuy] = useState(1)
-  const [post, setPost] = useState(1)
-  const room = Math.max(0, board.borrowLimit - board.yourDefenders)
-  const cities = crew.controlledCities.map(city => `${city.city} +${city.bonusThugs}`).join(' / ')
-
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    <StatusRow label="Pool" value={`${crew.offensiveThugs} offensive / ${crew.defensiveThugs} defensive`} />
-    {crew.cityControlThugs > 0 && <StatusRow label="City control" value={`+${crew.cityControlThugs} thugs (${cities})`} />}
-    <StatusRow
-      label="You may borrow"
-      value={board.borrowLimit === 0 ? 'Nothing until you have thugs of your own' : `${board.borrowLimit} (${board.yourDefenders} standing here)`}
-      warn={board.borrowLimit === 0}
-    />
-
-    {crew.youFounded && <div className="d-grid gtc-1 gtc-md-3 gap-2">
-      <label className="field">Buy<input className="form-control" type="number" min={1} value={buy} onChange={event => setBuy(Number(event.target.value))} /></label>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={firstReason(
-          busy && BUSY,
-          buy < 1 && 'Buy at least one.',
-          board.treasury < board.offensiveThugCost * buy && `${number.format(buy)} offensive thugs cost ${money.format(board.offensiveThugCost * buy)} and the treasury holds ${money.format(board.treasury)}.`,
-        )}
-        onClick={() => onAct(() => api.buyAllianceThugs('offensive', buy))}
-      >Offensive {money.format(board.offensiveThugCost * buy)}</Button>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={firstReason(
-          busy && BUSY,
-          buy < 1 && 'Buy at least one.',
-          board.treasury < board.defensiveThugCost * buy && `${number.format(buy)} defensive thugs cost ${money.format(board.defensiveThugCost * buy)} and the treasury holds ${money.format(board.treasury)}.`,
-        )}
-        onClick={() => onAct(() => api.buyAllianceThugs('defensive', buy))}
-      >Defensive {money.format(board.defensiveThugCost * buy)}</Button>
-    </div>}
-
-    <div className="d-grid gtc-1 gtc-md-3 gap-2">
-      <label className="field">Defenders<input className="form-control" type="number" min={1} value={post} onChange={event => setPost(Number(event.target.value))} /></label>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={firstReason(
-          busy && BUSY,
-          post < 1 && 'Post at least one.',
-          post > room && (board.borrowLimit === 0
-            ? 'You can borrow nothing until you have thugs of your own.'
-            : `You may borrow ${number.format(board.borrowLimit)} and ${number.format(board.yourDefenders)} of them already stand at your place.`),
-          crew.defensiveThugs < post && `The pool has ${number.format(crew.defensiveThugs)} defensive thugs in it and you are posting ${number.format(post)}.`,
-        )}
-        onClick={() => onAct(() => api.postDefenders(post))}
-      >Post to your place</Button>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={firstReason(
-          busy && BUSY,
-          post < 1 && 'Send back at least one.',
-          board.yourDefenders < post && `You have ${number.format(board.yourDefenders)} of the crew's thugs standing here and you are sending back ${number.format(post)}.`,
-        )}
-        onClick={() => onAct(() => api.postDefenders(-post))}
-      >Send back</Button>
-    </div>
-    <small className="d-block mt-1 text-body-tertiary small measure">
-      Offensive thugs ride along on a raid and defensive ones stand at your place. Both die like anybody
-      else, and what dies is gone from the pool for good.
-    </small>
-  </div>
-}
-
-/**
- * The boss's authority: the rate, the door, the sign on it, and where every other line is drawn.
- *
- * The thresholds sit here rather than beside the powers they gate because they are one decision - how
- * much of this crew do I run personally - and a boss changing their mind should not have to make it
- * five times in five places.
- */
-function AllianceSettingsPanel({ crew, board, maxDues, busy, onSave }: {
-  crew: AllianceSummary
-  board: AllianceBoard
-  maxDues: number
-  busy: boolean
-  onSave: (fn: () => Promise<ActionResult>) => void
-}) {
-  const [crewName, setCrewName] = useState(crew.name)
-  const [dues, setDues] = useState(crew.duesPercent)
-  const [door, setDoor] = useState<AllianceDoorKey>(crew.door)
-  useEffect(() => {
-    setCrewName(crew.name)
-    setDues(crew.duesPercent)
-    setDoor(crew.door)
-  }, [crew.id, crew.name, crew.duesPercent, crew.door])
-  const nameTicker = useSecondsTicker(!!crew.nameChangeReadyAtUtc)
-  const nameCooldownSeconds = secondsUntil(crew.nameChangeReadyAtUtc, nameTicker)
-
-  return <div className="d-grid gap-2 mb-3 border rounded bg-body-tertiary p-2">
-    <strong className="d-block mb-1 text-primary small">Who may do what</strong>
-    <div className="d-grid gtc-1 gtc-md-3 gap-2">
-      <label className="field">Crew name
-        <input className="form-control" maxLength={32} value={crewName} onChange={event => setCrewName(event.target.value)} />
-        <small className="form-text">
-          {nameCooldownSeconds > 0
-            ? `You can change it again in ${timeUntil(crew.nameChangeReadyAtUtc!)}.`
-            : 'Shown on the crew board, rosters, wars, and season tables.'}
-        </small>
-      </label>
-      <Button
-        className="btn btn-secondary btn-sm align-self-end"
-        blocked={firstReason(
-          busy && BUSY,
-          crewName.trim().length < 3 && 'A crew name needs at least three characters.',
-          crewName.trim().length > 32 && 'A crew name must be 32 characters or less.',
-          crewName.trim() === crew.name && 'That is already the crew name.',
-          nameCooldownSeconds > 0 && `You can change the crew name again in ${timeUntil(crew.nameChangeReadyAtUtc!)}.`,
-        )}
-        onClick={() => onSave(() => api.updateAlliance({ name: crewName.trim() }))}
-      >Rename</Button>
-    </div>
-    <div className="alliance-powers d-grid gap-2">
-      {board.powers.map(power => <label className="d-grid gap-1 small" key={power.power}>
-        <span>{power.label}</span>
-        <select className="form-select"
-          value={power.minRank}
-          disabled={busy}
-          onChange={event => onSave(() => api.updateAlliance({ powers: { [power.power]: event.target.value } }))}
-        >
-          {board.ranks.map(rank => <option key={rank} value={rank}>{rank} and up</option>)}
-        </select>
-      </label>)}
-    </div>
-    <div className="d-grid gtc-1 gtc-md-3 gap-2">
-      <label className="field">Dues %<input className="form-control" type="number" min={0} max={maxDues} value={dues} onChange={event => setDues(Number(event.target.value))} /></label>
-      <label className="field">Door
-        <select className="form-select" value={door} disabled={busy} onChange={event => setDoor(event.target.value as AllianceDoorKey)}>
-          {board.doors.map(option => <option key={option.door} value={option.door}>{option.label}</option>)}
-        </select>
-      </label>
-      <Button
-        className="btn btn-secondary btn-sm"
-        blocked={firstReason(
-          busy && BUSY,
-          dues < 0 && 'Dues cannot be negative. The crew pays you, not the other way about.',
-          dues > maxDues && `Dues top out at ${maxDues}%.`,
-        )}
-        onClick={() => onSave(() => api.updateAlliance({ duesPercent: dues, door }))}
-      >Save</Button>
-    </div>
-    <small className="d-block mt-1 text-body-tertiary small measure">
-      Dues come off the gross of every member's shift, beside the hoe cut. The ceiling is {maxDues}%.{' '}
-      {board.doors.find(x => x.door === door)?.detail}
-    </small>
-  </div>
-}
-
 function BankPanel({ dashboard, busy, bankAmount, setBankAmount, act, className, wide }: {
   dashboard: Dashboard
   busy: boolean
@@ -9253,280 +6535,6 @@ function CombatHistoryPanel({ entries, currentPlayerId }: { entries: CombatLog[]
  * Everything runs through the same services a real player's action does, so a refusal here is a real
  * game rule refusing, which is often the thing being tested.
  */
-function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
-  bot: AdminBotHealth
-  targets: AdminBotHealth[]
-  selfId: string
-  selfName: string
-  busy: boolean
-  onRun: (directive: BotDirective) => void
-}) {
-  const [action, setAction] = useState('street')
-  const [turns, setTurns] = useState(10)
-  const [quantity, setQuantity] = useState(10)
-  const [amount, setAmount] = useState(10000)
-  const [product, setProduct] = useState('weed')
-  const [item, setItem] = useState('condoms')
-  const [role, setRole] = useState('hoes')
-  const [strategy, setStrategy] = useState('rest')
-  const [room, setRoom] = useState('storage')
-  const [defenderId, setDefenderId] = useState(selfId)
-
-  const directive = (): BotDirective => {
-    switch (action) {
-      case 'street': return { action, turns }
-      case 'produce': return { action, product, turns }
-      case 'sell': return { action, product, quantity }
-      case 'buy': return { action, item, quantity }
-      case 'hire': case 'fire': return { action, role, quantity }
-      case 'deposit': case 'withdraw': return { action, amount }
-      case 'recover': return { action, strategy }
-      case 'upgrade': return { action, room }
-      case 'attack': return { action, defenderId, thugs: quantity, weapons: quantity }
-      default: return { action }
-    }
-  }
-
-  return <div className="mt-3 border rounded bg-body-tertiary p-3">
-    <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-baseline gap-1 gap-md-3">
-      <strong>Direct {bot.name}</strong>
-      <span className="eyebrow">Runs through the real rules, so a refusal is the game refusing</span>
-    </div>
-    <div className="control-row mt-2">
-      <label className="field">Action<select className="form-select" value={action} onChange={e => setAction(e.target.value)}>
-        <option value="street">Work the streets</option>
-        <option value="produce">Produce</option>
-        <option value="sell">Sell product</option>
-        <option value="buy">Buy supplies</option>
-        <option value="hire">Hire crew</option>
-        <option value="fire">Fire crew</option>
-        <option value="deposit">Deposit</option>
-        <option value="withdraw">Withdraw</option>
-        <option value="recover">Recover morale</option>
-        <option value="upgrade">Upgrade hideout</option>
-        <option value="attack">Attack someone</option>
-      </select></label>
-
-      {(action === 'street' || action === 'produce') &&
-        <label className="field">Turns<input className="form-control" type="number" min={1} max={20} value={turns} onChange={e => setTurns(Number(e.target.value))} /></label>}
-      {(action === 'produce' || action === 'sell') &&
-        <label className="field">Product<select className="form-select" value={product} onChange={e => setProduct(e.target.value)}>
-          <option value="weed">Weed</option><option value="coke">Coke</option>
-        </select></label>}
-      {action === 'buy' &&
-        <label className="field">Item<select className="form-select" value={item} onChange={e => setItem(e.target.value)}>
-          {/* The store sells guns by tier, so this offers them by tier. "weapons" was refused. */}
-          <option value="condoms">Condoms</option><option value="beer">Beer</option><option value="medicine">Medicine</option>
-          <option value="pistols">Pistols</option><option value="shotguns">Shotguns</option>
-          <option value="smgs">SMGs</option><option value="rifles">Rifles</option>
-        </select></label>}
-      {(action === 'hire' || action === 'fire') &&
-        <label className="field">Role<select className="form-select" value={role} onChange={e => setRole(e.target.value)}>
-          <option value="pimps">Pimps</option><option value="hoes">Hoes</option><option value="thugs">Thugs</option>
-        </select></label>}
-      {(action === 'sell' || action === 'buy' || action === 'hire' || action === 'fire') &&
-        <label className="field">Quantity<input className="form-control" type="number" min={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>}
-      {(action === 'deposit' || action === 'withdraw') &&
-        <label className="field">Amount<input className="form-control" type="number" min={1} step={1000} value={amount} onChange={e => setAmount(Number(e.target.value))} /></label>}
-      {action === 'recover' &&
-        <label className="field">Strategy<select className="form-select" value={strategy} onChange={e => setStrategy(e.target.value)}>
-          <option value="rest">Rest</option><option value="party">Party</option>
-        </select></label>}
-      {action === 'upgrade' &&
-        <label className="field">Room<select className="form-select" value={room} onChange={e => setRoom(e.target.value)}>
-          <option value="tier">Building tier</option><option value="storage">Storage</option>
-          <option value="safe">Safe</option><option value="weedlab">Weed lab</option><option value="cokelab">Coke lab</option>
-        </select></label>}
-      {action === 'attack' && <>
-        <label className="field">Target<select className="form-select" value={defenderId} onChange={e => setDefenderId(e.target.value)}>
-          <option value={selfId}>{selfName} (you)</option>
-          {targets.map(t => <option key={t.playerId} value={t.playerId}>{t.name}</option>)}
-        </select></label>
-        <label className="field">Thugs<input className="form-control" type="number" min={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>
-      </>}
-
-      <Button className="btn btn-primary btn-sm" blocked={busy && BUSY} onClick={() => onRun(directive())}>Do it</Button>
-    </div>
-  </div>
-}
-
-function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } }) {
-  const { overview, busy, seedBots, runBots, setBotAutomation } = ctx
-  const auto = overview.botAutomation
-  const [seedCount, setSeedCount] = useState(10)
-  const [runRounds, setRunRounds] = useState(1)
-  const [tickSeconds, setTickSeconds] = useState(auto.tickSeconds)
-  const [roundsPerTick, setRoundsPerTick] = useState(auto.roundsPerTick)
-  const [roster, setRoster] = useState<AdminBotHealth[]>([])
-  const [rosterError, setRosterError] = useState('')
-  const [working, setWorking] = useState<string | null>(null)
-  const [directing, setDirecting] = useState<string | null>(null)
-
-  // Re-reads the roster rather than patching it locally, so an action's real effect on net worth and
-  // idle time shows up instead of just the flag that was toggled.
-  const rivalAction = async (playerId: string, run: () => Promise<unknown>) => {
-    setWorking(playerId); setRosterError('')
-    try {
-      await run()
-      setRoster((await opsApi.oversight()).bots)
-    } catch (e) { setRosterError((e as Error).message) }
-    finally { setWorking(null) }
-  }
-
-  // Follow the server whenever it reports different timings, so an edit made elsewhere does not leave
-  // stale numbers sitting in the inputs.
-  useEffect(() => { setTickSeconds(auto.tickSeconds); setRoundsPerTick(auto.roundsPerTick) }, [auto.tickSeconds, auto.roundsPerTick])
-  useEffect(() => {
-    opsApi.oversight()
-      .then((data: AdminOversight) => setRoster(data.bots))
-      .catch((e: unknown) => setRosterError((e as Error).message))
-  }, [overview.generatedAtUtc])
-
-  const timingChanged = tickSeconds !== auto.tickSeconds || roundsPerTick !== auto.roundsPerTick
-  const timingValid = tickSeconds >= auto.minTickSeconds && tickSeconds <= auto.maxTickSeconds
-    && roundsPerTick >= auto.minRoundsPerTick && roundsPerTick <= auto.maxRoundsPerTick
-  const atDefaults = auto.tickSeconds === auto.defaultTickSeconds && auto.roundsPerTick === auto.defaultRoundsPerTick
-
-  return <>
-    <section className="card p-3 gcol-full">
-      <div className="panel-title">
-        <h2>Automatic AI</h2>
-        <span>{auto.enabled ? `On, ${auto.roundsPerTick} round(s) every ${auto.tickSeconds}s` : 'Off'}</span>
-      </div>
-      <p>
-        Rivals act on their own on this loop. The setting is saved, so it survives a restart, and the
-        timing takes effect on the next tick without one.
-      </p>
-      <div className="control-row">
-        <Button
-          className={auto.enabled ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
-          blocked={firstReason(
-            busy && WORKING,
-            overview.botAccounts < 1 && 'There are no rivals for the loop to run. Seed some below first.',
-          )}
-          onClick={() => setBotAutomation(!auto.enabled)}
-        >
-          {auto.enabled ? 'Turn off' : 'Turn on'}
-        </Button>
-        <label className="field">Tick seconds<input className="form-control"
-          type="number"
-          min={auto.minTickSeconds}
-          max={auto.maxTickSeconds}
-          value={tickSeconds}
-          onChange={e => setTickSeconds(Number(e.target.value))}
-        /></label>
-        <label className="field">Rounds per tick<input className="form-control"
-          type="number"
-          min={auto.minRoundsPerTick}
-          max={auto.maxRoundsPerTick}
-          value={roundsPerTick}
-          onChange={e => setRoundsPerTick(Number(e.target.value))}
-        /></label>
-        <Button
-          className="btn btn-secondary btn-sm"
-          blocked={firstReason(
-            busy && WORKING,
-            !timingChanged && 'The timing is already what is saved.',
-            !timingValid && `Tick has to be ${auto.minTickSeconds}-${auto.maxTickSeconds}s and rounds ${auto.minRoundsPerTick}-${auto.maxRoundsPerTick}.`,
-          )}
-          onClick={() => setBotAutomation(auto.enabled, { tickSeconds, roundsPerTick })}
-        >
-          Save timing
-        </Button>
-        <Button
-          className="btn btn-secondary btn-sm"
-          blocked={firstReason(
-            busy && WORKING,
-            atDefaults && 'The timing is already at the defaults.',
-          )}
-          onClick={() => setBotAutomation(auto.enabled, { resetTiming: true })}
-        >
-          Reset to {auto.defaultTickSeconds}s / {auto.defaultRoundsPerTick}
-        </Button>
-      </div>
-    </section>
-
-    <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>Seed and Run</h2><span>{number.format(overview.botAccounts)} rivals exist</span></div>
-      <div className="control-row">
-        <label className="field">Seed count<input className="form-control" type="number" min={1} max={15} value={seedCount} onChange={e => setSeedCount(Number(e.target.value))} /></label>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setSeedCount(5)}>5</Button>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setSeedCount(10)}>10</Button>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setSeedCount(15)}>15</Button>
-        <Button className="btn btn-primary btn-sm" blocked={firstReason(
-          busy && WORKING,
-          (seedCount < 1 || seedCount > 15) && 'Seed between 1 and 15 rivals at a time.',
-        )} onClick={() => seedBots(seedCount)}>Seed rivals</Button>
-      </div>
-      <div className="control-row">
-        <label className="field">Rounds<input className="form-control" type="number" min={1} max={10} value={runRounds} onChange={e => setRunRounds(Number(e.target.value))} /></label>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setRunRounds(1)}>1</Button>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setRunRounds(3)}>3</Button>
-        <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY} onClick={() => setRunRounds(10)}>10</Button>
-        <Button className="btn btn-primary btn-sm" blocked={firstReason(
-          busy && WORKING,
-          overview.botAccounts < 1 && 'There are no rivals to run. Seed some first.',
-          (runRounds < 1 || runRounds > 10) && 'Run between 1 and 10 rounds at a time.',
-        )} onClick={() => runBots(runRounds)}>Run now</Button>
-      </div>
-    </section>
-
-    <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>The Rivals</h2><span>Personality and playing habits</span></div>
-      {rosterError && <div className="alert alert-danger"><span>{rosterError}</span></div>}
-      {roster.length === 0 && !rosterError && <p className="text-body-tertiary small mt-3 mb-0">No AI rivals yet.</p>}
-      {roster.length > 0 && <div className="table-responsive mt-3"><table className="table table-sm table-hover align-middle game-table">
-        <thead><tr><th>Name</th><th>Personality</th><th>Net worth</th><th>Idle</th><th>Habits</th><th>State</th><th /></tr></thead>
-        <tbody>
-          {roster.map(bot => <tr key={bot.playerId} className={rivalRowClass(bot)}>
-            <td>{bot.name}</td>
-            <td>{bot.personality}</td>
-            <td>{money.format(bot.netWorth)}</td>
-            <td>{bot.lastActionAtUtc ? `${number.format(bot.minutesIdle)}m` : 'never acted'}</td>
-            <td>{bot.habits}</td>
-            <td>{bot.isPaused ? 'Paused' : botPresence(bot)}</td>
-            <td className="d-flex gap-1">
-              <Button
-                className="btn btn-secondary btn-sm"
-                blocked={working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`}
-                onClick={() => void rivalAction(bot.playerId, () => opsApi.setBotPaused(bot.playerId, !bot.isPaused))}
-              >
-                {bot.isPaused ? 'Resume' : 'Pause'}
-              </Button>
-              <Button
-                className="btn btn-secondary btn-sm"
-                blocked={firstReason(
-                  working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`,
-                  bot.isPaused && `${bot.name} is paused. Resume them first.`,
-                )}
-                title="Act now, ignoring the cooldown"
-                onClick={() => void rivalAction(bot.playerId, () => opsApi.actNow(bot.playerId))}
-              >
-                Act now
-              </Button>
-              <Button
-                className="btn btn-secondary btn-sm"
-                blocked={working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`}
-                onClick={() => setDirecting(id => id === bot.playerId ? null : bot.playerId)}
-              >
-                {directing === bot.playerId ? 'Close' : 'Direct'}
-              </Button>
-            </td>
-          </tr>)}
-        </tbody>
-      </table></div>}
-      {directing && <BotDirectivePanel
-        bot={roster.find(x => x.playerId === directing)!}
-        targets={roster.filter(x => x.playerId !== directing)}
-        selfId={ctx.dashboard.playerId}
-        selfName={ctx.dashboard.name}
-        busy={working === directing}
-        onRun={directive => void rivalAction(directing, () => opsApi.directBot(directing, directive))}
-      />}
-    </section>
-  </>
-}
-
 function MiniInventory({ dashboard }: { dashboard: Dashboard }) {
   return <div className="tnum d-grid">
     <StatusRow label="Condoms" value={number.format(dashboard.condoms)} />
@@ -9606,27 +6614,8 @@ function Leaderboard({ leaders, currentPlayerId }: { leaders: LeaderboardEntry[]
   </div>
 }
 
-function ActivityList({ entries }: { entries: { id: number, action: string, createdAtUtc: string, summary: string }[] }) {
-  return <div className="d-grid">
-    {entries.length === 0 && <p className="text-body-tertiary small mt-3 mb-0">No activity yet.</p>}
-    {entries.map(a => <div className="feed-item py-3 border-top" key={a.id}>
-      <div className="d-flex flex-column flex-sm-row justify-content-between gap-1 gap-sm-2">
-        <strong className="text-primary">{a.action}</strong>
-        <span className="text-body-tertiary small text-sm-end">{new Date(a.createdAtUtc).toLocaleString()}</span>
-      </div>
-      <p className="mt-1 mb-0">{a.summary}</p>
-    </div>)}
-  </div>
-}
 
 /** `sub` is for a tile whose number needs a word under it - confirmed, connected, none set. */
-function AdminMetric({ label, value, sub }: { label: string, value: string, sub?: string }) {
-  return <div className="d-grid gap-1 border rounded bg-body-secondary px-3 py-2">
-    <span className="eyebrow">{label}</span>
-    <strong className="min-w-0 fs-5 text-break">{value}</strong>
-    {sub && <small className="small text-body-tertiary">{sub}</small>}
-  </div>
-}
 
 // The stripe down the side of a headline, keyed by what the story is about. Held
 // as a map rather than as five CSS classes, because the colour is Bootstrap's and
@@ -9646,6 +6635,8 @@ const NEWS_TONE: Record<WorldNewsEntry['category'], string> = {
   arrival: 'text-info',
   crew: 'text-success',
   money: 'text-primary',
+  ground: 'text-primary',
+  casino: 'text-warning',
 }
 
 const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
@@ -9653,7 +6644,9 @@ const NEWS_LABELS: Record<WorldNewsEntry['category'], string> = {
   build: 'Built',
   arrival: 'Arrival',
   crew: 'Crew',
-  money: 'Money'
+  money: 'Money',
+  ground: 'Ground',
+  casino: 'Casino'
 }
 
 function WorldNewsPanel({ news, currentPlayerId }: { news: WorldNews, currentPlayerId: string }) {
@@ -9686,9 +6679,6 @@ function WorldNewsPanel({ news, currentPlayerId }: { news: WorldNews, currentPla
   </div>
 }
 
-function percent(value: number) {
-  return `${(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`
-}
 
 function combatProtectionText(status: { isProtected: boolean, protectionUntilUtc?: string | null }) {
   if (!status.isProtected || !status.protectionUntilUtc) return 'None'
@@ -9735,27 +6725,7 @@ function nextMissionTime(mission: CombatMission) {
         : mission.completedAtUtc ?? mission.returnsAtUtc ?? mission.arrivesAtUtc
 }
 
-function timeUntil(value: string) {
-  const seconds = Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 1000))
-  const minutes = Math.floor(seconds / 60)
-  const remainder = seconds % 60
-  // Hideout builds run for hours, where a bare minute count stops being readable.
-  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
-  return minutes <= 0 ? `${seconds}s` : `${minutes}m ${String(remainder).padStart(2, '0')}s`
-}
 
-/**
- * A countdown long enough to be a season.
- *
- * timeUntil tops out at hours, which is right for everything it was written for - a build, a mission,
- * a shift, all of which finish inside a day. A season runs for a month, and "719h 04m" is not a number
- * anybody reads as a date. Days first here, and the minutes only once the days have gone.
- */
-function timeLeft(value: string) {
-  const seconds = Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 1000))
-  const days = Math.floor(seconds / 86_400)
-  return days > 0 ? `${days}d ${Math.floor((seconds % 86_400) / 3600)}h` : timeUntil(value)
-}
 
 function formatCraftMinutes(minutes: number) {
   if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
@@ -9777,1632 +6747,7 @@ function formatBreakdownValue(key: string, value: unknown) {
   return String(value)
 }
 
-const ACCOUNT_TABS = ['profile', 'display', 'signin', 'invites', 'privacy', 'alerts', 'security'] as const
-type AccountTab = typeof ACCOUNT_TABS[number]
 
-const ACCOUNT_TAB_META: Record<AccountTab, { label: string, kicker: string }> = {
-  profile: { label: 'Profile', kicker: 'Who you are here' },
-  display: { label: 'Display', kicker: 'How this device shows it' },
-  signin: { label: 'Account', kicker: 'Name and sign-in' },
-  invites: { label: 'Invites', kicker: 'Beta keys you hold' },
-  privacy: { label: 'Privacy', kicker: 'Discord and messages' },
-  alerts: { label: 'Alerts', kicker: 'Email and sync' },
-  security: { label: 'Security', kicker: 'Sessions and last doors' },
-}
-
-const PROFILE_ACCENTS: Account['profileAccent'][] = ['Gold', 'Teal', 'Rose', 'Steel']
-
-function bannerClass(banner: ProfileBanner) {
-  return banner === 'None' ? 'border' : `profile-banner-${banner.toLowerCase()}`
-}
-
-/**
- * How this device shows the game, which is not a fact about the account: a phone and a monitor want
- * different densities, and reduced motion belongs to the machine that is doing the moving. Kept in
- * localStorage for that reason - see preferences.ts.
- */
-function AccountDisplayPanel() {
-  const [preferences, setPreferences] = useState<Preferences>(loadPreferences)
-
-  const change = (next: Preferences) => {
-    setPreferences(next)
-    savePreferences(next)
-    applyPreferences(next)
-  }
-
-  const systemReduced = systemPrefersReducedMotion()
-
-  return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title"><h2>Display</h2><span>This device only</span></div>
-    <p className="text-body-secondary">
-      Kept on this device rather than on your account, because the answers are usually different on a
-      phone and on a monitor. Signing in somewhere else starts from that machine's own settings.
-    </p>
-
-    <div className="d-grid gap-3">
-      <label className="form-check form-switch d-flex align-items-start gap-2 m-0">
-        <input
-          className="form-check-input flex-shrink-0"
-          type="checkbox"
-          role="switch"
-          checked={preferences.compact}
-          onChange={event => change({ ...preferences, compact: event.target.checked })}
-        />
-        <span className="min-w-0">
-          <strong className="d-block">Compact</strong>
-          <small className="text-body-tertiary">
-            Tighter rows and padding on the long lists - the leaderboard, the feed, the market. Buttons
-            and the tab bar keep their size, since a smaller target is a harder one to hit.
-          </small>
-        </span>
-      </label>
-
-      <label className="form-check form-switch d-flex align-items-start gap-2 m-0">
-        <input
-          className="form-check-input flex-shrink-0"
-          type="checkbox"
-          role="switch"
-          checked={preferences.reduceMotion ?? systemReduced}
-          onChange={event => change({ ...preferences, reduceMotion: event.target.checked })}
-        />
-        <span className="min-w-0">
-          <strong className="d-block">Reduce animations</strong>
-          <small className="text-body-tertiary">
-            {preferences.reduceMotion === null
-              ? `Following this device, which currently asks for ${systemReduced ? 'reduced' : 'full'} motion.`
-              : 'Set here, ignoring what this device asks for.'}
-          </small>
-        </span>
-      </label>
-
-      {preferences.reduceMotion !== null && <div>
-        <button
-          className="btn btn-link p-0 text-body-secondary"
-          type="button"
-          onClick={() => change({ ...preferences, reduceMotion: null })}
-        >Follow this device instead</button>
-      </div>}
-    </div>
-
-    <hr className="my-3" />
-    <p className="text-body-tertiary small mb-0">
-      The game is dark and only dark for now. A light theme is not a switch here: every panel, input and
-      table colour is compiled into the stylesheet as a dark value, so light means authoring a second
-      palette rather than flipping one.
-    </p>
-  </section>
-}
-
-function AccountInvitesPanel({ busy }: { busy: boolean }) {
-  const [keys, setKeys] = useState<AccountInviteKey[]>([])
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(true)
-  const available = keys.filter(key => key.status === 'Available' && key.usesLeft > 0)
-
-  const load = async () => {
-    setLoading(true); setError('')
-    try {
-      const board = await api.invites()
-      setKeys(board.keys)
-    } catch (e) { setError((e as Error).message) }
-    finally { setLoading(false) }
-  }
-  useEffect(() => { void load() }, [])
-
-  const copy = async (value: string, said: string) => {
-    try {
-      await copyToClipboard(value)
-      setMessage(said)
-    } catch { setError('Could not copy to the clipboard.') }
-  }
-
-  return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title">
-      <h2>Invites</h2>
-      <span>{loading ? 'Reading' : `${available.length} available`}</span>
-    </div>
-    {(error || message) && <div className="d-grid gap-2 mb-3">
-      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-      {message && <DismissibleMessage className="alert alert-success" onClose={() => setMessage('')}>{message}</DismissibleMessage>}
-    </div>}
-
-    <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-      <div className="tnum d-grid gtc-3 gap-2">
-        <AdminMetric label="Total" value={number.format(keys.length)} />
-        <AdminMetric label="Available" value={number.format(available.length)} />
-        <AdminMetric label="Used" value={number.format(keys.filter(key => key.status === 'Used').length)} />
-      </div>
-      <Button
-        className="btn btn-outline-primary"
-        type="button"
-        blocked={firstReason(
-          busy && BUSY,
-          available.length === 0 && 'You have no unused invites left to copy.',
-        )}
-        onClick={() => void copy(available.map(key => key.displayCode).join('\n'), 'Available invites copied.')}
-      >Copy Available</Button>
-    </div>
-
-    <div className="table-responsive">
-      <table className="table table-sm align-middle mb-0">
-        <thead>
-          <tr>
-            <th>Key</th>
-            <th>Status</th>
-            <th>Uses</th>
-            <th>Redeemed by</th>
-            <th>Dates</th>
-            <th className="text-end">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!loading && keys.length === 0 && <tr>
-            <td colSpan={6} className="text-body-tertiary">No invites have been issued to this account.</td>
-          </tr>}
-          {loading && <tr><td colSpan={6} className="text-body-tertiary">Reading your invites.</td></tr>}
-          {keys.map(key => <tr key={key.id}>
-            <td className="tnum">
-              <strong>{key.displayCode}</strong>
-              {key.label && <small className="d-block text-body-tertiary text-truncate">{key.label}</small>}
-            </td>
-            <td><span className={`badge ${betaKeyStatusClass(key.status)}`}>{key.status}</span></td>
-            <td className="tnum">{key.uses} / {key.maxUses}<small className="d-block text-body-tertiary">{key.usesLeft} left</small></td>
-            <td className="small">{key.redeemedByPlayerName ?? 'Not redeemed'}</td>
-            <td className="small">
-              <span className="d-block">Made {compactDateTime(key.createdAtUtc)}</span>
-              <span className="d-block text-body-tertiary">Redeemed {compactDateTime(key.redeemedAtUtc)}</span>
-            </td>
-            <td className="text-end">
-              <button className="btn btn-outline-secondary btn-sm" type="button" onClick={() => void copy(key.displayCode, 'Invite copied.')}>
-                Copy
-              </button>
-            </td>
-          </tr>)}
-        </tbody>
-      </table>
-    </div>
-  </section>
-}
-
-function profileAccentClass(accent: Account['profileAccent'] | PlayerTarget['profileAccent']) {
-  return accent === 'Teal'
-    ? 'text-info'
-    : accent === 'Rose'
-      ? 'text-danger'
-      : accent === 'Steel'
-        ? 'text-body-secondary'
-        : 'text-primary'
-}
-
-/**
- * A clock that ticks while something is counting down, and stops when nothing is.
- *
- * The verification panel has three deadlines running at once - the code expiring, the resend
- * cooldown, and neither - and a component that re-renders once a second forever to show a countdown
- * that is not there is a component quietly burning a laptop battery on a settings page.
- */
-function useSecondsTicker(active: boolean) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [active])
-  return now
-}
-
-/** Whole seconds between now and a deadline, floored at zero. */
-function secondsUntil(iso: string | null | undefined, now: number) {
-  if (!iso) return 0
-  return Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000))
-}
-
-function countdown(seconds: number) {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
-/**
- * The account tab.
- *
- * Everything a player owns hangs off one account, and until recently the only thing holding that
- * account was a username and a password chosen on the day they signed up, with no way to change
- * either and nowhere to look at them. This is that place.
- *
- * The rule the whole tab is arranged around is that at least one way in has to stay open. A player
- * who removes their password and then disconnects Discord owns an empire nobody can reach, so the
- * page says which is the last one standing and the server refuses the change regardless of what the
- * page says - this is the explanation, not the enforcement.
- *
- * It keeps its own state rather than going through the shared act(), because none of it is a game
- * action: nothing here spends a turn, moves a number, or belongs in the activity log, and running it
- * through the dashboard refresh would only throw away the one sentence worth reading.
- */
-function AccountPage(ctx: PageContext) {
-  const [tab, setTab] = useRouteTab('account', ACCOUNT_TABS, 'profile')
-  const [account, setAccount] = useState<Account | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [email, setEmail] = useState('')
-
-  const load = async () => {
-    try {
-      const loaded = await api.account()
-      setAccount(loaded)
-      setEmail(loaded.email ?? '')
-    } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [])
-
-  /** Every control on the tab does the same three things, so they say so once. */
-  const run = async (fn: () => Promise<Account | void>, said: string, form?: HTMLFormElement) => {
-    setBusy(true); setError(''); setNotice('')
-    const previousPlayerName = account?.playerName
-    try {
-      const updated = await fn()
-      if (updated) {
-        setAccount(updated)
-        setEmail(updated.email ?? '')
-        if (previousPlayerName && updated.playerName !== previousPlayerName) await ctx.refresh()
-      }
-      setNotice(said)
-      // Passwords typed into a form have no business surviving the submit that used them.
-      form?.querySelectorAll('input[type=password]').forEach(input => { (input as HTMLInputElement).value = '' })
-    } catch (e) {
-      setError((e as Error).message)
-      // A refused attempt still burned one, and the count only comes back on a fresh read.
-      await load()
-    }
-    finally { setBusy(false) }
-  }
-
-  if (!account) return <div className="d-grid gap-3">
-    <section className="card p-3"><p className="text-body-tertiary small mb-0">Reading your account.</p></section>
-    {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-  </div>
-
-  // Only what the panels take. Spreading the whole component state would let a panel quietly start
-  // depending on something it has no business touching.
-  const panel: AccountPanel = { account, busy, run, fail: setError }
-
-  /*
-    Accounts made before signing up required one of the two exist, and nothing was ever going to tell
-    them. They keep working - it is a rule about signing up, not about carrying on playing - but an
-    account with no way back is one forgotten password from being gone, and the owner should hear that
-    from the page rather than from the day it happens.
-  */
-  const strandable = waysBackIn(account).length === 0
-
-  return <div className="d-grid gtc-1 gap-3 align-items-start">
-    <nav className="d-grid gtc-fill-150 gap-1 border rounded p-1">
-      {ACCOUNT_TABS.map(name => <button
-        key={name}
-        type="button"
-        className={`admin-tab btn d-grid gap-1 text-start px-3 py-2 ${tab === name ? 'active' : ''}`}
-        aria-current={tab === name ? 'page' : undefined}
-        onClick={() => setTab(name)}
-      >
-        <strong>{ACCOUNT_TAB_META[name].label}</strong>
-        <span className="small opacity-75">{ACCOUNT_TAB_META[name].kicker}</span>
-      </button>)}
-    </nav>
-
-    {(error || notice) && <div className="d-grid gap-2">
-      {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-      {notice && <DismissibleMessage className="alert alert-success" onClose={() => setNotice('')}>{notice}</DismissibleMessage>}
-    </div>}
-
-    {/* Not dismissible, and on every tab. It is true until it is fixed, and hiding it would be doing
-        the player a favour they did not ask for. */}
-    {strandable && <div className="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-3 mb-0">
-      <span>
-        <strong>There is no way back into this account.</strong> Forget your password and it is gone -
-        confirm an email address or connect Discord, and there is a way back.
-      </span>
-      {tab !== 'signin' && <button className="btn btn-warning flex-shrink-0" type="button" onClick={() => setTab('signin')}>
-        Fix this
-      </button>}
-    </div>}
-
-    <div className="account-grid d-grid gtc-1 gtc-xl-2 gap-3 align-items-start min-w-0">
-      {tab === 'profile' && <AccountProfilePanel {...panel} dashboard={ctx.dashboard} onTab={setTab} />}
-      {tab === 'signin' && <>
-        <AccountNamePanel {...panel} />
-        <AccountEmailPanel {...panel} email={email} setEmail={setEmail} />
-        <AccountPasswordPanel {...panel} />
-        <AccountDiscordPanel {...panel} />
-      </>}
-      {tab === 'invites' && <AccountInvitesPanel busy={busy} />}
-      {tab === 'display' && <>
-        <AccountDisplayPanel />
-        <AccountWalkthroughPanel onTour={ctx.openTour} />
-      </>}
-      {tab === 'privacy' && <AccountPrivacyPanel {...panel} />}
-      {tab === 'alerts' && <AccountAlertsPanel {...panel} />}
-      {tab === 'security' && <AccountSecurityPanel {...panel} onTab={setTab} />}
-    </div>
-  </div>
-}
-
-/**
- * A door back into the walkthrough.
- *
- * It used to live on the Getting Started panel, which is the one place it was certain to be useless:
- * that panel is on the Overview, it is aimed at somebody in their first week, and it disappears once
- * the opening ladder is done. The player who actually wants this is the one who came back after a
- * month and cannot remember what banking was for - and by then the button had gone.
- *
- * Settings, because that is where somebody looks for a thing they half remember switching off.
- */
-function AccountWalkthroughPanel({ onTour }: { onTour: () => void }) {
-  return <section className="card p-3">
-    <div className="panel-title"><h2>Walkthrough</h2><span>The opening four moves</span></div>
-    <p className="text-body-secondary mt-3 mb-0">
-      The short tour a new account gets: pricing a shift before working it, working one, banking what
-      it paid, and buying what the next one burns. It runs once when the account is made. Nothing here
-      is spent by looking at it again.
-    </p>
-    <div className="d-flex mt-3">
-      <button className="btn btn-primary" type="button" onClick={onTour}>Run it again</button>
-    </div>
-  </section>
-}
-
-/** What the panels below all take. Bundled because every one of them takes all of it. */
-type AccountPanel = {
-  account: Account
-  busy: boolean
-  run: (fn: () => Promise<Account | void>, said: string, form?: HTMLFormElement) => Promise<void>
-  /** For a refusal the page can make on its own, without troubling the server about it. */
-  fail: (message: string) => void
-}
-
-function AccountNamePanel({ account, busy, run }: AccountPanel) {
-  const [playerName, setPlayerName] = useState(account.playerName)
-  useEffect(() => { setPlayerName(account.playerName) }, [account.playerName])
-  const nameTicker = useSecondsTicker(!!account.playerNameChangeReadyAtUtc)
-  const nameCooldownSeconds = secondsUntil(account.playerNameChangeReadyAtUtc, nameTicker)
-
-  const savePlayerName = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    void run(() => api.setPlayerName(playerName.trim()), 'Player name changed.')
-  }
-
-  return <section className="card p-3">
-    <div className="panel-title"><h2>Player Name</h2><span>{nameCooldownSeconds > 0 ? timeUntil(account.playerNameChangeReadyAtUtc!) : 'Ready'}</span></div>
-    <p>
-      This is the name other players see on ladders, news, profiles, chat, crew rosters, wars, and season
-      tables. Your username stays private and still handles sign-in.
-    </p>
-    <form className="d-grid gap-3" onSubmit={savePlayerName}>
-      <label className="field">
-        Display name
-        <input
-          className="form-control"
-          maxLength={32}
-          value={playerName}
-          onChange={event => setPlayerName(event.target.value)}
-        />
-        <small className="form-text">
-          {nameCooldownSeconds > 0
-            ? `You can change it again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`
-            : 'Names must be 3-32 characters.'}
-        </small>
-      </label>
-      <Button
-        className="btn btn-primary"
-        blocked={firstReason(
-          busy && BUSY,
-          playerName.trim().length < 3 && 'Player name must be at least three characters.',
-          playerName.trim().length > 32 && 'Player name must be 32 characters or less.',
-          playerName.trim() === account.playerName && 'That is already your player name.',
-          nameCooldownSeconds > 0 && `You can change your player name again in ${timeUntil(account.playerNameChangeReadyAtUtc!)}.`,
-        )}
-      >
-        {busy ? 'Working...' : 'Change Name'}
-      </Button>
-    </form>
-  </section>
-}
-
-function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: AccountPanel & { dashboard: Dashboard, onTab: (tab: AccountTab) => void }) {
-  // Two names, and they are not the same thing, which is worth saying plainly on the page where both
-  // appear: one is how you sign in and nobody else sees it, the other is what the whole city calls you.
-  const open = waysIn(account)
-  const [tagline, setTagline] = useState(account.profileTagline ?? '')
-  const [pronouns, setPronouns] = useState(account.profilePronouns ?? '')
-  const [location, setLocation] = useState(account.profileLocation ?? '')
-  const [accent, setAccent] = useState<Account['profileAccent']>(account.profileAccent)
-  const [banner, setBanner] = useState<ProfileBanner>(account.profileBanner)
-  const [featured, setFeatured] = useState(account.featuredTitle ?? '')
-  // What the picker may offer is what they hold today, which is a live answer rather than part of the
-  // account - see the endpoint. Empty for almost everybody, which is what makes a title worth having.
-  const [held, setHeld] = useState<PlayerTitle[]>([])
-  useEffect(() => { void (async () => { try { setHeld(await api.myTitles()) } catch { /* the picker just stays empty */ } })() }, [])
-  useEffect(() => {
-    setTagline(account.profileTagline ?? '')
-    setPronouns(account.profilePronouns ?? '')
-    setLocation(account.profileLocation ?? '')
-    setAccent(account.profileAccent)
-    setBanner(account.profileBanner)
-    setFeatured(account.featuredTitle ?? '')
-  }, [account.profileTagline, account.profilePronouns, account.profileLocation, account.profileAccent,
-      account.profileBanner, account.featuredTitle])
-
-  const saveProfile = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    void run(() => api.setProfile(tagline.trim(), pronouns.trim(), location.trim(), accent, banner, featured), 'Profile saved.')
-  }
-
-  const uploadAvatar = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = event.currentTarget
-    const file = (new FormData(form).get('avatar') as File | null)
-    if (!(file instanceof File) || file.size === 0) { fail('Choose an image file first.'); return }
-    if (file.size > 1_000_000) { fail('Avatar image must be 1 MB or smaller.'); return }
-    void run(() => api.uploadCustomAvatar(file), 'Custom avatar uploaded.', form)
-  }
-
-  return <>
-    <section className="card p-3 gcol-xl-full">
-      <div className="d-flex flex-wrap align-items-center gap-3 mb-3">
-        <AccountAvatar account={account} size={72} />
-        <div className="min-w-0 flex-fill">
-          <div className="panel-title mb-0"><h2>{account.playerName}</h2><span>{dashboard.city} / Rank #{dashboard.rank}</span></div>
-          <small className="text-body-tertiary">
-            {account.avatarSource === 'Discord' ? 'Using Discord avatar' : account.avatarSource === 'Custom' ? 'Using custom avatar' : 'Using default avatar'}
-          </small>
-          {account.profileTagline && <p className={`mb-0 mt-1 ${profileAccentClass(account.profileAccent)} text-truncate`}>{account.profileTagline}</p>}
-          {(account.profilePronouns || account.profileLocation) && <small className="d-block text-body-tertiary text-truncate">
-            {[account.profilePronouns, account.profileLocation].filter(Boolean).join(' / ')}
-          </small>}
-          <ProfileBadgeStrip badges={account.profileBadges ?? []} />
-        </div>
-      </div>
-      <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
-        <AdminMetric label="Player name" value={account.playerName} />
-        <AdminMetric label="Username" value={account.username} />
-        <AdminMetric label="Ways in" value={`${open.length} of 2`} />
-        <AdminMetric label="Since" value={new Date(account.createdAtUtc).toLocaleDateString()} />
-      </div>
-      <p className="mb-0">
-        Your <strong className="text-primary">player name</strong> is what the city sees - the ladder, the
-        news, the wanted list. Your <strong className="text-primary">username</strong> is only ever how you
-        sign in, and nobody else is shown it.
-      </p>
-      <div className="d-grid gtc-1 gtc-lg-2 gap-3 mt-3">
-        <form className="d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={saveProfile}>
-          <label className="field">
-            Tagline
-            <input
-              className="form-control"
-              maxLength={140}
-              value={tagline}
-              placeholder="One line the city sees"
-              onChange={event => setTagline(event.target.value)}
-            />
-            <small className="form-text">{Math.max(0, 140 - tagline.length)} characters left.</small>
-          </label>
-          <div className="d-grid gtc-1 gtc-md-2 gap-3">
-            <label className="field">
-              Pronouns
-              <input
-                className="form-control"
-                maxLength={64}
-                value={pronouns}
-                placeholder="Optional"
-                onChange={event => setPronouns(event.target.value)}
-              />
-            </label>
-            <label className="field">
-              Profile location
-              <input
-                className="form-control"
-                maxLength={64}
-                value={location}
-                placeholder="Optional"
-                onChange={event => setLocation(event.target.value)}
-              />
-            </label>
-          </div>
-          <div className="d-grid gtc-1 gtc-md-2 gap-3">
-            <label className="field">
-              Accent
-              <select
-                className="form-select"
-                value={accent}
-                onChange={event => setAccent(event.target.value as Account['profileAccent'])}
-              >
-                {PROFILE_ACCENTS.map(option => <option value={option} key={option}>{option}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              Banner
-              <select
-                className="form-select"
-                value={banner}
-                onChange={event => setBanner(event.target.value as ProfileBanner)}
-              >
-                {profileBanners.map(option => <option value={option.key} key={option.key}>{option.label}</option>)}
-              </select>
-              <small className="form-text">Behind your name when somebody opens your profile.</small>
-            </label>
-          </div>
-          {/*
-            Titles are worked out fresh from the day's fighting, so this offers what you hold now and
-            remembers the choice either way - one taken from you this afternoon is one you may hold
-            again tomorrow, and forgetting it every time would make this a setting nobody could keep.
-          */}
-          <label className="field">
-            Lead with
-            <select
-              className="form-select"
-              value={featured}
-              onChange={event => setFeatured(event.target.value)}
-            >
-              <option value="">Whatever I hold</option>
-              {held.map(title => <option value={title.key} key={title.key}>{title.title}</option>)}
-              {/* Their choice, still selectable, even on a day they have lost it. */}
-              {featured !== '' && !held.some(x => x.key === featured)
-                && <option value={featured}>{featured} (not held today)</option>}
-            </select>
-            <small className="form-text">
-              {held.length === 0
-                ? 'You hold no titles today. They are won by the day’s fighting, and most days nobody holds one.'
-                : 'Shown first on your card, ahead of the rest.'}
-            </small>
-          </label>
-
-          {/* Shown rather than described. A named gradient means nothing until you see it. */}
-          <div className={`profile-banner ${bannerClass(banner)} d-flex align-items-end p-2`}>
-            <strong className={`${profileAccentClass(accent)} text-truncate`}>{account.playerName}</strong>
-          </div>
-          <Button
-            className="btn btn-primary"
-            blocked={firstReason(
-              busy && BUSY,
-              tagline.trim() === (account.profileTagline ?? '')
-                && pronouns.trim() === (account.profilePronouns ?? '')
-                && location.trim() === (account.profileLocation ?? '')
-                && accent === account.profileAccent
-                && banner === account.profileBanner
-                && featured === (account.featuredTitle ?? '')
-                && 'Nothing on the card has been changed.',
-            )}
-          >
-            {busy ? 'Working...' : 'Save Profile'}
-          </Button>
-        </form>
-
-        <form className="avatar-form d-grid gap-3 border rounded bg-body-secondary p-3" onSubmit={uploadAvatar}>
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            <PlayerAvatar name={account.playerName} username={account.username} avatarUrl={account.customAvatarUrl} size={56} />
-            <div className="min-w-0">
-              <span className="eyebrow d-block">Uploaded avatar</span>
-              <strong className="d-block text-truncate">{account.customAvatarUrl ? 'Ready' : 'None uploaded'}</strong>
-            </div>
-          </div>
-          <label className="field">
-            Custom avatar
-            <input className="form-control" name="avatar" type="file" accept="image/png,image/jpeg,image/gif,image/webp" />
-            <small className="form-text">PNG, JPG, GIF, or WebP. 1 MB max.</small>
-          </label>
-          <div className="avatar-actions d-flex flex-wrap gap-2">
-            <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Upload and Use'}</Button>
-            <Button
-              className="btn btn-secondary"
-              type="button"
-              blocked={firstReason(
-                busy && BUSY,
-                !account.customAvatarUrl && 'You have not uploaded a picture yet.',
-                account.avatarSource === 'Custom' && 'Your uploaded picture is the one already in use.',
-              )}
-              onClick={() => void run(() => api.setAvatarSource('Custom'), 'Custom avatar selected.')}
-            >Use Custom</Button>
-            <Button
-              className="btn btn-outline-secondary"
-              type="button"
-              blocked={firstReason(
-                busy && BUSY,
-                account.avatarSource === 'None' && 'You are already on the default picture.',
-              )}
-              onClick={() => void run(() => api.setAvatarSource('None'), 'Default avatar selected.')}
-            >Use Default</Button>
-            <Button
-              className="btn btn-outline-danger"
-              type="button"
-              blocked={firstReason(
-                busy && BUSY,
-                !account.customAvatarUrl && 'There is no uploaded picture to remove.',
-              )}
-              onClick={() => void run(() => api.deleteCustomAvatar(), 'Custom avatar removed.')}
-            >Remove Custom</Button>
-          </div>
-        </form>
-      </div>
-    </section>
-
-    {/*
-      Two panels rather than one, because a name and a way in are not the same kind of thing and putting
-      them in one list of "ways in" says something false. An email address is a second name for the
-      password door - it opens nothing on its own, and the day the password goes it is worth nothing.
-      A player reading a tile that said otherwise might close the only door they had.
-    */}
-    <section className="card p-3">
-      <div className="panel-title"><h2>Ways In</h2><span>{open.length} of 2</span></div>
-      <p>
-        Two things can actually let you in, and you need to keep at least one. The game will not let you
-        close the last one.
-      </p>
-      <div className="d-grid gtc-1 gtc-md-2 gap-2">
-        <WayInTile label="Password" open={account.hasPassword} detail={account.hasPassword ? 'Set' : 'Never set'} />
-        <WayInTile label="Discord" open={account.discordConnected} detail={account.discordUsername ?? 'Not connected'} />
-      </div>
-      <button className="btn btn-secondary mt-3" type="button" onClick={() => onTab('signin')}>Manage sign-in</button>
-    </section>
-
-    <section className="card p-3">
-      <div className="panel-title"><h2>Names You Can Type</h2><span>{signInNames(account).length} of 2</span></div>
-      <p>
-        Either of these goes in the box on the sign-in screen, with your password. They are names, not
-        keys - neither of them opens anything without the password beside it.
-      </p>
-      <div className="d-grid gtc-1 gtc-md-2 gap-2">
-        <WayInTile label="Username" open detail={account.username} />
-        <WayInTile
-          label="Email"
-          open={account.emailVerified}
-          detail={account.email
-            ? account.emailVerified ? account.email : `${account.email} - not confirmed`
-            : 'None set'}
-        />
-      </div>
-    </section>
-  </>
-}
-
-function AccountAvatar({ account, size = 56 }: { account: Account, size?: number }) {
-  return <PlayerAvatar name={account.playerName} username={account.username} avatarUrl={account.avatarUrl} size={size} />
-}
-
-function PlayerAvatar({ name, username = name, avatarUrl, size = 36 }: { name: string, username?: string, avatarUrl?: string | null, size?: number }) {
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0]?.toUpperCase())
-    .join('') || username.slice(0, 2).toUpperCase()
-  const style = {
-    width: size,
-    height: size,
-    borderRadius: '50%',
-  }
-
-  return avatarUrl
-    ? <img
-      src={avatarUrl}
-      alt=""
-      className="border border-primary object-fit-cover flex-shrink-0"
-      style={style}
-      referrerPolicy="no-referrer"
-    />
-    : <div
-      className="d-inline-grid place-items-center border border-primary bg-body-secondary text-primary fw-bold flex-shrink-0 tnum"
-      style={{ ...style, fontSize: Math.max(16, Math.floor(size * 0.34)) }}
-      aria-hidden="true"
-    >{initials}</div>
-}
-
-/**
- * The things that would actually let somebody in.
- *
- * An email address is deliberately not one of them. It is a second name for the password door, so
- * counting it here would tell a player with a password and an address that they have two ways in and
- * can safely drop one - and dropping the password takes the address with it.
- */
-function waysIn(account: Account) {
-  return [
-    account.hasPassword && 'password',
-    account.discordConnected && 'discord',
-  ].filter(Boolean)
-}
-
-/** The names the sign-in box will accept. Only a confirmed address is one. */
-function signInNames(account: Account) {
-  return ['username', account.emailVerified && 'email'].filter(Boolean)
-}
-
-/**
- * The things that could get somebody back in, which is a different list from the things that let them
- * in. A password is a way in and is not a way back: forget it and there is nothing left to prove the
- * account was ever yours. Only a confirmed address and a Discord answer this one.
- */
-function waysBackIn(account: Account) {
-  return [
-    account.emailVerified && 'email',
-    account.discordConnected && 'discord',
-  ].filter(Boolean)
-}
-
-function WayInTile({ label, open, detail }: { label: string, open: boolean, detail: string }) {
-  return <div className={`stat d-grid gap-1 border rounded bg-body-secondary p-3 ${open ? 'border-primary' : ''}`}>
-    <span className="eyebrow">{label}</span>
-    <strong className={`min-w-0 fs-6 lh-1 text-truncate ${open ? 'text-primary' : 'text-body-tertiary'}`}>
-      {open ? 'Open' : 'Closed'}
-    </strong>
-    <small className="small text-truncate" title={detail}>{detail}</small>
-  </div>
-}
-
-function AccountEmailPanel({ account, busy, run, email, setEmail }: AccountPanel & { email: string, setEmail: (value: string) => void }) {
-  const pending = account.verification
-  const now = useSecondsTicker(pending !== null)
-  const expiresIn = secondsUntil(pending?.expiresAtUtc, now)
-  const resendIn = secondsUntil(pending?.resendableAtUtc, now)
-  const emailChanged = (account.email ?? '') !== email.trim()
-  // Emptying the box is a removal, and a removal is only allowed while something else could still get
-  // them back in. Changing it to a different address is always fine - one is still there to confirm.
-  const removingLastWayBack = email.trim().length === 0 && account.email !== null && !account.discordConnected
-
-  const saveEmail = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = event.currentTarget
-    const current = new FormData(form).get('currentPassword')
-    void run(
-      () => api.setEmail(email.trim(), String(current ?? '')),
-      email.trim() ? 'Email saved. Confirm it to sign in with it.' : 'Email removed.',
-      form)
-  }
-
-  const confirm = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = event.currentTarget
-    void run(() => api.confirmEmail(String(new FormData(form).get('code') ?? '')), 'Address confirmed.', form)
-      .then(() => { form.reset() })
-  }
-
-  return <section className="card p-3">
-    <div className="panel-title">
-      <h2>Email</h2>
-      <span className={account.emailVerified ? 'text-primary' : ''}>
-        {!account.email ? 'None' : account.emailVerified ? 'Confirmed' : 'Not confirmed'}
-      </span>
-    </div>
-    <p>
-      A second name to sign in under, with the same password. It only becomes a way in once you have
-      confirmed it, so an address typed by somebody who cannot read the mail opens nothing.
-    </p>
-
-    {/*
-      Said out loud rather than hidden. Mail written to a server log is exactly right on a laptop and
-      exactly wrong anywhere else, and a player who never gets a code deserves to know which it is.
-    */}
-    {!account.emailDelivers && <div className="alert alert-warning">
-      No email provider is configured on this server, so codes are written to the server log instead of
-      being sent. Fine for development; nobody will receive anything.
-    </div>}
-
-    {account.email && !account.emailVerified && <div className="border border-primary rounded p-3 mb-3 d-grid gap-3">
-      <div>
-        <span className="eyebrow d-block">Confirm this address</span>
-        <p className="mb-0 mt-1">
-          {pending
-            ? <>A six-digit code went to <strong className="text-primary">{pending.sentTo}</strong>.
-              It is good for another <strong className="tnum">{countdown(expiresIn)}</strong>, and you have{' '}
-              <strong className="tnum">{pending.attemptsRemaining}</strong> {pending.attemptsRemaining === 1 ? 'try' : 'tries'} left.</>
-            : <>Nothing is waiting. Ask for a code and it will arrive at{' '}
-              <strong className="text-primary">{account.email}</strong>.</>}
-        </p>
-      </div>
-
-      {pending && expiresIn > 0 && <form className="d-flex flex-wrap align-items-end gap-2" onSubmit={confirm}>
-        <label className="field flex-fill min-w-0">
-          Code
-          {/*
-            One box rather than six. Six boxes look the part and then fight the player over pasting,
-            backspacing and autofill, all to save typing that nobody was struggling with.
-          */}
-          <input
-            className="form-control tnum fs-4 text-center"
-            style={{ letterSpacing: '.4em' }}
-            name="code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]*"
-            maxLength={6}
-            placeholder="000000"
-            required
-          />
-        </label>
-        <Button className="btn btn-primary" blocked={busy && BUSY}>{busy ? 'Working...' : 'Confirm'}</Button>
-      </form>}
-
-      <Button
-        className="btn btn-secondary"
-        type="button"
-        blocked={firstReason(
-          busy && BUSY,
-          resendIn > 0 && `A code went out already. You can ask for another in ${countdown(resendIn)}.`,
-        )}
-        onClick={() => void run(() => api.sendEmailCode(), 'A new code is on its way.')}
-      >
-        {resendIn > 0
-          ? `Send another in ${countdown(resendIn)}`
-          : pending ? 'Send a new code' : 'Send a code'}
-      </Button>
-    </div>}
-
-    {account.emailVerified && account.emailVerifiedAtUtc && <p className="text-body-tertiary small">
-      Confirmed on {new Date(account.emailVerifiedAtUtc).toLocaleDateString()}.
-    </p>}
-
-    <form className="d-grid gap-3" onSubmit={saveEmail}>
-      <label className="field">
-        Address
-        <input
-          className="form-control"
-          type="email"
-          maxLength={254}
-          value={email}
-          placeholder="nobody@example.com"
-          onChange={event => setEmail(event.target.value)}
-        />
-        <small className="form-text">Empty removes it. Changing it starts the confirmation again.</small>
-      </label>
-      {account.hasPassword && <label className="field">
-        Current password
-        <input className="form-control" name="currentPassword" type="password" autoComplete="current-password" required />
-        <small className="form-text">Changing where a sign-in can come from costs the password.</small>
-      </label>}
-      {/*
-        Removing the last way back in is refused by the server whatever this button says, so the button
-        says it first. A refusal a player could have seen coming is a worse refusal than one that
-        explains itself before they click.
-      */}
-      <Button className="btn btn-primary" blocked={firstReason(
-        busy && BUSY,
-        !emailChanged && 'That is the address already on the account.',
-        removingLastWayBack && 'This address is the only way back into your account if you forget your password. Connect Discord on this page and you can remove it.',
-      )}>
-        {busy ? 'Working...' : email.trim() ? 'Save Email' : 'Remove Email'}
-      </Button>
-    </form>
-  </section>
-}
-
-function AccountPasswordPanel({ account, busy, run, fail }: AccountPanel) {
-  const savePassword = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = event.currentTarget
-    const data = new FormData(form)
-    const next = String(data.get('newPassword') ?? '')
-    // Caught here rather than sent: the server has no way to know what was typed in the second box,
-    // and a round trip to be told something the page already knew is a round trip wasted.
-    if (next !== String(data.get('confirmPassword') ?? '')) { fail('The two new passwords do not match.'); return }
-    void run(
-      () => api.setPassword(String(data.get('currentPassword') ?? ''), next),
-      account.hasPassword ? 'Password changed. Every other session has been signed out.' : 'Password set.',
-      form)
-  }
-
-  return <section className="card p-3">
-    <div className="panel-title"><h2>Password</h2><span>{account.hasPassword ? 'Set' : 'None'}</span></div>
-    <p>
-      {account.hasPassword
-        ? 'Changing it signs out every other session on this account, and keeps this one.'
-        : 'You signed up through Discord and have never set one. Set a password and you can sign in with your username as well.'}
-    </p>
-    <form className="d-grid gap-3" onSubmit={savePassword}>
-      {account.hasPassword && <label className="field">
-        Current password
-        <input className="form-control" name="currentPassword" type="password" autoComplete="current-password" required />
-      </label>}
-      <label className="field">
-        New password
-        <input className="form-control" name="newPassword" type="password" autoComplete="new-password" minLength={8} required />
-        <small className="form-text">Eight characters at the very least.</small>
-      </label>
-      <label className="field">
-        New password again
-        <input className="form-control" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required />
-      </label>
-      <Button className="btn btn-primary" blocked={busy && BUSY}>
-        {busy ? 'Working...' : account.hasPassword ? 'Change Password' : 'Set Password'}
-      </Button>
-    </form>
-  </section>
-}
-
-function AccountDiscordPanel({ account, busy, run }: AccountPanel) {
-  // Disconnecting takes away a way in, which is the same kind of act as changing the address, so it
-  // costs the same thing. An account with no password has nothing to prove with and is not asked.
-  const [password, setPassword] = useState('')
-  // Two separate reasons the connection might be stuck, and they are not the same reason - one is
-  // about getting in at all, the other about getting back in after forgetting the password.
-  const discordIsTheOnlyWayIn = account.discordConnected && !account.hasPassword
-  const discordIsTheOnlyWayBackIn = account.discordConnected && !account.emailVerified
-
-  return <section className="card p-3">
-    <div className="panel-title">
-      <h2>Discord</h2><span>{account.discordConnected ? 'Connected' : 'Not connected'}</span>
-    </div>
-    {account.discordConnected
-      ? <>
-        <p>
-          Connected to <strong className="text-primary">{account.discordUsername}</strong>
-          {account.discordLinkedAtUtc && <> since {new Date(account.discordLinkedAtUtc).toLocaleDateString()}</>}.
-          That Discord account signs straight in, on any browser, without a password.
-        </p>
-        {account.discordLinkRewardClaimedAtUtc && <div className="alert alert-success">
-          Link reward claimed: $10,000, 25 condoms, 25 beer, and the Discord Connected title.
-        </div>}
-        {!account.discordLinkRewardClaimedAtUtc && <div className="alert alert-primary d-flex flex-wrap align-items-center justify-content-between gap-2">
-          <span>Claim your first-link reward: $10,000, 25 condoms, 25 beer, and the Discord Connected title.</span>
-          <Button
-            className="btn btn-primary btn-sm"
-            type="button"
-            blocked={busy && BUSY}
-            onClick={() => void run(() => api.claimDiscordLinkReward(), 'Discord link reward claimed.')}
-          >
-            {busy ? 'Working...' : 'Claim reward'}
-          </Button>
-        </div>}
-        <div className="border rounded bg-body-secondary p-3 mb-3 d-grid gap-3">
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            {account.discordAvatarUrl
-              ? <img
-                src={account.discordAvatarUrl}
-                alt=""
-                className="border border-primary object-fit-cover flex-shrink-0"
-                style={{ width: 56, height: 56, borderRadius: '50%' }}
-                referrerPolicy="no-referrer"
-              />
-              : <AccountAvatar account={account} />}
-            <div className="min-w-0">
-              <span className="eyebrow d-block">Avatar</span>
-              <strong className="d-block text-truncate">
-                {account.avatarSource === 'Discord'
-                  ? 'Synced from Discord'
-                  : account.avatarSource === 'Custom' ? 'Using custom avatar' : 'Default'}
-              </strong>
-              <small className="text-body-tertiary">
-                {account.discordAvatarUrl ? 'Refresh after changing it on Discord.' : 'No custom Discord avatar found.'}
-              </small>
-            </div>
-          </div>
-          <div className="avatar-actions d-flex flex-wrap gap-2">
-            <Button
-              className="btn btn-secondary"
-              type="button"
-              blocked={firstReason(
-                busy && BUSY,
-                !account.discordAvatarUrl && 'Discord has no custom picture for you to use.',
-                account.avatarSource === 'Discord' && 'Your Discord picture is the one already in use.',
-              )}
-              onClick={() => void run(() => api.setAvatarSource('Discord'), 'Discord avatar selected.')}
-            >
-              Use Discord avatar
-            </Button>
-            <Button
-              className="btn btn-outline-secondary"
-              type="button"
-              blocked={firstReason(
-                busy && BUSY,
-                account.avatarSource === 'None' && 'You are already on the default picture.',
-              )}
-              onClick={() => void run(() => api.setAvatarSource('None'), 'Default avatar selected.')}
-            >
-              Use default
-            </Button>
-            <a className="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href={discordStartUrl()}>
-              <i className="bi bi-arrow-repeat" aria-hidden="true" />
-              Refresh from Discord
-            </a>
-          </div>
-        </div>
-        {discordIsTheOnlyWayIn
-          ? <div className="alert alert-warning mb-0">
-            This is the only way into your empire. Set a password before disconnecting it.
-          </div>
-          : discordIsTheOnlyWayBackIn
-          ? <div className="alert alert-warning mb-0">
-            This is the only way back into your empire if you forget your password. Confirm an email
-            address before disconnecting it.
-          </div>
-          : <div className="d-grid gap-2">
-            {account.hasPassword && <label className="field">
-              Current password
-              <input
-                className="form-control"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={event => setPassword(event.target.value)}
-              />
-              <small className="form-text">Taking away a way in costs the password, as changing your address does.</small>
-            </label>}
-            <Button
-              className="btn btn-outline-danger"
-              type="button"
-              blocked={firstReason(
-                busy && BUSY,
-                account.hasPassword && password.length === 0 && 'Type your password above. Taking away a way in costs it.',
-              )}
-              onClick={() => void run(
-                async () => { const a = await api.disconnectDiscord(password); setPassword(''); return a },
-                'Discord disconnected.')}
-            >Disconnect Discord</Button>
-          </div>}
-      </>
-      : account.discordConfigured
-        ? <>
-          <p>
-            Connect one and it becomes a way in: one button on the sign-in screen, no password typed.
-            You keep your username and password either way.
-          </p>
-          <p className="text-body-tertiary small">
-            First link pays $10,000, 25 condoms, 25 beer, and unlocks the Discord Connected title.
-          </p>
-          {/*
-            A link, not a button. Connecting is the same round trip through Discord that signing in is,
-            and the only difference is that this one starts with a session already in hand - which is
-            what tells the callback to attach rather than to sign somebody in.
-          */}
-          <a className="btn btn-secondary d-inline-flex align-items-center justify-content-center gap-2" href={discordStartUrl()}>
-            <i className="bi bi-discord" aria-hidden="true" />
-            Connect Discord
-          </a>
-        </>
-        : <p className="mb-0 text-body-tertiary">
-          This server has no Discord credentials set, so there is nothing to connect to yet.
-        </p>}
-  </section>
-}
-
-function AccountPrivacyPanel({ account, busy, run }: AccountPanel) {
-  const [showDiscord, setShowDiscord] = useState(account.showDiscordOnProfile)
-  const [dmPolicy, setDmPolicy] = useState<Account['directMessagePolicy']>(account.directMessagePolicy)
-  const [showActivity, setShowActivity] = useState(account.showActivityOnProfile)
-  useEffect(() => {
-    setShowDiscord(account.showDiscordOnProfile)
-    setDmPolicy(account.directMessagePolicy)
-    setShowActivity(account.showActivityOnProfile)
-  }, [account.showDiscordOnProfile, account.directMessagePolicy, account.showActivityOnProfile])
-
-  const changed = showDiscord !== account.showDiscordOnProfile
-    || dmPolicy !== account.directMessagePolicy
-    || showActivity !== account.showActivityOnProfile
-  const save = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    void run(() => api.setPrivacy(showDiscord, dmPolicy, showActivity), 'Privacy saved.')
-  }
-
-  return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title"><h2>Privacy</h2><span>{
-      dmPolicy === 'Everyone' ? 'Open'
-        : dmPolicy === 'Alliance' ? 'Crew only'
-          : dmPolicy === 'AllianceAndPacts' ? 'Crew and allies'
-            : 'Closed'
-    }</span></div>
-    <form className="d-grid gap-3" onSubmit={save}>
-      <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
-        <input
-          className="form-check-input"
-          type="checkbox"
-          checked={showDiscord}
-          disabled={!account.discordConnected}
-          onChange={event => setShowDiscord(event.target.checked)}
-        />
-        <strong className="d-block">Show Discord on public profile</strong>
-        <small className="form-text">
-          {account.discordConnected
-            ? account.discordUsername ?? 'Connected Discord'
-            : 'Connect Discord before showing it publicly.'}
-        </small>
-      </label>
-      <label className="field">
-        Direct messages
-        <select
-          className="form-select"
-          value={dmPolicy}
-          onChange={event => setDmPolicy(event.target.value as Account['directMessagePolicy'])}
-        >
-          <option value="Everyone">Everyone</option>
-          <option value="AllianceAndPacts">My crew and our allies</option>
-          <option value="Alliance">My crew only</option>
-          <option value="Nobody">Nobody</option>
-        </select>
-        <small className="form-text">
-          Allies are crews yours has a standing pact with. Existing blocks still win over this setting.
-        </small>
-      </label>
-      {/*
-        The one genuinely private thing on a profile, and the reason this is a switch rather than a
-        blanket setting. Your city and your numbers are on the leaderboard whatever you choose here -
-        this is the eight-action list with timestamps and takings, which is available nowhere else.
-      */}
-      <label className="form-check form-switch border rounded bg-body-secondary p-3 ps-5">
-        <input
-          className="form-check-input"
-          type="checkbox"
-          checked={showActivity}
-          onChange={event => setShowActivity(event.target.checked)}
-        />
-        <strong className="d-block">Show recent activity on my profile</strong>
-        <small className="form-text">
-          The last eight things you did, with times and takings, to anybody who opens your profile. Your
-          city and your worth are on the leaderboard either way; this is the part that is not.
-        </small>
-      </label>
-      <Button className="btn btn-primary" blocked={firstReason(
-        busy && BUSY,
-        !changed && 'Nothing here has been changed.',
-      )}>{busy ? 'Working...' : 'Save Privacy'}</Button>
-    </form>
-  </section>
-}
-
-function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
-  const [syncDiscord, setSyncDiscord] = useState(account.syncDiscordAvatar)
-  const [security, setSecurity] = useState(account.emailSecurityNotices)
-  const [combat, setCombat] = useState(account.emailCombatNotices)
-  const [alliance, setAlliance] = useState(account.emailAllianceNotices)
-  const [discordSecurity, setDiscordSecurity] = useState(account.discordSecurityNotices)
-  const [discordCombat, setDiscordCombat] = useState(account.discordCombatNotices)
-  const [discordCrew, setDiscordCrew] = useState(account.discordCrewNotices)
-  const [discordMarket, setDiscordMarket] = useState(account.discordMarketNotices)
-  const [bellCombat, setBellCombat] = useState(account.noticeCombat)
-  const [bellCrew, setBellCrew] = useState(account.noticeCrew)
-  const [bellMarket, setBellMarket] = useState(account.noticeMarket)
-  useEffect(() => {
-    setSyncDiscord(account.syncDiscordAvatar)
-    setSecurity(account.emailSecurityNotices)
-    setCombat(account.emailCombatNotices)
-    setAlliance(account.emailAllianceNotices)
-    setDiscordSecurity(account.discordSecurityNotices)
-    setDiscordCombat(account.discordCombatNotices)
-    setDiscordCrew(account.discordCrewNotices)
-    setDiscordMarket(account.discordMarketNotices)
-    setBellCombat(account.noticeCombat)
-    setBellCrew(account.noticeCrew)
-    setBellMarket(account.noticeMarket)
-  }, [account.syncDiscordAvatar, account.emailSecurityNotices, account.emailCombatNotices, account.emailAllianceNotices,
-      account.discordSecurityNotices, account.discordCombatNotices, account.discordCrewNotices,
-      account.discordMarketNotices, account.noticeCombat, account.noticeCrew, account.noticeMarket])
-
-  const changed = syncDiscord !== account.syncDiscordAvatar
-    || security !== account.emailSecurityNotices
-    || combat !== account.emailCombatNotices
-    || alliance !== account.emailAllianceNotices
-    || discordSecurity !== account.discordSecurityNotices
-    || discordCombat !== account.discordCombatNotices
-    || discordCrew !== account.discordCrewNotices
-    || discordMarket !== account.discordMarketNotices
-    || bellCombat !== account.noticeCombat
-    || bellCrew !== account.noticeCrew
-    || bellMarket !== account.noticeMarket
-
-  const save = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    void run(
-      () => api.setNotificationPreferences(
-        syncDiscord,
-        security,
-        combat,
-        alliance,
-        discordSecurity,
-        discordCombat,
-        discordCrew,
-        discordMarket,
-        bellCombat,
-        bellCrew,
-        bellMarket),
-      'Alert settings saved.')
-  }
-
-  return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title"><h2>Alerts</h2><span>{security || combat || alliance || discordSecurity || discordCombat || discordCrew || discordMarket ? 'On' : 'Quiet'}</span></div>
-    <form className="d-grid gap-3" onSubmit={save}>
-      <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
-        <input
-          className="form-check-input"
-          type="checkbox"
-          checked={syncDiscord}
-          disabled={!account.discordConnected}
-          onChange={event => setSyncDiscord(event.target.checked)}
-        />
-        <strong className="d-block">Prefer Discord avatar after refresh</strong>
-        <small className="form-text">
-          {account.discordConnected
-            ? 'When Discord refreshes and has an avatar, it becomes your selected account avatar.'
-            : 'Connect Discord before turning this on.'}
-        </small>
-      </label>
-      {/*
-        Refreshing is a trip back through Discord rather than a call the server can make on its own,
-        because no Discord token is kept here - only the account id it handed over. That is the more
-        private arrangement of the two and this is the cost of it: one click, and Discord asks nothing
-        again if you are still signed in there.
-
-        The handle has always refreshed itself on every Discord sign-in. What was missing was any
-        record of when, which is the half this reports.
-      */}
-      {account.discordConnected && <div className="border rounded bg-body-secondary p-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <div className="min-w-0">
-          <strong className="d-block text-truncate">
-            <i className="bi bi-discord me-1" aria-hidden="true" />
-            {account.discordUsername ?? 'Connected'}
-          </strong>
-          <small className="text-body-tertiary">
-            {account.discordSyncedAtUtc
-              ? `Last checked ${new Date(account.discordSyncedAtUtc).toLocaleString()}.`
-              : 'Not checked since this was added - refresh to pull your current handle and avatar.'}
-          </small>
-        </div>
-        <a className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2" href={discordStartUrl()}>
-          <i className="bi bi-arrow-clockwise" aria-hidden="true" />
-          Refresh from Discord
-        </a>
-      </div>}
-      <div>
-        <span className="eyebrow d-block mb-2">By email</span>
-      </div>
-      <div className="d-grid gtc-1 gtc-md-3 gap-2">
-        <NoticeToggle
-          label="Security"
-          detail="Password, Discord, sessions, and account access."
-          checked={security}
-          onChange={setSecurity}
-        />
-        <NoticeToggle
-          label="Combat"
-          detail="Future fight and defence email alerts."
-          checked={combat}
-          onChange={setCombat}
-        />
-        <NoticeToggle
-          label="Crew"
-          detail="Future crew requests, pacts, and transfers."
-          checked={alliance}
-          onChange={setAlliance}
-        />
-      </div>
-
-      <div>
-        <span className="eyebrow d-block mb-2">By Discord DM</span>
-        <div className="d-grid gtc-1 gtc-md-4 gap-2">
-          <NoticeToggle
-            label="Security"
-            detail={account.discordConnected ? 'Password, Discord, sessions, and account access.' : 'Connect Discord before turning this on.'}
-            checked={discordSecurity}
-            disabled={!account.discordConnected}
-            onChange={setDiscordSecurity}
-          />
-          <NoticeToggle
-            label="Combat"
-            detail={account.discordConnected ? 'Raids on your house, and ground won or lost.' : 'Connect Discord before turning this on.'}
-            checked={discordCombat}
-            disabled={!account.discordConnected}
-            onChange={setDiscordCombat}
-          />
-          <NoticeToggle
-            label="Crew"
-            detail={account.discordConnected ? 'Allies calling for help or crew business that needs eyes.' : 'Connect Discord before turning this on.'}
-            checked={discordCrew}
-            disabled={!account.discordConnected}
-            onChange={setDiscordCrew}
-          />
-          <NoticeToggle
-            label="Market"
-            detail={account.discordConnected ? 'Somebody buying what you put up for sale.' : 'Connect Discord before turning this on.'}
-            checked={discordMarket}
-            disabled={!account.discordConnected}
-            onChange={setDiscordMarket}
-          />
-        </div>
-      </div>
-
-      {/*
-        A different channel, not a duplicate of the three above. Somebody who wants no mail at all still
-        wants the bell, and somebody who wants mail about a raid does not necessarily want it about a
-        sale - so these are their own columns rather than one set of switches governing both.
-
-        Turning one off takes it out of the unread count as well as the list: a badge over something you
-        asked not to be told about is the notification you switched off.
-      */}
-      <div>
-        <span className="eyebrow d-block mb-2">In the game, on the bell</span>
-        <div className="d-grid gtc-1 gtc-md-3 gap-2">
-          <NoticeToggle
-            label="Combat"
-            detail="Raids on your house, and ground won or lost."
-            checked={bellCombat}
-            onChange={setBellCombat}
-          />
-          <NoticeToggle
-            label="Crew"
-            detail="Allies calling for help while they are being raided."
-            checked={bellCrew}
-            onChange={setBellCrew}
-          />
-          <NoticeToggle
-            label="Market"
-            detail="Somebody buying what you put up for sale."
-            checked={bellMarket}
-            onChange={setBellMarket}
-          />
-        </div>
-        <small className="form-text d-block mt-2">
-          Your labs, builds and mule runs always ring. They are your own machinery reporting in, and
-          there is nowhere else they are said.
-        </small>
-      </div>
-
-      <Button className="btn btn-primary" blocked={firstReason(
-        busy && BUSY,
-        !changed && 'Nothing here has been changed.',
-      )}>{busy ? 'Working...' : 'Save Alerts'}</Button>
-    </form>
-  </section>
-}
-
-function NoticeToggle({ label, detail, checked, disabled, onChange }: {
-  label: string
-  detail: string
-  checked: boolean
-  disabled?: boolean
-  onChange: (value: boolean) => void
-}) {
-  return <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${checked ? 'border-primary' : ''}`}>
-    <input
-      className="form-check-input"
-      type="checkbox"
-      checked={checked}
-      disabled={disabled}
-      onChange={event => onChange(event.target.checked)}
-    />
-    <strong className="d-block">{label}</strong>
-    <small className="form-text">{detail}</small>
-  </label>
-}
-
-/**
- * Where you are signed in, and the ability to end one of them.
- *
- * The list is loaded here rather than arriving with the account, because it is the one thing on this
- * page that changes without anybody touching it - a session moves every few minutes as somebody plays -
- * and folding it into the account payload would make every other panel refetch it for nothing.
- */
-function SessionsCard({ account, busy, run }: { account: Account, busy: boolean, run: AccountPanel['run'] }) {
-  const [sessions, setSessions] = useState<PlayerSession[] | null>(null)
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-
-  const load = async () => {
-    try { setSessions(await api.sessions()) } catch (e) { setError((e as Error).message) }
-  }
-  useEffect(() => { void load() }, [])
-
-  // Only an account with a password can be asked for one. A Discord-only account has nothing to prove
-  // with and is already proving itself with the cookie, which is the same exemption the password form
-  // makes rather than a hole opened here.
-  const needsPassword = account.hasPassword
-
-  const revokeOne = async (session: PlayerSession) => {
-    setError('')
-    try {
-      await api.revokeSession(session.id, password)
-      setPassword('')
-      await load()
-    } catch (e) { setError((e as Error).message) }
-  }
-
-  return <section className="card p-3">
-    <div className="panel-title">
-      <h2>Sessions</h2>
-      <span>{sessions === null ? 'Reading' : `${sessions.length} signed in`}</span>
-    </div>
-    <p>
-      A sign-in lasts a fortnight and renews itself while you play, which is convenient right up until
-      you leave yourself signed in on a machine you no longer have.
-    </p>
-
-    {needsPassword && <label className="field mb-3">
-      Current password
-      <input
-        className="form-control"
-        type="password"
-        autoComplete="current-password"
-        value={password}
-        onChange={event => setPassword(event.target.value)}
-      />
-      <small className="form-text">
-        Ending a session is how somebody who has taken one would lock you out of your own account, so it
-        costs the password - which a stolen cookie does not carry.
-      </small>
-    </label>}
-
-    {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-
-    {sessions !== null && <div className="d-grid gap-2 mb-3">
-      {sessions.length === 0 && <p className="text-body-tertiary small mb-0">
-        Nothing recorded yet. Sessions from before this was added are not listed - they still work, and
-        signing out everywhere ends them.
-      </p>}
-      {sessions.map(session => <div
-        key={session.id}
-        className={`session-row border rounded p-2 d-grid gap-2 align-items-center ${session.isCurrent ? 'border-primary' : 'bg-body-secondary'}`}
-      >
-        <div className="min-w-0">
-          <strong className="d-block text-truncate">
-            {session.isCurrent ? 'This device' : session.ipAddress ?? 'Unknown address'}
-          </strong>
-          <small className="session-user-agent d-block text-body-tertiary">{session.userAgent ?? 'Unknown browser'}</small>
-          <small className="d-block text-body-tertiary">
-            Last seen {new Date(session.lastSeenAtUtc).toLocaleString()}
-            {session.isCurrent ? '' : ` / signed in ${new Date(session.createdAtUtc).toLocaleDateString()}`}
-          </small>
-        </div>
-        <Button
-          className="btn btn-outline-danger btn-sm"
-          type="button"
-          blocked={busy && BUSY}
-          onClick={() => void revokeOne(session)}
-        >{session.isCurrent ? 'Sign out here' : 'End it'}</Button>
-      </div>)}
-    </div>}
-
-    <Button
-      className="btn btn-outline-danger"
-      type="button"
-      blocked={busy && BUSY}
-      onClick={() => void run(
-        async () => { const a = await api.revokeSessions(password); setPassword(''); await load(); return a },
-        'Every other session has been signed out.')}
-    >{busy ? 'Working...' : 'Sign out everywhere else'}</Button>
-  </section>
-}
-
-/**
- * Ten single-use ways back in, shown once.
- *
- * Once is not a limitation to work around - it is the reason these are safe to have. What the server
- * keeps is a hash, exactly as it does for a password, so there is no endpoint that could say them again
- * and no column that hands somebody with database access a way into every account in the game.
- */
-function RecoveryCodesCard({ account, busy }: { account: Account, busy: boolean }) {
-  const [remaining, setRemaining] = useState<number | null>(null)
-  const [password, setPassword] = useState('')
-  const [codes, setCodes] = useState<string[] | null>(null)
-  const [error, setError] = useState('')
-  const [working, setWorking] = useState(false)
-
-  const load = async () => {
-    try { setRemaining((await api.recoveryCodesLeft()).remaining) } catch { /* the count is not the point */ }
-  }
-  useEffect(() => { void load() }, [])
-
-  const issue = async () => {
-    setWorking(true); setError('')
-    try {
-      setCodes((await api.issueRecoveryCodes(password)).codes)
-      setPassword('')
-      await load()
-    } catch (e) { setError((e as Error).message) }
-    finally { setWorking(false) }
-  }
-
-  return <section className="card p-3">
-    <div className="panel-title">
-      <h2>Recovery codes</h2>
-      <span>{remaining === null ? 'Reading' : remaining === 0 ? 'None made' : `${remaining} left`}</span>
-    </div>
-    <p>
-      Ten one-time codes. Any of them gets you back in without an email and without Discord, which is the
-      case neither of the other two doors can answer - a lost mailbox, or a Discord account you no longer
-      have. Each one works once.
-    </p>
-    <p className="text-body-tertiary small">
-      They do not replace your email or your Discord: you still cannot remove your last way back in. A
-      sheet of paper is the thing most easily lost, so it is a spare set of keys rather than the door.
-    </p>
-
-    {codes
-      ? <>
-        <div className="alert alert-warning">
-          Written down now or not at all. They are stored hashed, exactly as your password is, so this is
-          the only time they can be shown.
-        </div>
-        <pre className="border rounded bg-body-tertiary p-3 mb-3 tnum">{codes.join('\n')}</pre>
-        <button
-          className="btn btn-secondary"
-          type="button"
-          onClick={() => void navigator.clipboard?.writeText(codes.join('\n'))}
-        >Copy them</button>
-        <button className="btn btn-link text-body-secondary" type="button" onClick={() => setCodes(null)}>
-          I have written them down
-        </button>
-      </>
-      : <div className="d-grid gap-3">
-        {account.hasPassword && <label className="field">
-          Current password
-          <input
-            className="form-control"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={event => setPassword(event.target.value)}
-          />
-        </label>}
-        {error && <DismissibleMessage className="alert alert-danger" onClose={() => setError('')}>{error}</DismissibleMessage>}
-        <div>
-          <Button
-            className="btn btn-outline-primary"
-            type="button"
-            blocked={firstReason(
-              busy && BUSY,
-              working && 'Your codes are being made now.',
-              account.hasPassword && password.length === 0 && 'Type your password above first.',
-            )}
-            onClick={() => void issue()}
-          >{working ? 'Working...' : remaining ? 'Make a new set' : 'Make my codes'}</Button>
-        </div>
-        {remaining !== null && remaining > 0 && <small className="text-body-tertiary">
-          Making a new set voids the old one, so any sheet you already have stops working.
-        </small>}
-      </div>}
-  </section>
-}
-
-function AccountSecurityPanel({ account, busy, run, onTab }: AccountPanel & { onTab: (tab: AccountTab) => void }) {
-  const open = waysIn(account)
-  const back = waysBackIn(account)
-  const enoughOfBoth = open.length > 1 && back.length > 1
-  return <>
-    <SessionsCard account={account} busy={busy} run={run} />
-    <RecoveryCodesCard account={account} busy={busy} />
-
-    {/*
-      Two counters rather than one, because the panel used to answer one question and imply the other.
-      It said "you can close either one and still get back in", which stopped being true the day a way
-      *in* and a way *back in* came apart - closing Discord with no confirmed address leaves a player
-      signed in and unrecoverable, which is exactly the state the counts exist to show.
-    */}
-    <section className="card p-3">
-      <div className="panel-title">
-        <h2>The Last Door</h2><span>{open.length} in / {back.length} back</span>
-      </div>
-      <p>
-        Two different questions, and the pair above answers both. <strong className="text-primary">In</strong> is
-        what signs you in: a password, or a connected Discord. <strong className="text-primary">Back</strong> is
-        what could still prove the account was yours once the password is gone: a confirmed email
-        address, or that same Discord.
-      </p>
-      <p>
-        A password answers the first and never the second - forget it and it proves nothing - which is
-        why the two are rarely the same number.
-      </p>
-      <p className={enoughOfBoth ? 'mb-0' : ''}>
-        {enoughOfBoth
-          ? 'You have a spare of each, so nothing here is load-bearing. Close any one of them and you can still get in, and still get back.'
-          : 'The game refuses to let you close a last one of either. That is a poor substitute for having a spare of each.'}
-      </p>
-      {!enoughOfBoth && <button className="btn btn-primary" type="button" onClick={() => onTab('signin')}>
-        Add another
-      </button>}
-    </section>
-  </>
-}
-
-function DismissibleMessage({ className, children, onClose }: { className: string, children: ReactNode, onClose: () => void }) {
-  return <div className={`${className} d-flex align-items-center justify-content-between gap-3`}>
-    <span>{children}</span>
-    <button className="btn-close" type="button" aria-label="Close notification" onClick={onClose} />
-  </div>
-}
 
 function Stat({ label, value, sub, tone, title }: { label: string, value: string, sub?: string, tone?: string, title?: string }) {
   return <div className={`stat d-grid gap-1 border rounded bg-body-secondary p-3 ${tone ?? ''}`} title={title}>
@@ -11545,12 +6890,6 @@ function SellRow({ name, owned, price, quantity, onQuantity, onSell, blocked }: 
   </div>
 }
 
-function StatusRow({ label, value, warn, trend }: { label: string, value: string, warn?: boolean, trend?: ReactNode }) {
-  return <div className="status-row d-flex justify-content-between gap-3 py-2 border-top">
-    <span className="text-body-secondary">{label}</span>
-    <strong className={`text-end text-break ${warn ? 'text-primary' : 'text-body'}`}>{value}{trend}</strong>
-  </div>
-}
 
 const MORALE_ARROWS: Record<MoraleDirection, string> = { up: '▲', down: '▼', steady: '–', unknown: '' }
 
@@ -11570,3 +6909,13 @@ function MoraleArrow({ trend, crew }: { trend: MoraleTrend, crew: 'hoe' | 'thug'
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)
+
+
+
+
+
+
+
+
+
+

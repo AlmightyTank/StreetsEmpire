@@ -1,6 +1,6 @@
 namespace StreetEmpire.Api.Models;
 
-public sealed class Player
+public sealed class Player : IStash
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid AccountId { get; set; }
@@ -8,9 +8,37 @@ public sealed class Player
 
     public string Name { get; set; } = string.Empty;
     public DateTime? NameChangedAtUtc { get; set; }
+    /// <summary>
+    /// The town the player is physically standing in.
+    ///
+    /// Deliberately not the same thing as <see cref="Models.Hideout.City"/>, and the whole point of
+    /// this pairing. Travel moves this and nothing else: the house, the shelves, the safe and the crew
+    /// stay where they were built, which is what makes going somewhere a decision rather than a
+    /// teleport for an entire operation. Anything the player physically walks up to - the counter, the
+    /// casino floor, the street, a trader's job book - reads this. Anything the house does on its own
+    /// reads the hideout's town instead.
+    /// </summary>
     public string City { get; set; } = "New York";
 
+    /// <summary>
+    /// The gun on the player's hip, as a weapon tier key, or null for somebody carrying nothing.
+    ///
+    /// A tier rather than a count because this is not a shelf: it is which of the guns in
+    /// <see cref="Armoury"/> is the one to hand. Kept on the player rather than the rack so it travels
+    /// with them, and swapping it for something out of hideout storage needs a trip home.
+    /// </summary>
+    public string? EquippedWeapon { get; set; }
+
     // Money
+    /// <summary>
+    /// Cash in the player's pocket. It goes where they go, it is what the street, the store and the
+    /// casino floor are paid out of, and it is the only money a stop on the way into town can take.
+    ///
+    /// Uncapped on purpose. The safe used to be the ceiling on this, back when cash on hand and the
+    /// safe were the same pile; now that <see cref="Models.Hideout.SafeCash"/> is a real place with a
+    /// real door, the ceiling belongs to it. Walking around with a fortune is allowed and is meant to
+    /// be a bad idea.
+    /// </summary>
     public long Cash { get; set; }
     public long BankCash { get; set; }
 
@@ -50,7 +78,13 @@ public sealed class Player
     public double HoeHappiness { get; set; } = 100;
     public double ThugHappiness { get; set; } = 100;
 
-    // Inventory
+    // Inventory - the hideout's shelves. See Carried for the other pile.
+    //
+    // Every good below sits in the hideout, in Hideout.City, and does not move when the player does.
+    // These are the columns the storage room caps, the labs fill, the crew eat, the thugs arm
+    // themselves from, and a raid carries out of the door - which is why they stayed here rather than
+    // being moved on to the Hideout row when the two piles were split. What a player physically has on
+    // them is Carried, and it is the new half.
     public int Condoms { get; set; }
     public int Beer { get; set; }
 
@@ -124,8 +158,19 @@ public sealed class Player
     public int Poison { get; set; }
 
     /// <summary>
-    /// Low-riders. A ride is what a drive-by is fired from and what a jacking takes, so it is the one
-    /// asset that is both a tool and a target: parking a fleet outside a thin guard is an invitation.
+    /// Low-riders, parked in the garage at <see cref="Models.Hideout.City"/>.
+    ///
+    /// A ride is what a drive-by is fired from and what a jacking takes, so it is the one asset that is
+    /// both a tool and a target: parking a fleet outside a thin guard is an invitation.
+    ///
+    /// It is the hideout's, and it is the only good here whose home is the building rather than the
+    /// storage room - the garage is bought with the tier, not with shelves. Cars do not get on planes
+    /// with their owner, and there is deliberately no way to carry one: a ride is a thing you drive out
+    /// of a garage and back into it, so it is in exactly one town and that town is the hideout's.
+    ///
+    /// When a base can be relocated, the fleet does not follow it for free either - moving cars between
+    /// towns is a flatbed and a bill, and that price belongs to the relocation rule rather than to
+    /// anything here. This column simply never changes because the player went somewhere.
     /// </summary>
     public int Rides { get; set; }
 
@@ -149,6 +194,57 @@ public sealed class Player
     /// It is an empire rather than a person, so a season takes it. See <see cref="Services.StoreRep"/>.
     /// </summary>
     public double StoreRep { get; set; }
+
+    /// <summary>
+    /// Standing on the casino floor, earned by putting cash through the slots.
+    ///
+    /// It is separate from store standing because the two rooms remember different things: the counter
+    /// trusts steady trade, while the casino trusts action. A player who gambles heavily should be
+    /// known by the cage without making the gun dealer any friendlier, and a trader with a clean store
+    /// record should not walk straight into the private machines.
+    /// </summary>
+    public double CasinoRep { get; set; }
+
+    /// <summary>
+    /// What the cage owes this player back, in dollars of comps.
+    ///
+    /// Separate from standing on purpose, because the two answer different questions and a real floor
+    /// keeps them apart for the same reason: standing is who you are to the house and decides which
+    /// room will take your money, while comps are what the house owes you for having played and are
+    /// spent down to nothing every time you collect. One is a rank and the other is a balance, so a
+    /// player can be a House Name with nothing to claim, or a Walk-In holding a night's worth.
+    ///
+    /// Held in dollars rather than in points because every one of them is redeemed for something with
+    /// a price, and a currency that has to be mentally converted before it means anything is a
+    /// currency nobody spends.
+    ///
+    /// Kept in cents, as a whole number, for the reason <see cref="Cash"/> is a long: this is money,
+    /// and money in a double is money that drifts. It is added to a few cents at a time - a hundredth
+    /// of every wager - so a season of play is tens of thousands of additions, each one landing on a
+    /// binary fraction that cannot represent a tenth of a cent exactly. The error is invisible per
+    /// spin and cumulative by construction, and it lands on a balance players spend.
+    ///
+    /// Cents rather than whole dollars because the accrual is inherently smaller than a dollar: at a
+    /// hundredth of the stake, a fifty dollar hand earns fifty cents, and a currency that rounded
+    /// that to nothing would pay out only to people betting in hundreds. The cage still talks in
+    /// whole dollars - see CasinoService.CompsFor - because that is what the rewards are priced in.
+    /// </summary>
+    public long CasinoCompsCents { get; set; }
+
+    /// <summary>
+    /// Spins the house owes this player, and the ticket they are owed on.
+    ///
+    /// The ticket is held with the count rather than taken from whatever is on screen when they are
+    /// spent. Free spins that played at the current stake would make the way to use them obvious and
+    /// stupid: win them on the cheapest pull the machine takes, then set the stake to the maximum and
+    /// collect at a hundred times the price of what earned them. They replay the spin that won them,
+    /// which is also what a real floor does with them.
+    /// </summary>
+    public int CasinoFreeSpins { get; set; }
+
+    public string? CasinoFreeSpinMachine { get; set; }
+    public long CasinoFreeSpinBet { get; set; }
+    public int CasinoFreeSpinLanes { get; set; }
 
     /// <summary>
     /// When the counter will take another investment. Null means now.
@@ -337,8 +433,53 @@ public sealed class Player
 
     public Hideout? Hideout { get; set; }
 
+    /// <summary>
+    /// What the player physically has on them. It goes where they go.
+    ///
+    /// The other half of the split, and the new one. Everything else on this row that looks like stock
+    /// is the hideout's - see the inventory block above - and the difference between the two is
+    /// entirely a matter of where it is standing when something happens to it. A stop on the road into
+    /// town takes from here; a raid on the house cannot reach here at all. Product bought at a counter
+    /// lands here, and putting it somewhere safer is a decision the player makes at their own front
+    /// door.
+    ///
+    /// An owned type rather than nine more loose columns, so that it is one thing the rules can be
+    /// handed rather than nine the next rule has to remember all of. Capped by
+    /// <see cref="Services.HideoutService.CarryCapacityFor"/>, which is where bags, cars, escorts and
+    /// skills will eventually be read.
+    /// </summary>
+    public Stash Carried { get; set; } = new();
+
+    /// <summary>
+    /// The hideout's shelves, as one value rather than as a dozen columns.
+    ///
+    /// It is <c>this</c>, because the player row is where the store has always been kept. The property
+    /// exists so that code written from here on can say which of the two piles it means instead of
+    /// leaving the reader to know, and so that the day the store does move to a table of its own, the
+    /// rules that read it do not have to move with it.
+    /// </summary>
+    public IStash Stored => this;
+
     /// <summary>Named pimps, active and fallen. <see cref="Pimps"/> counts the active ones.</summary>
     public List<Pimp> Crew { get; set; } = [];
+
+    /// <summary>
+    /// Optimistic concurrency token, in the same spirit as <see cref="BetaKey.Version"/> and for a
+    /// much larger reason.
+    ///
+    /// Nearly every rule in this game is written as read the player, check they can afford it, take
+    /// it, save. Two requests that overlap each get their own DbContext and their own copy of this
+    /// row, so both read the same cash, both agree the purchase is affordable, and both write - and
+    /// the second write is computed from a balance that no longer exists. The money comes off once
+    /// and the goods arrive twice. Double-clicking will not do it; two requests genuinely in flight
+    /// together will, and the casino was the worst of it, where two winning spins could each read the
+    /// same progressive meter and walk off with the whole of it.
+    ///
+    /// Stamped in <see cref="Data.GameDbContext.SaveChangesAsync(bool, CancellationToken)"/> rather
+    /// than at the hundred-odd places that spend something, because a rule that has to be remembered
+    /// at every call site is a rule that holds until somebody adds the hundred-and-first.
+    /// </summary>
+    public int Version { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<GameActionLog> ActionLogs { get; set; } = [];

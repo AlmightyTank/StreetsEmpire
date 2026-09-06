@@ -51,11 +51,23 @@ internal static class StartingState
         player.Medicine = 0;
         player.Poison = 0;
         player.Rides = 0;
+        // The bag goes with the rest of it. It is stock like any other stock; the only thing that makes
+        // it different is which side of the front door it is on.
+        player.Carried = new Stash();
+        player.EquippedWeapon = null;
 
         // Standing is an empire and not a person. It was earned by an empire's worth of trading, it
         // unlocks the guns that empire fought with, and carrying it through a roll would open a new
         // season with the rifle counter already unlocked - which is the one thing a season is for.
         player.StoreRep = 0;
+        player.CasinoRep = 0;
+        // The cage settles up at the end of a season whether you collected or not. Carrying a balance
+        // across would be last season's play buying this season's turns.
+        player.CasinoCompsCents = 0;
+        player.CasinoFreeSpins = 0;
+        player.CasinoFreeSpinMachine = null;
+        player.CasinoFreeSpinBet = 0;
+        player.CasinoFreeSpinLanes = 0;
         player.StoreInvestmentReadyAtUtc = null;
         // The hand itself goes with the book, which the roll empties. This is only the clock that
         // decides what looking again costs, and it has to open at free like everybody else's.
@@ -87,6 +99,16 @@ internal static class StartingState
     /// </summary>
     internal static void Apply(Hideout hideout, DateTime nowUtc)
     {
+        // The safe is an empire, and a roll takes the empire. Left alone it would be the one pile in the
+        // game a season could not touch: a full safe waiting on day one, in a house that has been reset
+        // to a Trap House around it.
+        //
+        // The town is deliberately not on this list. Where somebody set up is who they are rather than
+        // what they built, it is already carried across for the player beside them, and a roll that
+        // silently moved everybody's house would be the exact teleport this whole change exists to
+        // stop - only once a season and with nobody watching.
+        hideout.SafeCash = 0;
+
         hideout.Tier = 1;
         hideout.UpgradingToTier = null;
         hideout.UpgradeCompletesAtUtc = null;

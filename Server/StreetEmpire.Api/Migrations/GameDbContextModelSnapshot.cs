@@ -518,6 +518,180 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("BetaKeys");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.BlackjackHand", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ActiveHand")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Bet")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DealerCardsJson")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("DeckJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("HandsJson")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("InsuranceAnswered")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("InsuranceBet")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("InsuranceOffered")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("InsurancePayout")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Payout")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("SettledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Splits")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("TableKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId", "Status");
+
+                    b.ToTable("BlackjackHands");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.CasinoJackpotDrop", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CasinoTransactionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("MachineKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("WonAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CasinoTransactionId");
+
+                    b.HasIndex("PlayerId");
+
+                    b.HasIndex("MachineKey", "WonAtUtc");
+
+                    b.ToTable("CasinoJackpotDrops");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.CasinoTransaction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BetAmount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DetailJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("GameType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<bool>("IsFreeSpin")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("JackpotAmount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("MachineKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<long>("NetResult")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<int>("Paylines")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<long>("PayoutAmount")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("WinningPaylines")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId", "CreatedAtUtc");
+
+                    b.HasIndex("GameType", "MachineKey", "CreatedAtUtc");
+
+                    b.ToTable("CasinoTransactions");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>
                 {
                     b.Property<long>("Id")
@@ -1284,6 +1458,12 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<string>("ConfigOverridesJson")
                         .HasColumnType("text");
 
+                    b.Property<string>("CrewRanksJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CrewReportsPostedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("DiscordAnnouncementUsername")
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
@@ -1341,12 +1521,18 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<long?>("JackpotAnnouncedAmount")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("MaintenanceMessage")
                         .HasMaxLength(400)
                         .HasColumnType("character varying(400)");
 
                     b.Property<bool>("MaintenanceMode")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("TitleHoldersJson")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -1376,6 +1562,11 @@ namespace StreetEmpire.Api.Migrations
                         .HasColumnType("bigint");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<bool>("CokeLabAutoSell")
                         .HasColumnType("boolean");
@@ -1416,6 +1607,9 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<string>("RepairingRoom")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
+
+                    b.Property<long>("SafeCash")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("SafeLevel")
                         .HasColumnType("integer");
@@ -1650,6 +1844,125 @@ namespace StreetEmpire.Api.Migrations
                     b.ToTable("MuleRuns");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.PendingStrike", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("ArrivesAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("AttackerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("CommittedCoke")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("CommittedCokePurity")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("CommittedPoison")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CommittedRides")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DefenderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Fare")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("LaunchedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("OriginCity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("ResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("ReturnRiskPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("ReturningCoke")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("ReturningCokePurity")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("ReturningHoes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReturningPoison")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReturningRides")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ReturnsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SeizedHoes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SeizedRides")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("TargetCity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("TravelTurns")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TurnsSpent")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttackerId");
+
+                    b.HasIndex("DefenderId", "Status");
+
+                    b.HasIndex("Status", "ArrivesAtUtc");
+
+                    b.HasIndex("Status", "ReturnsAtUtc");
+
+                    b.ToTable("PendingStrikes");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.Pimp", b =>
                 {
                     b.Property<long>("Id")
@@ -1658,8 +1971,17 @@ namespace StreetEmpire.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("Assignment")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<int>("BonusPercent")
                         .HasColumnType("integer");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTime>("HiredAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -1739,6 +2061,25 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<long>("Cash")
                         .HasColumnType("bigint");
 
+                    b.Property<long>("CasinoCompsCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CasinoFreeSpinBet")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CasinoFreeSpinLanes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CasinoFreeSpinMachine")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("CasinoFreeSpins")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("CasinoRep")
+                        .HasColumnType("double precision");
+
                     b.Property<DateTime?>("CatchUpSeenAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1766,6 +2107,10 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<int>("Cut")
                         .HasColumnType("integer");
+
+                    b.Property<string>("EquippedWeapon")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<double>("Heat")
                         .HasColumnType("double precision");
@@ -1870,6 +2215,10 @@ namespace StreetEmpire.Api.Migrations
                     b.Property<int>("Turns")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("WalkthroughSeenAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1927,6 +2276,9 @@ namespace StreetEmpire.Api.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)");
 
+                    b.Property<DateTime?>("DiscordAlertsSentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("DiscordAvatarHash")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -1946,6 +2298,11 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<DateTime?>("DiscordLinkedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("DiscordMachineNotices")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("DiscordMarketNotices")
                         .ValueGeneratedOnAdd()
@@ -2753,6 +3110,47 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("RedeemedByAccount");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.BlackjackHand", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.CasinoJackpotDrop", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.CasinoTransaction", "Transaction")
+                        .WithMany()
+                        .HasForeignKey("CasinoTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
+
+                    b.Navigation("Transaction");
+                });
+
+            modelBuilder.Entity("StreetEmpire.Api.Models.CasinoTransaction", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.ChatMessage", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.Player", "Author")
@@ -2942,6 +3340,25 @@ namespace StreetEmpire.Api.Migrations
                     b.Navigation("Player");
                 });
 
+            modelBuilder.Entity("StreetEmpire.Api.Models.PendingStrike", b =>
+                {
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Attacker")
+                        .WithMany()
+                        .HasForeignKey("AttackerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StreetEmpire.Api.Models.Player", "Defender")
+                        .WithMany()
+                        .HasForeignKey("DefenderId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Attacker");
+
+                    b.Navigation("Defender");
+                });
+
             modelBuilder.Entity("StreetEmpire.Api.Models.Pimp", b =>
                 {
                     b.HasOne("StreetEmpire.Api.Models.Player", "Player")
@@ -2966,9 +3383,65 @@ namespace StreetEmpire.Api.Migrations
                         .HasForeignKey("AllianceId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.OwnsOne("StreetEmpire.Api.Models.Stash", "Carried", b1 =>
+                        {
+                            b1.Property<Guid>("PlayerId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<int>("Beer")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Coke")
+                                .HasColumnType("integer");
+
+                            b1.Property<double>("CokePurity")
+                                .HasPrecision(5, 4)
+                                .HasColumnType("double precision");
+
+                            b1.Property<int>("Condoms")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Cut")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Medicine")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Moonshine")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Pistols")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Poison")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Rifles")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Shotguns")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Smgs")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("Weed")
+                                .HasColumnType("integer");
+
+                            b1.HasKey("PlayerId");
+
+                            b1.ToTable("Players");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PlayerId");
+                        });
+
                     b.Navigation("Account");
 
                     b.Navigation("Alliance");
+
+                    b.Navigation("Carried")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StreetEmpire.Api.Models.PlayerBlock", b =>

@@ -31,6 +31,11 @@ public static class WorldNews
                   && log.Action != "GROUND"
                   && log.Action != "BUST"
                   && (log.Action == "ATTACK"
+                      // A progressive that drops is news at any size. It is fed by everybody who
+                      // played that machine, so the one person who walked off with it owes the rest of
+                      // the floor an explanation, and the cash swing rule would silently swallow the
+                      // cheapest pots - which are exactly the ones most players are playing for.
+                      || log.Action == "JACKPOT"
                       // One crew declaring on another is the largest thing that happens in this world
                       // and the only one that involves a dozen people at once. It is written once, to
                       // the player who declared it, precisely so it can be published here.
@@ -56,6 +61,8 @@ public static class WorldNews
         "HIDEOUT" => "build",
         "START" => "arrival",
         "CREW" => "crew",
+        "JACKPOT" => "casino",
+        "CASINO" => "casino",
         _ => "money"
     };
 }

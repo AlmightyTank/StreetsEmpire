@@ -64,7 +64,10 @@ internal static partial class AccountSetup
         // existing player back through the same call, and two copies of "what a new player has" is
         // exactly how the two doors end up handing out different amounts of money.
         StartingState.Apply(player, options, now);
-        player.Hideout = new Hideout { Player = player };
+        // The house is founded where the player is standing, and that is the last time the two are
+        // set together. From here they move independently: travel takes the player and leaves the
+        // building, and there is no mechanic yet that moves the building at all.
+        player.Hideout = new Hideout { Player = player, City = player.City };
         StartingState.Apply(player.Hideout, now);
         // Turns the starting pimp count into named crew.
         pimps.Reconcile(player, DateTime.UtcNow);

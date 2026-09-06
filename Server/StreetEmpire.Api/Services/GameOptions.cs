@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
@@ -252,6 +253,7 @@ public sealed class GameOptions
     public AllianceOptions Alliances { get; set; } = new();
     public TitleOptions Titles { get; set; } = new();
     public HideoutOptions Hideout { get; set; } = new();
+    public CarryOptions Carry { get; set; } = new();
     public PimpOptions Pimps { get; set; } = new();
     public AntiFarmOptions AntiFarm { get; set; } = new();
     public WorldNewsOptions WorldNews { get; set; } = new();
@@ -262,6 +264,7 @@ public sealed class GameOptions
     public CityMarketOptions CityMarkets { get; set; } = new();
     public MuleOptions Mules { get; set; } = new();
     public BankOptions Bank { get; set; } = new();
+    public CasinoOptions Casino { get; set; } = new();
     public ArrestOptions Arrests { get; set; } = new();
     public SeasonOptions Seasons { get; set; } = new();
     public StoreOptions Store { get; set; } = new();
@@ -330,6 +333,12 @@ public sealed class CombatRoundOptions
 
     public double CrewLossRate { get; set; } = 0.06;
     public double WeaponLossRate { get; set; } = 0.04;
+
+    /// <summary>
+    /// Whether a round of a fight takes anybody, as a fraction of one. Rolled against directly, so
+    /// one is the ceiling: above it every round of every fight costs somebody.
+    /// </summary>
+    [Range(0, 1)]
     public double LossRollChance { get; set; } = 0.55;
 }
 
@@ -377,6 +386,85 @@ public sealed class StrikeOptions
     public JackOptions Jack { get; set; } = new();
     public InfestOptions Infest { get; set; } = new();
     public PoachOptions Poach { get; set; } = new();
+
+    /// <summary>What throwing one at a house in another town costs.</summary>
+    public StrikeDistanceOptions Distance { get; set; } = new();
+}
+
+/// <summary>
+/// The price of throwing a strike across the country.
+///
+/// Distance here is a town's own remoteness rather than a pair of towns, exactly as it is for travel
+/// and for mule runs: this map has no matrix and does not need one, because what makes New York far is
+/// New York. So the cost of hitting a place is a property of the place, and everybody pays the same to
+/// reach it.
+///
+/// The turn cost is deliberately mild. A cross-country drive-by should not approach the price of a
+/// raid - the thing that makes distance expensive is the clock and the warning it hands the target,
+/// not the turn bank.
+/// </summary>
+public sealed class StrikeDistanceOptions
+{
+    /// <summary>Whether a strike can leave its own town at all. Off makes every strike local.</summary>
+    public bool Allowed { get; set; } = true;
+
+    /// <summary>Extra turns per turn of distance, on top of the method's own cost.</summary>
+    public double TurnCostPerTravelTurn { get; set; } = 0.5;
+
+    /// <summary>
+    /// Petrol, plates, and somewhere to wait. Per turn of distance, and small: this is the cost that
+    /// stops a broke player throwing punches across the country, not the one that stops a rich one.
+    /// The clock does that.
+    /// </summary>
+    public long FarePerTravelTurn { get; set; } = 2_500;
+
+    /// <summary>
+    /// How many can be on the road at once. A cap rather than a crew commitment, because a strike does
+    /// not assign a crew the way a raid does and inventing one would make it a small raid.
+    /// </summary>
+    public int MaxInFlight { get; set; } = 3;
+
+    /// <summary>
+    /// How much of a loud strike's chance is lost per turn of distance. Strange streets, no bolt-hole,
+    /// and plates nobody recognises.
+    ///
+    /// Only the loud ones pay it - see <see cref="LoudMethods"/>. An infestation is one person being
+    /// quiet and a poach is money talking, and neither cares how far it drove.
+    /// </summary>
+    public double HitChancePenaltyPerTravelTurn { get; set; } = 0.03;
+
+    /// <summary>
+    /// The share of a failed away job that costs the car outright rather than risking it. A drive-by
+    /// that goes wrong in your own town is a fast drive home; one that goes wrong four states away is a
+    /// car left behind.
+    /// </summary>
+    public double RideImpoundChanceOnFailure { get; set; } = 0.5;
+
+    /// <summary>
+    /// How much riskier every turn of distance makes the drive home, on top of the town's own.
+    ///
+    /// The way back is the half of an away job that nobody thinks about until it goes wrong, and it is
+    /// where a jacking and a poach get their character: one is driving stolen cars on plates that have
+    /// been called in, the other is a van of people who walked out of somebody else's house an hour
+    /// ago. Neither is a quiet journey, and the further it is the more road there is to be stopped on.
+    /// </summary>
+    public double ReturnRiskPerTravelTurn { get; set; } = 0.04;
+
+    /// <summary>Never a certainty, however far it is. A road that always ends badly is a road nobody takes.</summary>
+    public double MaxReturnRisk { get; set; } = 0.55;
+
+    /// <summary>
+    /// The share of the haul that goes when the way home goes wrong. Wide, and deliberately so: this
+    /// is the swing an away job is bought with, and a flat two-thirds every time would be a tax rather
+    /// than a risk.
+    /// </summary>
+    public double ReturnSeizureMinPercent { get; set; } = 0.34;
+    public double ReturnSeizureMaxPercent { get; set; } = 1.0;
+
+    /// <summary>The strikes that suffer for the distance. The quiet ones are not on it.</summary>
+    public IReadOnlyList<string> LoudMethods => [AttackMethods.DriveBy, AttackMethods.Jack];
+
+    public bool IsLoud(string method) => LoudMethods.Contains(AttackMethods.Normalize(method));
 }
 
 public sealed class DriveByOptions
@@ -885,6 +973,70 @@ public sealed class PimpOptions
 /// initializers would merge them with appsettings and let the stale default win the level lookup.
 /// Call <see cref="ApplyDefaultsWhereEmpty"/> after binding to fill in whatever config omitted.
 /// </summary>
+/// <summary>
+/// What a player can physically carry.
+///
+/// This exists because the hideout store stopped being the player's pockets. While the two were one
+/// pile the storage room was the only ceiling anybody needed; now that a player can walk out of the
+/// door with a load and get on a plane, "how much" is a question with its own answer, and an
+/// unanswered one is a player carrying four hundred weed across the country in their coat.
+///
+/// Flat numbers today. Every modifier the design wants later - bags, a car, an escort, a skill, a
+/// perk, a bigger house - is a multiplier or an addition on top of these, and the single place they
+/// all have to land is <see cref="HideoutService.CarryCapacityFor"/>. Nothing outside that method
+/// reads these numbers, so adding a modifier is a change to one function rather than to every rule
+/// that moves a good.
+/// </summary>
+public sealed class CarryOptions
+{
+    /// <summary>
+    /// Whether carry limits are enforced at all. On by design; the switch is here so a bad number in
+    /// this table is a configuration fix rather than a deploy.
+    /// </summary>
+    public bool Enforce { get; set; } = true;
+
+    public int Condoms { get; set; } = 40;
+    public int Beer { get; set; } = 25;
+    public int Medicine { get; set; } = 10;
+    public int Poison { get; set; } = 10;
+
+    /// <summary>
+    /// Guns, across every tier at once, exactly as the storage room counts them. Small on purpose:
+    /// an armoury is a thing you keep somewhere, and what you take out of it is a couple of pieces.
+    /// </summary>
+    public int Weapons { get; set; } = 6;
+
+    /// <summary>
+    /// Product. Sized against the opening storage room rather than the top of the ladder, so carrying
+    /// a load between towns by hand is a real trade and never the best way to move a warehouse - that
+    /// is what mule runs are for, and they take a pimp, a crew and a risk.
+    /// </summary>
+    public int Weed { get; set; } = 60;
+    public int Coke { get; set; } = 30;
+    public int Moonshine { get; set; } = 30;
+    public int Cut { get; set; } = 30;
+
+    /// <summary>
+    /// Extra room per hideout tier, as a percentage of the base. Zero by default: the hook is here so
+    /// that a house upgrade can be made to matter without any rule outside the capacity function
+    /// learning that hideout tiers exist.
+    /// </summary>
+    public int PerTierBonusPercent { get; set; }
+
+    public int Of(string key) => key switch
+    {
+        "condoms" => Condoms,
+        "beer" => Beer,
+        "medicine" => Medicine,
+        "poison" => Poison,
+        "weed" => Weed,
+        "coke" => Coke,
+        "moonshine" => Moonshine,
+        "cut" => Cut,
+        _ => WeaponTiers.IsWeapon(key) ? Weapons : 0
+    };
+}
+
 public sealed class HideoutOptions
 {
     public List<HideoutTierOptions> Tiers { get; set; } = [];
@@ -1072,6 +1224,22 @@ public sealed class HideoutOptions
     /// </summary>
     public int MinLabLevelForAutoSell { get; set; } = 3;
 
+    /// <summary>
+    /// The intelligence centre level at which the labs can be switched, and set to sell, from another
+    /// town. Zero would mean always, and a level above the table would mean never.
+    ///
+    /// The first rung of remote management, and deliberately the cheapest one: a switch is a phone
+    /// call. It is gated at all because being away from the house is supposed to cost something, and
+    /// the room that exists to know things is the honest place to buy that cost back.
+    /// </summary>
+    public int RemoteLabControlLevel { get; set; } = 2;
+
+    /// <summary>
+    /// The level at which repairs can be started from another town. Higher than a switch because this
+    /// one spends money and puts a crew in a room, which is a decision rather than a message.
+    /// </summary>
+    public int RemoteRepairLevel { get; set; } = 3;
+
     public void ApplyDefaultsWhereEmpty()
     {
         // Each tier's crew caps are what the storage level it unlocks is sized against, so a full-length
@@ -1166,9 +1334,13 @@ public sealed class HideoutOptions
         if (Lookout.Count == 0)
             Lookout =
             [
-                new LookoutLevelOptions { Level = 1, MinTier = 1, BustChanceReductionPercent = 25, UpgradeCost = 100_000 },
-                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, UpgradeCost = 390_000 },
-                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, UpgradeCost = 1_750_000 }
+                // The warning ladder is read against the map: a trip runs 12 to 36 minutes, so four
+                // minutes is a scramble at any distance, eight covers the near towns, and fifteen sees
+                // most of the country coming. Nobody ever gets the whole flight, because a room that
+                // guaranteed a full night's notice would end the decision it exists to create.
+                new LookoutLevelOptions { Level = 1, MinTier = 1, BustChanceReductionPercent = 25, WarningMinutes = 4, UpgradeCost = 100_000 },
+                new LookoutLevelOptions { Level = 2, MinTier = 2, BustChanceReductionPercent = 45, WarningMinutes = 8, UpgradeCost = 390_000 },
+                new LookoutLevelOptions { Level = 3, MinTier = 3, BustChanceReductionPercent = 60, WarningMinutes = 15, UpgradeCost = 1_750_000 }
             ];
 
         if (Intelligence.Count == 0)
@@ -1874,6 +2046,653 @@ public sealed class BankOptions
 }
 
 /// <summary>
+/// The playable casino inside the Casino District.
+///
+/// Cash goes in and out of the player's hand for now. That keeps chips from becoming a second bank:
+/// money carried into the district is still money somebody can take if the player gets careless.
+/// </summary>
+public sealed class CasinoOptions
+{
+    public bool Enabled { get; set; } = true;
+    public int HistoryDepth { get; set; } = 8;
+    /// <summary>
+    /// Standing earned by a spin that buys the machine's whole ticket - every lane at its top stake -
+    /// with anything smaller earning its share of that.
+    ///
+    /// Per ticket rather than per dollar, which is what it used to be. A dollar rate makes standing a
+    /// measure of how rich you are: the Vault takes stakes a thousand times the Sidewalk's, so a
+    /// single pull there was worth a thousand Sidewalk pulls and the whole ladder fell over in about
+    /// eleven spins to anybody who could already afford the top room. Standing is meant to say how you
+    /// play, not what you can afford, and the rooms are already gated on net worth for the other half.
+    ///
+    /// Because a pull costs one turn whatever it stakes, this also makes the full ticket the fastest
+    /// way to earn standing per turn - which is the scarce thing - by a wide margin.
+    /// </summary>
+    public double RepPerMaxBetSpin { get; set; } = 5;
+
+    /// <summary>
+    /// What a pull costs in turns.
+    ///
+    /// It used to cost none, which made the casino the only thing in the game that did not compete
+    /// with anything else you could be doing. A floor you can work for ever between street shifts is
+    /// not a floor, it is a button, and an evening at a real one costs you the evening.
+    /// </summary>
+    public int SpinTurnCost { get; set; } = 1;
+
+    /// <summary>
+    /// Dollars of comps earned per dollar wagered.
+    ///
+    /// On the wager rather than on the loss, the way a real floor rates play. Earning on losses alone
+    /// would pay nothing for the nights that go well and read as the house punishing a winner, and it
+    /// would make the rebate the only thing on offer. Rating the wager gives every night a floor by
+    /// itself: a player who leaves with nothing still leaves holding something.
+    ///
+    /// At a hundredth of the stake this returns roughly a fifth of what the house expects to hold,
+    /// which is about what a real players' club gives back.
+    /// </summary>
+    public double CompsPerDollarWagered { get; set; } = 0.01;
+
+    /// <summary>
+    /// What a wager is worth in comps, in whole cents.
+    ///
+    /// Here rather than at the three tables that rate play, because slots, roulette and blackjack all
+    /// have to agree about what a dollar through them is worth, and three copies of one multiplication
+    /// is three chances for them not to.
+    ///
+    /// The rounding happens once, here, on the way in. That is the whole point of holding the balance
+    /// in cents: every wager becomes a whole number of them before it is added to anything, so a
+    /// season of play is a sum of integers rather than a running total of binary fractions.
+    /// </summary>
+    public long CompsCentsFor(long wagered)
+        => wagered <= 0
+            ? 0
+            : (long)Math.Round(wagered * Math.Max(0, CompsPerDollarWagered) * 100, MidpointRounding.AwayFromZero);
+
+    public List<CompRewardOptions> CompRewards { get; set; } = [];
+    public CasinoJackpotOptions Jackpot { get; set; } = new();
+    public CasinoFreeSpinOptions FreeSpins { get; set; } = new();
+    public RouletteOptions Roulette { get; set; } = new();
+    public BlackjackOptions Blackjack { get; set; } = new();
+    public List<CasinoRepLevelOptions> Levels { get; set; } = [];
+    public List<SlotMachineOptions> SlotMachines { get; set; } = [];
+    public List<SlotSymbolOptions> SlotSymbols { get; set; } = [];
+
+    /// <summary>The reel a machine actually turns: its own if it has one, the floor's otherwise.</summary>
+    public IReadOnlyList<SlotSymbolOptions> SymbolsFor(SlotMachineOptions machine)
+        => machine.Symbols.Count > 0 ? machine.Symbols : SlotSymbols;
+
+    public SlotMachineOptions? Machine(string? key)
+        => SlotMachines.FirstOrDefault(x => string.Equals(x.Key, key?.Trim().ToLowerInvariant(), StringComparison.Ordinal));
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (SlotMachines.Count == 0)
+        {
+            SlotMachines =
+            [
+                // The four rooms differ on two axes at once, and both are deliberate. Volatility rises
+                // as you climb - the Sidewalk pays small and often, the Vault pays almost never and
+                // then pays enormously - and so does the return, because a real floor holds most on
+                // its cheapest machines and least in the high-limit room. Climbing the ladder buys
+                // better odds as well as bigger numbers, which is most of what standing is for.
+                new SlotMachineOptions
+                {
+                    Key = "sidewalk",
+                    Name = "Sidewalk Slots",
+                    Blurb = "Cheap pulls under bad neon. Small bets, fast trouble.",
+                    MinBet = 10,
+                    MaxBet = 100,
+                    JackpotSeed = 5_000,
+                    // 92.5% back, and something lands on about seven spins in ten.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 32, PairMultiplier = 1, TripleMultiplier = 5, QuadMultiplier = 17, QuintMultiplier = 43 },
+                        new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 24, PairMultiplier = 1, TripleMultiplier = 8, QuadMultiplier = 27, QuintMultiplier = 69 },
+                        new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 0, TripleMultiplier = 14, QuadMultiplier = 37, QuintMultiplier = 120 },
+                        new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 13, PairMultiplier = 0, TripleMultiplier = 23, QuadMultiplier = 80, QuintMultiplier = 205 },
+                        new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 8, PairMultiplier = 0, TripleMultiplier = 44, QuadMultiplier = 150, QuintMultiplier = 390 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, PairMultiplier = 0, TripleMultiplier = 98, QuadMultiplier = 330, QuintMultiplier = 860 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 315, QuadMultiplier = 1060, QuintMultiplier = 2760 }
+                    ]
+                },
+                new SlotMachineOptions
+                {
+                    Key = "neon",
+                    Name = "Neon Fortune",
+                    Blurb = "A louder room with heavier bills moving through it.",
+                    MinBet = 100,
+                    MaxBet = 1_000,
+                    MinCasinoRepLevel = 2,
+                    MinNetWorth = 50_000,
+                    JackpotSeed = 50_000,
+                    // 94.4% back. The middle of the floor, and the curve the whole casino used to run.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "cherry", Label = "Cherry", Weight = 28, PairMultiplier = 1, TripleMultiplier = 6, QuadMultiplier = 21, QuintMultiplier = 59 },
+                        new SlotSymbolOptions { Key = "bell", Label = "Bell", Weight = 22, PairMultiplier = 0, TripleMultiplier = 10, QuadMultiplier = 35, QuintMultiplier = 99 },
+                        new SlotSymbolOptions { Key = "glass", Label = "Champagne", Weight = 18, PairMultiplier = 0, TripleMultiplier = 18, QuadMultiplier = 65, QuintMultiplier = 170 },
+                        new SlotSymbolOptions { Key = "dice", Label = "Dice", Weight = 14, PairMultiplier = 0, TripleMultiplier = 28, QuadMultiplier = 95, QuintMultiplier = 265 },
+                        new SlotSymbolOptions { Key = "diamond", Label = "Diamond", Weight = 10, PairMultiplier = 0, TripleMultiplier = 52, QuadMultiplier = 175, QuintMultiplier = 495 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 0, TripleMultiplier = 115, QuadMultiplier = 385, QuintMultiplier = 1080 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 375, QuadMultiplier = 1270, QuintMultiplier = 3550 }
+                    ]
+                },
+                new SlotMachineOptions
+                {
+                    Key = "kingpin",
+                    Name = "Kingpin",
+                    Blurb = "The table boss watches every pull.",
+                    MinBet = 1_000,
+                    MaxBet = 10_000,
+                    MinCasinoRepLevel = 3,
+                    MinNetWorth = 500_000,
+                    JackpotSeed = 500_000,
+                    // 95.5% back. Pairs are worth almost nothing here; the money is in the triples.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "chip", Label = "Casino Chip", Weight = 30, PairMultiplier = 0, TripleMultiplier = 4, QuadMultiplier = 14, QuintMultiplier = 42 },
+                        new SlotSymbolOptions { Key = "whiskey", Label = "Whiskey", Weight = 24, PairMultiplier = 0, TripleMultiplier = 9, QuadMultiplier = 31, QuintMultiplier = 92 },
+                        new SlotSymbolOptions { Key = "cigar", Label = "Cigar", Weight = 19, PairMultiplier = 0, TripleMultiplier = 19, QuadMultiplier = 66, QuintMultiplier = 205 },
+                        new SlotSymbolOptions { Key = "watch", Label = "Pocket Watch", Weight = 13, PairMultiplier = 0, TripleMultiplier = 43, QuadMultiplier = 150, QuintMultiplier = 445 },
+                        new SlotSymbolOptions { Key = "ring", Label = "Signet Ring", Weight = 8, PairMultiplier = 0, TripleMultiplier = 94, QuadMultiplier = 330, QuintMultiplier = 980 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 5, PairMultiplier = 0, TripleMultiplier = 205, QuadMultiplier = 720, QuintMultiplier = 2160 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 455, QuadMultiplier = 1590, QuintMultiplier = 4760 }
+                    ]
+                },
+                new SlotMachineOptions
+                {
+                    Key = "vault",
+                    Name = "The Vault",
+                    Blurb = "A private cage for people with more cash than caution.",
+                    MinBet = 10_000,
+                    MaxBet = 100_000,
+                    MinCasinoRepLevel = 4,
+                    MinNetWorth = 2_500_000,
+                    JackpotSeed = 5_000_000,
+                    // 96.2% back and almost three spins in four pay nothing at all. No pair pays below
+                    // a Seven, so anything that lands here is a triple and is worth having: this is the
+                    // room where the money is in the tail rather than in the grind.
+                    //
+                    // The paytable stops at 500x rather than reaching for a headline number. The top
+                    // symbol is one in a million on a lane, so it barely shows up in what the room
+                    // feels like - dropping it from 2,650x cost eight percent of the volatility and
+                    // nothing else, and took the largest thing this machine can hand over from
+                    // $265m to $50m. The progressive is uncapped and wants all five lanes; that is
+                    // where a moonshot belongs.
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "ledger", Label = "Ledger", Weight = 26, PairMultiplier = 0, TripleMultiplier = 6, QuadMultiplier = 21, QuintMultiplier = 66 },
+                        new SlotSymbolOptions { Key = "key", Label = "Vault Key", Weight = 22, PairMultiplier = 0, TripleMultiplier = 11, QuadMultiplier = 38, QuintMultiplier = 120 },
+                        new SlotSymbolOptions { Key = "bar", Label = "Gold Bar", Weight = 18, PairMultiplier = 0, TripleMultiplier = 18, QuadMultiplier = 52, QuintMultiplier = 210 },
+                        new SlotSymbolOptions { Key = "spade", Label = "Ace of Spades", Weight = 15, PairMultiplier = 0, TripleMultiplier = 32, QuadMultiplier = 115, QuintMultiplier = 365 },
+                        new SlotSymbolOptions { Key = "skull", Label = "Skull", Weight = 11, PairMultiplier = 0, TripleMultiplier = 62, QuadMultiplier = 225, QuintMultiplier = 710 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 0, TripleMultiplier = 145, QuadMultiplier = 520, QuintMultiplier = 1650 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 475, QuadMultiplier = 1720, QuintMultiplier = 2200 }
+                    ]
+                }
+            ];
+        }
+
+        if (Levels.Count == 0)
+        {
+            Levels =
+            [
+                new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
+                new CasinoRepLevelOptions { Level = 2, Name = "Regular", Rep = 100 },
+                new CasinoRepLevelOptions { Level = 3, Name = "High Roller", Rep = 1_000 },
+                new CasinoRepLevelOptions { Level = 4, Name = "House Name", Rep = 5_000 }
+            ];
+        }
+
+        if (CompRewards.Count == 0)
+        {
+            CompRewards =
+            [
+                new CompRewardOptions
+                {
+                    Key = "room",
+                    Name = "A room upstairs",
+                    Blurb = "The house keeps one for people who play. Sleep it off and start again.",
+                    Cost = 500,
+                    Turns = 25
+                },
+                new CompRewardOptions
+                {
+                    Key = "cage",
+                    Name = "The cage settles up",
+                    Blurb = "Walk to the window and take what you are owed in cash.",
+                    Cost = 1_000,
+                    Cash = 1_000,
+                    MinCasinoRepLevel = 2
+                },
+                new CompRewardOptions
+                {
+                    Key = "word",
+                    Name = "A word with the law",
+                    Blurb = "Somebody the house knows makes a call, and a file gets thinner.",
+                    Cost = 2_500,
+                    Heat = 20,
+                    MinCasinoRepLevel = 3
+                },
+                new CompRewardOptions
+                {
+                    Key = "suite",
+                    Name = "The suite, and a car home",
+                    Blurb = "The floor manager stops calling you sir and starts using your name.",
+                    Cost = 10_000,
+                    Turns = 100,
+                    Cash = 5_000,
+                    Heat = 40,
+                    MinCasinoRepLevel = 4
+                }
+            ];
+        }
+
+        Roulette.ApplyDefaultsWhereEmpty();
+        Blackjack.ApplyDefaultsWhereEmpty();
+
+        if (SlotSymbols.Count == 0)
+        {
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "cash", Label = "Cash Stack", Weight = 28, PairMultiplier = 2, TripleMultiplier = 8 },
+                new SlotSymbolOptions { Key = "chain", Label = "Gold Chain", Weight = 22, PairMultiplier = 2, TripleMultiplier = 12 },
+                new SlotSymbolOptions { Key = "pistol", Label = "Pistol", Weight = 18, PairMultiplier = 2, TripleMultiplier = 18 },
+                new SlotSymbolOptions { Key = "ride", Label = "Low-Rider", Weight = 14, PairMultiplier = 3, TripleMultiplier = 30 },
+                new SlotSymbolOptions { Key = "crown", Label = "Crew Crown", Weight = 10, PairMultiplier = 4, TripleMultiplier = 55 },
+                new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 7, PairMultiplier = 8, TripleMultiplier = 100 },
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 20, TripleMultiplier = 500 }
+            ];
+        }
+    }
+
+    public IReadOnlyList<CasinoRepLevelOptions> Ladder()
+        => Levels.OrderBy(x => x.Rep).ThenBy(x => x.Level).ToList();
+
+    public CasinoRepLevelOptions? LevelFor(double rep)
+        => Ladder().LastOrDefault(x => rep >= x.Rep);
+
+    public CasinoRepLevelOptions? NextLevelAfter(double rep)
+        => Ladder().FirstOrDefault(x => rep < x.Rep);
+
+    public CasinoRepLevelOptions? Level(int level)
+        => Levels.FirstOrDefault(x => x.Level == level);
+
+    public CompRewardOptions? Reward(string? key)
+        => CompRewards.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public string LevelName(int level)
+        => Level(level)?.Name ?? $"level {level}";
+}
+
+/// <summary>
+/// One thing the cage will do for you, and what it costs in comps.
+///
+/// Every reward is the same shape - some turns, some cash, some heat taken off - so the menu is
+/// configuration rather than code, and a new one is a row in appsettings rather than a new branch in
+/// the claim path. A reward may grant any combination, including all three.
+///
+/// Standing gates the menu and comps pay for it. That is how a real floor works and it is also the
+/// only arrangement in which both numbers matter: a rank that could be spent would make standing a
+/// currency, and a balance that opened rooms would let one big night buy the whole ladder.
+/// </summary>
+public sealed class CompRewardOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+
+    /// <summary>Dollars of comps it costs to claim.</summary>
+    public long Cost { get; set; }
+
+    /// <summary>Turns handed back, up to whatever the player's hideout will hold.</summary>
+    public int Turns { get; set; }
+
+    /// <summary>Cash paid at the window.</summary>
+    public long Cash { get; set; }
+
+    /// <summary>Points of heat taken off the file.</summary>
+    public double Heat { get; set; }
+
+    public int MinCasinoRepLevel { get; set; } = 1;
+}
+
+/// <summary>
+/// The wheel.
+///
+/// Unlike the slots, roulette's return needs no tuning at all: it falls out of the wheel. Thirty-six
+/// to one paid on a straight number that comes up one time in thirty-seven returns 97.3%, and adding
+/// a second zero makes it one in thirty-eight and 94.7%. Every bet on the table carries the same edge
+/// as every other, which is the thing that makes it roulette rather than a paytable.
+///
+/// So the tables differ by how many zeroes they carry, and that is the whole of it. The double-zero
+/// wheel is out front where anybody can reach it; the single-zero is in the back and wants standing,
+/// which is how a real floor arranges the same two wheels.
+/// </summary>
+public sealed class RouletteOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>What a spin of the wheel costs, in turns. The same as a pull on the slots.</summary>
+    public int SpinTurnCost { get; set; } = 1;
+
+    /// <summary>How many separate bets can ride on one spin.</summary>
+    public int MaxBetsPerSpin { get; set; } = 12;
+
+    public List<RouletteTableOptions> Tables { get; set; } = [];
+
+    public RouletteTableOptions? Table(string? key)
+        => Tables.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (Tables.Count > 0) return;
+
+        Tables =
+        [
+            new RouletteTableOptions
+            {
+                Key = "front",
+                Name = "The Front Table",
+                Blurb = "Two zeroes and a crowd. Nobody here is counting anything.",
+                Zeroes = 2,
+                MinBet = 25,
+                MaxBet = 2_500
+            },
+            new RouletteTableOptions
+            {
+                Key = "back",
+                Name = "The Back Table",
+                Blurb = "One zero, a quieter room, and a croupier who knows your name.",
+                Zeroes = 1,
+                MinBet = 500,
+                MaxBet = 50_000,
+                MinCasinoRepLevel = 3,
+                MinNetWorth = 500_000
+            }
+        ];
+    }
+}
+
+/// <summary>
+/// The pit.
+///
+/// Blackjack is the only game here that can be played badly, and therefore the only one whose return
+/// is a range rather than a number: somewhere near 99.5% played correctly and a good deal worse
+/// otherwise. That makes it the best thing on the floor for anybody willing to learn it, which is the
+/// reason it sits behind the most standing of any game in the casino.
+/// </summary>
+public sealed class BlackjackOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>What a hand costs in turns, charged on the deal rather than on each card.</summary>
+    public int SpinTurnCost { get; set; } = 1;
+
+    /// <summary>How many decks go in the shoe. Shuffled fresh every hand, so counting them is idle.</summary>
+    public int Decks { get; set; } = 6;
+
+    /// <summary>
+    /// Whether the dealer takes another card on a seventeen that still counts an ace as eleven.
+    /// Worth about two tenths of a percent to the house, and the difference between the two rules
+    /// most tables in the world advertise on the felt.
+    /// </summary>
+    public bool DealerHitsSoft17 { get; set; }
+
+    /// <summary>
+    /// What a natural pays, as a fraction. Three to two is the honest number; the six to five a lot of
+    /// real floors quietly moved to costs a player over a percent and is why it is configuration.
+    /// </summary>
+    public int BlackjackPaysNumerator { get; set; } = 3;
+    public int BlackjackPaysDenominator { get; set; } = 2;
+
+    /// <summary>
+    /// How many times a round may be split, so three of them is four hands.
+    ///
+    /// A limit rather than none, because splitting is the one move that can be made again on its own
+    /// result and a table with no ceiling on it is a table that can be asked for an arbitrary number
+    /// of stakes off one deal.
+    /// </summary>
+    public int MaxSplits { get; set; } = 3;
+
+    /// <summary>
+    /// Whether the house offers insurance when the dealer shows an ace.
+    ///
+    /// It pays two to one on a bet that the hole card is a ten, and only four ranks in thirteen are,
+    /// so it is the worst bet on the floor and the most famous one. It is here because a blackjack
+    /// table without it is not a blackjack table, not because anybody should ever take it.
+    /// </summary>
+    public bool InsuranceEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Whether split aces take one card each and stop.
+    ///
+    /// Every house makes this exception. A pair of aces that could be resplit and drawn on freely is
+    /// the strongest position in the game by a distance, and the rule is what keeps splitting them
+    /// from being the only move anybody thinks about.
+    /// </summary>
+    public bool OneCardOnSplitAces { get; set; } = true;
+
+    public List<BlackjackTableOptions> Tables { get; set; } = [];
+
+    public BlackjackTableOptions? Table(string? key)
+        => Tables.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    public void ApplyDefaultsWhereEmpty()
+    {
+        if (Tables.Count > 0) return;
+
+        Tables =
+        [
+            new BlackjackTableOptions
+            {
+                Key = "pit",
+                Name = "The Pit",
+                Blurb = "Six decks, a dealer who stands on everything, and no help at all.",
+                AllowsSurrender = false,
+                MinBet = 100,
+                MaxBet = 10_000,
+                MinCasinoRepLevel = 2,
+                MinNetWorth = 50_000
+            },
+            new BlackjackTableOptions
+            {
+                Key = "high",
+                Name = "The High Table",
+                Blurb = "One hand at a time, nobody watching the clock, and a hand you can walk away from.",
+                AllowsSurrender = true,
+                MinBet = 5_000,
+                MaxBet = 250_000,
+                MinCasinoRepLevel = 4,
+                MinNetWorth = 2_500_000
+            }
+        ];
+    }
+}
+
+public sealed class BlackjackTableOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+    public long MinBet { get; set; } = 100;
+    public long MaxBet { get; set; } = 10_000;
+    public int MinCasinoRepLevel { get; set; } = 1;
+    public long MinNetWorth { get; set; }
+
+    /// <summary>
+    /// Whether a hand can be given up for half the stake before the dealer draws.
+    ///
+    /// Late surrender, so it is only ever offered once the dealer has been shown not to be holding a
+    /// natural. It is worth about a tenth of a percent to somebody who uses it correctly and nothing
+    /// at all to everybody else, which is why the cheap table does not have it and the dear one does.
+    /// </summary>
+    public bool AllowsSurrender { get; set; }
+}
+
+public sealed class RouletteTableOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+
+    /// <summary>
+    /// One or two. This single number is the entire difference between the tables: it decides how many
+    /// pockets the ball can land in, and therefore the house edge on every bet the table takes.
+    /// </summary>
+    public int Zeroes { get; set; } = 2;
+
+    public long MinBet { get; set; } = 25;
+    public long MaxBet { get; set; } = 2_500;
+    public int MinCasinoRepLevel { get; set; } = 1;
+    public long MinNetWorth { get; set; }
+}
+
+public sealed class CasinoRepLevelOptions
+{
+    public int Level { get; set; } = 1;
+    public string Name { get; set; } = string.Empty;
+    public int Rep { get; set; }
+}
+
+public sealed class SlotMachineOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Blurb { get; set; } = string.Empty;
+    public long MinBet { get; set; } = 1;
+    public long MaxBet { get; set; } = 100;
+
+    /// <summary>
+    /// This machine's own reel and paytable. Empty falls back to the floor's shared list, so a machine
+    /// only has to say what makes it different.
+    ///
+    /// There used to be one list for the whole floor and a MaxWinMultiplier per machine to tell the
+    /// rooms apart, which does not work: a ceiling cannot make a machine pay differently, only less.
+    /// It flattened the top of the cheap rooms into a single number - on the Sidewalk a Crew Crown at
+    /// one in a thousand, a Seven at one in three thousand and a Vault at one in a million all paid
+    /// exactly fifty times the lane, so the rarest symbol on the reel felt like the fifth rarest. A
+    /// machine that is meant to pay differently needs its own paytable, which is this.
+    /// </summary>
+    public List<SlotSymbolOptions> Symbols { get; set; } = [];
+
+    public int MinCasinoRepLevel { get; set; } = 1;
+    public long MinNetWorth { get; set; }
+
+    /// <summary>
+    /// What this machine's progressive resets to after somebody takes it, and therefore the least it
+    /// can ever be worth. Set per machine rather than once for the floor because the rooms are three
+    /// orders of magnitude apart in stake: a seed worth chasing on the Sidewalk is a rounding error
+    /// in the Vault, and one worth chasing in the Vault would be the only thing anybody ever played.
+    /// </summary>
+    public long JackpotSeed { get; set; }
+}
+
+/// <summary>
+/// Spins on the house, handed out at random.
+///
+/// The one thing on the floor that is not paid for by the person receiving it, which is the whole
+/// point: every other good thing here is bought. They replay the pull that won them - same machine,
+/// same stake, same lanes - so they cannot be won cheaply and spent expensively.
+/// </summary>
+public sealed class CasinoFreeSpinOptions
+{
+    /// <summary>
+    /// Off by default here and on in the shipped configuration, deliberately.
+    ///
+    /// The trigger is a roll against the same generator the reels use, and the test harness runs
+    /// machines on generators that return zero - which is below any chance worth setting, so every
+    /// spin in the suite would win free spins and no test that spends cash would spend any. The
+    /// shipped configuration is what turns this on for the real game.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// The chance a paid pull ends with the house owing you some, as a fraction of one.
+    ///
+    /// Rolled against directly rather than clamped where it is read, so one is genuinely the ceiling:
+    /// above it every pull would owe another and the machine would never stop paying for itself.
+    /// </summary>
+    [Range(0, 1)]
+    public double ChancePerSpin { get; set; } = 0.02;
+
+    /// <summary>How many are owed when it happens.</summary>
+    public int Award { get; set; } = 5;
+}
+
+/// <summary>
+/// The progressive: a slice off every wager on a machine, pooled until one player takes the lot.
+///
+/// It is deliberately not part of the paytable. The paytable is capped per machine so a cheap room
+/// cannot pay a rich room's top award, and a pot that respected that cap would not be a pot. This is
+/// the one award on the floor that pays whatever it has grown to.
+/// </summary>
+public sealed class CasinoJackpotOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// The share of every wager that feeds the pot, as a percentage. It comes out of the return the
+    /// paytable would otherwise have paid and goes back to the floor in one lump, so the money the
+    /// house holds does not move - only how lumpy the giving back is.
+    ///
+    /// A percentage of the wager, so a hundred is all of it. Past that the meter would grow faster
+    /// than the money going into it and the floor would pay out more than it ever took.
+    /// </summary>
+    [Range(0, 100)]
+    public double ContributionPercent { get; set; } = 1.0;
+
+    /// <summary>Which symbol counts towards the pot. Matched against the symbol keys on the reels.</summary>
+    public string Symbol { get; set; } = "vault";
+
+    /// <summary>
+    /// How many of that symbol have to land anywhere on the nine cells.
+    ///
+    /// Anywhere, rather than on a lane, and counted rather than lined up: three Vaults on a payline is
+    /// one spin in a million, which at the size of this world is a pot nobody would ever collect.
+    /// Three anywhere on the grid is about one spin in twelve thousand, which is rare enough to be an
+    /// event and common enough to be a real one.
+    /// </summary>
+    public int SymbolsRequired { get; set; } = 4;
+
+    /// <summary>
+    /// Whether the pot only pays when every lane is bought. It does, the way it does on a real floor:
+    /// a progressive fed by everybody's money and collectable on the minimum stake is a pot the
+    /// cheapest possible spin is the correct way to chase.
+    /// </summary>
+    public bool RequireAllPaylines { get; set; } = true;
+}
+
+/// <summary>
+/// One face on a reel, and what a run of it pays.
+///
+/// A lane is read from the left: however many of the same symbol it opens with is the run, and the run
+/// decides which of these is paid. Two of a kind pays on almost nothing - it is worth several percent
+/// of a machine's whole return on a common symbol, so it is a structural choice about how often a lane
+/// does anything rather than a number to tune with.
+/// </summary>
+public sealed class SlotSymbolOptions
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Weight { get; set; } = 1;
+    public int PairMultiplier { get; set; }
+    public int TripleMultiplier { get; set; }
+    public int QuadMultiplier { get; set; }
+    public int QuintMultiplier { get; set; }
+
+    /// <summary>What a run of this length pays, or nothing if it is too short to pay at all.</summary>
+    public int PayFor(int run) => run switch
+    {
+        2 => Math.Max(0, PairMultiplier),
+        3 => Math.Max(0, TripleMultiplier),
+        4 => Math.Max(0, QuadMultiplier),
+        >= 5 => Math.Max(0, QuintMultiplier),
+        _ => 0
+    };
+}
+
+/// <summary>
 /// Getting swept up working the streets, and what it costs to get people back.
 ///
 /// The street had no downside event at all. It draws heat, but heat only ever answered for what was
@@ -2054,6 +2873,19 @@ public sealed class LookoutLevelOptions
 
     /// <summary>How much of an hour's raid chance the warning takes off. Never all of it.</summary>
     public int BustChanceReductionPercent { get; set; }
+
+    /// <summary>
+    /// How much notice the room gives of a crew coming in from out of town, in minutes.
+    ///
+    /// The lookout's second job, and the reason it stopped being the room nobody buys. It buys notice
+    /// and never detail: a player is told something is on its way and nothing else - not who, not what
+    /// kind - so the answer they reach for is a guess. Medicine, a bigger guard and a better cut are
+    /// three different purchases and only one of them is the right one.
+    ///
+    /// A ladder of minutes rather than a chance to spot it. A warning that sometimes does not arrive is
+    /// a warning nobody can plan around, and the whole value here is being able to plan.
+    /// </summary>
+    public int WarningMinutes { get; set; }
 
     public long UpgradeCost { get; set; }
 }
@@ -2595,7 +3427,13 @@ public sealed class ChatOptions
     /// <summary>
     /// Characters in one message. Long enough to say something, short enough that nobody can push the
     /// rest of the room off the screen with a single paste.
+    ///
+    /// The ceiling is the database column and not a matter of taste. Raised above it, this setting
+    /// would let a player write a line the game accepts and the database refuses - a 500 on an
+    /// ordinary message, arriving some time after the change that caused it and looking nothing like
+    /// its cause.
     /// </summary>
+    [Range(1, ChatMessage.MaxBodyLength)]
     public int MaxLength { get; set; } = 280;
 
     /// <summary>

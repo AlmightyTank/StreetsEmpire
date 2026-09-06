@@ -24,6 +24,177 @@ public sealed record SellProductRequest(string? Product, int Quantity);
 public sealed record TravelRequest(string? City);
 public sealed record StoreBuyRequest(string? ItemKey, int Quantity);
 public sealed record BankRequest(long Amount);
+
+/// <summary>Moving one good between the player's bag and the hideout's shelves.</summary>
+public sealed record StashRequest(string? Item, int Quantity);
+
+/// <summary>Moving money between the player's pocket and the safe.</summary>
+public sealed record SafeRequest(long Amount);
+
+/// <summary>The gun to put on the player's hip, or null to carry nothing.</summary>
+public sealed record EquipRequest(string? Weapon);
+public sealed record SlotSpinRequest(string? MachineKey, long Bet, int Paylines = 1);
+
+public sealed record ClaimCompRequest(string? RewardKey);
+
+public sealed record BlackjackDealRequest(string? TableKey, long Bet);
+
+/// <param name="IsActive">Whether this is the hand the table is waiting on.</param>
+public sealed record BlackjackHandView(
+    int Index,
+    IReadOnlyList<string> Cards,
+    int Best,
+    bool Soft,
+    long Bet,
+    string Status,
+    long Payout,
+    long NetResult,
+    bool IsActive,
+    bool CanDouble,
+    bool CanSplit,
+    bool CanSurrender);
+
+/// <param name="DealerCards">
+/// What the dealer is showing. While a round is live this is the up card alone - the hole card is
+/// dealt at the same time as everything else and never leaves the server until the round is over.
+/// </param>
+/// <param name="DealerBest">Read off the cards above, so it gives nothing away either.</param>
+/// <param name="AwaitingInsurance">
+/// Whether the dealer is showing an ace and the table is waiting on that question before anything
+/// else can happen. Nothing about the hand can be decided until it is answered.
+/// </param>
+/// <param name="InsuranceBet">What went up on insurance, which is nothing when it was declined.</param>
+public sealed record BlackjackRoundView(
+    long Id,
+    string TableKey,
+    long Bet,
+    IReadOnlyList<BlackjackHandView> Hands,
+    IReadOnlyList<string> DealerCards,
+    int DealerBest,
+    bool InPlay,
+    string Status,
+    long Payout,
+    long NetResult,
+    bool AwaitingInsurance,
+    long InsuranceCost,
+    bool CanInsure,
+    long InsuranceBet,
+    long InsurancePayout);
+
+public sealed record BlackjackTableResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    long MinBet,
+    long MaxBet,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool AllowsSurrender,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record BlackjackRowHand(
+    IReadOnlyList<string> Cards,
+    int Best,
+    long Bet,
+    string Status,
+    long NetResult);
+
+public sealed record BlackjackRowResponse(
+    long Id,
+    string TableKey,
+    string TableName,
+    IReadOnlyList<BlackjackRowHand> Hands,
+    IReadOnlyList<string> DealerCards,
+    int DealerBest,
+    string Status,
+    long Bet,
+    long Payout,
+    long NetResult,
+    DateTime SettledAtUtc);
+
+public sealed record BlackjackBoardResponse(
+    bool Enabled,
+    IReadOnlyList<BlackjackTableResponse> Tables,
+    int HandTurnCost,
+    bool DealerHitsSoft17,
+    int BlackjackPaysNumerator,
+    int BlackjackPaysDenominator,
+    int MaxSplits,
+    bool InsuranceEnabled,
+    BlackjackRoundView? Round,
+    IReadOnlyList<BlackjackRowResponse> Recent);
+
+public sealed record BlackjackActionResponse(
+    BlackjackRoundView Round,
+    long Cash,
+    long Turns,
+    BlackjackBoardResponse Board);
+
+public sealed record RouletteBetRequest(string Kind, string? Value, long Amount);
+
+public sealed record RouletteSpinRequest(string? TableKey, IReadOnlyList<RouletteBetRequest>? Bets);
+
+/// <param name="RedPockets">Which numbers are red. Not derivable from the number, so the board is told.</param>
+public sealed record RouletteBoardResponse(
+    bool Enabled,
+    IReadOnlyList<RouletteTableResponse> Tables,
+    IReadOnlyList<RouletteBetKindResponse> BetKinds,
+    IReadOnlyList<int> RedPockets,
+    int SpinTurnCost,
+    int MaxBetsPerSpin,
+    IReadOnlyList<RouletteSpinRowResponse> Recent);
+
+/// <param name="ReturnPercent">
+/// Exact rather than measured. Every bet pays as though the zeroes were not on the wheel, so what
+/// comes back is thirty-six over however many pockets there are, and that is the same figure for
+/// every bet the table takes.
+/// </param>
+public sealed record RouletteTableResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    int Zeroes,
+    int Pockets,
+    double ReturnPercent,
+    long MinBet,
+    long MaxBet,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record RouletteBetKindResponse(string Key, string Name, int Odds, string Blurb, bool TakesNumber);
+
+public sealed record RouletteSettledBetResponse(
+    string Kind,
+    string Label,
+    string Value,
+    long Amount,
+    long Payout);
+
+public sealed record RouletteSpinRowResponse(
+    long Id,
+    string TableKey,
+    string TableName,
+    string Pocket,
+    string Colour,
+    IReadOnlyList<RouletteSettledBetResponse> Bets,
+    long Staked,
+    long PayoutAmount,
+    long NetResult,
+    DateTime CreatedAtUtc);
+
+public sealed record RouletteSpinResponse(
+    RouletteSpinRowResponse Spin,
+    string Pocket,
+    string Colour,
+    long Cash,
+    long Turns,
+    int TurnsSpent,
+    int RepEarned,
+    int CompsEarned,
+    RouletteBoardResponse Board);
 public sealed record UpdateCrewSettingsRequest(int HoeCutPercent);
 public sealed record CrewRequest(string? Role, int Quantity);
 public sealed record MoraleRecoveryRequest(string? Strategy);
@@ -76,12 +247,218 @@ public sealed record CombatAttackRequest(
 /// One entry on the attack menu, priced and gated for the player looking at it. Sent from the server so
 /// the client never has to know a rule: a method it cannot use arrives already carrying the reason.
 /// </summary>
+/// <summary>
+/// What it costs to send a strike to a house in another town, and how long it is on the road.
+///
+/// Null for a neighbour, which is how the page tells the two apart without knowing the rule: a trip
+/// that exists is a trip, and one that does not is a strike that lands the moment it is pressed.
+/// </summary>
+public sealed record StrikeTripResponse(
+    string TargetCity,
+    int TravelTurns,
+    /// <summary>One leg. They arrive after this and are home again after twice it.</summary>
+    int MinutesEachWay,
+    long Fare,
+    /// <summary>The full turn price per method, the drive included, keyed by method.</summary>
+    IReadOnlyDictionary<string, int> TurnCosts,
+    /// <summary>Whether the loud methods take an odds penalty for the distance, and how much.</summary>
+    int HitChancePenaltyPercent,
+    /// <summary>
+    /// The odds the drive home goes wrong, for a crew carrying something that is not theirs.
+    ///
+    /// Quoted before the commitment because it is the whole of what a jacking and a poach are buying
+    /// at distance, and a risk somebody is judged by after the fact but never shown beforehand is not
+    /// a decision - it is a surprise.
+    /// </summary>
+    int ReturnRiskPercent);
+
+/// <summary>One of this player's crews on the road, as they see it.</summary>
+public sealed record PendingStrikeResponse(
+    long Id,
+    string Method,
+    string MethodLabel,
+    string TargetName,
+    string TargetCity,
+    string Status,
+    DateTime ArrivesAtUtc,
+    DateTime ReturnsAtUtc,
+    string Summary,
+    string? Outcome);
+
 public sealed record AttackMethodResponse(
     string Key,
     string Label,
     int TurnCost,
     string Description,
     string? BlockedReason);
+
+public sealed record CasinoBoardResponse(
+    IReadOnlyList<SlotMachineResponse> SlotMachines,
+    IReadOnlyList<SlotPaylineResponse> Paylines,
+    CasinoRepResponse Reputation,
+    CasinoStatsResponse Stats,
+    IReadOnlyList<CasinoTransactionResponse> Recent,
+    CasinoJackpotRulesResponse JackpotRules,
+    IReadOnlyList<CasinoJackpotDropResponse> RecentJackpots,
+    int SpinTurnCost,
+    CasinoCompsResponse Comps,
+    CasinoFreeSpinsResponse FreeSpins);
+
+/// <summary>What the house still owes, and the ticket it is owed on.</summary>
+public sealed record CasinoFreeSpinsResponse(
+    bool Enabled,
+    int Owed,
+    string? MachineKey,
+    string? MachineName,
+    long Bet,
+    int Paylines,
+    long TicketValue);
+
+/// <param name="DollarsWageredPerComp">What a dollar of comps costs in play, for the card to say so.</param>
+public sealed record CasinoCompsResponse(
+    long Balance,
+    int DollarsWageredPerComp,
+    IReadOnlyList<CompRewardResponse> Rewards);
+
+public sealed record CompRewardResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    long Cost,
+    int Turns,
+    long Cash,
+    double Heat,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
+
+/// <summary>What the floor has to say about how the pot is won, so the rule is on the machine.</summary>
+public sealed record CasinoJackpotRulesResponse(
+    bool Enabled,
+    string SymbolLabel,
+    int SymbolsRequired,
+    bool RequireAllPaylines,
+    double ContributionPercent);
+
+public sealed record CasinoJackpotDropResponse(
+    string MachineKey,
+    string MachineName,
+    string PlayerName,
+    long Amount,
+    DateTime WonAtUtc);
+
+public sealed record SlotPaylineResponse(
+    int Index,
+    string Name,
+    IReadOnlyList<int> Cells);
+
+/// <param name="TopAward">
+/// The largest the paytable can pay on one lane at this machine's maximum stake. It used to be
+/// advertised as that figure multiplied by every lane, which is a number requiring all nine cells to
+/// come up on the rarest symbol on the reel - about one spin in a quintillion. A board should quote a
+/// prize somebody could actually be paid.
+/// </param>
+/// <param name="Progressive">What the machine's pot stands at right now, seed included.</param>
+/// <param name="ReturnPercent">
+/// What this machine hands back over a long enough evening, worked out from its own reel. Published
+/// because the rooms no longer return the same thing: the floor holds most on the cheapest machine and
+/// least in the high-limit room, and a player owed better odds for climbing should be able to see it.
+/// </param>
+/// <param name="Paytable">What each symbol pays here, richest first.</param>
+public sealed record SlotMachineResponse(
+    string Key,
+    string Name,
+    string Blurb,
+    long MinBet,
+    long MaxBet,
+    long TopAward,
+    double ReturnPercent,
+    IReadOnlyList<SlotSymbolPayResponse> Paytable,
+    long Progressive,
+    int MaxPaylines,
+    int MinRepLevel,
+    string? MinRepLevelName,
+    bool Locked,
+    string? LockedReason);
+
+public sealed record SlotSymbolPayResponse(string Label, int Pair, int Triple, int Quad, int Quint);
+
+/// <param name="Run">How many cells from the left actually matched. Two of a kind is a win two cells wide.</param>
+/// <param name="Cells">Exactly the cells it ran across, so the board can light those and no others.</param>
+public sealed record SlotWinResponse(
+    int PaylineIndex,
+    string PaylineName,
+    string Symbol,
+    int Run,
+    IReadOnlyList<int> Cells,
+    long Payout);
+
+public sealed record CasinoRepResponse(
+    int Rep,
+    int Level,
+    string LevelName,
+    int? NextLevel,
+    string? NextLevelName,
+    int? NextLevelRep,
+    int RepToNextLevel,
+    int ProgressPercent,
+    /// <summary>Standing earned by a spin that buys every lane at the machine's top stake.</summary>
+    double RepPerFullTicket);
+
+/// <param name="Plays">
+/// Every stake taken on the floor, not only the ones with reels behind them - a hand of blackjack and
+/// a turn of the wheel are both a play.
+/// </param>
+public sealed record CasinoStatsResponse(
+    int Plays,
+    long Wagered,
+    long Won,
+    long Net);
+
+public sealed record CasinoTransactionResponse(
+    long Id,
+    string GameType,
+    string MachineKey,
+    string MachineName,
+    int Paylines,
+    int WinningPaylines,
+    long BetAmount,
+    long PayoutAmount,
+    long NetResult,
+    IReadOnlyList<string> Symbols,
+    /// <summary>Whether the house staked this one. Its net is the payout, because nothing went in.</summary>
+    bool IsFreeSpin,
+    IReadOnlyList<SlotWinResponse> Wins,
+    bool Jackpot,
+    long JackpotAmount,
+    DateTime CreatedAtUtc);
+
+public sealed record SlotSpinResponse(
+    CasinoTransactionResponse Transaction,
+    IReadOnlyList<string> Symbols,
+    long Cash,
+    long BankCash,
+    int Turns,
+    int TurnsSpent,
+    int RepEarned,
+    int CompsEarned,
+    CasinoRepResponse Reputation,
+    CasinoStatsResponse Stats,
+    bool WasFreeSpin,
+    int FreeSpinsAwarded,
+    int FreeSpinsLeft,
+    CasinoBoardResponse Board);
+
+public sealed record ClaimCompResponse(
+    string Summary,
+    int TurnsGranted,
+    long CashPaid,
+    double HeatCleared,
+    long Turns,
+    long Cash,
+    double Heat,
+    CasinoBoardResponse Board);
 
 public sealed record StoreSellRequest(string? ItemKey, int Quantity);
 
@@ -641,7 +1018,13 @@ public sealed record TerritoryBoardResponse(
     AllianceCityControlResponse? AllianceCityControl,
     /// <summary>The whole development ladder, so the page can show what is ahead rather than one rung.</summary>
     IReadOnlyList<TerritoryDevelopmentRungResponse> DevelopmentLadder,
-    IReadOnlyList<TerritoryResponse> Territories);
+    IReadOnlyList<TerritoryResponse> Territories,
+    /// <summary>
+    /// Ground this player holds in other towns. Empty for anybody who has not left one behind. It is not
+    /// part of <see cref="Territories"/> because that is the town's whole map, rivals included, and this
+    /// is only ever your own - held from a distance, paying nothing, and still worth taking off you.
+    /// </summary>
+    IReadOnlyList<TerritoryResponse> Away);
 
 /// <summary>One rung of the ladder as the map page lists it.</summary>
 public sealed record TerritoryDevelopmentRungResponse(
@@ -671,7 +1054,16 @@ public sealed record DashboardResponse(
     /// and for anybody who has asked for it again from their settings.
     /// </summary>
     bool WalkthroughDue,
+    /// <summary>The town the player is standing in. The operation's town is on <see cref="Location"/>.</summary>
     string City,
+    /// <summary>
+    /// Where the player is against where their empire is, and what that costs them from here.
+    ///
+    /// At the top of the response rather than buried in the hideout block, because almost every panel
+    /// on the page has to know it: the street cannot be worked from another town, the counter puts what
+    /// it sells into a different pile, and the safe is not openable at all.
+    /// </summary>
+    LocationResponse Location,
     CityMarketResponse CurrentMarket,
     IReadOnlyList<CityMarketResponse> CityMarkets,
     TravelStatusResponse Travel,
@@ -717,6 +1109,17 @@ public sealed record DashboardResponse(
     int Coke,
     int Moonshine,
     int Cut,
+    /// <summary>
+    /// What the player is physically carrying, which is a different pile from every count above it.
+    ///
+    /// The counts above are the hideout's shelves, in the hideout's town, and they are what feeds the
+    /// crew and arms the thugs. This is what is in the player's hands and on the plane with them.
+    /// </summary>
+    StashResponse Carried,
+    /// <summary>What one person can carry, before anything is on them.</summary>
+    StashResponse CarryCapacity,
+    /// <summary>The gun on their hip, or null. Always one of the guns in <see cref="Carried"/>.</summary>
+    string? EquippedWeapon,
     int WeedSellPrice,
     int CokeSellPrice,
     /// <summary>How clean the coke pile is, and what that does to its price here.</summary>
@@ -729,6 +1132,18 @@ public sealed record DashboardResponse(
     IReadOnlyList<PimpResponse> FallenCrew,
     CombatCrewResponse CombatCrew,
     CombatStatusResponse CombatStatus,
+    /// <summary>
+    /// Whether the lookout can see anybody coming in off the road, and nothing more than that.
+    ///
+    /// A bare yes or no on purpose. The room buys notice, never detail: not who, not what kind, not
+    /// how long. Medicine, a bigger guard and a better cut are three different purchases and only one
+    /// of them answers what is actually coming, so having to guess is the decision.
+    ///
+    /// Always false for a house with no lookout, or one with a wrecked one. Blind is the default.
+    /// </summary>
+    bool StrikeInbound,
+    /// <summary>This player's own crews on the road, out and coming back.</summary>
+    IReadOnlyList<PendingStrikeResponse> StrikesOut,
     int UnreadDefenceAlerts,
     IReadOnlyList<StoreItemResponse> Store,
     /// <summary>Where this player stands with the counter, and what standing is costing or saving them.</summary>
@@ -1024,6 +1439,8 @@ public sealed record PlayerProfileResponse(
     /// attacker alone and never sees who is being looked at.
     /// </summary>
     IReadOnlyDictionary<string, string> StrikeBlockers,
+    /// <summary>The drive to this person's door, or null when they are on your own streets.</summary>
+    StrikeTripResponse? StrikeTrip,
     Guid PlayerId,
     string Name,
     string? AvatarUrl,
@@ -1299,6 +1716,56 @@ public sealed record BlockRequest(Guid? PlayerId);
 /// <summary>How much of an order to hand over. Null means as much as will go.</summary>
 public sealed record DeliverContractRequest(int? Quantity);
 
+/// <summary>
+/// One good, in both places at once, with the room each side has left.
+///
+/// Sent as a pair rather than as two lists because every question the page asks about a good is a
+/// comparison - can I carry more of this, is there room on the shelf, how much is in the wrong town -
+/// and two lists that have to be zipped in the browser is two lists that will eventually be zipped
+/// wrongly.
+/// </summary>
+/// <summary>
+/// One pile of goods, or one set of limits on a pile. The same shape for both, so the page can put a
+/// count and its ceiling side by side without a second contract that means almost the same thing.
+/// </summary>
+public sealed record StashResponse(
+    int Condoms,
+    int Beer,
+    int Weapons,
+    IReadOnlyList<WeaponTierResponse> WeaponRack,
+    int Medicine,
+    int Poison,
+    int Weed,
+    int Coke,
+    int Moonshine,
+    int Cut,
+    int CokePurityPercent);
+
+public sealed record StashLineResponse(
+    string Key,
+    string Label,
+    int Carried,
+    int CarryCapacity,
+    int Stored,
+    int StorageCapacity);
+
+/// <summary>
+/// Where the player is standing, where their operation is, and what that costs them right now.
+///
+/// The one thing the whole page hangs off. Being able to see the hideout from another town is not the
+/// same as being able to reach into it, and this is what tells the client which of those it is drawing.
+/// </summary>
+public sealed record LocationResponse(
+    string PlayerCity,
+    string HideoutCity,
+    bool AtHideout,
+    /// <summary>What is blocked from here, in the words the server would refuse it in. Empty at home.</summary>
+    IReadOnlyList<string> BlockedHere,
+    /// <summary>Whether the intelligence centre reaches far enough to work the labs from here.</summary>
+    bool CanControlLabsRemotely,
+    /// <summary>Whether it reaches far enough to start a repair from here.</summary>
+    bool CanRepairRemotely);
+
 public sealed record HideoutResponse(
     string TierName,
     int Tier,
@@ -1363,7 +1830,15 @@ public sealed record HideoutResponse(
     /// </summary>
     IReadOnlyList<HideoutDamageResponse> Damage,
     /// <summary>The room the crew are in right now, or null when they are not in one.</summary>
-    HideoutRepairResponse? Repair);
+    HideoutRepairResponse? Repair,
+    /// <summary>The town the house is in. Not necessarily the town the player is in.</summary>
+    string City,
+    /// <summary>Whether the player is standing in it, and can therefore touch anything.</summary>
+    bool AtHideout,
+    /// <summary>What is in the safe, and what the safe holds.</summary>
+    long SafeCash,
+    /// <summary>Every good, on the shelves and in the bag, with the room left on each side.</summary>
+    IReadOnlyList<StashLineResponse> Stash);
 
 /// <summary>
 /// A room that has been put out of action, and the bill for putting it back.
@@ -2047,7 +2522,11 @@ public sealed record AdminConfigEntryResponse(
     string Type,
     string EffectiveValue,
     string? OverrideValue,
-    bool IsOverridden);
+    bool IsOverridden,
+    // Null for the settings that only have to be a number. Stated for the ones with a real limit, so
+    // the page can print it beside the box rather than let an admin find it by being refused.
+    string? Minimum,
+    string? Maximum);
 
 public sealed record AdminConfigResponse(
     int Version,

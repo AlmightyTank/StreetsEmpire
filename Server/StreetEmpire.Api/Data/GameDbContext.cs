@@ -17,6 +17,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CombatMission> CombatMissions => Set<CombatMission>();
     public DbSet<CombatMissionEvent> CombatMissionEvents => Set<CombatMissionEvent>();
     public DbSet<Hideout> Hideouts => Set<Hideout>();
+    public DbSet<PendingStrike> PendingStrikes => Set<PendingStrike>();
     public DbSet<Pimp> Pimps => Set<Pimp>();
     public DbSet<AdminAuditLog> AdminAuditLogs => Set<AdminAuditLog>();
     public DbSet<GameSetting> GameSettings => Set<GameSetting>();
@@ -43,6 +44,9 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
     public DbSet<CustomTitle> CustomTitles => Set<CustomTitle>();
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<SeasonResult> SeasonResults => Set<SeasonResult>();
+    public DbSet<CasinoTransaction> CasinoTransactions => Set<CasinoTransaction>();
+    public DbSet<CasinoJackpotDrop> CasinoJackpotDrops => Set<CasinoJackpotDrop>();
+    public DbSet<BlackjackHand> BlackjackHands => Set<BlackjackHand>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +91,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.DiscordCombatNotices).HasDefaultValue(false);
             entity.Property(x => x.DiscordCrewNotices).HasDefaultValue(false);
             entity.Property(x => x.DiscordMarketNotices).HasDefaultValue(false);
+            entity.Property(x => x.DiscordMachineNotices).HasDefaultValue(false);
             entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)
@@ -194,11 +199,30 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             entity.HasIndex(x => x.Name).IsUnique();
             entity.Property(x => x.Name).HasMaxLength(32);
+            // Every write to a player carries the version it was read at, so two overlapping requests
+            // cannot both spend the same cash. See Player.Version, and StampPlayerVersions below for
+            // what moves it.
+            entity.Property(x => x.Version).IsConcurrencyToken();
             // The rack, and the total across it, are views over the four gun columns rather than columns.
             entity.Ignore(x => x.Armoury);
             entity.Ignore(x => x.Weapons);
             entity.Property(x => x.HoeHappiness).HasPrecision(5, 2);
             entity.Property(x => x.ThugHappiness).HasPrecision(5, 2);
+            // Holds a machine key, so it is sized like every other one on the floor.
+            entity.Property(x => x.CasinoFreeSpinMachine).HasMaxLength(32);
+            // A weapon tier key, bounded like every other key column here.
+            entity.Property(x => x.EquippedWeapon).HasMaxLength(16);
+            // The bag rides in the player's own row rather than a table of its own: there is no
+            // question anybody asks of it that does not begin with whose pockets it is in.
+            entity.OwnsOne(x => x.Carried, bag =>
+            {
+                bag.Ignore(x => x.Armoury);
+                bag.Ignore(x => x.Weapons);
+                bag.Ignore(x => x.Any);
+                bag.Property(x => x.CokePurity).HasPrecision(5, 4);
+            });
+            entity.Navigation(x => x.Carried).IsRequired();
+            entity.Ignore(x => x.Stored);
         });
 
         modelBuilder.Entity<Alliance>(entity =>
@@ -258,6 +282,58 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.HasOne(x => x.Player)
                 .WithMany()
                 .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CasinoTransaction>(entity =>
+        {
+            // The casino page reads one player's newest rows, and tuning reads the game/machine shape.
+            entity.HasIndex(x => new { x.PlayerId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.GameType, x.MachineKey, x.CreatedAtUtc });
+            entity.Property(x => x.GameType).HasMaxLength(16);
+            entity.Property(x => x.MachineKey).HasMaxLength(32);
+            entity.Property(x => x.Paylines).HasDefaultValue(1);
+            entity.Property(x => x.Outcome).HasMaxLength(240);
+            // A dozen bets with their odds and payouts, and room for the shape to grow.
+            entity.Property(x => x.DetailJson).HasMaxLength(2_000);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BlackjackHand>(entity =>
+        {
+            // Every read of this table asks the same question: has this player got a hand going?
+            entity.HasIndex(x => new { x.PlayerId, x.Status });
+            entity.Property(x => x.TableKey).HasMaxLength(32);
+            entity.Property(x => x.Status).HasMaxLength(24);
+            // Six decks of three-character cards with quotes and commas, and room to spare.
+            entity.Property(x => x.DeckJson).HasMaxLength(4_000);
+            // Four hands of cards with their stakes and states.
+            entity.Property(x => x.HandsJson).HasMaxLength(2_000);
+            entity.Property(x => x.DealerCardsJson).HasMaxLength(400);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CasinoJackpotDrop>(entity =>
+        {
+            // Every read of this table asks one machine for its newest drop, because that is the line
+            // the running total is measured from.
+            entity.HasIndex(x => new { x.MachineKey, x.WonAtUtc });
+            entity.Property(x => x.MachineKey).HasMaxLength(32);
+            entity.HasOne(x => x.Player)
+                .WithMany()
+                .HasForeignKey(x => x.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // The ledger row outlives nothing the drop needs, but a drop without its spin is a payout
+            // with no account of what won it, so the two go together.
+            entity.HasOne(x => x.Transaction)
+                .WithMany()
+                .HasForeignKey(x => x.CasinoTransactionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -360,10 +436,45 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             // every other key column here is: a string column with no length is a column somebody can
             // eventually write a paragraph into.
             entity.Property(x => x.RepairingRoom).HasMaxLength(16);
+            entity.Property(x => x.City).HasMaxLength(32);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Hideout)
                 .HasForeignKey<Hideout>(x => x.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PendingStrike>(entity =>
+        {
+            // What the tick asks, every time anybody touches the game: whose trips are due. Status
+            // leads because the overwhelming majority of rows are finished ones nobody will read again.
+            entity.HasIndex(x => new { x.Status, x.ArrivesAtUtc });
+            entity.HasIndex(x => new { x.Status, x.ReturnsAtUtc });
+            // And what a lookout asks: is anything pointed at me.
+            entity.HasIndex(x => new { x.DefenderId, x.Status });
+            entity.Property(x => x.Method).HasMaxLength(16);
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.Outcome).HasMaxLength(16);
+            entity.Property(x => x.OriginCity).HasMaxLength(32);
+            entity.Property(x => x.TargetCity).HasMaxLength(32);
+            entity.Property(x => x.Summary).HasMaxLength(512);
+            entity.Property(x => x.ReturnRiskPercent).HasPrecision(5, 2);
+            entity.Property(x => x.CommittedCokePurity).HasPrecision(5, 4);
+            entity.Property(x => x.ReturningCokePurity).HasPrecision(5, 4);
+            entity.Ignore(x => x.IsInbound);
+            entity.Ignore(x => x.IsOut);
+
+            entity.HasOne(x => x.Attacker)
+                .WithMany()
+                .HasForeignKey(x => x.AttackerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The defender's leaving must not cascade into the attacker's rows twice over - Postgres
+            // refuses two cascade paths to one table - so a trip aimed at somebody who has gone is left
+            // to be tidied by the tick rather than deleted underneath it.
+            entity.HasOne(x => x.Defender)
+                .WithMany()
+                .HasForeignKey(x => x.DefenderId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<MarketListing>(entity =>
@@ -499,7 +610,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(x => x.City).HasMaxLength(64);
             entity.Property(x => x.AuthorName).HasMaxLength(32);
-            entity.Property(x => x.Body).HasMaxLength(400);
+            entity.Property(x => x.Body).HasMaxLength(ChatMessage.MaxBodyLength);
             // A line outlives the person who said it: the name is already kept beside it, so losing the
             // author should blank the link rather than delete what they said.
             entity.HasOne(x => x.Author)
@@ -635,6 +746,8 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.Name).HasMaxLength(48);
             entity.Property(x => x.LostReason).HasMaxLength(32);
             entity.Property(x => x.Loyalty).HasPrecision(5, 2);
+            entity.Property(x => x.Assignment).HasMaxLength(16);
+            entity.Property(x => x.City).HasMaxLength(32);
             entity.HasOne(x => x.Player)
                 .WithMany(x => x.Crew)
                 .HasForeignKey(x => x.PlayerId)
@@ -716,5 +829,42 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .HasForeignKey(x => x.CombatMissionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+    }
+
+    // Both entry points, because the game saves through the async one and the tests through both, and
+    // a token that only moves down one of the two paths is worse than no token at all: it would hold
+    // in the code that is exercised and quietly not hold in the code that is not.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampPlayerVersions();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampPlayerVersions();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Moves the concurrency token on every player this save is about to change.
+    ///
+    /// EF builds the WHERE from the value the row was read at and the SET from the value now, so
+    /// incrementing here is what makes the update say "and only if nobody has touched this player
+    /// since I read them". Without the increment the token never changes and the check passes for
+    /// everybody, which is a concurrency token in name and a lost update in practice.
+    ///
+    /// Only Modified entities. A player being inserted has nothing to conflict with, and a delete
+    /// already matches on the version it was read at.
+    ///
+    /// A save that throws will have stamped a number that never reached the database, so a caller who
+    /// retries skips an integer. Nothing reads this but the WHERE clause, and the WHERE clause is
+    /// built from the original value, so a gap costs nothing.
+    /// </summary>
+    private void StampPlayerVersions()
+    {
+        foreach (var entry in ChangeTracker.Entries<Player>())
+            if (entry.State == EntityState.Modified)
+                entry.Entity.Version++;
     }
 }

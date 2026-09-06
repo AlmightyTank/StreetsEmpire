@@ -64,10 +64,12 @@ internal static class BotSeeding
         player.Hideout = new Hideout
         {
             Player = player,
+            City = player.City,
             StorageLevel = maxStorageLevel,
             SafeLevel = maxSafeLevel,
             CreatedAtUtc = createdAtUtc
         };
+
         return player;
     }
 

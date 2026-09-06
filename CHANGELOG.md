@@ -1,8 +1,333 @@
 # Changelog
 
+## 0.3.2 (in progress)
+
 ## 0.3.0
 
 ### Changed
+- **Ground stays held when you leave town.** Travel used to be refused outright to anybody holding
+  ground, so every trip began by giving up the map: pull the garrisons, lose the work in the ground,
+  fly, and start again. Nobody with a real map ever travelled, which made the city markets a thing you
+  read about rather than a thing you used.
+
+  It stays yours now. What keeps that from being free is the three things that come with it. Ground
+  pays out only in the town it stands in, so an empire away from its ground earns nothing from it. The
+  garrison is still away from home, so those thugs are off your roster the whole time you are gone.
+  And it is still raidable by anybody standing next to it, which is the part you cannot answer from
+  another city - the warning arrives, and you are a flight away from it.
+
+  From out of town the only thing you can do to a piece is walk away from it. Reinforcing it or
+  starting work on it would move crew and money across the country the instant they were asked for,
+  which is the one thing the flight clock exists to stop. Giving it up is a release rather than a
+  posting, so that one works from anywhere; refusing it as well would strand a garrison on ground its
+  holder had already decided to drop.
+
+  The map page grew a section for it, because a town's map is one town and ground left standing
+  elsewhere would otherwise be invisible - and invisible ground is still holding thugs off your roster.
+  It counts against your holding cap wherever it is, so the page and the claim endpoint can no longer
+  disagree about how much you run. The trip itself says what it is leaving behind, since both halves of
+  that are things nobody would guess.
+
+- **A strike can cross the country, and the drive is the mechanic.** Splitting the hideout out gave
+  every house a town, which left the four strikes hitting places their crew could not have reached.
+  They can reach them now, and what distance costs is not really the price - it is the warning.
+
+  A strike at a neighbour is what it always was: instant, and unanswerable. One at a house in another
+  town is a drive. The crew leave with what they need, arrive twelve to thirty-six minutes later
+  depending on how far the town is, and drive home again after that. Turns and a fare pay for the
+  road; what actually makes it a different thing is that the target has that long.
+
+  So the map has a shape now. Living among your rivals is dangerous - everyone can hit you the moment
+  they decide to. Living somewhere remote is safer and lonelier: you get notice, and every punch you
+  throw costs you a round trip.
+
+  What arrives is decided against the house it finds, not the house it left. A defender who spends
+  the warning on medicine is answered by an infestation that cures itself. Somebody who got there
+  first, an alliance formed mid-flight, or a target who has fallen out of your weight class all turn
+  the crew round at the door with the load still in the boot - they keep the turns and the fare,
+  because a wasted trip caused by somebody else's timing is not a bad roll.
+
+  Loud work suffers for the distance and quiet work does not. A drive-by and a jacking lose odds on
+  streets nobody knows, and a drive-by that goes wrong away from home is a car left behind rather than
+  a fast drive back. An infestation is one person being quiet and a poach is money talking, and
+  neither cares how far it came.
+
+  And what a crew took has to be driven home, which is a journey of its own. A jacked car is on a
+  motorway until they are back at their own door, and the road out of a town you have just robbed is
+  the half of an away job nobody thinks about until it goes wrong: the town's own risk plus the length
+  of the drive, never a certainty, quoted before the crew leave and frozen when they do. It reads on
+  the haul and never on the load they set out with - a car you own and a car you took an hour ago are
+  the same object and completely different journeys, and only one of them is the reason anybody is
+  looking. Which is also what keeps a drive-by the cheap fast verb: it brings nothing home but its own
+  car, so there is nothing to stop it for.
+
+  Heat is charged where the crime happened rather than where the criminal lives. Loud things in New
+  York are noticed by New York, wherever you are standing.
+
+- **The lookout stopped being the room nobody buys.** It shaves police odds as before, and now it also
+  watches the road. It buys notice and never detail: a player is told something is coming and nothing
+  else - not who, not what kind, not how long. Medicine, a bigger armed guard and a better cut answer
+  three different strikes and only one of them is right, so the guess is the decision. The level is
+  how far down the road it can see, from four minutes to fifteen; a house without one is blind, and so
+  is one whose lookout has been put through a wall.
+
+- **Travel moves the player, not the empire.** A hideout has a town of its own now. It used to have
+  none at all, which meant it was implicitly wherever its owner was standing - so a flight to Las
+  Vegas quietly carried the building, the shelves, the safe and the crew along with it, and looking at
+  a different market moved a player's entire operation to it.
+
+  Now a plane ticket moves one person. The house stays where it was built, the crew stay in it, the
+  shelves stay on its walls, and only what the player is physically carrying gets on the plane with
+  them.
+
+  Two piles instead of one, and the difference between them is entirely a matter of where each is
+  standing when something happens to it. What is on the shelves feeds the crew, arms the thugs and is
+  what a raid on the house carries out of the door. What is in the bag is what a stop on the road into
+  town can take, and it is the only thing a raid can never reach. A player in Las Vegas with the coke
+  in a bag keeps the coke and loses whatever they left behind - which is a decision they made rather
+  than a loophole.
+
+  Nothing moved in the database. Every good a player owns was already the hideout's store - the
+  storage room is what has always capped it - so it stays exactly where it was, and the bag starts
+  empty. Filling it is a deliberate withdrawal, at your own front door.
+
+- **A safe you have to walk to.** Cash on hand used to be capped by the safe, back when the two were
+  one pile. The safe is now a place with a door: it holds what the room holds, it costs no turns and
+  no trip unlike the bank, it can only be opened while you are standing in front of it, and it is the
+  money a raid on the house actually gets at. Cash in your pocket has no ceiling at all any more.
+  Walking around with a fortune is allowed and is meant to be a bad idea.
+
+- **The house keeps its own books.** Anything the hideout does on its own now reads the hideout's
+  town rather than whichever one its owner happens to be in. A selling lab takes its own market's
+  price and pays into the safe; heat on the shelves is charged at the shelves' town and heat in the
+  bag at the player's; a mule run leaves from the house and comes back to it. Travelling stopped being
+  an economic lever - a player could otherwise fly to the dearest market on the board and leave their
+  labs selling into it from a thousand miles away.
+
+- **Being away is a real cost.** The hideout page still works from anywhere and still shows
+  everything - the labs running, the timers ticking, the damage, the heat - because watching your
+  operation from another town is most of what having one is. Touching any of it needs you there:
+  street shifts, the labs and the bench, hiring and firing, raids and strikes, mule runs, building,
+  and the safe. The page says so once at the top rather than eleven buttons each refusing separately.
+  An intelligence centre buys some of it back - the lab switches at level 2, repairs at level 3.
+
+- **The fleet stays in the garage.** Rides are the hideout's, parked at its town, and they are the one
+  thing that cannot be carried at any price - a car is driven out of a garage and back into it, so it
+  is in exactly one place and that place is the house. Buying one, selling one, firing from one and
+  jacking one all need you standing in that town. When a base can be relocated the fleet will not
+  follow it for free either: moving cars between towns is a flatbed and a bill, and that price belongs
+  to the relocation rule rather than to travel.
+
+- **Carrying capacity.** A person carries a person's worth. Configured in `Carry`, deliberately small
+  against the storage room, and read in exactly one place so that bags, cars, escorts, skills and
+  hideout upgrades can be added later without any rule that moves a good learning they exist.
+
+### Added
+- **Splitting.** A pair becomes two hands, each with its own stake and each played out in turn, and
+  then one dealer hand answers all of them. That last part is what makes it a decision rather than a
+  free roll: two hands are two stakes against the same dealer, so a dealer twenty takes both at once.
+  Up to three splits a round, so four hands. Split aces take one card each and stop, which every house
+  in the world insists on because a pair of aces resplit and drawn on freely is the strongest position
+  in the game. And twenty-one made on a split hand is twenty-one rather than a natural, so it pays
+  even money.
+
+  A round is the unit now rather than a hand, since a split is still one visit to the table: one shoe,
+  one dealer hand, one turn paid for. Rounds played before this kept their cards - the migration
+  carries each of them into a list of exactly one, which is what they always were.
+- **Blackjack, in a pit of two tables.** Hit, stand and double against a dealer who draws to a rule
+  rather than a decision. Six decks, shuffled fresh every hand so there is nothing to count, a natural
+  paying three to two, and a dealer standing on a soft seventeen - all of it configuration, because
+  the six-to-five a lot of real floors quietly moved to costs a player over a percent and that should
+  be visible rather than assumed.
+
+  It is the only game on the floor that can be played badly, and so the only one whose return is a
+  range rather than a number: a shade under 100% played correctly and a good deal worse otherwise.
+  That makes it the best thing in the casino for anybody willing to learn it, which is why the cheap
+  table wants Regular and the high one wants House Name.
+
+  A hand lives in the database while it is live, because everything that decides it - the shoe and the
+  card the dealer has face down - has to sit somewhere the player cannot read. The hole card is dealt
+  at the deal and simply never leaves the server until the hand is over; even the dealer's total is
+  read off the card that is showing.
+
+  No insurance or surrender yet.
+- **Roulette, on two wheels.** A cloth with every number on it, the outside bets down the side, and as
+  many chips on it at once as the croupier will take. Every bet settles against one pocket, which is
+  what makes covering the board a way to lose steadily rather than a clever idea.
+
+  Roulette needs none of the tuning the slots needed, and that is the interesting thing about it: every
+  bet is paid as though the zeroes were not on the wheel, so the zeroes are the house's entire take and
+  every bet on the table carries exactly the same edge. Two zeroes returns 94.74% and one returns
+  97.30% - which is not tuned but arithmetic, and is checked by walking a stake around every pocket of
+  both wheels and finding thirty-six back every time. So the Front Table has two zeroes and takes
+  anybody, and the Back Table has one, wants High Roller and half a million in net worth, and is the
+  best odds on the floor.
+
+  The wheel is a real one. The numbers sit in the order they sit in on an actual wheel rather than in
+  counting order - both sequences, one per table - because that ordering is the thing that stops an arc
+  of the wheel being an arc of the cloth. It turns six times over and eases down onto the pocket that
+  came up, with the ball and the pointer staying put and the disc coming to them.
+- **The Casino District is a floor you can play.** Four slot machines, a nine cell grid of weighted
+  symbols and five paylines bought one at a time. Pays read left to right - the first two cells of a
+  lane have to match before the third decides between a pair and a triple - and the paytable returns
+  92.4% on the Sidewalk and 94.7% in the rooms above it, which is about what a real floor holds. Bets
+  come from cash on hand and winnings go back to it, so chips are not a second bank: money carried into
+  the district is money somebody can still take off you. Standing is earned per dollar wagered rather
+  than per spin, and it gates the rooms - the Vault wants House Name and two and a half million in net
+  worth before it will take a bet. Both the ledger and your standing reset with the season.
+- **Every machine keeps a progressive pot.** A percent of each stake played on a machine feeds its
+  meter, and the whole thing goes to whoever lands three Vaults anywhere on the grid with all five
+  lanes bought - about one spin in twelve thousand. The pot is the one award on the floor not held to
+  the machine's top multiplier, because a meter capped at the paytable would be advertising money the
+  machine could not hand over. The slice comes out of what the paytable would otherwise have returned,
+  so the house holds the same share either way; it is only given back in one lump instead of a hundred
+  small ones. A pot that drops resets to the machine's seed, and the wager that won it does not feed
+  the next one.
+- **The cage owes you for playing.** Every pull is rated whether it lands or not, at a hundredth of the
+  stake, and the comps that come off it are held in dollars because every one of them buys something
+  with a price. Standing and comps do separate jobs and both have to be satisfied: standing decides
+  what the cage will do for you, comps pay for it. A rank that could be spent would make standing a
+  currency, and a balance that opened rooms would let one big night buy the whole ladder. On the menu:
+  a room upstairs for turns at Walk-In, the cage settling up in cash at Regular, a word with the law
+  that takes heat off the file at High Roller, and the suite for a House Name. Every reward is turns,
+  cash and heat in some combination, so the menu is configuration rather than code.
+
+  This is what a pull costing a turn needs to be fair. Slots are negative expectation at every stake by
+  design - a turn on the street grosses far more than a turn at a machine is worth in expectation - so
+  the reason to play cannot be the money, and until now a losing night gave back nothing at all. It is
+  also the half of the island the floor was still missing: news left the casino and nothing came back.
+  Turns, cash and heat all land outside it.
+- **A dropped pot is news whatever it is worth.** It reaches the world feed on its own account rather
+  than by clearing the cash swing that makes an ordinary win newsworthy - the pot on the cheapest
+  machine is the smallest on the floor and still the story of the night, because everybody who played
+  that machine paid for it. The floor also keeps its own record of the last few that went and who took
+  them.
+
+### Changed
+- **The ledger shows the pull instead of describing it.** Its grid column was the fifteen symbol
+  names written out - two hundred characters in a row that has seven other columns - which pushed the
+  whole table off the side of the page and was unreadable at any width. Fifteen faces are a picture,
+  so it is drawn as one: a five by three of the same glyphs the reels use, with the cells that
+  actually paid lit the way they were on the machine. The table fits now, and a win is findable in a
+  row without counting along it. The written-out version survives as the label a screen reader gets.
+- **A win is counted out rather than printed.** The payout climbs from nothing to what it landed on,
+  and the net climbs with it because it is derived from the same figure rather than animated
+  separately - so the two cannot disagree on the way past and both arrive together. How long it takes
+  scales with how many times the stake came back, on a square root, so a double is over almost at once
+  and a thirty-to-one hangs about without a thousand-to-one taking all day. It eases into the number
+  instead of stopping dead on it. Reduced motion gets the figure and not the performance.
+- **The machine holds its breath.** When the reels already down leave a run alive and the one still
+  turning could pay properly, it hangs on for an extra nine tenths of a second and turns harder inside
+  a warmer edge while it does. That is the entire reason a slot stops its reels in order, and stopping
+  them on the same beat every time threw it away.
+
+  What triggers it is the money rather than the run. Three of a kind is still live on 36% of nine-lane
+  spins, and a machine pausing on a third of them is not pausing - most of those are three of the
+  commonest face, where a fourth adds almost nothing. It holds when landing one more would pay back at
+  least four times the whole stake, which covers nearly any four-of-a-kind reaching for five and only
+  the better faces reaching for four. That lands on about one spin in five: 7% before the fourth reel
+  and 12% before the fifth. Reduced motion skips the hold along with the rest of the timing.
+- **A win is lit across what actually matched.** A lane that paid on two of a kind lit all five of its
+  cells and drew a line the full width of the grid, which says a five of a kind landed. With runs of
+  two to five being the whole mechanic, that was the board reporting the wrong win: a pair and a
+  five-of-a-kind looked identical. Lanes now carry the run they paid on, and only those cells light
+  and only that much line is drawn. Under the reels is what each lane actually did - the symbol, how
+  far it ran, which lane, and what it paid - because a nine-lane win was otherwise one number with no
+  account of where it came from.
+- **Spins on the house.** A paid pull now has a small chance of ending with the house owing you a
+  handful of free ones. They replay the pull that won them - same machine, same stake, same lanes -
+  which is what a real floor does with them and is also the only way they are not silly: free spins
+  that played whatever was on screen when you spent them would be won on the smallest pull a machine
+  takes and cashed at the largest. While the house owes you any, the stake box does not apply.
+
+  They cost no cash and no turn, and because nothing was staked they pay for none of the things
+  stakes pay for: not the progressive, not standing, not comps, all of which come out of what players
+  actually put in and would otherwise be paid for twice. They can still take the pot, which is
+  everybody's money and does not ask whose turn paid for the pull. A free spin never wins more free
+  spins - that is the difference between a run of luck and a machine that never stops.
+- **The reels stop one at a time.** They all stopped together, which reads as a picture appearing
+  rather than as a machine landing - and it threw the result away, because the only reason to keep
+  watching a slot machine is the reel that has not stopped yet. They drop left to right now, and the
+  gaps widen as they go - 380, 440, 500 and 560 milliseconds - so the machine takes longest over the
+  reel that can still change the answer. A spin runs about two and a half seconds. Each reel to the
+  right turns a little slower than the one before it. Somebody who has asked the game to stop moving
+  gets the same order at a tenth of the length, because with the strip animation off those
+  milliseconds are a still grid and a wait for nothing.
+  Everything that reads as the verdict waits for the last of them: the winning lines, the lit cells
+  and the receipt all hold until the fifth reel is down, so nothing tells you how it went while a reel
+  can still change it.
+- **Every room has its own faces.** The four machines already ran their own weights and their own
+  pays, but they all showed the same seven symbols, so the thing a player actually looks at was
+  identical in every room. They share Sevens and the Vault at the top now - the constants of a slot
+  floor, and the pot is keyed on the Vault - and nothing below it. Neon Fortune runs a Cherry, a Bell,
+  Champagne, Dice and a Diamond; Kingpin a Casino Chip, Whiskey, a Cigar, a Pocket Watch and a Signet
+  Ring; The Vault a Ledger, a Vault Key, a Gold Bar, an Ace of Spades and a Skull. Swapping the faces
+  moved no number on any card, because the weights and the pays are what the maths is made of. The
+  reels idle and spin on the faces of the machine you are stood at, so a Vault never shows a
+  Low-Rider it could not land.
+- **Five columns, three rows, nine lanes.** The floor was three by three with five lanes across it. It
+  is fifteen cells now and a lane runs the full width, so what a lane pays is the run it opens with
+  from the left: two, three, four or five of the same face. Left-anchored, because that is how a reel
+  is read - three of something on the last three columns is not a win, and paying it would roughly
+  double how often every lane hits. The nine lanes are sold in the order they are legible: the three
+  straight rows, then the two full-height chevrons, then four shallower shapes, so a player buying
+  four lanes gets the four clearest ones.
+
+  Every paytable was re-solved for it, because a five-reel game is not a three-reel one with more
+  cells. The return has to come from three-of-a-kind, which is far rarer than a pair was, so the
+  middle of every card rises and the top of it rises further. Two-of-a-kind now pays on the Sidewalk
+  and almost nowhere else: on a common symbol one unit of it is worth several percent of a machine's
+  whole return, so it is a structural choice about how often a lane does anything rather than a number
+  to tune with. It is what makes the Sidewalk a grinder at 34% dead spins against the Vault at 72%.
+
+  The pot asks for four of the symbol rather than three. Fifteen cells make three of anything five
+  times as likely as nine cells did - about one spin in two thousand four hundred, which is a pot that
+  drops before it has grown. Four is about one in eighty thousand, which is a month between drops and
+  a pot worth taking.
+- **Every machine turns its own reel.** The four rooms shared one paytable and were told apart by a
+  ceiling on what a lane could pay, which cannot make a machine pay differently - only less. It
+  flattened the top of the cheap rooms into a single number: on the Sidewalk a Crew Crown at one in a
+  thousand, a Seven at one in three thousand and a Vault at one in a million all paid exactly fifty
+  times the lane, so landing the rarest symbol on the reel felt like landing the fifth rarest. The
+  ceiling is gone and the paytable is the ceiling. Each machine now carries its own weights and pays,
+  and a machine that names none falls back to the floor's shared reel.
+
+  The rooms differ on two axes at once and both rise as you climb. **Volatility**, from a grinder that
+  pays something on seven spins in ten to a room where almost three in four pay nothing at all and the
+  money is entirely in the tail - and **the return itself**, because a real floor holds most on its
+  cheapest machines and least in the high-limit room. Sidewalk returns 92.5% at a top of 2,760x, Neon
+  94.5% at 3,550x, Kingpin 95.5% at 4,760x, The Vault 96.5% at 2,200x. Climbing the ladder buys better
+  odds as well as bigger numbers, which is most of what standing is for.
+
+  Kingpin's card climbs more steeply than Neon's rather than copying it. It carries rarer top faces
+  than the room below, so an identical ladder meant meeting the big pays less often without them being
+  any bigger - which left the dearer machine the flatter of the two. Less on the common faces and more
+  on the rare ones fixes it at the same return, and volatility across the floor now rises the whole
+  way up: 1.86, 2.53, 2.92, 3.16.
+
+  The Vault's five-of-a-kind stops at 2,200x rather than following its own curve up. On five reels the
+  top symbol lands five times in about one spin in ten billion, so the number is a card rather than a
+  prize, and letting it run would have advertised a ceiling nobody could ever be paid. The uncapped
+  progressive, which wants every lane, is where this room's moonshot belongs.
+
+  Each machine publishes what it returns and what it pays, because none of that is guessable once the
+  rooms stop matching and a player owed better odds for climbing should be able to see that they got
+  them.
+- **Standing is earned by the ticket rather than by the dollar.** A full ticket - every lane at the
+  machine's top stake - is worth five standing, and a smaller stake earns its share of that. It used
+  to be a rate per dollar wagered, which made standing a measure of how rich somebody already was: the
+  Vault takes stakes a thousand times the Sidewalk's, so one pull there was worth a thousand Sidewalk
+  pulls and anybody who could afford the top room climbed the whole ladder in about eleven spins.
+  Standing is meant to say how you play, and the rooms are already gated on net worth for the other
+  half of it. Because a pull costs one turn whatever it stakes, the full ticket is now much the
+  fastest way to earn standing per turn - which is the part that is actually scarce.
+- **A pull costs a turn.** The casino was the only thing in the game that charged nothing but money,
+  which made it the one activity that never competed with any other: there was no hour of the day when
+  spinning was the wrong thing to be doing. An evening at a real floor costs you the evening.
+- **A machine advertises a prize somebody could be paid.** The figure on the tile was the top
+  multiplier times the maximum stake times every lane, which is a number requiring all nine cells to
+  land on the rarest symbol on the reel - about one spin in a quintillion. Tiles now quote the live pot
+  and the largest single lane the paytable can pay.
 - **A raid is worth being afraid of.** The odds per point of heat double and the ceiling goes to a coin
   flip, so a Hunted house is tonight's problem rather than one to outrun - at a hundred heat it was
   about one hour in six, which is long enough that the sensible play was to ignore the number and keep

@@ -58,6 +58,19 @@ var tests = new (string Name, Action Test)[]
     ("everything you can hold is worth something", EverythingYouCanHoldIsWorthSomething),
     ("the bench never makes an attack cheaper than its answer", DefenceIsNeverDearerThanAttack),
     ("hideout banks cash over the safe and spills goods", HideoutBanksCashOverSafeAndSpillsGoods),
+    ("travel moves the player and leaves the empire", TravelMovesThePlayerAndLeavesTheEmpire),
+    ("the empire cannot be worked from another town", TheEmpireCannotBeWorkedFromAnotherTown),
+    ("a raid on the house never reaches a pocket in another state", ARaidNeverReachesAPocketInAnotherState),
+    ("stock is deposited and withdrawn against both ceilings", StockMovesAgainstBothCeilings),
+    ("heat is drawn in the town each pile is standing in", HeatIsDrawnWhereEachPileStands),
+    ("the whole gun rack answers to its own name", TheRackAnswersToItsOwnName),
+    ("a strike at a neighbour lands now and one down the road does not", DistanceDecidesWhetherAStrikeWaits),
+    ("a crew on the road meets whatever is standing when they get there", ALandingReadsTheHouseItFinds),
+    ("a trip that finds a shield turns round with the load", AShieldedLandingTurnsTheCrewRound),
+    ("what a crew are still carrying comes home with them", TheHaulComesHomeAtTheDoor),
+    ("a lookout buys notice and never detail", ALookoutBuysNoticeAndNeverDetail),
+    ("the way home is its own risk, and only for what was taken", TheWayHomeIsItsOwnRisk),
+    ("an intelligence centre buys back the switches distance takes", IntelligenceBuysBackRemoteControl),
     ("crew are swept up, bailed out, or left inside", CrewAreSweptUpBailedOrLeftInside),
     ("a bond is refused late, short, or twice", ABondIsRefusedLateShortOrTwice),
     ("a trip to the bank costs turns", ATripToTheBankCostsTurns),
@@ -65,6 +78,42 @@ var tests = new (string Name, Action Test)[]
     ("the free bank window does not slide", TheFreeBankWindowDoesNotSlide),
     ("bank trips double inside one day and cap at ten turns", BankTripsDoubleInsideOneDayAndCapAtTenTurns),
     ("a bank trip you cannot afford moves no money", ABankTripYouCannotAffordMovesNoMoney),
+    ("casino slots spend cash and write a transaction", CasinoSlotsSpendCashAndWriteTransaction),
+    ("casino slots enforce machine limits", CasinoSlotsEnforceMachineLimits),
+    ("a machine pays the top of its own paytable", CasinoSlotsPayTheTopOfTheirOwnPaytable),
+    ("each machine turns its own reel", EachMachineTurnsItsOwnReel),
+    ("casino slots draw a fifteen cell board and pay every lane", CasinoSlotsDrawFifteenCellsAndPayLanes),
+    ("casino slots pay only left to right matches", CasinoSlotsPayOnlyLeftToRightMatches),
+    ("casino slots earn floor standing and unlock machines", CasinoSlotsEarnStandingAndUnlockMachines),
+    ("casino standing resets with the season", CasinoStandingResetsWithTheSeason),
+    ("casino slots cost turns and stop at an empty bank", CasinoSlotsCostTurns),
+    ("a progressive grows on every wager and pays out whole", CasinoProgressivePaysThePot),
+    ("a progressive needs every lane bought", CasinoProgressiveNeedsEveryLane),
+    ("a dropped pot starts again from the seed", CasinoProgressiveResetsToSeed),
+    ("the pot pays the meter the board is showing, to the pound", CasinoProgressivePaysWhatTheMeterReads),
+    ("the meter is measured from the last drop and not from the beginning", CasinoProgressiveCountsOnlySinceTheLastDrop),
+    ("the meter asks the database for a range and not for a sift", TheProgressiveReadsARangeOfTheLedger),
+    ("two overlapping requests cannot spend the same money twice", OverlappingWritesToOnePlayerAreRefused),
+    ("a player's version only moves when the player does", ThePlayerVersionMovesOnlyOnAChange),
+    ("comps are rated on the wager, win or lose", CompsAreRatedOnTheWager),
+    ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
+    ("a claimed comp hands over turns, cash and quiet", ACompHandsOverWhatItPromises),
+    ("comps reset with the season", CompsResetWithTheSeason),
+    ("a season of small wagers adds up to exactly what it should", CompsDoNotDriftOverASeason),
+    ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
+    ("a free spin pays for none of the floor it plays on", FreeSpinsPayForNoneOfTheFloor),
+    ("every roulette bet carries the wheel's own edge and no other", RouletteEdgeIsTheZeroesAndNothingElse),
+    ("the zeroes are on the wheel and not on the cloth", RouletteZeroesBeatTheOutsideBets),
+    ("a roulette spin settles every bet against one pocket", RouletteSettlesEveryBetAgainstOnePocket),
+    ("an ace counts eleven only while it fits", BlackjackCountsAcesBothWays),
+    ("the hole card stays down until the hand is over", BlackjackKeepsTheHoleCardDown),
+    ("a hand settles on what the two totals are", BlackjackSettlesOnTheTotals),
+    ("a split pair becomes two hands against one dealer", BlackjackSplitsIntoTwoHands),
+    ("split aces take one card and stop", BlackjackSplitAcesTakeOneCard),
+    ("insurance holds the round still until it is answered", BlackjackInsuranceHoldsTheRound),
+    ("insurance is settled on the hole card alone", BlackjackInsuranceSettlesOnTheHoleCard),
+    ("a hand can be given up for half where the table takes it", BlackjackSurrenderPaysHalfBack),
+    ("the slots ledger holds slots and the stats hold the floor", SlotsLedgerIsSlotsAlone),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -94,6 +143,7 @@ var tests = new (string Name, Action Test)[]
     ("ground is worth what has been put into it", GroundIsWorthWhatWasPutIntoIt),
     ("a bigger building actually lets you hold more ground", ABiggerBuildingHoldsMoreGround),
     ("working ground up costs money, turns and time", WorkingGroundUpIsPaidForUpFront),
+    ("ground stays held when its holder leaves town", GroundStaysHeldWhenItsHolderLeavesTown),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
@@ -111,6 +161,7 @@ var tests = new (string Name, Action Test)[]
     ("account lockout blocks banned and suspended players", AccountLockoutBlocksBannedAndSuspended),
     ("wealth stats describe the distribution", WealthStatsDescribeTheDistribution),
     ("option paths discover and write scalar tuning", OptionPathsDiscoverAndWriteScalars),
+    ("a setting with a real limit is held to it, and says what it is", SettingsWithARealLimitAreHeldToIt),
     ("option overrides layer over appsettings values", OptionOverridesLayerOverAppsettings),
     ("anti-farm refuses mismatched fights", AntiFarmRefusesMismatchedFights),
     ("anti-farm decays loot for repeat victories", AntiFarmDecaysRepeatLoot),
@@ -251,6 +302,8 @@ var tests = new (string Name, Action Test)[]
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
+    ("the Discord alert sweep says what the bell says, once", TheDiscordAlertSweepSaysWhatTheBellSaysOnce),
+    ("news the game only ever worked out is written down", NewsTheGameOnlyEverWorkedOutIsWrittenDown),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
     ("announcement delivery sends Discord embeds", AnnouncementDeliverySendsDiscordEmbeds),
@@ -258,6 +311,8 @@ var tests = new (string Name, Action Test)[]
     ("Discord role sync selects city, crew, and title roles", DiscordRoleSyncSelectsCityCrewAndTitleRoles),
     ("Discord crew channel sync creates private crew rooms", DiscordCrewChannelSyncCreatesPrivateCrewRooms),
     ("Discord server commands resolve through the API", DiscordServerCommandsResolveThroughTheApi),
+    ("Discord crew subcommands answer their own question", DiscordCrewSubcommandsAnswerTheirOwnQuestion),
+    ("the Discord status says the game's name between everything else", TheDiscordStatusSaysTheGamesNameBetweenEverythingElse),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
@@ -431,9 +486,15 @@ static void WorthExpressionsTranslateToSql()
     AssertTrue(ranked.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
         "net worth ranks on the hideout in the database");
 
-    // And the raid sum must not touch it at all, or every target query pays for a join it never reads.
-    AssertTrue(!plunder.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
-        "what a raid can take owes nothing to the building");
+    // The raid sum reaches the hideout too, and has to. It is not reading the building - a building is
+    // still not loot, and HideoutValue is still only on the ranking side - it is reading the safe,
+    // which a raid empties. Leaving it out would let a player hide a fortune behind a door the raid
+    // can open and still be weighed as somebody with nothing worth taking, which is exactly the
+    // mismatch the anti-farm rules exist to catch.
+    AssertTrue(plunder.Contains("Hideouts", StringComparison.OrdinalIgnoreCase),
+        "what a raid can take includes what is in the safe");
+    AssertTrue(!plunder.Contains("StorageLevel", StringComparison.OrdinalIgnoreCase),
+        "but never what the rooms cost to build");
 }
 
 static void AHideoutIsWorthWhatItCost()
@@ -1541,6 +1602,7 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
 {
     var options = new GameOptions { WeedSellPrice = 40 };
     var service = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
     var player = new Player
     {
         Cash = 49_000,
@@ -1550,21 +1612,28 @@ static void HideoutBanksCashOverSafeAndSpillsGoods()
         Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
     };
 
-    // 60 weed at $40 is $2,400, which pushes cash past the level 1 safe's $50,000.
+    // 60 weed at $40 is $2,400, which would once have pushed cash past the level 1 safe's $50,000 and
+    // been swept into the bank. It is not any more: the safe stopped being the ceiling on what a
+    // player can hold the moment it became a room in a particular town with a door on it. Walking
+    // around with more than the safe would take is allowed, and it is meant to be a bad idea rather
+    // than an impossible one - the road into the next town is what charges for it.
     var result = service.SellProduct(player, "weed", 60);
 
-    AssertEqual(50_000L, player.Cash);
-    AssertEqual(1_400L, player.BankCash);
-    AssertEqual(1_400L, Value<long>(RequiredBreakdown(result), "cashBankedByOverflow"));
-    AssertTrue(result.Summary.Contains("safe was full"), "the summary should explain the transfer");
+    AssertEqual(51_400L, player.Cash);
+    AssertEqual(0L, player.BankCash);
+    AssertEqual(0, Value<int>(RequiredBreakdown(result), "storedByOverflow"));
 
-    // The sweep is not a trip to the bank and is never charged for. This is deliberate rather than an
-    // oversight: money over the safe is money the player could not hold, and billing them turns for
-    // failing to hold it would be a fee on earning well. It leaves a door open - a safe kept full
-    // banks its overflow for nothing - but a full safe is also the most a raid can ever take, so the
-    // trade pays for itself and is a strategy rather than a hole.
+    // And the safe is a place now, not a limit. It only holds what is put in it, by somebody standing
+    // in front of it, and what it holds is the pile a raid on the house actually gets at.
+    AssertEqual(0L, player.Hideout!.SafeCash);
+    hideouts.MoveCash(player, 20_000, depositing: true);
+    AssertEqual(31_400L, player.Cash);
+    AssertEqual(20_000L, player.Hideout.SafeCash);
+
+    // Neither move is a trip to the bank and neither is charged for. Money already at your own house
+    // costs nothing to touch; the bank charges because it is somewhere else.
     AssertEqual(20, player.Turns);
-    AssertTrue(player.LastBankedAtUtc is null, "an overflow sweep should not open the free window either");
+    AssertTrue(player.LastBankedAtUtc is null, "the safe should not open the bank's free window either");
 }
 
 /// <summary>
@@ -1814,6 +1883,1787 @@ static void ABankTripYouCannotAffordMovesNoMoney()
     AssertTrue(player.LastBankedAtUtc is null, "a refused trip should not open the free window");
 }
 
+static void CasinoSlotsSpendCashAndWriteTransaction()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "test", Name = "Test Slots", MinBet = 100, MaxBet = 500 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 },
+                new SlotSymbolOptions { Key = "c", Label = "C", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ScriptedRandom(0.0, 0.4, 0.8));
+    var now = new DateTime(2026, 9, 3, 4, 30, 0, DateTimeKind.Utc);
+
+    var spin = casino.SpinSlotsAsync(player, "test", 100, 1, now, default).GetAwaiter().GetResult();
+    var transaction = spin.Transaction;
+    db.SaveChanges();
+    var stats = casino.StatsAsync(player.Id, default).GetAwaiter().GetResult();
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+
+    AssertEqual(900L, player.Cash);
+    AssertEqual(100L, transaction.BetAmount);
+    AssertEqual(0L, transaction.PayoutAmount);
+    AssertEqual(-100L, transaction.NetResult);
+    AssertEqual(1, transaction.Paylines);
+    AssertEqual(0, transaction.WinningPaylines);
+    AssertEqual("a,b,c,c,c,c,c,c,c,c,c,c,c,c,c", transaction.Outcome);
+    AssertEqual(1, stats.Plays);
+    AssertEqual(100L, stats.Wagered);
+    AssertEqual(-100L, stats.Net);
+    AssertEqual(1, board.Recent.Count);
+}
+
+static void CasinoSlotsEnforceMachineLimits()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "vip", Name = "VIP Slots", MinBet = 100, MaxBet = 1_000, MinNetWorth = 50_000 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 5 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(), "a player below the machine's net worth gate spins it");
+
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertTrue(board.SlotMachines.Single().Locked, "the board should show the machine as locked too");
+
+    player.Cash = 60_000;
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 50, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(), "a bet below the table minimum is placed");
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 1_500, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(), "a bet above the table maximum is placed");
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "vip", 100, 10, DateTime.UtcNow, default).GetAwaiter().GetResult(), "too many lanes are bought");
+}
+
+/// <summary>
+/// A machine pays what its own paytable says, all of it.
+///
+/// This used to assert the opposite. Every machine shared one reel and was told apart by a ceiling on
+/// what a lane could pay, which cannot make a machine pay differently - only less. On the Sidewalk it
+/// flattened a Crew Crown at one in a thousand, a Seven at one in three thousand and a Vault at one in
+/// a million into the same fifty times the lane, so landing the rarest symbol on the reel felt exactly
+/// like landing the fifth rarest. The ceiling is gone and the paytable is the ceiling.
+/// </summary>
+static void CasinoSlotsPayTheTopOfTheirOwnPaytable()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotMachines =
+            [
+                new SlotMachineOptions
+                {
+                    Key = "deep",
+                    Name = "Deep Slots",
+                    MinBet = 100,
+                    MaxBet = 500,
+                    Symbols =
+                    [
+                        new SlotSymbolOptions { Key = "crown", Label = "Crown", Weight = 8, TripleMultiplier = 44, QuadMultiplier = 150, QuintMultiplier = 390 },
+                        new SlotSymbolOptions { Key = "seven", Label = "Seven", Weight = 4, TripleMultiplier = 98, QuadMultiplier = 330, QuintMultiplier = 860 },
+                        new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, TripleMultiplier = 315, QuadMultiplier = 1060, QuintMultiplier = 2760 }
+                    ]
+                }
+            ]
+        }
+    });
+
+    // Three rungs of the same paytable, each landed in turn - a whole grid of one symbol, so every
+    // lane opens with a run of five. A ceiling anywhere below the top would pay two of these three the
+    // same number, which is exactly what the old one did.
+    var landed = new List<long>();
+    foreach (var roll in new[] { 0.0, 0.7, 0.99 })
+    {
+        using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 10, Hideout = new Hideout() };
+        var spin = CreateCasino(db, options, new ScriptedRandom(roll))
+            .SpinSlotsAsync(player, "deep", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        landed.Add(spin.Transaction.PayoutAmount);
+    }
+
+    AssertEqual(39_000L, landed[0]);
+    AssertEqual(86_000L, landed[1]);
+    AssertEqual(276_000L, landed[2]);
+
+    // And the board advertises the top of the paytable rather than a ceiling over it.
+    using var boardDb = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var reader = new Player { Id = Guid.NewGuid(), Cash = 1_000, Hideout = new Hideout() };
+    var machine = CreateCasino(boardDb, options).BoardAsync(reader, default).GetAwaiter().GetResult().SlotMachines.Single();
+    AssertEqual(1_380_000L, machine.TopAward);
+    AssertEqual("Vault", machine.Paytable[0].Label);
+    AssertEqual(2_760, machine.Paytable[0].Quint);
+}
+
+/// <summary>
+/// Two machines, the same symbol keys, different money against them - and a third that names no reel
+/// of its own and falls back to the floor's.
+///
+/// The fallback matters as much as the difference: a machine only has to say what makes it unusual,
+/// so the shared list stays the default rather than something every room has to restate.
+/// </summary>
+static void EachMachineTurnsItsOwnReel()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "Floor A", Weight = 1, QuintMultiplier = 7 }],
+            SlotMachines =
+            [
+                new SlotMachineOptions
+                {
+                    Key = "cheap",
+                    Name = "Cheap Slots",
+                    MinBet = 100,
+                    MaxBet = 100,
+                    Symbols = [new SlotSymbolOptions { Key = "a", Label = "Cheap A", Weight = 1, QuintMultiplier = 3 }]
+                },
+                new SlotMachineOptions
+                {
+                    Key = "rich",
+                    Name = "Rich Slots",
+                    MinBet = 100,
+                    MaxBet = 100,
+                    Symbols = [new SlotSymbolOptions { Key = "a", Label = "Rich A", Weight = 1, QuintMultiplier = 40 }]
+                },
+                new SlotMachineOptions { Key = "plain", Name = "Plain Slots", MinBet = 100, MaxBet = 100 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 20, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var cheap = casino.SpinSlotsAsync(player, "cheap", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var rich = casino.SpinSlotsAsync(player, "rich", 100, 1, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
+    var plain = casino.SpinSlotsAsync(player, "plain", 100, 1, DateTime.UtcNow.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(300L, cheap.Transaction.PayoutAmount);
+    AssertEqual(4_000L, rich.Transaction.PayoutAmount);
+    AssertEqual(700L, plain.Transaction.PayoutAmount);
+
+    // The ledger reads each row against the reel it was played on, so the same stored key is three
+    // different labels depending on which room it was spun in.
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual("Plain Slots", board.Recent[0].MachineName);
+    AssertEqual("Floor A", board.Recent[0].Symbols[0]);
+    AssertEqual("Rich A", board.Recent[1].Symbols[0]);
+    AssertEqual("Cheap A", board.Recent[2].Symbols[0]);
+
+    // And each machine reports its own return, worked out from its own reel.
+    var machines = board.SlotMachines.ToDictionary(x => x.Key);
+    AssertTrue(machines["rich"].ReturnPercent > machines["cheap"].ReturnPercent, "the richer paytable should return more");
+    AssertEqual(4_000L, machines["rich"].TopAward);
+    AssertEqual(300L, machines["cheap"].TopAward);
+}
+
+static void CasinoSlotsDrawFifteenCellsAndPayLanes()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotMachines = [new SlotMachineOptions { Key = "lanes", Name = "Lane Slots", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, QuintMultiplier = 3 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, QuintMultiplier = 4 },
+                new SlotSymbolOptions { Key = "c", Label = "C", Weight = 1, QuintMultiplier = 5 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+
+    // Every cell the same symbol, so all nine lanes open with a run of five and every one of them pays.
+    var casino = CreateCasino(db, options, new ScriptedRandom(0.8));
+    var spin = casino.SpinSlotsAsync(player, "lanes", 10, 9, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var response = casino.ToResponse(spin.Transaction);
+
+    AssertEqual(15, response.Symbols.Count);
+    AssertEqual(9, spin.Transaction.Paylines);
+    AssertEqual(9, spin.Transaction.WinningPaylines);
+    AssertEqual(90L, spin.Transaction.BetAmount);
+    AssertEqual(450L, spin.Transaction.PayoutAmount);
+    AssertEqual(360L, spin.Transaction.NetResult);
+    AssertEqual("1,2,3,4,5,6,7,8,9", string.Join(",", response.Wins.Select(x => x.PaylineIndex)));
+    // Every cell the same symbol, so every lane ran the whole width of the grid.
+    AssertTrue(response.Wins.All(x => x.Run == 5), "a grid of one symbol runs five cells on every lane");
+    AssertTrue(response.Wins.All(x => x.Cells.Count == 5), "and lights all five of them");
+    AssertEqual(50L, response.Wins[0].Payout);
+}
+
+/// <summary>
+/// A lane is read from the left and nowhere else.
+///
+/// One grid, two lanes. The Middle lane opens on a B and then runs four As, which pays nothing at all
+/// - if runs were found anywhere in a lane rather than at its start, that would be four of a kind. The
+/// Top lane opens on two As and pays for exactly two.
+/// </summary>
+static void CasinoSlotsPayOnlyLeftToRightMatches()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotMachines = [new SlotMachineOptions { Key = "left", Name = "Left Slots", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 5, TripleMultiplier = 20, QuadMultiplier = 60, QuintMultiplier = 200 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 5, TripleMultiplier = 20, QuadMultiplier = 60, QuintMultiplier = 200 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 5, City = "Detroit" };
+
+    // Cells 0-4 are the Top lane, 5-9 the Middle. A high roll is a B, a low one an A.
+    var spin = CreateCasino(db, options, new ScriptedRandom(
+            0.0, 0.0, 0.9, 0.0, 0.0,
+            0.9, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0))
+        .SpinSlotsAsync(player, "left", 10, 2, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var response = CreateCasino(db, options).ToResponse(spin.Transaction);
+
+    // Two lanes at ten is a twenty stake; the Top lane's pair of As pays fifty.
+    AssertEqual(20L, spin.Transaction.BetAmount);
+    AssertEqual(50L, spin.Transaction.PayoutAmount);
+    AssertEqual(30L, spin.Transaction.NetResult);
+    AssertEqual(1, spin.Transaction.WinningPaylines);
+
+    // The win is two cells wide, and only those two. Reporting the whole lane here is what made the
+    // board light five cells for a pair.
+    var win = response.Wins.Single();
+    AssertEqual(2, win.PaylineIndex);
+    AssertEqual(2, win.Run);
+    AssertEqual("0,1", string.Join(",", win.Cells));
+    AssertEqual("A", win.Symbol);
+    AssertEqual(50L, win.Payout);
+}
+
+static void CasinoSlotsEarnStandingAndUnlockMachines()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            RepPerMaxBetSpin = 10,
+            Levels =
+            [
+                new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
+                new CasinoRepLevelOptions { Level = 2, Name = "Regular", Rep = 10 }
+            ],
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "open", Name = "Open Slots", MinBet = 100, MaxBet = 100 },
+                new SlotMachineOptions { Key = "back", Name = "Back Room", MinBet = 100, MaxBet = 100, MinCasinoRepLevel = 2 }
+            ],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }
+            ]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var before = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertTrue(before.SlotMachines.Single(x => x.Key == "back").Locked, "the back room starts shut");
+    AssertEqual(0, before.Reputation.Rep);
+    AssertEqual("Walk-In", before.Reputation.LevelName);
+
+    // A third of the ticket - three lanes of nine - is worth a third of the standing, and not enough
+    // to open anything.
+    var partial = casino.SpinSlotsAsync(player, "open", 100, 3, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(3, partial.RepEarned);
+    AssertTrue(casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single(x => x.Key == "back").Locked,
+        "a third of a ticket should not open the back room");
+
+    // The whole ticket is worth the whole of it.
+    player.CasinoRep = 0;
+    var spin = casino.SpinSlotsAsync(player, "open", 100, 9, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var after = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+
+    AssertEqual(10, spin.RepEarned);
+    AssertEqual(10d, player.CasinoRep);
+    AssertEqual("Regular", after.Reputation.LevelName);
+    AssertEqual(10d, after.Reputation.RepPerFullTicket);
+    AssertTrue(!after.SlotMachines.Single(x => x.Key == "back").Locked, "a full ticket should open the next room");
+}
+
+static void CasinoStandingResetsWithTheSeason()
+{
+    using var world = NewCrewWorld();
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 9, 3, 4, 45, 0, DateTimeKind.Utc);
+    var player = world.Member("Lucky", cash: 500_000);
+    player.CasinoRep = 1_234;
+    world.Db.CasinoTransactions.Add(new CasinoTransaction
+    {
+        PlayerId = player.Id,
+        MachineKey = "sidewalk",
+        BetAmount = 100,
+        PayoutAmount = 0,
+        NetResult = -100,
+        Outcome = "cash,chain,seven",
+        CreatedAtUtc = now
+    });
+    world.Db.CasinoJackpotDrops.Add(new CasinoJackpotDrop
+    {
+        MachineKey = "sidewalk",
+        PlayerId = player.Id,
+        Amount = 12_500,
+        Transaction = world.Db.CasinoTransactions.Local.First(),
+        WonAtUtc = now
+    });
+    world.Db.SaveChanges();
+    AssertEqual(1, world.Db.CasinoJackpotDrops.Count());
+
+    seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+
+    AssertEqual(0d, player.CasinoRep);
+    AssertEqual(0, world.Db.CasinoTransactions.Count());
+    AssertEqual(0, world.Db.CasinoJackpotDrops.Count());
+}
+
+/// <summary>
+/// Comps are earned for playing rather than for losing.
+///
+/// Rating the loss would pay nothing for a night that went well, which reads as the house punishing a
+/// winner, and it would leave a player who broke even holding nothing to show for an evening. Rating
+/// the wager is what gives every night a floor.
+/// </summary>
+static void CompsAreRatedOnTheWager()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            CompsPerDollarWagered = 0.1,
+            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, QuintMultiplier = 5 }]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+
+    // The same stake on a machine that always pays and one that never does.
+    var winner = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 10, Hideout = new Hideout() };
+    var loser = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 10, Hideout = new Hideout() };
+
+    var paying = CreateCasino(db, options, new ZeroRandom()).SpinSlotsAsync(winner, "rated", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    var cold = CreateCasino(db, Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            CompsPerDollarWagered = 0.1,
+            SlotMachines = [new SlotMachineOptions { Key = "rated", Name = "Rated Slots", MinBet = 100, MaxBet = 100 }],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 },
+                new SlotSymbolOptions { Key = "b", Label = "B", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }
+            ]
+        }
+    }), new ScriptedRandom(0.0, 0.9)).SpinSlotsAsync(loser, "rated", 100, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+
+    AssertTrue(paying.Transaction.NetResult > 0, "the first player should have won on this machine");
+    AssertTrue(cold.Transaction.NetResult < 0, "the second player should have lost on this machine");
+
+    // Same stake, same comps, opposite results.
+    AssertEqual(10, paying.CompsEarned);
+    AssertEqual(10, cold.CompsEarned);
+    AssertEqual(1_000L, winner.CasinoCompsCents);
+    AssertEqual(1_000L, loser.CasinoCompsCents);
+}
+
+/// <summary>
+/// Standing says what the cage will do for you and comps pay for it. Both have to be true at once,
+/// because either one alone collapses the ladder: a rank you could spend would make standing a
+/// currency, and a balance that opened rooms would let one big night buy the whole menu.
+/// </summary>
+static void CompsAreGatedByStandingAndPaidFor()
+{
+    var options = CompOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 1_000, Turns = 0, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    // Holding the price but standing at the door.
+    player.CasinoCompsCents = 50_000 * 100L;
+    player.CasinoRep = 0;
+    AssertRuleError(() => casino.ClaimComp(player, "backroom"), "a walk-in claims a reward held for regulars");
+
+    var walkIn = casino.BoardAsync(player, default).GetAwaiter().GetResult().Comps;
+    AssertEqual(50_000L, walkIn.Balance);
+    AssertTrue(walkIn.Rewards.Single(x => x.Key == "backroom").Locked, "the board should show it shut too");
+    AssertTrue(!walkIn.Rewards.Single(x => x.Key == "room").Locked, "and the open one open");
+
+    // Standing, but nothing to pay with.
+    player.CasinoRep = 500;
+    player.CasinoCompsCents = 10 * 100L;
+    AssertRuleError(() => casino.ClaimComp(player, "backroom"), "a regular claims a reward they cannot afford");
+    AssertRuleError(() => casino.ClaimComp(player, "nothing-like-this"), "a reward that does not exist is claimed");
+
+    // The cage never goes below nothing, however the menu is priced.
+    player.CasinoCompsCents = 600 * 100L;
+    casino.ClaimComp(player, "room");
+    AssertEqual(100 * 100L, player.CasinoCompsCents);
+}
+
+static void ACompHandsOverWhatItPromises()
+{
+    var options = CompOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player
+    {
+        Id = Guid.NewGuid(),
+        Cash = 1_000,
+        Turns = 5,
+        Heat = 30,
+        CasinoRep = 500,
+        CasinoCompsCents = 5_000 * 100L,
+        Hideout = new Hideout()
+    };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var claim = casino.ClaimComp(player, "backroom");
+
+    AssertEqual(25, claim.TurnsGranted);
+    AssertEqual(750L, claim.CashPaid);
+    AssertEqual(12d, claim.HeatCleared);
+    AssertEqual(30, player.Turns);
+    AssertEqual(1_750L, player.Cash);
+    AssertEqual(18d, player.Heat);
+    AssertEqual(3_000 * 100L, player.CasinoCompsCents);
+
+    // Heat stops at nothing rather than going negative and buying immunity to the next raid.
+    player.Heat = 4;
+    player.CasinoCompsCents = 5_000 * 100L;
+    player.Turns = 0;
+    casino.ClaimComp(player, "backroom");
+    AssertEqual(0d, player.Heat);
+
+    // A full turn bank refuses the room rather than charging for turns it cannot hand over.
+    player.CasinoCompsCents = 5_000 * 100L;
+    player.Turns = Resolve(options).MaxTurnsFor(player);
+    AssertRuleError(() => casino.ClaimComp(player, "room"), "a comped room is claimed with a full turn bank");
+    AssertEqual(5_000 * 100L, player.CasinoCompsCents);
+}
+
+static void CompsResetWithTheSeason()
+{
+    using var world = NewCrewWorld();
+    var seasons = CreateSeasons(world);
+    var now = new DateTime(2026, 9, 4, 3, 0, 0, DateTimeKind.Utc);
+    var player = world.Member("Whale", cash: 500_000);
+    player.CasinoCompsCents = 40_000 * 100L;
+    world.Db.SaveChanges();
+
+    seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
+    seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default).GetAwaiter().GetResult();
+
+    AssertEqual(0L, player.CasinoCompsCents);
+}
+
+/// <summary>
+/// A whole season of small wagers is worth exactly the sum of them.
+///
+/// The reason comps are a whole number of cents rather than a double of dollars. A hundredth of a
+/// wager is very often a value binary floating point cannot hold - a five dollar hand earns five
+/// cents, and 0.05 is not representable - so the old balance was a running total of approximations.
+/// One spin's error is far below a penny and completely invisible; the point is that it never
+/// cancels, because it is the same error every time, on a balance that is added to tens of thousands
+/// of times a season and then spent.
+///
+/// Ten thousand five dollar hands is an ordinary season for somebody who plays. Rated at a hundredth
+/// that is five hundred dollars of comps, and it has to be five hundred exactly rather than five
+/// hundred and something.
+/// </summary>
+static void CompsDoNotDriftOverASeason()
+{
+    var casino = new CasinoOptions { CompsPerDollarWagered = 0.01 };
+    var player = new Player();
+
+    for (var hand = 0; hand < 10_000; hand++)
+        player.CasinoCompsCents += casino.CompsCentsFor(5);
+
+    AssertEqual(50_000L, player.CasinoCompsCents);
+    AssertEqual(500L, CasinoService.CompDollars(player.CasinoCompsCents));
+
+    // The same run through a double, which is what this replaced. Kept as a live comparison rather
+    // than an assertion about a number, so this says why the column changed rather than merely that
+    // it did - and stays honest if a future runtime rounds differently.
+    var asADouble = 0d;
+    for (var hand = 0; hand < 10_000; hand++)
+        asADouble += 5 * 0.01;
+
+    AssertTrue(asADouble != 500d,
+        "the double total should not be exactly 500, or this test is no longer demonstrating anything");
+    AssertTrue(Math.Abs(asADouble - 500d) < 0.01,
+        "and it should be wrong by far less than a penny, which is what made it invisible");
+}
+
+/// <summary>
+/// An ace is eleven while eleven fits and one when it does not, and a hand with two of them can only
+/// ever use one of them high - two would be twenty-two before anything else was counted.
+/// </summary>
+static void BlackjackCountsAcesBothWays()
+{
+    AssertEqual(21, BlackjackService.Best(["AS", "KH"]));
+    AssertEqual(21, BlackjackService.Best(["AS", "AH", "9D"]));
+    AssertEqual(13, BlackjackService.Best(["AS", "AH", "AD"]));
+    AssertEqual(20, BlackjackService.Best(["AS", "9H"]));
+    // Sixteen with the ace high; drawing a ten drops it to twelve rather than busting.
+    AssertEqual(16, BlackjackService.Best(["AS", "5H"]));
+    AssertEqual(16, BlackjackService.Best(["AS", "5H", "TD"]));
+    AssertEqual(22, BlackjackService.Best(["TS", "5H", "7D"]));
+
+    AssertTrue(BlackjackService.IsSoft(["AS", "5H"]), "an ace still counting eleven is a soft hand");
+    AssertTrue(!BlackjackService.IsSoft(["AS", "5H", "TD"]), "and stops being soft once it cannot");
+    AssertTrue(!BlackjackService.IsSoft(["TS", "7H"]), "a hand with no ace is never soft");
+
+    AssertEqual(10, BlackjackService.Value("KD"));
+    AssertEqual(1, BlackjackService.Value("AC"));
+    AssertEqual(7, BlackjackService.Value("7H"));
+}
+
+/// <summary>
+/// The dealer's second card is dealt at the deal and shown at the end, and nothing in between says
+/// what it is. This is the one thing in the game that has to be true for it to be a game at all.
+/// </summary>
+static void BlackjackKeepsTheHoleCardDown()
+{
+    using var db = BlackjackDb();
+    var options = BlackjackOptions();
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    var pit = CreateBlackjack(db, options);
+
+    var hand = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var stored = JsonSerializer.Deserialize<List<string>>(hand.DealerCardsJson)!;
+    AssertEqual(2, stored.Count);
+
+    var view = pit.View(player, hand);
+    if (view.InPlay)
+    {
+        AssertEqual(1, view.DealerCards.Count);
+        AssertEqual(stored[0], view.DealerCards[0]);
+        // The shown total is read off the shown card, so it cannot give the other one away either.
+        AssertEqual(BlackjackService.Best([stored[0]]), view.DealerBest);
+        AssertTrue(!view.DealerCards.Contains(stored[1]) || stored[0] == stored[1],
+            "the hole card should not be in what the table shows");
+
+        // Standing turns it over, and only then.
+        var done = pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        var shown = pit.View(player, done);
+        AssertTrue(!shown.InPlay, "standing ends the round");
+        AssertTrue(shown.DealerCards.Count >= 2, "and turns the dealer's hand face up");
+        AssertEqual(stored[0], shown.DealerCards[0]);
+        AssertEqual(stored[1], shown.DealerCards[1]);
+    }
+
+    // Whatever happened, the shoe is never part of what a player is handed.
+    var board = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    var asJson = JsonSerializer.Serialize(board);
+    AssertTrue(!asJson.Contains("DeckJson") && !asJson.Contains("deckJson"), "the shoe must not reach the client");
+}
+
+/// <summary>
+/// What a hand pays, over the cases that decide it: a natural, a bust on either side, a plain
+/// comparison, and a push. The dealer draws to a rule rather than to a decision, which is the trade
+/// for the player seeing one of their cards from the start.
+/// </summary>
+static void BlackjackSettlesOnTheTotals()
+{
+    // A shoe dealt in build order: player takes the first and third card, dealer the second and fourth.
+    using var db = BlackjackDb();
+    var options = BlackjackOptions();
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 20, CasinoRep = 100_000, Hideout = new Hideout() };
+    var pit = CreateBlackjack(db, options, new NoShuffleRandom());
+
+    var cash = player.Cash;
+    var hand = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    // AS 3S against 2S 4S: eleven soft against six, so nothing has settled itself.
+    var dealt = pit.View(player, hand);
+    AssertEqual(1, dealt.Hands.Count);
+    AssertEqual("AS,3S", string.Join(",", dealt.Hands[0].Cards));
+    AssertEqual(BlackjackStatus.Playing, hand.Status);
+    AssertEqual(cash - 100, player.Cash);
+    AssertEqual(19, player.Turns);
+
+    var settled = pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertTrue(BlackjackStatus.IsOver(settled.Status), "standing settles the hand");
+    // Whatever the dealer drew to, the row and the money agree with each other.
+    AssertEqual(settled.Payout - settled.Bet, settled.Payout - 100);
+    AssertTrue(settled.SettledAtUtc is not null, "a settled hand is stamped");
+
+    // A hand cannot be dealt while one is live, and there is nothing to act on when one is not.
+    using var second = BlackjackDb();
+    var busy = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    var table = CreateBlackjack(second, options, new NoShuffleRandom());
+    table.DealAsync(busy, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    second.SaveChanges();
+    if (!BlackjackStatus.IsOver(table.BoardAsync(busy, default).GetAwaiter().GetResult().Round!.Status))
+    {
+        AssertRuleError(() => table.DealAsync(busy, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+            "a second hand is dealt on top of a live one");
+    }
+
+    using var idle = BlackjackDb();
+    var waiting = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    AssertRuleError(() => CreateBlackjack(idle, options).HitAsync(waiting, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a card is asked for with no hand on the table");
+
+    // And the table's limits are the table's limits.
+    using var limits = BlackjackDb();
+    var punter = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 10, CasinoRep = 100_000, Hideout = new Hideout() };
+    AssertRuleError(() => CreateBlackjack(limits, options).DealAsync(punter, "pit", 10, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is dealt under the table minimum");
+    AssertRuleError(() => CreateBlackjack(limits, options).DealAsync(punter, "pit", 500_000, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is dealt over the table maximum");
+}
+
+static GameDbContext BlackjackDb()
+    => new(new DbContextOptionsBuilder<GameDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+
+static GameOptions BlackjackOptions()
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            RepPerMaxBetSpin = 5,
+            CompsPerDollarWagered = 0.01,
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1 }],
+            Blackjack = new BlackjackOptions
+            {
+                Enabled = true,
+                SpinTurnCost = 1,
+                Decks = 1,
+                Tables =
+                [
+                    new BlackjackTableOptions { Key = "pit", Name = "Pit", MinBet = 100, MaxBet = 10_000 },
+                    new BlackjackTableOptions { Key = "soft", Name = "Soft", MinBet = 100, MaxBet = 10_000, AllowsSurrender = true }
+                ]
+            }
+        }
+    };
+
+/// <summary>
+/// Deals from a seeded shoe until the player is holding what the test needs, and hands back the round
+/// waiting on a decision.
+///
+/// A pair cannot be arranged by picking a shuffle: the generators these tests use elsewhere return one
+/// value, and Fisher-Yates driven by one value only ever swaps against a single index - the first and
+/// third cards off such a shoe are never the same rank. So this deals real shuffles from a fixed seed,
+/// which is both deterministic and the actual code path.
+/// </summary>
+static (BlackjackService Pit, GameDbContext Db, Player Player, BlackjackHand Round) DealUntil(
+    GameOptions options, Func<IReadOnlyList<string>, bool> wanted, string looking,
+    string tableKey = "pit", bool awaitingInsurance = false)
+{
+    for (var seed = 1; seed <= 4_000; seed++)
+    {
+        var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        var player = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
+        var pit = CreateBlackjack(db, options, new SeededRandom(seed));
+        var round = pit.DealAsync(player, tableKey, 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+
+        // A round waiting on insurance refuses every other move, so unless that is what the caller is
+        // after it is not a round anybody can play and the search keeps going.
+        var view = pit.View(player, round);
+        if (view.Hands.Count == 1
+            && view.AwaitingInsurance == awaitingInsurance
+            && wanted(view.Hands[0].Cards)
+            && !BlackjackStatus.IsOver(round.Status))
+            return (pit, db, player, round);
+
+        db.Dispose();
+    }
+
+    throw new InvalidOperationException($"No seed in four thousand dealt {looking}.");
+}
+
+/// <summary>
+/// A split pair becomes two hands, each with its own stake, and both are answered by one dealer hand.
+///
+/// That last part is the whole reason splitting is a decision rather than a free roll: two hands are
+/// two stakes against the same dealer, so a dealer twenty takes both of them at once.
+/// </summary>
+static void BlackjackSplitsIntoTwoHands()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options,
+        cards => BlackjackService.Value(cards[0]) == BlackjackService.Value(cards[1]) && cards[0][0] != 'A',
+        "a pair that is not aces");
+    using var _ = db;
+
+    var dealt = pit.View(player, round);
+    AssertTrue(dealt.Hands[0].CanSplit, "a pair should be splittable");
+    var cashBefore = player.Cash;
+
+    pit.SplitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var after = pit.View(player, round);
+    AssertEqual(2, after.Hands.Count);
+    // A second stake went up for the second hand, and the round knows what it cost altogether.
+    AssertEqual(cashBefore - 100, player.Cash);
+    AssertEqual(200L, round.Bet);
+    AssertEqual(1, round.Splits);
+    // Each hand keeps one of the pair and is dealt back up to two.
+    AssertEqual(2, after.Hands[0].Cards.Count);
+    AssertEqual(2, after.Hands[1].Cards.Count);
+    AssertEqual(100L, after.Hands[0].Bet);
+    AssertEqual(100L, after.Hands[1].Bet);
+    AssertEqual(dealt.Hands[0].Cards[0], after.Hands[0].Cards[0]);
+    AssertEqual(dealt.Hands[0].Cards[1], after.Hands[1].Cards[0]);
+
+    // Play both out. The table waits on the first, then the second, then the dealer plays once.
+    var guard = 0;
+    while (pit.View(player, round).InPlay && guard++ < 10)
+        pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var settled = pit.View(player, round);
+    AssertTrue(!settled.InPlay, "standing on the last hand settles the round");
+    AssertEqual(BlackjackStatus.Split, round.Status);
+    AssertTrue(settled.Hands.All(x => x.Status != BlackjackStatus.Playing), "every hand is answered");
+    // One dealer hand answered both, and the round's money is the sum of what the hands did.
+    AssertEqual(settled.Hands.Sum(x => x.Payout), round.Payout);
+    AssertEqual(round.Payout - round.Bet, settled.NetResult);
+    AssertTrue(settled.DealerCards.Count >= 2, "the dealer's hand is face up at the end");
+
+    // One row in the ledger for the round, carrying both hands.
+    var board = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(2, board.Recent[0].Hands.Count);
+    AssertEqual(200L, board.Recent[0].Bet);
+}
+
+/// <summary>
+/// Split aces take one card each and are not asked anything else, which every house in the world
+/// insists on: a pair of aces resplit and drawn on freely is the strongest position in the game.
+/// </summary>
+static void BlackjackSplitAcesTakeOneCard()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options, cards => cards[0][0] == 'A' && cards[1][0] == 'A', "a pair of aces");
+    using var _ = db;
+
+    // Two aces is soft twelve rather than twenty-one, so the round is live and the pair is splittable.
+    var dealt = pit.View(player, round);
+    AssertEqual(12, dealt.Hands[0].Best);
+    AssertTrue(dealt.Hands[0].CanSplit, "aces are a pair like any other");
+
+    pit.SplitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var after = pit.View(player, round);
+    AssertEqual(2, after.Hands.Count);
+    AssertTrue(after.Hands.All(x => x.Cards.Count == 2), "each split ace takes exactly one card");
+    AssertTrue(!after.InPlay, "and neither hand is asked anything after it");
+    // Whatever they made, neither is paid as a natural: a natural is the hand as it was dealt.
+    AssertTrue(after.Hands.All(x => x.Status != BlackjackStatus.PlayerBlackjack),
+        "twenty-one after a split is twenty-one, not blackjack");
+}
+
+/// <summary>
+/// While the dealer is showing an ace and the question has not been answered, the table does nothing.
+///
+/// This is the part of insurance that is easy to get wrong: the offer comes before anybody looks at
+/// the hole card, so a round that is asking cannot settle itself, cannot deal another card, and must
+/// not show what is underneath - because showing it is exactly what the answer is worth.
+/// </summary>
+static void BlackjackInsuranceHoldsTheRound()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options, _ => true, "an ace up", awaitingInsurance: true);
+    using var _ = db;
+
+    var view = pit.View(player, round);
+    AssertTrue(view.AwaitingInsurance, "an ace up is asked about");
+    AssertTrue(view.InPlay, "and the round is still live while it is being asked");
+    // Half the stake, and the hole card is still face down whatever it happens to be.
+    AssertEqual(50L, view.InsuranceCost);
+    AssertEqual(1, view.DealerCards.Count);
+    AssertEqual("A", view.DealerCards[0][0].ToString());
+
+    // Nothing else is on offer until it is answered.
+    AssertRuleError(() => pit.HitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a card is drawn with insurance outstanding");
+    AssertRuleError(() => pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is stood with insurance outstanding");
+    AssertRuleError(() => pit.DoubleAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is doubled with insurance outstanding");
+    AssertRuleError(() => pit.SplitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is split with insurance outstanding");
+    AssertTrue(!view.Hands[0].CanDouble && !view.Hands[0].CanSplit && !view.Hands[0].CanSurrender,
+        "and the table offers none of them either");
+
+    // Declining costs nothing and puts the round back in the player's hands.
+    var cash = player.Cash;
+    pit.InsuranceAsync(player, false, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(cash, player.Cash);
+    AssertEqual(0L, round.InsuranceBet);
+    AssertTrue(!pit.View(player, round).AwaitingInsurance, "the question is asked once");
+    AssertRuleError(() => pit.InsuranceAsync(player, true, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "insurance is taken after the answer was given");
+}
+
+/// <summary>
+/// Insurance is decided by the hole card and nothing else, and against a dealer natural it pays for
+/// exactly the hand it was covering.
+///
+/// Two to one on half the stake returns the whole stake, so a covered hand lost to a natural is a
+/// wash. That is the sales pitch. It is still the worst bet on the floor, because the hole card is a
+/// ten four times in thirteen and two to one is the price of one in three - the walk-away is the
+/// point of the test, not the value.
+/// </summary>
+static void BlackjackInsuranceSettlesOnTheHoleCard()
+{
+    var options = BlackjackOptions();
+    var paid = false;
+    var lost = false;
+
+    // Which of the two a seed gives is not knowable until the dealer looks, so this takes insurance on
+    // ace-up deals until both have turned up.
+    for (var seed = 1; seed <= 4_000 && !(paid && lost); seed++)
+    {
+        using var db = BlackjackDb();
+        var player = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
+        var pit = CreateBlackjack(db, options, new SeededRandom(seed));
+        var start = player.Cash;
+
+        var round = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+        if (!pit.View(player, round).AwaitingInsurance) continue;
+
+        pit.InsuranceAsync(player, true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+
+        // Half the stake goes up whichever way it lands, and it is added to what the round cost.
+        AssertEqual(50L, round.InsuranceBet);
+        var view = pit.View(player, round);
+
+        if (round.InsurancePayout > 0)
+        {
+            paid = true;
+            // The side stake back plus two to one on it.
+            AssertEqual(150L, round.InsurancePayout);
+            AssertTrue(!view.InPlay, "a dealer natural settles the round as soon as insurance is answered");
+            AssertEqual(21, view.DealerBest);
+            AssertEqual(2, view.DealerCards.Count);
+            AssertEqual(150L, round.Bet);
+
+            // A losing hand covered by insurance is a wash: the stake comes back through the side bet.
+            if (view.Hands[0].Status == BlackjackStatus.DealerWin)
+                AssertEqual(start, player.Cash);
+        }
+        else if (view.InPlay)
+        {
+            lost = true;
+            // No natural under there, so the side bet is gone and the hand is still to be played.
+            AssertEqual(0L, round.InsurancePayout);
+            AssertEqual(start - 150, player.Cash);
+            AssertTrue(view.DealerCards.Count == 1, "and the hole card stays down while the hand goes on");
+        }
+    }
+
+    AssertTrue(paid, "no seed in four thousand put a ten under an ace");
+    AssertTrue(lost, "no seed in four thousand put anything else under one");
+}
+
+/// <summary>
+/// A hand given up pays half the stake back, ends the round where it stands, and is only offered by a
+/// table that takes it.
+///
+/// The dealer does not draw afterwards, which is the tell that the hand really is over rather than
+/// being played out cheaply: there is nothing left for those cards to beat.
+/// </summary>
+static void BlackjackSurrenderPaysHalfBack()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options, _ => true, "a hand at a table that takes surrenders", tableKey: "soft");
+    using var _ = db;
+
+    var dealt = pit.View(player, round);
+    AssertTrue(dealt.Hands[0].CanSurrender, "a fresh hand at this table can be given up");
+    var cash = player.Cash;
+
+    pit.SurrenderAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var view = pit.View(player, round);
+    AssertEqual(BlackjackStatus.Surrendered, round.Status);
+    AssertTrue(!view.InPlay, "giving the hand up ends the round");
+    // Half of a hundred back, and the round is stamped and paid like any other.
+    AssertEqual(50L, round.Payout);
+    AssertEqual(cash + 50, player.Cash);
+    AssertEqual(-50L, view.NetResult);
+    AssertTrue(round.SettledAtUtc is not null, "a given-up hand is stamped");
+    // Nothing left to beat, so the dealer never turned another card.
+    AssertEqual(2, view.DealerCards.Count);
+
+    // One row in the ledger, saying what it was.
+    var board = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(BlackjackStatus.Surrendered, board.Recent[0].Status);
+    AssertEqual(-50L, board.Recent[0].NetResult);
+
+    // A table that does not take surrenders does not take them.
+    var (cheap, cheapDb, cheapPlayer, cheapRound) = DealUntil(options, _ => true, "a hand at the cheap table");
+    using var __ = cheapDb;
+    AssertTrue(!cheap.View(cheapPlayer, cheapRound).Hands[0].CanSurrender, "the cheap table does not offer it");
+    AssertRuleError(() => cheap.SurrenderAsync(cheapPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is given up at a table that does not take surrenders");
+
+    // And a hand that has been split has to be played out.
+    var (split, splitDb, splitPlayer, _) = DealUntil(options,
+        cards => BlackjackService.Value(cards[0]) == BlackjackService.Value(cards[1]) && cards[0][0] != 'A',
+        "a pair at a table that takes surrenders", tableKey: "soft");
+    using var ___ = splitDb;
+    split.SplitAsync(splitPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    splitDb.SaveChanges();
+    AssertRuleError(() => split.SurrenderAsync(splitPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a split hand is given up");
+}
+
+/// <summary>
+/// The slots ledger carries pulls, and the floor's stats carry everything.
+///
+/// Every game writes to one transactions table, which is right - it is one cage. But the ledger on the
+/// slots page is drawn as a grid of reels with a lane count and a pot beside it, and a hand of cards
+/// has none of those: it came out as a table key with dashes across the row. The split is which
+/// question is being asked. "What have the machines been doing" is the machines; "what has this place
+/// done to me" is the whole floor, cards and wheel included.
+/// </summary>
+static void SlotsLedgerIsSlotsAlone()
+{
+    var options = BlackjackOptions();
+    options.Casino.SlotMachines = [new SlotMachineOptions { Key = "test", Name = "Test", MinBet = 10, MaxBet = 1_000 }];
+    options.Casino.SlotSymbols =
+    [
+        // No multipliers at all, so the pull is a deterministic loser and the money is easy to read.
+        new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1 }
+    ];
+
+    using var db = BlackjackDb();
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
+    var now = DateTime.UtcNow;
+
+    // One pull and one hand, both settled, both in the same transactions table.
+    var casino = CreateCasino(db, options, new ScriptedRandom(0.0));
+    casino.SpinSlotsAsync(player, "test", 100, 1, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var pit = CreateBlackjack(db, options, new NoShuffleRandom());
+    pit.DealAsync(player, "pit", 100, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    var round = pit.BoardAsync(player, default).GetAwaiter().GetResult().Round;
+    if (round is not null && round.InPlay)
+    {
+        pit.StandAsync(player, now, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+    }
+
+    // Two plays are on the floor's record.
+    var stats = casino.StatsAsync(player.Id, default).GetAwaiter().GetResult();
+    AssertEqual(2, stats.Plays);
+    AssertEqual(200L, stats.Wagered);
+
+    // One of them is a pull, and only that one is in the ledger that draws reels.
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1, board.Recent.Count);
+    AssertEqual("slots", board.Recent[0].GameType);
+    AssertTrue(board.Recent.All(x => x.GameType == "slots"), "the slots ledger holds nothing else");
+
+    // And the hand is still on its own ledger, where the columns mean something.
+    var pitBoard = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1, pitBoard.Recent.Count);
+    AssertEqual("pit", pitBoard.Recent[0].TableKey);
+}
+
+/// <summary>
+/// Roulette's return is not tuned, it is arithmetic, and this checks the arithmetic rather than the
+/// tuning: paid over every pocket in turn, each bet returns thirty-six times its stake for every
+/// thirty-seven or thirty-eight pockets on the wheel, whichever wheel it is sitting at.
+///
+/// That sameness is the point of the game. A player choosing between a straight number and red is
+/// choosing variance and nothing else, and if any row of this test disagreed with the others then one
+/// of the bets on the cloth would be the right one to make.
+/// </summary>
+static void RouletteEdgeIsTheZeroesAndNothingElse()
+{
+    foreach (var (key, zeroes, pockets) in new[] { ("front", 2, 38), ("back", 1, 37) })
+    {
+        var options = RouletteOptions(zeroes);
+        foreach (var (kind, value) in new[] { ("straight", "17"), ("red", ""), ("odd", ""), ("low", ""), ("dozen", "2"), ("column", "3") })
+        {
+            long staked = 0, returned = 0;
+            // Every pocket exactly once, so this is the whole wheel rather than a sample of it.
+            for (var pocket = 0; pocket < pockets; pocket++)
+            {
+                using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+                    .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                    .Options);
+                var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+                var spin = CreateRoulette(db, options, new FixedIntRandom(pocket))
+                    .Spin(player, key, [new RouletteBetRequest(kind, value, 100)], DateTime.UtcNow);
+                staked += spin.Transaction.BetAmount;
+                returned += spin.Transaction.PayoutAmount;
+            }
+
+            // 36 back for every pocket staked: 94.74% on two zeroes, 97.30% on one.
+            AssertEqual(pockets * 100L, staked);
+            AssertEqual(3_600L, returned);
+        }
+    }
+}
+
+/// <summary>
+/// The zeroes are numbers on the wheel and nothing at all on the cloth. They are the house's entire
+/// take, so a zero paying an outside bet even once would hand the edge back.
+/// </summary>
+static void RouletteZeroesBeatTheOutsideBets()
+{
+    var options = RouletteOptions(2);
+    foreach (var pocket in new[] { 0, 37 })
+    {
+        foreach (var kind in new[] { "red", "black", "odd", "even", "low", "high", "dozen", "column" })
+        {
+            using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options);
+            var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+            var spin = CreateRoulette(db, options, new FixedIntRandom(pocket))
+                .Spin(player, "front", [new RouletteBetRequest(kind, "1", 100)], DateTime.UtcNow);
+
+            AssertEqual(0L, spin.Transaction.PayoutAmount);
+            AssertEqual("green", spin.Colour);
+        }
+    }
+
+    // And a straight number on the zero itself is paid like any other pocket.
+    using var zeroDb = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var backer = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+    var onZero = CreateRoulette(zeroDb, RouletteOptions(2), new FixedIntRandom(37))
+        .Spin(backer, "front", [new RouletteBetRequest("straight", "00", 100)], DateTime.UtcNow);
+    AssertEqual("00", onZero.Pocket);
+    AssertEqual(3_600L, onZero.Transaction.PayoutAmount);
+
+    // The double zero is not a pocket on a single-zero wheel, so it is not a bet either.
+    using var singleDb = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var quiet = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, CasinoRep = 100_000, Hideout = new Hideout() };
+    AssertRuleError(() => CreateRoulette(singleDb, RouletteOptions(1), new FixedIntRandom(0))
+            .Spin(quiet, "back", [new RouletteBetRequest("straight", "00", 500)], DateTime.UtcNow),
+        "a double zero is backed on a wheel that does not have one");
+}
+
+/// <summary>
+/// Several bets ride on one spin and all of them are settled against the same pocket - which is what
+/// makes covering the cloth a way to lose steadily rather than a way to win.
+/// </summary>
+static void RouletteSettlesEveryBetAgainstOnePocket()
+{
+    var options = RouletteOptions(2);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 5, Hideout = new Hideout() };
+
+    // The ball finds 17: black, odd, low, second dozen, second column.
+    var spin = CreateRoulette(db, options, new FixedIntRandom(17)).Spin(player, "front",
+    [
+        new RouletteBetRequest("straight", "17", 100),
+        new RouletteBetRequest("red", null, 100),
+        new RouletteBetRequest("odd", null, 100),
+        new RouletteBetRequest("dozen", "2", 100),
+        new RouletteBetRequest("column", "1", 100)
+    ], DateTime.UtcNow);
+
+    AssertEqual("17", spin.Pocket);
+    AssertEqual("black", spin.Colour);
+    AssertEqual(500L, spin.Transaction.BetAmount);
+    // 3,600 on the number, 200 on odd, 300 on the dozen. Red loses; 17 is in the second column, not the first.
+    AssertEqual(4_100L, spin.Transaction.PayoutAmount);
+    AssertEqual(3_600L, spin.Transaction.NetResult);
+    AssertEqual(5, spin.Transaction.Paylines);
+    AssertEqual(3, spin.Transaction.WinningPaylines);
+    AssertEqual(13_600L, player.Cash);
+    AssertEqual(4, player.Turns);
+
+    // The breakdown survives the round trip through the row rather than living only in the response.
+    var row = CreateRoulette(db, options).ToResponse(spin.Transaction);
+    AssertEqual(5, row.Bets.Count);
+    AssertEqual("Straight up 17", row.Bets[0].Label);
+    AssertEqual(3_600L, row.Bets[0].Payout);
+    AssertEqual(0L, row.Bets[1].Payout);
+    AssertEqual("17", row.Pocket);
+
+    // An empty cloth is not a spin, and the table will not take a bet under its minimum.
+    AssertRuleError(() => CreateRoulette(db, options).Spin(player, "front", [], DateTime.UtcNow),
+        "the wheel is spun with nothing on the cloth");
+    AssertRuleError(() => CreateRoulette(db, options).Spin(player, "front", [new RouletteBetRequest("red", null, 1)], DateTime.UtcNow),
+        "a bet under the table minimum is placed");
+    AssertRuleError(() => CreateRoulette(db, options).Spin(player, "front", [new RouletteBetRequest("nonsense", null, 100)], DateTime.UtcNow),
+        "a bet nobody offers is placed");
+}
+
+/// <summary>Two wheels that differ only in how many zeroes they carry.</summary>
+static GameOptions RouletteOptions(int zeroes)
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            RepPerMaxBetSpin = 5,
+            CompsPerDollarWagered = 0.01,
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1 }],
+            Roulette = new RouletteOptions
+            {
+                Enabled = true,
+                SpinTurnCost = 1,
+                Tables =
+                [
+                    new RouletteTableOptions { Key = "front", Name = "Front", Zeroes = 2, MinBet = 25, MaxBet = 2_500 },
+                    new RouletteTableOptions { Key = "back", Name = "Back", Zeroes = zeroes, MinBet = 25, MaxBet = 50_000 }
+                ]
+            }
+        }
+    };
+
+/// <summary>
+/// A spin the house owes costs nothing and replays the pull that won it.
+///
+/// The ticket travels with the count on purpose. Free spins that played whatever was on screen when
+/// they were spent would have one obvious use: win them on the smallest pull the machine takes, then
+/// set the stake to the maximum and collect at a hundred times the price of what earned them.
+/// </summary>
+static void FreeSpinsReplayThePullThatWonThem()
+{
+    var options = FreeSpinOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 20, Hideout = new Hideout() };
+
+    // MinimumRandom rolls one, which is over any chance worth setting, so this pull wins nothing.
+    var quiet = CreateCasino(db, options, new MinimumRandom())
+        .SpinSlotsAsync(player, "free", 10, 2, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(0, quiet.FreeSpinsAwarded);
+    AssertEqual(0, player.CasinoFreeSpins);
+
+    // ZeroRandom rolls nothing, which is under it, so this one does - on a two-lane pull at ten.
+    var lucky = CreateCasino(db, options, new ZeroRandom())
+        .SpinSlotsAsync(player, "free", 10, 2, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
+    AssertEqual(3, lucky.FreeSpinsAwarded);
+    AssertEqual(3, player.CasinoFreeSpins);
+    AssertEqual(10L, player.CasinoFreeSpinBet);
+    AssertEqual(2, player.CasinoFreeSpinLanes);
+    AssertTrue(!lucky.WasFreeSpin, "the pull that wins them is not itself a free one");
+
+    // Now ask for the largest pull the machine takes. It replays the ticket instead, and takes
+    // neither cash nor a turn for it.
+    var cashBefore = player.Cash;
+    var turnsBefore = player.Turns;
+    var free = CreateCasino(db, options, new MinimumRandom())
+        .SpinSlotsAsync(player, "free", 1_000, 9, DateTime.UtcNow.AddMinutes(2), default).GetAwaiter().GetResult();
+
+    AssertTrue(free.WasFreeSpin, "a spin the house owes should be free");
+    AssertEqual(20L, free.Transaction.BetAmount);
+    AssertEqual(2, free.Transaction.Paylines);
+    AssertEqual(0, free.TurnsSpent);
+    AssertEqual(turnsBefore, player.Turns);
+    AssertEqual(cashBefore, player.Cash);
+    AssertEqual(2, player.CasinoFreeSpins);
+    AssertTrue(free.Transaction.IsFreeSpin, "the row should say who paid for it");
+
+    // And it cannot pay for more of itself, however the roll lands.
+    var second = CreateCasino(db, options, new ZeroRandom())
+        .SpinSlotsAsync(player, "free", 10, 2, DateTime.UtcNow.AddMinutes(3), default).GetAwaiter().GetResult();
+    AssertEqual(0, second.FreeSpinsAwarded);
+    AssertEqual(1, player.CasinoFreeSpins);
+}
+
+/// <summary>
+/// Nothing was staked on a free spin, so it pays for none of the things stakes pay for: not the
+/// progressive, not standing, not comps. It can still take the pot, which is everybody's money and
+/// does not ask whose turn paid for the pull.
+/// </summary>
+static void FreeSpinsPayForNoneOfTheFloor()
+{
+    var options = FreeSpinOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 20, Hideout = new Hideout() };
+
+    CreateCasino(db, options, new ZeroRandom())
+        .SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(3, player.CasinoFreeSpins);
+
+    // ZeroRandom draws the blank, so this one lands nothing and the meter can be read either side of it.
+    var casino = CreateCasino(db, options, new ZeroRandom());
+    var potBefore = casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive;
+    var repBefore = player.CasinoRep;
+    var compsBefore = player.CasinoCompsCents;
+
+    var free = casino.SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertTrue(free.WasFreeSpin, "this one is on the house");
+    AssertEqual(0, free.RepEarned);
+    AssertEqual(0, free.CompsEarned);
+    AssertEqual(repBefore, player.CasinoRep);
+    AssertEqual(compsBefore, player.CasinoCompsCents);
+
+    // The stake is still written down - it is what the paytable multiplied - but it put nothing in,
+    // so it comes off nothing either. Subtracting it here reported a sixty dollar loss to a player
+    // whose cash had just gone up by twenty.
+    AssertEqual(900L, free.Transaction.BetAmount);
+    AssertEqual(free.Transaction.PayoutAmount, free.Transaction.NetResult);
+    AssertTrue(free.Transaction.NetResult >= 0, "a spin that cost nothing cannot lose money");
+    var potAfter = casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive;
+    AssertEqual(potBefore, potAfter);
+
+    // It can still take the pot. MinimumRandom falls off the end of the reel onto the Vault, so this
+    // grid is fifteen of them on a full ticket, which is what the meter pays out on.
+    var winner = CreateCasino(db, options, new MinimumRandom())
+        .SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertTrue(winner.WasFreeSpin, "still on the house");
+    AssertEqual(potAfter, winner.JackpotWon);
+    AssertTrue(winner.JackpotWon > 0, "a spin the house paid for can still take everybody's money");
+}
+
+/// <summary>
+/// One machine that pays nothing at all, so the only money moving in these tests is the free spins
+/// themselves, and a three-spin award on a one-in-fifty roll.
+/// </summary>
+static GameOptions FreeSpinOptions()
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 1,
+            CompsPerDollarWagered = 0.01,
+            RepPerMaxBetSpin = 5,
+            FreeSpins = new CasinoFreeSpinOptions { Enabled = true, ChancePerSpin = 0.02, Award = 3 },
+            Jackpot = new CasinoJackpotOptions { Enabled = true, ContributionPercent = 10, Symbol = "vault", SymbolsRequired = 4, RequireAllPaylines = true },
+            SlotMachines = [new SlotMachineOptions { Key = "free", Name = "Free Slots", MinBet = 10, MaxBet = 1_000, JackpotSeed = 1_000 }],
+            SlotSymbols =
+            [
+                new SlotSymbolOptions { Key = "blank", Label = "Blank", Weight = 1 },
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1 }
+            ]
+        }
+    };
+
+/// <summary>
+/// A menu of two: one anybody can take, and one the back room keeps for regulars that pays in all
+/// three currencies at once so the claim path is exercised whole.
+/// </summary>
+static GameOptions CompOptions()
+    => new()
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            CompsPerDollarWagered = 0.01,
+            Levels =
+            [
+                new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
+                new CasinoRepLevelOptions { Level = 2, Name = "Regular", Rep = 100 }
+            ],
+            CompRewards =
+            [
+                new CompRewardOptions { Key = "room", Name = "A room upstairs", Cost = 500, Turns = 25 },
+                new CompRewardOptions { Key = "backroom", Name = "The back room", Cost = 2_000, Turns = 25, Cash = 750, Heat = 12, MinCasinoRepLevel = 2 }
+            ],
+            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any Slots", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
+        }
+    };
+
+
+
+/// <summary>
+/// A pull costs turns, and running out of them stops the night.
+///
+/// The floor used to be the only thing in the game that charged nothing but money, which made it the
+/// one activity that never competed with any other - there was no hour of the day when spinning was
+/// the wrong thing to be doing.
+/// </summary>
+static void CasinoSlotsCostTurns()
+{
+    var options = Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 3,
+            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
+        }
+    });
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 7, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    var first = casino.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(3, first.TurnsSpent);
+    AssertEqual(4, player.Turns);
+
+    casino.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(1, player.Turns);
+
+    // The stake stays in the player's pocket when the bank is short: being out of turns is the whole
+    // answer to the request, and there is no sense taking money to say so.
+    AssertRuleError(
+        () => casino.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a pull is asked for with fewer turns than it costs");
+    AssertEqual(1, player.Turns);
+    AssertEqual(99_980L, player.Cash);
+
+    // A floor tuned back to costing nothing still works, because the charge is a number and not a rule.
+    var free = CreateCasino(db, Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 0,
+            SlotMachines = [new SlotMachineOptions { Key = "turns", Name = "Turn Slots", MinBet = 10, MaxBet = 100 }],
+            SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
+        }
+    }), new ZeroRandom());
+    var spin = free.SpinSlotsAsync(player, "turns", 10, 1, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual(0, spin.TurnsSpent);
+    AssertEqual(1, player.Turns);
+}
+
+/// <summary>
+/// The pot is the machine's seed plus a slice of every wager taken since the last time it went, and
+/// the whole of it goes to whoever lands it.
+///
+/// Nothing anywhere stores that number. It is derived from the ledger on the way past, which is what
+/// keeps two people spinning the same machine at the same moment from reading one counter, adding to
+/// it and writing back over each other.
+/// </summary>
+static void CasinoProgressivePaysThePot()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // Two spins that land nothing, each feeding a tenth of its stake into the meter.
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    cold.SpinSlotsAsync(player, "pot", 100, 9, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    cold.SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var board = cold.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1_180L, board.SlotMachines.Single().Progressive);
+
+    // The third lands the grid. The pot pays what it stood at including this spin's own slice.
+    var hot = CreateCasino(db, options, new ScriptedRandom(0.9));
+    var spin = hot.SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(1_270L, spin.JackpotWon);
+    AssertEqual(1_270L, spin.Transaction.JackpotAmount);
+    AssertEqual(1_270L, spin.Transaction.PayoutAmount);
+    AssertEqual(370L, spin.Transaction.NetResult);
+
+    var drop = db.CasinoJackpotDrops.Single();
+    AssertEqual(1_270L, drop.Amount);
+    AssertEqual("pot", drop.MachineKey);
+    AssertEqual(spin.Transaction.Id, drop.CasinoTransactionId);
+
+    // Every symbol on this machine pays nothing, so the paytable cannot have contributed a penny and
+    // the whole payout is the pot - which is the only way to be sure the figure came from the meter.
+    AssertEqual(spin.Transaction.JackpotAmount, spin.Transaction.PayoutAmount);
+    AssertTrue(spin.Transaction.PayoutAmount > spin.Transaction.BetAmount, "the pot pays more than the stake that fed it");
+}
+
+/// <summary>
+/// The pot only pays on a full ticket, and only when enough of the symbol actually lands.
+///
+/// Both halves matter. A progressive fed by everybody and collectable on one lane makes the cheapest
+/// possible spin the correct way to chase it, and a rule that counted any two would drop the pot
+/// several times an evening.
+/// </summary>
+static void CasinoProgressiveNeedsEveryLane()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // A grid full of the symbol, eight lanes bought. Nothing.
+    var shortTicket = CreateCasino(db, options, new ScriptedRandom(0.9))
+        .SpinSlotsAsync(player, "pot", 100, 8, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(0L, shortTicket.JackpotWon);
+    AssertEqual(0, db.CasinoJackpotDrops.Count());
+
+    // Every lane bought, but only two of the symbol on the grid.
+    var thin = CreateCasino(db, options, new ScriptedRandom(
+            0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        .SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(0L, thin.JackpotWon);
+    AssertEqual(0, db.CasinoJackpotDrops.Count());
+
+    // Three of the symbol, anywhere on the grid, on a full ticket.
+    var landed = CreateCasino(db, options, new ScriptedRandom(
+            0.9, 0.0, 0.9, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        .SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(2), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertTrue(landed.JackpotWon > 0, "three of the symbol anywhere on a full ticket takes the pot");
+    AssertEqual(1, db.CasinoJackpotDrops.Count());
+}
+
+/// <summary>
+/// A pot that has gone starts again from the seed, and the wager that won it does not feed the next
+/// one. The drop is the line the running total is measured from.
+/// </summary>
+static void CasinoProgressiveResetsToSeed()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    CreateCasino(db, options, new ScriptedRandom(0.9))
+        .SpinSlotsAsync(player, "pot", 100, 9, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    var afterDrop = cold.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1_000L, afterDrop.SlotMachines.Single().Progressive);
+
+    cold.SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var rebuilding = cold.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1_090L, rebuilding.SlotMachines.Single().Progressive);
+}
+
+/// <summary>
+/// What the winner is handed is what the meter said, exactly.
+///
+/// The house takes a percentage of what has been staked and drops the fraction. That is one rounding
+/// and it belongs to the total, but the pot used to be worked out as the meter so far plus this
+/// spin's slice costed separately - two floors instead of one, which can only ever lose money. Every
+/// stake here is 135, a tenth of which is 13.5, so the two ways of counting disagree on the second
+/// spin and the winner used to be paid a pound less than the board went on to advertise.
+/// </summary>
+static void CasinoProgressivePaysWhatTheMeterReads()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // A full ticket at 15 a lane: 135 staked, a tenth of which is 13.5 and counts as 13.
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    cold.SpinSlotsAsync(player, "pot", 15, 9, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(1_013L, cold.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive);
+
+    // 270 staked across the two, a tenth of which is 27 exactly. Counted the old way this was 13 + 13.
+    var hot = CreateCasino(db, options, new ScriptedRandom(0.9));
+    var spin = hot.SpinSlotsAsync(player, "pot", 15, 9, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(1_027L, spin.JackpotWon);
+    AssertEqual(1_027L, db.CasinoJackpotDrops.Single().Amount);
+}
+
+/// <summary>
+/// A dropped pot is a line under the ledger, and the meter starts again below it.
+///
+/// The reset itself is covered elsewhere. What this pins is that the wagers on the far side of a drop
+/// stay on the far side of it once play carries on - the reading has to be the seed plus the stakes
+/// since, and never the seed plus everything the machine has ever taken.
+/// </summary>
+static void CasinoProgressiveCountsOnlySinceTheLastDrop()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 500, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // A thousand through the machine before anybody wins anything.
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    for (var i = 0; i < 10; i++)
+    {
+        cold.SpinSlotsAsync(player, "pot", 100, 1, now.AddMinutes(i), default).GetAwaiter().GetResult();
+        db.SaveChanges();
+    }
+    AssertEqual(1_100L, cold.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive);
+
+    // Somebody takes it.
+    CreateCasino(db, options, new ScriptedRandom(0.9))
+        .SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(20), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(1, db.CasinoJackpotDrops.Count());
+
+    // Two hundred more through it afterwards. The meter reads the seed and those two hundred alone -
+    // not the two thousand the machine has taken in its life.
+    var after = CreateCasino(db, options, new ScriptedRandom(0.0));
+    after.SpinSlotsAsync(player, "pot", 100, 1, now.AddMinutes(30), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    after.SpinSlotsAsync(player, "pot", 100, 1, now.AddMinutes(31), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(1_020L, after.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive);
+}
+
+/// <summary>
+/// The shape of the query behind the meter, which is the whole reason it was rewritten.
+///
+/// The total was right before and is right now; what was wrong was the cost of arriving at it. The
+/// old reading asked, for every wager the machine had ever taken, whether a jackpot had dropped at or
+/// after it - a correlated subquery per row, so opening the casino page re-read the season's play,
+/// and so did every pull. The cut-off is one timestamp, read once, and comparing against it is a
+/// range on the index the table already carries.
+///
+/// Asserted on the SQL rather than on a stopwatch, because the difference is a query plan and a
+/// timing test would only notice once the table was large enough to hurt.
+/// </summary>
+static void TheProgressiveReadsARangeOfTheLedger()
+{
+    var options = new DbContextOptionsBuilder<GameDbContext>()
+        .UseNpgsql("Host=localhost;Database=translation_only;Username=none")
+        .Options;
+    using var db = new GameDbContext(options);
+    var casino = CreateCasino(db, ProgressiveOptions(), new ScriptedRandom(0.0));
+    var machine = ProgressiveOptions().Casino.SlotMachines.Single();
+
+    var sinceADrop = casino.WagersSince(machine, new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc)).ToQueryString();
+
+    // The drop is a value compared against, not a table joined to and asked about per row.
+    AssertTrue(!sinceADrop.Contains("CasinoJackpotDrops", StringComparison.OrdinalIgnoreCase),
+        $"the meter should not touch the drops table per row:\n{sinceADrop}");
+    AssertTrue(!sinceADrop.Contains("EXISTS", StringComparison.OrdinalIgnoreCase),
+        $"the meter should not sift the ledger with a subquery:\n{sinceADrop}");
+
+    // Read off the WHERE alone. Every column of the row is in the SELECT either way, so the whole
+    // statement cannot tell the two readings apart - only what the database is asked to filter on can.
+    AssertTrue(WhereClauseOf(sinceADrop).Contains("CreatedAtUtc", StringComparison.OrdinalIgnoreCase),
+        $"the meter should bound the ledger by time:\n{sinceADrop}");
+
+    // A machine that has never dropped has nothing to bound by and must not invent one.
+    var never = casino.WagersSince(machine, null).ToQueryString();
+    AssertTrue(!WhereClauseOf(never).Contains("CreatedAtUtc", StringComparison.OrdinalIgnoreCase),
+        $"a machine that has never paid out counts everything:\n{never}");
+
+    // And the cut-off itself is one grouped read the database does the counting for. If this fell back
+    // to the client it would load every jackpot ever dropped to find the newest one per machine, which
+    // is the same fault in a smaller table.
+    var lines = casino.LastDropQuery().ToQueryString();
+    AssertTrue(lines.Contains("MAX(", StringComparison.OrdinalIgnoreCase),
+        $"the newest drop per machine is an aggregate in the database:\n{lines}");
+    AssertTrue(lines.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase),
+        $"the drops are grouped by machine in the database:\n{lines}");
+
+    static string WhereClauseOf(string sql)
+    {
+        var where = sql.LastIndexOf("WHERE", StringComparison.OrdinalIgnoreCase);
+        return where < 0 ? string.Empty : sql[where..];
+    }
+}
+
+/// <summary>
+/// Two requests in flight at once cannot both spend the same balance.
+///
+/// This is the shape of nearly every rule in the game - read the player, check they can afford it,
+/// take it, save - and each request gets its own DbContext and its own copy of the row. Both used to
+/// read the same cash, both agree the purchase was affordable, and both write, with the second
+/// writing a total computed from money the first had already spent. The row carries a version now, so
+/// the write built on the stale read is refused rather than applied.
+///
+/// Two contexts over one database is exactly what two overlapping requests are.
+/// </summary>
+static void OverlappingWritesToOnePlayerAreRefused()
+{
+    var name = Guid.NewGuid().ToString();
+    var options = new DbContextOptionsBuilder<GameDbContext>().UseInMemoryDatabase(name).Options;
+    var playerId = Guid.NewGuid();
+
+    using (var seed = new GameDbContext(options))
+    {
+        seed.Players.Add(new Player { Id = playerId, Name = "Spender", Cash = 100, Hideout = new Hideout() });
+        seed.SaveChanges();
+    }
+
+    using var first = new GameDbContext(options);
+    using var second = new GameDbContext(options);
+
+    // Both read the same hundred pounds before either of them has spent it.
+    var asFirstSawThem = first.Players.Single(x => x.Id == playerId);
+    var asSecondSawThem = second.Players.Single(x => x.Id == playerId);
+    AssertEqual(100L, asFirstSawThem.Cash);
+    AssertEqual(100L, asSecondSawThem.Cash);
+
+    asFirstSawThem.Cash -= 100;
+    first.SaveChanges();
+
+    asSecondSawThem.Cash -= 100;
+    try
+    {
+        second.SaveChanges();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        // The refusal is the point, and so is what it left behind: one purchase, one hundred pounds.
+        using var after = new GameDbContext(options);
+        AssertEqual(0L, after.Players.Single(x => x.Id == playerId).Cash);
+        return;
+    }
+
+    throw new InvalidOperationException(
+        "The second write was accepted, so both requests spent the same hundred pounds.");
+}
+
+/// <summary>
+/// The token moves on a change and stays put otherwise.
+///
+/// Both halves are load-bearing. If it never moved, the version in every WHERE clause would match
+/// forever and the check above would pass for everybody - a concurrency token in name and a lost
+/// update in practice. If it moved on a save that changed nothing about the player, ordinary traffic
+/// would collide with itself and refuse work that never conflicted with anything.
+/// </summary>
+static void ThePlayerVersionMovesOnlyOnAChange()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+
+    var player = new Player { Id = Guid.NewGuid(), Name = "Ledger", Cash = 10, Hideout = new Hideout() };
+    db.Players.Add(player);
+    db.SaveChanges();
+
+    // Nothing to conflict with on the way in.
+    AssertEqual(0, player.Version);
+
+    player.Cash += 5;
+    db.SaveChanges();
+    AssertEqual(1, player.Version);
+
+    // A save about somebody else entirely leaves this player's version where it was.
+    db.ActionLogs.Add(new GameActionLog { PlayerId = player.Id, Action = "TEST", Summary = "Nothing about the player." });
+    db.SaveChanges();
+    AssertEqual(1, player.Version);
+}
+
+/// <summary>
+/// One machine, a thousand in the seed, a tenth of every stake into the meter, and two symbols so a
+/// scripted roll can decide whether the grid lands or not: below the halfway point is a blank and
+/// above it is the jackpot symbol.
+/// </summary>
+static GameOptions ProgressiveOptions()
+    => Resolve(new GameOptions
+    {
+        Casino = new CasinoOptions
+        {
+            SpinTurnCost = 1,
+            Jackpot = new CasinoJackpotOptions
+            {
+                Enabled = true,
+                ContributionPercent = 10,
+                Symbol = "vault",
+                SymbolsRequired = 3,
+                RequireAllPaylines = true
+            },
+            SlotMachines = [new SlotMachineOptions { Key = "pot", Name = "Pot Slots", MinBet = 10, MaxBet = 1_000, JackpotSeed = 1_000 }],
+            SlotSymbols =
+            [
+                // Both pay nothing, so the only money moving in these tests is the pot.
+                new SlotSymbolOptions { Key = "blank", Label = "Blank", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 },
+                new SlotSymbolOptions { Key = "vault", Label = "Vault", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }
+            ]
+        }
+    });
+
 /// <summary>
 /// What a rival thinks a trip is worth is a multiple of its own fare, and the fare is what those turns
 /// would have earned on the street - so the bar scales with the crew instead of being a flat sum that
@@ -1865,18 +3715,27 @@ static void CityMarketsChangeProductSalePrices()
     {
         City = "Chicago",
         Weed = 2,
-        Coke = 1,
-        Hideout = new Hideout { SafeLevel = 1, StorageLevel = 3 }
+        Hideout = new Hideout { City = "Chicago", SafeLevel = 1, StorageLevel = 3 }
     };
 
+    // At home, a sale comes off the shelves at the price of the town the shelves are in.
     var weed = service.SellProduct(player, "weed", 2);
     AssertEqual(100L, player.Cash);
     AssertEqual(50, Value<int>(RequiredBreakdown(weed), "unitPrice"));
 
+    // In another town it comes out of the bag instead, at that town's price. Which is the trade the
+    // whole city market exists to offer: the dear town pays more, and getting the load there means
+    // deciding beforehand how much of the warehouse to carry.
     player.City = "Detroit";
+    player.Carried.Coke = 1;
     var coke = service.SellProduct(player, "coke", 1);
     AssertEqual(250L, player.Cash);
     AssertEqual(150, Value<int>(RequiredBreakdown(coke), "unitPrice"));
+    AssertEqual(0, player.Carried.Coke);
+
+    // And the shelves at home are not reachable from here, however full they are.
+    player.Coke = 50;
+    AssertRuleError(() => service.SellProduct(player, "coke", 1), "selling stock that is in another town");
 }
 
 static void TravelChangesCityAndSpendsTheTownsDistance()
@@ -1906,7 +3765,12 @@ static void TravelChangesCityAndSpendsTheTownsDistance()
 static void StoppedRunTakesAShareOfTheLoadButNeverTheBank()
 {
     var service = CreateEconomy(null, new AlwaysRandom());
-    var player = new Player { City = "Detroit", Turns = 10, Cash = 10_000, BankCash = 50_000, Weed = 100, Coke = 40 };
+    // The load is in the bag, because that is the only load that gets on the plane. What is on the
+    // shelves at home was never on the road and cannot be stopped on it.
+    var player = new Player { City = "Detroit", Turns = 10, Cash = 10_000, BankCash = 50_000 };
+    player.Carried.Weed = 100;
+    player.Carried.Coke = 40;
+    player.Weed = 500;
 
     var result = service.Travel(player, "Chicago");
     var breakdown = RequiredBreakdown(result);
@@ -1918,8 +3782,9 @@ static void StoppedRunTakesAShareOfTheLoadButNeverTheBank()
 
     AssertEqual(50_000L, player.BankCash);
     AssertEqual(8_000L, player.Cash);
-    AssertEqual(80, player.Weed);
-    AssertEqual(32, player.Coke);
+    AssertEqual(80, player.Carried.Weed);
+    AssertEqual(32, player.Carried.Coke);
+    AssertTrue(player.Weed == 500, "the shelves at home are untouched by a stop on the road");
     AssertEqual(2_000L, Value<long>(breakdown, "cashSeized"));
     AssertEqual(20, Value<int>(breakdown, "weedSeized"));
     AssertEqual(8, Value<int>(breakdown, "cokeSeized"));
@@ -3486,7 +5351,7 @@ static void ANewColumnDoesNotSwitchAnythingOff()
         AssertEqual(true, property!.GetDefaultValue());
     }
 
-    foreach (var name in new[] { "DiscordSecurityNotices", "DiscordCombatNotices", "DiscordCrewNotices", "DiscordMarketNotices" })
+    foreach (var name in new[] { "DiscordSecurityNotices", "DiscordCombatNotices", "DiscordCrewNotices", "DiscordMarketNotices", "DiscordMachineNotices" })
     {
         var property = account.FindProperty(name);
         AssertTrue(property is not null, $"{name} should be mapped");
@@ -3499,6 +5364,8 @@ static void ANewColumnDoesNotSwitchAnythingOff()
     AssertTrue(fresh.NoticeCombat && fresh.NoticeCrew && fresh.NoticeMarket, "a new account hears everything");
     AssertTrue(!fresh.DiscordSecurityNotices && !fresh.DiscordCombatNotices && !fresh.DiscordCrewNotices && !fresh.DiscordMarketNotices,
         "Discord DMs are opt-in");
+    AssertTrue(!fresh.DiscordMachineNotices, "so is being DMd about your own machinery");
+    AssertEqual(null, fresh.DiscordAlertsSentAtUtc);
 }
 
 static void DiscordDmsAreOptInAndSentByTheBot()
@@ -3549,6 +5416,205 @@ static void DiscordDmsAreOptInAndSentByTheBot()
     gameQuiet.DiscordCombatNotices = true;
     AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Combat), "combat can be opted into");
     AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Market), "one Discord game switch should not imply another");
+
+    // The category the in-game bell lets through unasked. A panel nobody opened costs nothing; a DM
+    // arrives wherever the person is, so this one has a switch of its own and starts off.
+    AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "your own machinery is not DMd unasked");
+    gameQuiet.DiscordMachineNotices = true;
+    AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "and can be opted into");
+}
+
+static void NewsTheGameOnlyEverWorkedOutIsWrittenDown()
+{
+    // Six things players asked to hear about. Four of them now write a log row where they happen, and
+    // this is the half that decides whether a row is news at all - so if a kind is missing here it is
+    // missing from the bell and from Discord at the same time, silently.
+    foreach (var (action, summary, kind) in new[]
+    {
+        ("TRAVEL", "You have landed in Miami.", "travel"),
+        ("WORKSHOP", "Two pistols came off the bench.", "workshop"),
+        ("CASINO", "The house owes you 3 free spins.", "casino"),
+        ("TITLE", "You are now the Butcher.", "title"),
+        ("TRADERJOB", "The book settled up on weed in Chicago.", "traderjob"),
+        ("CREWNOTICE", "The Eastside Table climbed to #3 on the crew board.", "crew"),
+    })
+    {
+        AssertTrue(DefenceAlerts.IsNotification(action, summary), $"{action} should count as news");
+        var alert = DefenceAlerts.ToAlert(1, action, summary, DateTime.UtcNow, null);
+        AssertTrue(alert is not null, $"{action} should describe itself as an alert");
+        AssertEqual(kind, alert!.Kind);
+    }
+
+    // WORKSHOP is the one that was already being written and had simply never been listed as news, so
+    // a finished craft was invisible to the bell as well as to Discord. Worth its own line.
+    AssertTrue(DefenceAlerts.IsNotification("WORKSHOP", "Two pistols came off the bench."),
+        "a craft coming off the bench is news, not activity");
+
+    // Losing a title is news by the same argument that gaining one is, and the sentence is what tells
+    // the two apart.
+    AssertEqual("bad", DefenceAlerts.ToAlert(1, "TITLE", "Boss took the Butcher off you.", DateTime.UtcNow, null)!.Tone);
+    AssertEqual("good", DefenceAlerts.ToAlert(1, "TITLE", "You are now the Butcher.", DateTime.UtcNow, null)!.Tone);
+
+    // The book is somebody paying you, so it answers to the same switch a sale does rather than to none.
+    AssertEqual(AlertCategory.Market, DefenceAlerts.CategoryOf("traderjob"));
+    AssertEqual(AlertCategory.Crew, DefenceAlerts.CategoryOf("crew"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("travel"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("casino"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("title"));
+
+    // A flight that lands writes the row itself, on the clock, rather than being noticed later by
+    // whoever happens to look. This is the whole reason travel could not be reported before: there was
+    // no moment anything could hook, only an arrival time quietly falling into the past.
+    var options = Resolve(new GameOptions());
+    var snapshot = Snapshot(options);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"landing-{Guid.NewGuid()}")
+        .Options);
+    var (player, _) = AccountSetup.NewPlayer(
+        new PlayerAccount { Username = "flier" }, "Flier", "Miami", options, CreateRoster(options));
+    db.Players.Add(player);
+    db.SaveChanges();
+
+    var hideouts = new HideoutService(snapshot);
+    var economy = CreateEconomy(options);
+    var clock = new PlayerClock(
+        new TurnService(snapshot, CreateRoster(options)),
+        hideouts,
+        db,
+        new MinimumRandom(),
+        new MuleService(snapshot, hideouts),
+        economy,
+        new ArrestService(db, snapshot, new MinimumRandom(), hideouts, CreateRoster(options)),
+        new TerritoryService(db, snapshot),
+        new AllianceService(db, snapshot, economy, hideouts));
+
+    var landedAt = DateTime.UtcNow;
+    player.TravelArrivesAtUtc = landedAt.AddMinutes(-1);
+    clock.AdvanceAsync(player, landedAt, db).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var landing = db.ActionLogs.Where(x => x.PlayerId == player.Id && x.Action == "TRAVEL").ToList();
+    AssertEqual(1, landing.Count);
+    AssertTrue(landing[0].Summary.Contains("Miami"), "the landing should say where you came down");
+    AssertEqual(null, player.TravelArrivesAtUtc);
+
+    // And once only. A second tick on somebody already standing on the ground must not keep announcing
+    // a flight that is over.
+    clock.AdvanceAsync(player, landedAt.AddMinutes(1), db).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(1, db.ActionLogs.Count(x => x.PlayerId == player.Id && x.Action == "TRAVEL"));
+}
+
+static void TheDiscordAlertSweepSaysWhatTheBellSaysOnce()
+{
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-sweep-{Guid.NewGuid()}")
+        .Options);
+    var options = Resolve(new GameOptions());
+
+    var account = new PlayerAccount
+    {
+        Username = "sam",
+        DiscordUserId = "777777777777777777",
+        DiscordCombatNotices = true
+    };
+    var (player, _) = AccountSetup.NewPlayer(account, "Sam", "Chicago", options, CreateRoster(options));
+    // A real attacker rather than a loose id. Attacker is a required navigation, so the Include the
+    // sweep does is an inner join - a raid by nobody is a row that silently does not exist.
+    var (raider, _) = AccountSetup.NewPlayer(new PlayerAccount { Username = "tony" }, "Tony", "Chicago", options, CreateRoster(options));
+    db.Players.AddRange(player, raider);
+
+    // One of each half the sweep reads: a raid, which is a CombatLog, and a mule coming home, which is
+    // an action log row the bell classifies as news.
+    db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = raider.Id,
+        DefenderId = player.Id,
+        Outcome = "Victory",
+        Method = AttackMethods.Raid,
+        Summary = "Somebody went through the door.",
+        CreatedAtUtc = now.AddMinutes(-1)
+    });
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = player.Id,
+        Action = "MULE",
+        Summary = "Your mule is back with the load.",
+        CreatedAtUtc = now.AddMinutes(-1)
+    });
+    db.SaveChanges();
+
+    var links = (string _) => (IReadOnlyList<object>?)[new { type = 1 }];
+    var sender = new DiscordDirectMessages(
+        new HttpClient(new RecordingHttpHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"id":"444444444444444444"}""")
+        })),
+        db,
+        Options(new DiscordIntegrationOptions()),
+        NullLogger<DiscordDirectMessages>.Instance);
+
+    // First pass: an account nobody has swept before is marked caught up and told nothing at all.
+    // Linking Discord must not open with a recital of everything that has ever happened.
+    AssertEqual(0, DiscordAlertSweep.SweepAsync(db, sender, links, now, default).GetAwaiter().GetResult());
+    AssertEqual(now, db.Accounts.Single(x => x.Username == "sam").DiscordAlertsSentAtUtc);
+
+    // Something happens after the watermark, and the raid goes out - but not the mule, because the
+    // switch governing your own machinery is still off.
+    db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = raider.Id,
+        DefenderId = player.Id,
+        Outcome = "Victory",
+        Method = AttackMethods.Raid,
+        Summary = "They came back for the rest.",
+        CreatedAtUtc = now.AddMinutes(1)
+    });
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = player.Id,
+        Action = "MULE",
+        Summary = "Your mule is back again.",
+        CreatedAtUtc = now.AddMinutes(1)
+    });
+    db.SaveChanges();
+
+    var later = now.AddMinutes(2);
+    AssertEqual(1, DiscordAlertSweep.SweepAsync(db, sender, links, later, default).GetAwaiter().GetResult());
+    AssertEqual(later, db.Accounts.Single(x => x.Username == "sam").DiscordAlertsSentAtUtc);
+
+    // The same rows again, and nothing goes out a second time. This is the whole point of the
+    // watermark: a sweep every two minutes must not be a raid alert every two minutes.
+    AssertEqual(0, DiscordAlertSweep.SweepAsync(db, sender, links, later.AddMinutes(2), default).GetAwaiter().GetResult());
+
+    // Turning the machinery switch on picks the mule up on the next thing that happens, through the
+    // same classifier the bell uses - so the DM and the bell can never disagree about what counts.
+    db.Accounts.Single(x => x.Username == "sam").DiscordMachineNotices = true;
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = player.Id,
+        Action = "MULE",
+        Summary = "Your mule is back once more.",
+        CreatedAtUtc = later.AddMinutes(3)
+    });
+    db.SaveChanges();
+    AssertEqual(1, DiscordAlertSweep.SweepAsync(db, sender, links, later.AddMinutes(4), default).GetAwaiter().GetResult());
+
+    // An account that has asked for nothing is never read at all, however much happens to it.
+    var quiet = new PlayerAccount { Username = "quiet", DiscordUserId = "888888888888888888" };
+    var (quietPlayer, _) = AccountSetup.NewPlayer(quiet, "Quiet", "Miami", options, CreateRoster(options));
+    db.Players.Add(quietPlayer);
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = quietPlayer.Id,
+        Action = "BUST",
+        Summary = "The door came in.",
+        CreatedAtUtc = later.AddMinutes(5)
+    });
+    db.SaveChanges();
+    AssertEqual(0, DiscordAlertSweep.SweepAsync(db, sender, links, later.AddMinutes(6), default).GetAwaiter().GetResult());
+    AssertEqual(null, db.Accounts.Single(x => x.Username == "quiet").DiscordAlertsSentAtUtc);
 }
 
 static void GameUpdatesShowWhatIsVisibleAndStillNew()
@@ -3862,6 +5928,8 @@ static void DiscordCrewChannelSyncCreatesPrivateCrewRooms()
         Snapshot(options),
         CreateEconomy(options),
         new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
         new DiscordGatewayState(),
         NullLogger<DiscordGuildIntegration>.Instance);
 
@@ -3887,6 +5955,136 @@ static void DiscordCrewChannelSyncCreatesPrivateCrewRooms()
     AssertTrue(http.Requests.Any(x => x.Method == "PATCH" && x.Uri.EndsWith("/channels/555555555555555555", StringComparison.Ordinal)),
         "existing mapped channels should be kept in sync");
 }
+
+static void TheDiscordStatusSaysTheGamesNameBetweenEverythingElse()
+{
+    // A status bar has no room for commas, and nobody says "fourteen million eight hundred thousand".
+    AssertEqual("$950", DiscordGatewayService.Compact(950));
+    AssertEqual("$14.8K", DiscordGatewayService.Compact(14_800));
+    AssertEqual("$14.8M", DiscordGatewayService.Compact(14_800_000));
+    AssertEqual("$5M", DiscordGatewayService.Compact(5_000_000));
+    AssertEqual("$2.4B", DiscordGatewayService.Compact(2_400_000_000));
+
+    // The rotation is off unless somebody asks for it, because an IDENTIFY already carries the default
+    // line - a server that never sets this has a correct status and no queries running behind it.
+    AssertEqual(0, new DiscordIntegrationOptions().PresenceRotateSeconds);
+
+    // And the window the status counts players over is the one /online reports, rather than a second
+    // number that would disagree with it in the same server.
+    AssertEqual(15, DiscordGuildIntegration.OnlineWindowMinutes);
+}
+
+static void DiscordCrewSubcommandsAnswerTheirOwnQuestion()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-crew-{Guid.NewGuid()}")
+        .Options);
+    var options = Resolve(new GameOptions());
+
+    var crew = new Alliance { Name = "The Eastside Table", Treasury = 250_000, DefensiveThugs = 40 };
+    var rival = new Alliance { Name = "Southside", Treasury = 10_000 };
+    db.Alliances.AddRange(crew, rival);
+
+    var bossAccount = new PlayerAccount { Username = "sam", DiscordUserId = "777777777777777777" };
+    var (boss, _) = AccountSetup.NewPlayer(bossAccount, "Sam", "Chicago", options, CreateRoster(options));
+    boss.Alliance = crew;
+    boss.AllianceRank = AllianceRank.Boss;
+    boss.Cash += 500_000;
+    var (soldier, _) = AccountSetup.NewPlayer(new PlayerAccount { Username = "lee" }, "Lee", "Chicago", options, CreateRoster(options));
+    soldier.Alliance = crew;
+    soldier.AllianceRank = AllianceRank.Soldier;
+    var (outsider, _) = AccountSetup.NewPlayer(new PlayerAccount { Username = "kim" }, "Kim", "Miami", options, CreateRoster(options));
+    outsider.Alliance = rival;
+    db.Players.AddRange(boss, soldier, outsider);
+    db.SaveChanges();
+
+    db.Territories.AddRange(
+        new Territory { Name = "South Side", City = "Chicago", Type = "corner", HolderId = boss.Id, GarrisonThugs = 3 },
+        new Territory { Name = "Downtown", City = "Chicago", Type = "corner", HolderId = soldier.Id, GarrisonThugs = 25 },
+        new Territory { Name = "Ocean Drive", City = "Miami", Type = "corner", HolderId = outsider.Id, GarrisonThugs = 9 });
+    db.AllianceWars.Add(new AllianceWar
+    {
+        DeclaringAllianceId = crew.Id,
+        TargetAllianceId = rival.Id,
+        DeclaredById = boss.Id,
+        Status = AllianceWarStatuses.Active,
+        Stake = 100_000,
+        DeclaringScore = 4,
+        TargetScore = 1,
+        StartedAtUtc = DateTime.UtcNow.AddHours(-1),
+        EndsAtUtc = DateTime.UtcNow.AddHours(5)
+    });
+    db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = boss.Id,
+        DefenderId = outsider.Id,
+        Outcome = "Victory",
+        Method = AttackMethods.Raid,
+        Summary = "Through the door.",
+        CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+    });
+    db.SaveChanges();
+
+    var service = new DiscordGuildIntegration(
+        new HttpClient(),
+        db,
+        Options(new DiscordIntegrationOptions { PublicUrl = "https://streetsempire.example/" }),
+        Snapshot(options),
+        CreateEconomy(options),
+        new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
+        new DiscordGatewayState(),
+        NullLogger<DiscordGuildIntegration>.Instance);
+
+    // The subcommand is part of the name, because who may see the answer differs between them: a board
+    // of crews is a board, and a crew treasury is not. Read from the raw callback before dispatch, so
+    // the deferral and the answer cannot disagree about it.
+    using var callback = JsonDocument.Parse("""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "crew", "options": [ { "name": "leaderboard", "type": 1, "options": [] } ] }
+        }
+        """);
+    AssertEqual("crew leaderboard", DiscordGuildIntegration.CommandName(callback));
+    AssertTrue(!DiscordGuildIntegration.AnswersEphemerally("crew leaderboard"), "a board of crews is public");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("crew status"), "a crew treasury is not");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("crew territories"), "where ground is thin is not");
+
+    var status = CrewCommand(service, "status");
+    AssertTrue(status.Contains("The Eastside Table"), "status should resolve the caller's own crew");
+    AssertTrue(status.Contains("2 member(s)"), "status should count the members");
+    AssertTrue(status.Contains("Ground held: 2"), "status should count only this crew's ground");
+
+    var members = CrewCommand(service, "members");
+    AssertTrue(members.IndexOf("Sam") < members.IndexOf("Lee"), "members should lead with the highest rank");
+    AssertTrue(!members.Contains("Kim"), "another crew's members are not this crew's members");
+
+    // Thinnest first, because the useful question is which ground would fall tonight.
+    var ground = CrewCommand(service, "territories");
+    AssertTrue(ground.IndexOf("South Side") < ground.IndexOf("Downtown"), "the thinnest garrison should lead");
+    AssertTrue(!ground.Contains("Ocean Drive"), "another crew's ground is not this crew's ground");
+
+    var wars = CrewCommand(service, "wars");
+    AssertTrue(wars.Contains("Southside"), "a war should name the other crew");
+    AssertTrue(wars.Contains("4 to 1"), "and read the score from this crew's side");
+
+    var board = CrewCommand(service, "leaderboard");
+    AssertTrue(board.IndexOf("The Eastside Table") < board.IndexOf("Southside"), "the richer crew leads the board");
+    AssertTrue(board.Contains("<- you"), "the caller's own crew is marked on it");
+
+    AssertTrue(CrewCommand(service, "activity").Contains("Sam"), "activity should name who has been fighting");
+}
+
+static string CrewCommand(DiscordGuildIntegration service, string sub)
+    => DiscordResponseContent(service.HandleInteractionAsync(JsonDocument.Parse($$"""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "crew", "options": [ { "name": "{{sub}}", "type": 1, "options": [] } ] }
+        }
+        """), default).GetAwaiter().GetResult());
 
 static void DiscordServerCommandsResolveThroughTheApi()
 {
@@ -3917,10 +6115,12 @@ static void DiscordServerCommandsResolveThroughTheApi()
     var service = new DiscordGuildIntegration(
         new HttpClient(),
         db,
-        Options(new DiscordIntegrationOptions()),
+        Options(new DiscordIntegrationOptions { PublicUrl = "https://streetsempire.example/" }),
         Snapshot(options),
         CreateEconomy(options),
         new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
         new DiscordGatewayState(),
         NullLogger<DiscordGuildIntegration>.Instance);
 
@@ -3938,8 +6138,21 @@ static void DiscordServerCommandsResolveThroughTheApi()
     AssertEqual(2, interactionType);
     AssertEqual("999999999999999999", applicationId);
     AssertEqual("interaction-token", token);
-    using var deferred = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse()));
+    // Who sees an answer is settled by the deferral and cannot be moved afterwards, so the name has to
+    // be readable from the raw callback before anything is dispatched.
+    AssertEqual("rank", DiscordGuildIntegration.CommandName(callback));
+    using var deferred = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse(ephemeral: false)));
     AssertEqual(5, deferred.RootElement.GetProperty("type").GetInt32());
+    AssertEqual(0, deferred.RootElement.GetProperty("data").GetProperty("flags").GetInt32());
+    using var privateDeferral = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse(ephemeral: true)));
+    AssertEqual(64, privateDeferral.RootElement.GetProperty("data").GetProperty("flags").GetInt32());
+
+    // A command nobody has classified answers the caller alone. This is the arm that matters: the cost
+    // of forgetting to list a command is a private answer shown to a whole channel, so the default has
+    // to be the safe one rather than the convenient one.
+    AssertTrue(!DiscordGuildIntegration.AnswersEphemerally("rank"), "rank is a public lookup");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("wallet"), "an unclassified command stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally(null), "a callback naming no command stays private");
 
     var callerResponse = DiscordCommand(service, "rank");
     AssertTrue(callerResponse.Contains("Runner"), "rank should resolve the Discord caller to their linked empire");
@@ -3963,6 +6176,141 @@ static void DiscordServerCommandsResolveThroughTheApi()
     var streetWire = DiscordCommand(service, "streetwire");
     AssertTrue(streetWire.Contains("Street Wire live"), "streetwire should read the canonical in-game update feed");
     AssertTrue(streetWire.Contains("v0.4.0"), "streetwire should include version data from the update record");
+
+    // The link button, checked after the trip through the follow-up payload rather than before it. That
+    // is the half worth having: every real interaction is deferred, so an answer that carries its
+    // buttons only on the first reply carries them nowhere.
+    AssertEqual("https://streetsempire.example/#/updates", DiscordResponseButton(service, "streetwire"));
+    AssertEqual("https://streetsempire.example/#/market", DiscordResponseButton(service, "market"));
+
+    // No public address means no buttons at all, rather than a row of links into somebody else's
+    // localhost - which would look like it worked.
+    var unaddressed = new DiscordGuildIntegration(
+        new HttpClient(),
+        db,
+        Options(new DiscordIntegrationOptions()),
+        Snapshot(options),
+        CreateEconomy(options),
+        new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
+        new DiscordGatewayState(),
+        NullLogger<DiscordGuildIntegration>.Instance);
+    AssertEqual(null, DiscordResponseButton(unaddressed, "streetwire"));
+
+    // /play is the one command with nothing behind it but a link, so with no address configured it has
+    // nothing to say - and says that, rather than offering a button into a developer's laptop.
+    AssertEqual("https://streetsempire.example/", DiscordResponseButton(service, "play"));
+    AssertTrue(DiscordCommand(unaddressed, "play").Contains("PublicUrl"),
+        "with nowhere to point, /play should name the setting an admin has to fill in");
+
+    // /me is the private front door: it reads out a bank balance, so it must never be a public answer.
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("me"), "/me reads a bank balance and stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("casino"), "/casino reads comps and stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("travel"), "being in the air is raid intel and stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("crew"), "a crew treasury stays private");
+    AssertTrue(!DiscordGuildIntegration.AnswersEphemerally("jackpot"), "/jackpot is advertising and is public");
+
+    var me = DiscordCommand(service, "me");
+    AssertTrue(me.Contains("Runner"), "/me should resolve the caller through their linked account");
+    AssertTrue(me.Contains("rank #2"), "/me should carry the same rank the standings query gives");
+    AssertTrue(me.Contains("Chicago"), "/me should say where the player is");
+
+    // The board counts everybody the in-game rank counts, so /leaderboard and /me cannot disagree about
+    // who is above whom.
+    var board = DiscordCommand(service, "leaderboard");
+    AssertTrue(board.IndexOf("Boss") < board.IndexOf("Runner"), "the richer empire should come first");
+    AssertTrue(board.Contains("1. Boss"), "the leaderboard should be numbered from the top");
+
+    // Nobody has a session in this world, so the honest answer is nobody - not a bot-inflated count.
+    AssertTrue(DiscordCommand(service, "online").Contains("Nobody has been on"),
+        "/online should report the empty window rather than counting simulated players");
+
+    var season = DiscordCommand(service, "season");
+    AssertTrue(season.Contains("No season is running"),
+        "/season should say so rather than opening a season because somebody typed a slash command");
+    AssertEqual(0, db.Seasons.Count());
+
+    var crew = DiscordCommand(service, "crew", ("crew", "Nobody Here"));
+    AssertTrue(crew.Contains("No Street Empire crew named Nobody Here"), "an unknown crew should be named back");
+
+    // The dealer's board. Read straight off the open rows rather than through BookAsync, which tops a
+    // thin book up - a slash command must not quietly write jobs into a town.
+    AssertTrue(DiscordCommand(service, "wanted").Contains("The book is empty in Chicago"),
+        "an empty book should say so rather than inventing work");
+    AssertEqual(0, db.TraderJobs.Count());
+
+    db.TraderJobs.AddRange(
+        new TraderJob
+        {
+            City = "Chicago",
+            Kind = TraderJobKind.Supply,
+            Reason = TraderJobReason.ShelfGap,
+            Good = "weed",
+            Quantity = 40,
+            PricePerUnit = 250,
+            PostedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(6)
+        },
+        // Filled, so it is off the board however long it has left to run.
+        new TraderJob
+        {
+            City = "Chicago",
+            Kind = TraderJobKind.Product,
+            Reason = TraderJobReason.Deal,
+            Good = "coke",
+            Quantity = 10,
+            PricePerUnit = 9_000,
+            PostedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(6),
+            FilledAtUtc = DateTime.UtcNow.AddMinutes(-1)
+        },
+        // Somebody else's town.
+        new TraderJob
+        {
+            City = "Miami",
+            Kind = TraderJobKind.Supply,
+            Reason = TraderJobReason.Favour,
+            Good = "medicine",
+            Quantity = 5,
+            PricePerUnit = 400,
+            PostedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(6)
+        });
+    db.SaveChanges();
+
+    var wanted = DiscordCommand(service, "wanted");
+    AssertTrue(wanted.Contains("The book in Chicago"), "/wanted should default to the caller's own town");
+    AssertTrue(wanted.Contains("40 weed"), "the board should say how much is still wanted");
+    AssertTrue(wanted.Contains("counter is dry"), "a shelf gap is the one job with a consequence, so it is marked");
+    AssertTrue(!wanted.Contains("coke"), "a filled job is off the board");
+    AssertTrue(!wanted.Contains("medicine"), "another town's book is not this town's book");
+    AssertTrue(DiscordCommand(service, "wanted", ("city", "Miami")).Contains("medicine"),
+        "a named city should override the caller's own");
+
+    var travel = DiscordCommand(service, "travel");
+    AssertTrue(travel.Contains("You are in Chicago"), "/travel should start from where the caller is");
+    AssertTrue(travel.Contains("Miami"), "/travel should list the towns the caller is not in");
+    AssertTrue(!travel.Contains("Chicago - "), "/travel should not offer a flight to the city you are standing in");
+}
+
+/// <summary>The url on the first link button of a command's answer, as it survives the follow-up edit.</summary>
+static string? DiscordResponseButton(DiscordGuildIntegration service, string command)
+{
+    var response = service.HandleInteractionAsync(JsonDocument.Parse($$"""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "{{command}}", "options": [] }
+        }
+        """), default).GetAwaiter().GetResult();
+
+    using var json = JsonDocument.Parse(
+        JsonSerializer.Serialize(DiscordGuildIntegration.InteractionMessagePayload(response)));
+    var rows = json.RootElement.GetProperty("components");
+    return rows.GetArrayLength() == 0
+        ? null
+        : rows[0].GetProperty("components")[0].GetProperty("url").GetString();
 }
 
 static string DiscordCommand(DiscordGuildIntegration service, string command, params (string Name, string Value)[] options)
@@ -4099,7 +6447,7 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
     // Crossing the language boundary is the point: no test on either side alone could have caught it.
     var root = SolutionRoot();
 
-    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    var client = ClientSource();
 
     // Everything the server will answer to, from the three lists that decide it.
     var known = new HashSet<string>(StringComparer.Ordinal);
@@ -4159,7 +6507,7 @@ static void GuidanceOnlyPointsWhereTheClientCanGo()
 {
     var root = SolutionRoot();
 
-    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    var client = ClientSource();
 
     // The client's own mapping, read out of it: name -> page, the tab when it names one, and the area
     // within the tab when it names that too. All three parts optional after the page, because a
@@ -5508,7 +7856,7 @@ static void TheVersionIsWrittenDownOnce()
     AssertTrue(viteConfig.Contains("VERSION"), "vite should read the VERSION file");
     AssertTrue(viteConfig.Contains("__APP_VERSION__"), "vite should define the token the client reads");
 
-    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    var client = ClientSource();
     AssertTrue(client.Contains("__APP_VERSION__"), "the client should show the token, not a typed number");
 
     // The page title, which was the fifth copy and outlived the fix that was supposed to remove all
@@ -5519,16 +7867,17 @@ static void TheVersionIsWrittenDownOnce()
     AssertTrue(indexHtml.Contains("__APP_VERSION__"), "the page title should carry the token, not a typed number");
 
     // And nothing should have gone back to writing one down. The changelog and the release notes name
-    // versions on purpose and are history; these four are the ones that have to move together.
-    foreach (var (path, what) in new[]
+    // versions on purpose and are history; these are the ones that have to move together.
+    foreach (var (text, what) in new[]
     {
-        (Path.Combine("Client", "src", "main.tsx"), "the client"),
-        (Path.Combine("Client", "package.json"), "the client manifest"),
-        (Path.Combine("Client", "index.html"), "the page title"),
-        (Path.Combine("Server", "StreetEmpire.Api", "Program.cs"), "the server"),
+        // The whole client tree rather than one file of it, because a number typed into a page module
+        // is the same mistake in a place a named file would no longer be looking.
+        (ClientSource(), "the client"),
+        (File.ReadAllText(Path.Combine(root.FullName, "Client", "package.json")), "the client manifest"),
+        (File.ReadAllText(Path.Combine(root.FullName, "Client", "index.html")), "the page title"),
+        (File.ReadAllText(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Program.cs")), "the server"),
     })
     {
-        var text = File.ReadAllText(Path.Combine(root.FullName, path));
         AssertTrue(!text.Contains($"\"{declared}\"") && !text.Contains($">{declared}<"),
             $"{what} names the version literally again - it should be reading it from VERSION");
     }
@@ -5833,7 +8182,7 @@ static void LabSwitchesStopAndSell()
     Player Grower(int level = 1) => new()
     {
         City = "Atlanta",
-        Hideout = new Hideout { StorageLevel = 2, WeedLabLevel = level, LabsCollectedAtUtc = start }
+        Hideout = new Hideout { City = "Atlanta", StorageLevel = 2, WeedLabLevel = level, LabsCollectedAtUtc = start }
     };
 
     // Off makes nothing, and says so rather than reporting a yield of zero as if nothing had happened.
@@ -5865,8 +8214,13 @@ static void LabSwitchesStopAndSell()
     AssertEqual(0, sold.Weed);
     AssertEqual(0, operation.Weed);
     AssertEqual(perHour * 3, sold.WeedSold);
-    AssertEqual(sold.Earned, operation.Cash);
-    AssertTrue(operation.Cash > 0, "and it is worth something");
+    // Into the safe, not into the player's pocket. The labs run whether or not anybody is home, so the
+    // money they make has to land somewhere that does not require the player to be standing there -
+    // and putting it in their hands wherever they happened to be would have a New York lab paying out
+    // in Las Vegas.
+    AssertEqual(sold.Earned, operation.Hideout!.SafeCash);
+    AssertEqual(0L, operation.Cash);
+    AssertTrue(operation.Hideout.SafeCash > 0, "and it is worth something");
     AssertTrue(sold.Describe().Contains("sold"), $"the notice says it sold: {sold.Describe()}");
 
     // A full store is no reason for a selling lab to stop, which is most of what the upgrade buys.
@@ -5952,6 +8306,14 @@ static void WorldNewsKeepsFightsAndDropsNoise()
     AssertTrue(!newsworthy(new GameActionLog { Action = "GROUND", CreatedAtUtc = now, Summary = "X took Y from you." }),
         "a notice written to one player is not published to everyone");
     AssertEqual("ground", WorldNews.Category("TERRITORY"));
+
+    // The pot on the cheapest machine is smaller than the cash swing that makes an ordinary win news,
+    // and it is still the story of the night - it was fed by everybody who played that machine.
+    AssertTrue(newsworthy(new GameActionLog { Action = "JACKPOT", CreatedAtUtc = now, CashDelta = 4_000 }), "a dropped pot is news at any size");
+    AssertTrue(!newsworthy(new GameActionLog { Action = "CASINO", CreatedAtUtc = now, CashDelta = 900 }), "an ordinary pull is not news");
+    AssertTrue(newsworthy(new GameActionLog { Action = "CASINO", CreatedAtUtc = now, CashDelta = 40_000 }), "a big win still clears the swing rule");
+    AssertEqual("casino", WorldNews.Category("JACKPOT"));
+    AssertEqual("casino", WorldNews.Category("CASINO"));
     AssertEqual("combat", WorldNews.Category("ATTACK"));
     AssertEqual("build", WorldNews.Category("HIDEOUT"));
     AssertEqual("money", WorldNews.Category("SALE"));
@@ -6382,7 +8744,7 @@ static void AShiftNamesOnlyWhatHappened()
     player.Pimps = 4;
     player.Condoms = 500;
     player.Beer = 500;
-    player.Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 4 };
+    player.Hideout = new Hideout { City = player.City, Tier = 2, StorageLevel = 4, SafeLevel = 4 };
     var summary = economy.Scout(player, 10).Summary;
 
     // The work and the money, in that order, in sentences rather than in a ledger.
@@ -6525,9 +8887,629 @@ static void GuidancePointsAtTheGame()
 
 }
 
+
+/// <summary>
+/// The rule the whole change exists for: a plane ticket moves a person, not an operation.
+///
+/// Written as one test over every column that used to follow the player around, because the failure
+/// this guards against is not one of them going wrong - it is a new one being added later and quietly
+/// being made to travel by whoever adds it.
+/// </summary>
+static void TravelMovesThePlayerAndLeavesTheEmpire()
+{
+    var options = Resolve(null);
+    var economy = CreateEconomy(options);
+    var player = new Player
+    {
+        City = "New York",
+        Turns = 100,
+        Cash = 25_000,
+        Pimps = 3,
+        Hoes = 20,
+        Thugs = 10,
+        Weed = 400,
+        Coke = 100,
+        Condoms = 200,
+        Rides = 5,
+        Hideout = new Hideout { City = "New York", Tier = 2, StorageLevel = 4, SafeLevel = 3, SafeCash = 100_000 }
+    };
+    player.Carried.Weed = 10;
+    player.AddWeapons(WeaponTiers.Pistol, 8);
+    player.Carried.AddWeapons(WeaponTiers.Pistol, 1);
+
+    var result = economy.Travel(player, "Las Vegas");
+
+    // The player is somewhere else.
+    AssertEqual("Las Vegas", player.City);
+
+    // Everything they built is not.
+    AssertEqual("New York", player.Hideout!.City);
+    AssertEqual(100_000L, player.Hideout.SafeCash);
+    AssertEqual(400, player.Weed);
+    AssertEqual(100, player.Coke);
+    AssertEqual(200, player.Condoms);
+    AssertEqual(8, player.Weapons);
+    AssertEqual(3, player.Pimps);
+    AssertEqual(20, player.Hoes);
+    AssertEqual(10, player.Thugs);
+    // The fleet least of all. A car is the one thing here that cannot be carried at any price: it is
+    // driven out of a garage and back into it, so it is in exactly one town and that town is the
+    // hideout's. Moving one is a flatbed and a bill, and that is relocation's problem rather than a
+    // side effect of buying a plane ticket.
+    AssertEqual(5, player.Rides);
+
+    // What is in their hands came with them.
+    AssertEqual(25_000L, player.Cash);
+    AssertEqual(10, player.Carried.Weed);
+    AssertEqual(1, player.Carried.Weapons);
+
+    // And the summary says so, because this is the rule most likely to surprise somebody.
+    AssertTrue(result.Summary.Contains("stay in New York"), $"the trip should say what stayed: {result.Summary}");
+    AssertTrue(!HideoutService.IsAtHideout(player), "they are not at their own front door any more");
+}
+
+/// <summary>
+/// Being able to see the hideout from another town is not being able to reach into it.
+///
+/// Every one of these is a physical act at a particular address - a shift on a corner, a crew being
+/// paid off, a safe being opened, a wall being built - and the point of the list is that they are
+/// refused by one rule rather than by however many of them remembered to check.
+/// </summary>
+static void TheEmpireCannotBeWorkedFromAnotherTown()
+{
+    var options = Resolve(null);
+    var economy = CreateEconomy(options);
+    var hideouts = CreateHideouts(options);
+    var away = new Player
+    {
+        City = "Las Vegas",
+        Turns = 200,
+        Cash = 5_000_000,
+        Pimps = 2,
+        Hoes = 20,
+        Thugs = 10,
+        Condoms = 500,
+        Beer = 500,
+        Weed = 100,
+        HoeHappiness = 90,
+        ThugHappiness = 90,
+        Hideout = new Hideout { City = "New York", Tier = 2, StorageLevel = 4, SafeLevel = 3, SafeCash = 100_000 }
+    };
+
+    AssertRuleError(() => economy.Scout(away, 5), "working a street a thousand miles from your crew");
+    AssertRuleError(() => economy.HireCrew(away, "thugs", 1), "hiring into a house you are not standing in");
+    AssertRuleError(() => economy.FireCrew(away, "thugs", 1), "paying somebody off from another state");
+    AssertRuleError(() => economy.RecoverCrewMorale(away, "rest"), "throwing a party you will not be at");
+    AssertRuleError(() => hideouts.Upgrade(away, "storage", DateTime.UtcNow), "signing off a wall by telephone");
+    AssertRuleError(() => hideouts.MoveCash(away, 1_000, depositing: true), "opening a safe in another town");
+    AssertRuleError(() => hideouts.MoveStock(away, "weed", 1, depositing: false), "reaching a shelf in another town");
+
+    // The money in that safe is not spendable either, however much of it there is. It is counted when
+    // the player is standing in front of it and not otherwise, which is what stops a fortune locked in
+    // New York from quietly paying for something in Las Vegas.
+    AssertEqual(away.Cash + away.BankCash, Capital.Available(away));
+    away.City = "New York";
+    AssertEqual(away.Cash + away.BankCash + 100_000L, Capital.Available(away));
+
+    // And at the door, every one of them works again.
+    hideouts.MoveCash(away, 1_000, depositing: true);
+    AssertEqual(101_000L, away.Hideout!.SafeCash);
+}
+
+/// <summary>
+/// The two halves of the same rule, from both ends: a raid is on a place and a mugging is on a person,
+/// and neither can reach across the country to find the other.
+/// </summary>
+static void ARaidNeverReachesAPocketInAnotherState()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var away = new Player
+    {
+        City = "Las Vegas",
+        Cash = 25_000,
+        Heat = 10_000,
+        Coke = 400,
+        Weed = 400,
+        Hideout = new Hideout { City = "New York", StorageLevel = 6, SafeLevel = 4, SafeCash = 80_000 }
+    };
+    away.Carried.Coke = 10;
+    away.Carried.AddWeapons(WeaponTiers.Pistol, 1);
+
+    var bust = hideouts.RollBust(away, 1, new AlwaysRandom(), now);
+    AssertTrue(bust.Happened, "a hunted house with that much in it gets turned over");
+
+    // They took what was in the building.
+    AssertTrue(away.Coke < 400, "the shelves were emptied out");
+    AssertTrue(away.Hideout!.SafeCash < 80_000, "and the safe was opened");
+
+    // And nothing at all that was in Las Vegas.
+    AssertEqual(10, away.Carried.Coke);
+    AssertEqual(1, away.Carried.Weapons);
+    AssertEqual(25_000L, away.Cash);
+
+    // Standing in it, the same raid catches them with what they are holding as well - which is the
+    // decision the split creates rather than a loophole in it.
+    var home = new Player
+    {
+        City = "New York",
+        Cash = 25_000,
+        Heat = 10_000,
+        Coke = 400,
+        Hideout = new Hideout { City = "New York", StorageLevel = 6, SafeLevel = 4, SafeCash = 80_000 }
+    };
+    home.Carried.Coke = 10;
+
+    AssertTrue(hideouts.RollBust(home, 1, new AlwaysRandom(), now).Happened, "the same house, the same night");
+    AssertTrue(home.Carried.Coke < 10, "and this time they were in it");
+}
+
+/// <summary>
+/// Moving stock across your own threshold, which is bounded on both sides: the shelf holds what the
+/// room holds, and a person holds what a person can carry.
+/// </summary>
+static void StockMovesAgainstBothCeilings()
+{
+    var options = Resolve(null);
+    options.Carry.Weed = 20;
+    var hideouts = CreateHideouts(options);
+    var player = new Player
+    {
+        City = "New York",
+        Weed = 100,
+        Hideout = new Hideout { City = "New York", StorageLevel = 1 }
+    };
+
+    // Out to the carry limit and no further, and short deliveries say so rather than being silent.
+    var taken = hideouts.MoveStock(player, "weed", 60, depositing: false);
+    AssertEqual(20, player.Carried.Weed);
+    AssertEqual(80, player.Weed);
+    AssertTrue(taken.Summary.Contains("only carry"), $"a short withdrawal says so: {taken.Summary}");
+
+    // Full hands refuse rather than silently dropping what was asked for.
+    AssertRuleError(() => hideouts.MoveStock(player, "weed", 1, depositing: false), "carrying more than a person can");
+
+    // And back, which is bounded by the room instead. A level 1 store holds 50 weed and has 80 in it
+    // already, from before the room was this small - a deposit cannot make that worse.
+    AssertRuleError(() => hideouts.MoveStock(player, "weed", 1, depositing: true), "putting weed on a full shelf");
+
+    // Down to 30 on a shelf that holds 50, so all twenty fit and the bag empties.
+    player.Weed = 30;
+    var put = hideouts.MoveStock(player, "weed", 20, depositing: true);
+    AssertEqual(0, player.Carried.Weed);
+    AssertEqual(50, player.Weed);
+    AssertTrue(put.Summary.Contains("New York"), $"a deposit names the town it happened in: {put.Summary}");
+
+    // Poison is on the shelf even though it is not on the player market, which is the distinction the
+    // storable list exists to make: you can put a dose down, you just cannot sell one to anybody.
+    player.Poison = 5;
+    hideouts.MoveStock(player, "poison", 2, depositing: false);
+    AssertEqual(2, player.Carried.Poison);
+}
+
+/// <summary>
+/// Heat follows the goods rather than the person, because the goods are what somebody notices.
+///
+/// Two piles in two towns are two rates, and the interesting consequence is that emptying a store into
+/// a bag and flying somewhere quiet genuinely cools the house down - and makes the traveller the most
+/// interesting person at the airport.
+/// </summary>
+static void HeatIsDrawnWhereEachPileStands()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+
+    // The same coke, in the same town, in one pile or the other, draws the same notice.
+    var shelved = new Player { City = "New York", Coke = 100, Hideout = new Hideout { City = "New York" } };
+    var pocketed = new Player { City = "New York", Hideout = new Hideout { City = "New York" } };
+    pocketed.Carried.Coke = 100;
+    AssertEqual(hideouts.HeldGoodsHeatFor(shelved), hideouts.HeldGoodsHeatFor(pocketed));
+
+    // Carry it somewhere quieter and only the half that moved cools down.
+    var split = new Player { City = "Detroit", Coke = 100, Hideout = new Hideout { City = "New York" } };
+    split.Carried.Coke = 100;
+    AssertTrue(hideouts.CarriedGoodsHeatFor(split) < hideouts.StoredGoodsHeatFor(split),
+        "the half on the plane is in a quieter town than the half on the shelves");
+
+    // The crew never move, so their share is always read at the house.
+    var crew = new Player { City = "Detroit", Pimps = 2, Hoes = 20, Thugs = 10, Hideout = new Hideout { City = "New York" } };
+    var athome = new Player { City = "New York", Pimps = 2, Hoes = 20, Thugs = 10, Hideout = new Hideout { City = "New York" } };
+    AssertEqual(hideouts.CrewHeatFor(athome), hideouts.CrewHeatFor(crew));
+}
+
+/// <summary>
+/// The rack has two names - the four tiers and the pile - and both have to reach the same ceiling.
+///
+/// A regression rather than a feature. Settling an overflow asks what the shelf holds for "weapons",
+/// because four tiers share one ceiling and there is no honest way to ask that tier by tier. The keys
+/// table only knew the four, so it answered nought, and every gun above what a player walked in with
+/// would have been spilled into the street by the next shift they worked.
+/// </summary>
+static void TheRackAnswersToItsOwnName()
+{
+    var options = Resolve(null);
+    var hideouts = CreateHideouts(options);
+    var capacity = hideouts.CapacityFor(new Hideout { StorageLevel = 3 });
+
+    AssertTrue(capacity.MaxWeapons > 0, "a level 3 store holds guns at all");
+    AssertEqual(capacity.MaxWeapons, TradeGoods.Capacity(capacity, "weapons"));
+    foreach (var tier in WeaponTiers.All)
+        AssertEqual(capacity.MaxWeapons, TradeGoods.Capacity(capacity, tier));
+
+    // And a shift that ends under the ceiling leaves the rack exactly as it found it.
+    var player = new Player { City = "Detroit", Hideout = new Hideout { City = "Detroit", StorageLevel = 3 } };
+    player.AddWeapons(WeaponTiers.Rifle, 4);
+    player.AddWeapons(WeaponTiers.Pistol, 4);
+    var before = StockLevels.From(player);
+    var overflow = hideouts.Settle(player, before);
+
+    AssertEqual(8, player.Weapons);
+    AssertEqual(4, player.Armoury.Rifles);
+    AssertEqual(0, overflow.WeaponsLost);
+}
+
+/// <summary>
+/// The first thing the intelligence centre is worth once a player can be somewhere else: a switch is a
+/// phone call, and a room that exists to know things is the honest place to buy one.
+/// </summary>
+static void IntelligenceBuysBackRemoteControl()
+{
+    var options = Resolve(null);
+    options.Hideout.RemoteLabControlLevel = 2;
+    options.Hideout.RemoteRepairLevel = 3;
+    var hideouts = CreateHideouts(options);
+
+    var bare = new Hideout { City = "New York" };
+    AssertTrue(!hideouts.CanControlLabsRemotely(bare), "a house with no centre reaches nothing");
+    AssertTrue(!hideouts.CanRepairRemotely(bare), "and certainly cannot run a building site");
+
+    var wired = new Hideout { City = "New York", IntelligenceLevel = 2 };
+    AssertTrue(hideouts.CanControlLabsRemotely(wired), "level 2 answers the phone");
+    AssertTrue(!hideouts.CanRepairRemotely(wired), "but does not sign off a repair");
+
+    var deep = new Hideout { City = "New York", IntelligenceLevel = 3 };
+    AssertTrue(hideouts.CanRepairRemotely(deep), "level 3 does");
+
+    // A room through a wall reaches nothing at all, which is the whole reason a raider wants it.
+    deep.SetWrecked(HideoutRooms.Intelligence, DateTime.UtcNow);
+    AssertTrue(!hideouts.CanControlLabsRemotely(deep), "there is nobody in a wrecked centre to take the call");
+    AssertTrue(!hideouts.CanRepairRemotely(deep), "or to place one");
+}
+
+
+static PendingStrikeService CreatePendingStrikes(GameDbContext db, GameOptions options, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    var snapshot = Snapshot(resolved);
+    var hideouts = new HideoutService(snapshot);
+    var roll = random ?? new MinimumRandom();
+    var economy = CreateEconomy(resolved, roll);
+    return new PendingStrikeService(
+        db,
+        snapshot,
+        roll,
+        new StreetStrikeService(snapshot, roll, hideouts),
+        hideouts,
+        new TerritoryService(db, snapshot),
+        new AllianceService(db, snapshot, economy));
+}
+
+static GameDbContext NewStrikeWorld()
+    => new(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"strike-{Guid.NewGuid()}")
+        .Options);
+
+/// <summary>
+/// A house across town is answered on the spot; a house across the country is a drive.
+///
+/// The asymmetry the whole mechanic rests on, and the reason it is worth having: the people nearest
+/// you cannot be seen coming, and the people far from you can.
+/// </summary>
+static void DistanceDecidesWhetherAStrikeWaits()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options, rides: 2);
+    var neighbour = Defender(options, rides: 2);
+    var distant = Defender(options, rides: 2);
+    distant.City = "Los Angeles";
+    distant.Hideout!.City = "Los Angeles";
+
+    AssertEqual(0, pending.TravelTurnsBetween(attacker, neighbour));
+    // Distance is the target's own remoteness, exactly as it is for travel and for mule runs. There is
+    // no matrix on this map and there does not need to be: what makes Los Angeles far is Los Angeles.
+    AssertEqual(options.CityMarkets.TravelTurns("Los Angeles"), pending.TravelTurnsBetween(attacker, distant));
+
+    var turnsBefore = attacker.Turns;
+    var road = pending.LaunchAsync(attacker, distant, Strike(distant, AttackMethods.DriveBy), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    // The car left with them and the clock is running. Nothing has happened to anybody yet.
+    AssertEqual(PendingStrikeStatus.Outbound, road.Status);
+    AssertEqual(1, road.CommittedRides);
+    AssertEqual(1, attacker.Rides);
+    AssertEqual("Los Angeles", road.TargetCity);
+    AssertTrue(road.ArrivesAtUtc > now, "a drive takes time");
+    AssertTrue(road.ReturnsAtUtc > road.ArrivesAtUtc, "and the way back takes as long again");
+    AssertEqual(10, distant.Thugs);
+
+    // The drive is paid for in turns on top of the job, and in cash on top of that.
+    var strikes = new StreetStrikeService(Snapshot(options), new MinimumRandom(), new HideoutService(Snapshot(options)));
+    AssertTrue(road.TurnsSpent > strikes.TurnCostOf(AttackMethods.DriveBy), "the drive costs turns of its own");
+    AssertEqual(turnsBefore - road.TurnsSpent, attacker.Turns);
+    AssertTrue(road.Fare > 0, "and petrol and plates cost money");
+
+    // Nothing at all is due yet, so the tick leaves it alone.
+    AssertEqual(0, pending.ResolveDueAsync(now.AddMinutes(1), default).GetAwaiter().GetResult());
+    AssertEqual(PendingStrikeStatus.Outbound, road.Status);
+}
+
+/// <summary>
+/// The crew are decided against the house they find, not the one they left. This is the whole value of
+/// the warning: a defender who spends the notice on a bigger guard is answered by a harder strike.
+/// </summary>
+static void ALandingReadsTheHouseItFinds()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options, new AlwaysRandom());
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    // An infestation, because it is the one strike whose answer has no dice in it at all: what the
+    // medicine saves is arithmetic. So this measures the house rather than the roll - and buying
+    // medicine is precisely what a warning is for.
+    var attacker = Attacker(options);
+    attacker.Poison = 50;
+    var target = Defender(options);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    target.Hoes = 20;
+    target.Medicine = 0;
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.Infest), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(50, road.CommittedPoison);
+    AssertEqual(0, attacker.Poison);
+
+    // While the crew are on the road, the target spends the warning on the answer.
+    target.Medicine = 40;
+
+    var settled = pending.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertTrue(settled > 0, "a trip whose clock has run out is settled");
+    AssertEqual(PendingStrikeStatus.Returning, road.Status);
+    // Every hoe treated, because the medicine bought during the flight is the medicine they met.
+    AssertEqual(20, target.Hoes);
+    AssertTrue(target.Medicine < 40, "and the crates were spent doing it");
+    AssertTrue(db.CombatLogs.Any(x => x.AttackerId == attacker.Id), "written down like any other attack");
+
+    // Unused doses are still the attacker's, and drive home with the crew rather than evaporating.
+    AssertTrue(road.ReturningPoison > 0, "what they did not use is still theirs");
+    AssertEqual(0, attacker.Poison);
+    pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertTrue(attacker.Poison > 0, "and it is back on the shelf once they are");
+}
+
+/// <summary>
+/// Somebody else got there first. Not a bad roll and not the attacker's fault, so the load goes back in
+/// the boot - they keep the turns and the fare, which is what the trip actually cost.
+/// </summary>
+static void AShieldedLandingTurnsTheCrewRound()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options, coke: 500);
+    var target = Defender(options);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var perHoe = options.Strikes.Poach.CokePerHoe;
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.Poach, perHoe * 4), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(perHoe * 4, road.CommittedCoke);
+    AssertEqual(500 - perHoe * 4, attacker.Coke);
+
+    // Somebody else hits the house while the crew are driving.
+    target.StrikeProtectionUntilUtc = road.ArrivesAtUtc.AddMinutes(5);
+
+    pending.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual("Aborted", road.Outcome);
+    AssertEqual(perHoe * 4, road.ReturningCoke);
+    // Still on the road, not back in the store: it comes home when they do.
+    AssertEqual(500 - perHoe * 4, attacker.Coke);
+
+    pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(PendingStrikeStatus.Done, road.Status);
+    // Every unit of it, even though the store is nowhere near big enough to have accepted it as new
+    // stock. It was never new stock: it went out of that door and came back in the same week.
+    AssertEqual(500, attacker.Coke);
+    AssertEqual(20, target.Hoes);
+}
+
+/// <summary>
+/// What a crew took has to be driven home. A jacked car appearing in the garage the instant it was
+/// taken would be exactly the teleport the hideout's town exists to close.
+/// </summary>
+static void TheHaulComesHomeAtTheDoor()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    // Nought lands the jacking; one gets them home clean. The way back is its own roll and it has to
+    // be answered here, or this test is measuring two things and reporting one.
+    var pending = CreatePendingStrikes(db, options, new ScriptedRandom(0, 1));
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options);
+    var target = Defender(options, rides: 3);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    target.Thugs = 0;
+    target.Armoury = Armoury.Empty;
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.Jack), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    pending.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual("Victory", road.Outcome);
+    AssertTrue(road.ReturningRides > 0, "they got a car");
+    // Taken from the target's garage, but not yet parked in the attacker's - it is on a road somewhere.
+    AssertTrue(target.Rides < 3, "and it is gone from the target's garage");
+    AssertEqual(0, attacker.Rides);
+
+    pending.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(PendingStrikeStatus.Done, road.Status);
+    AssertEqual(0, road.SeizedRides);
+    AssertTrue(attacker.Rides > 0, "and now it is home");
+}
+
+/// <summary>
+/// The lookout's second job. It buys notice and never detail, which is what keeps the warning a
+/// decision rather than an instruction: medicine, a bigger guard and a better cut are three different
+/// purchases and the warning does not say which one is wanted.
+/// </summary>
+static void ALookoutBuysNoticeAndNeverDetail()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var pending = CreatePendingStrikes(db, options);
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    var attacker = Attacker(options, rides: 2);
+    var target = Defender(options);
+    target.City = "Los Angeles";
+    target.Hideout!.City = "Los Angeles";
+    db.Players.AddRange(attacker, target);
+    db.SaveChanges();
+
+    var road = pending.LaunchAsync(attacker, target, Strike(target, AttackMethods.DriveBy), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    // Blind by default. A house with no lookout never sees anybody coming, at any distance.
+    AssertEqual(0, pending.WarningMinutesFor(target.Hideout));
+    AssertTrue(!pending.AnythingInboundAsync(target, now, default).GetAwaiter().GetResult(),
+        "a house with no eyes on the street sees nothing");
+
+    // With eyes, the level is the lead time: nothing to see until they are close enough.
+    target.Hideout!.LookoutLevel = 1;
+    var notice = pending.WarningMinutesFor(target.Hideout);
+    AssertTrue(notice > 0, "a lookout is worth some notice");
+    AssertTrue(!pending.AnythingInboundAsync(target, now, default).GetAwaiter().GetResult(),
+        "a crew still hours out is nobody's problem yet");
+    AssertTrue(pending.AnythingInboundAsync(target, road.ArrivesAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult(),
+        "but a crew almost at the door is seen");
+
+    // A deeper room sees further, and a wrecked one sees nothing at all - which is most of why a raider
+    // wants to break it.
+    target.Hideout.LookoutLevel = 3;
+    AssertTrue(pending.WarningMinutesFor(target.Hideout) > notice, "a deeper room looks further down the road");
+    target.Hideout.SetWrecked(HideoutRooms.Lookout, now);
+    AssertEqual(0, pending.WarningMinutesFor(target.Hideout));
+    AssertTrue(!pending.AnythingInboundAsync(target, road.ArrivesAtUtc.AddMinutes(-1), default).GetAwaiter().GetResult(),
+        "there is nobody in a wrecked lookout to do the watching");
+}
+
+
+/// <summary>
+/// The half of an away job nobody thinks about until it goes wrong.
+///
+/// A car you own and a car you took an hour ago are the same object and completely different journeys:
+/// one has plates nobody is looking for, and the other is the reason anybody is looking. So the road
+/// home reads on the haul and never on the load a crew set out with - which is also what keeps a
+/// drive-by the cheap fast verb, since it brings nothing home but its own car.
+/// </summary>
+static void TheWayHomeIsItsOwnRisk()
+{
+    var options = Resolve(new GameOptions());
+    using var db = NewStrikeWorld();
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+
+    Player Target()
+    {
+        var target = Defender(options, rides: 3);
+        target.City = "Los Angeles";
+        target.Hideout!.City = "Los Angeles";
+        target.Thugs = 0;
+        target.Armoury = Armoury.Empty;
+        return target;
+    }
+
+    // Quoted before anything is committed, because a risk somebody is judged by and never shown is a
+    // surprise rather than a decision. It is never a certainty, however far the drive is.
+    var quoted = CreatePendingStrikes(db, options);
+    var far = quoted.ReturnRiskFor("Los Angeles", options.CityMarkets.TravelTurns("Los Angeles"));
+    var near = quoted.ReturnRiskFor("Detroit", options.CityMarkets.TravelTurns("Detroit"));
+    AssertTrue(far > near, $"a longer drive is more road to be stopped on: {far:P0} against {near:P0}");
+    AssertTrue(far < 1, "and it is never a certainty");
+    AssertEqual(0.0, quoted.ReturnRiskFor("Detroit", 0));
+
+    // Nought lands the jacking, and nought again stops them on the way out with it.
+    var stopped = CreatePendingStrikes(db, options, new AlwaysRandom());
+    var robber = Attacker(options);
+    var robbed = Target();
+    db.Players.AddRange(robber, robbed);
+    db.SaveChanges();
+
+    var road = stopped.LaunchAsync(robber, robbed, Strike(robbed, AttackMethods.Jack), now, default)
+        .GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertTrue(road.ReturnRiskPercent > 0, "the odds were written down when they left");
+
+    stopped.ResolveDueAsync(road.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual("Victory", road.Outcome);
+    var took = road.ReturningRides;
+    AssertTrue(took > 0, "they got a car out of the garage");
+
+    stopped.ResolveDueAsync(road.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(took, road.SeizedRides);
+    AssertEqual(0, robber.Rides);
+    AssertTrue(road.Summary.Contains("stopped on the way out"), $"and the summary says so: {road.Summary}");
+    // Taken from the target either way. A stop on the road is not the car going back where it came from.
+    AssertTrue(robbed.Rides < 3, "the target is still short a car");
+
+    // A drive-by carries nothing home but the car it left with, so there is nothing to stop it for.
+    // Minimum rolls: the pass misses, the car survives the street, and it is not impounded either.
+    using var second = NewStrikeWorld();
+    var quiet = CreatePendingStrikes(second, options, new MinimumRandom());
+    var shooter = Attacker(options, rides: 2);
+    var shot = Target();
+    second.Players.AddRange(shooter, shot);
+    second.SaveChanges();
+
+    var pass = quiet.LaunchAsync(shooter, shot, Strike(shot, AttackMethods.DriveBy), now, default)
+        .GetAwaiter().GetResult();
+    second.SaveChanges();
+    AssertEqual(1, shooter.Rides);
+
+    quiet.ResolveDueAsync(pass.ArrivesAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    quiet.ResolveDueAsync(pass.ReturnsAtUtc.AddSeconds(1), default).GetAwaiter().GetResult();
+    AssertEqual(PendingStrikeStatus.Done, pass.Status);
+    AssertEqual(0, pass.SeizedRides);
+    AssertEqual(2, shooter.Rides);
+}
+
 static Player Rookie(GameOptions options) => new()
 {
     City = "Detroit",
+    // Set up where they are standing. It has to be said out loud now: a hideout has a town of its own,
+    // and a rookie whose house was in a city they had never been to could not work their own street.
     Cash = options.StartingCash,
     Turns = options.StartingTurns,
     Pimps = options.StartingPimps,
@@ -6538,7 +9520,7 @@ static Player Rookie(GameOptions options) => new()
     Pistols = options.StartingWeapons,
     HoeHappiness = 100,
     ThugHappiness = 100,
-    Hideout = new Hideout { Tier = 1, StorageLevel = 1, SafeLevel = 1 }
+    Hideout = new Hideout { City = "Detroit", Tier = 1, StorageLevel = 1, SafeLevel = 1 }
 };
 
 static GuidanceService CreateGuidance(GameOptions options)
@@ -7258,6 +10240,103 @@ static void WorkingGroundUpIsPaidForUpFront()
     AssertTrue(given.DevelopingToLevel is null, "and takes the unfinished work with it");
 }
 
+
+/// <summary>
+/// Leaving town used to mean giving up the map: travel was refused outright while a player held any
+/// ground, so every trip began by walking away from everything they had taken. Ground stays held now.
+///
+/// What keeps that from being free is the three things that come with it. It pays out only in the town
+/// it stands in, so an empire away from its ground earns nothing from it. Its garrison is still away
+/// from home, so the thugs on it are gone from the roster the whole time. And it is still raidable by
+/// anybody standing next to it, which is the part the holder cannot answer from another city.
+/// </summary>
+static void GroundStaysHeldWhenItsHolderLeavesTown()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var service = new TerritoryService(world.Db, Snapshot(options));
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var holder = world.Member("Holder", thugs: 30, cash: 100_000);
+    holder.BankCash = 5_000_000;
+    holder.Turns = 200;
+    holder.Hideout!.Tier = 2;
+
+    var ground = new Territory { City = "Detroit", Name = "The Docks", Type = "dock", HolderId = holder.Id, GarrisonThugs = 10 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+
+    // Nothing in the travel path pulls the garrison off, so the flight leaves it exactly as it stood.
+    holder.City = "Chicago";
+    AssertEqual(holder.Id, ground.HolderId);
+    AssertEqual(10, ground.GarrisonThugs);
+
+    // And the crew standing on it is still spoken for. A garrison that stopped counting the moment its
+    // holder left town would make holding ground free for anybody willing to fly.
+    AssertEqual(20, service.FreeThugsAsync(holder, default).GetAwaiter().GetResult());
+
+    // What cannot be done from a country away is anything that moves crew or money onto the ground.
+    // Both would cross the map the instant they were asked for, which is what the flight clock exists
+    // to stop.
+    AssertRuleError(() => service.SetGarrisonAsync(holder, ground.Id, 20, null, default).GetAwaiter().GetResult(),
+        "reinforcing ground in a town the holder is not standing in");
+    AssertRuleError(() => service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult(),
+        "starting work on ground in a town the holder is not standing in");
+    AssertEqual(10, ground.GarrisonThugs);
+
+    // Walking away is the exception, because it is a release rather than a posting. Refusing it too
+    // would strand a garrison on ground its holder had already decided to drop.
+    var (given, gaveUp) = service.SetGarrisonAsync(holder, ground.Id, 0, null, default).GetAwaiter().GetResult();
+    AssertTrue(gaveUp, "ground can be given up from another town");
+    AssertTrue(given.HolderId is null, "and it goes back to being nobody's");
+    world.Db.SaveChanges();
+    AssertEqual(30, service.FreeThugsAsync(holder, default).GetAwaiter().GetResult());
+
+    // Back home, the same calls work. The rule is about distance, not about the ground.
+    holder.City = "Detroit";
+    var reclaimed = service.ClaimAsync(holder, ground.Id, 10, null, now, default).GetAwaiter().GetResult();
+    AssertEqual(10, reclaimed.GarrisonThugs);
+    world.Db.SaveChanges();
+    service.SetGarrisonAsync(holder, ground.Id, 15, null, default).GetAwaiter().GetResult();
+    AssertEqual(15, ground.GarrisonThugs);
+
+    // The trip says what it is leaving standing, because both halves of that are things nobody would
+    // guess: the ground keeps paying nothing until its holder is back on it, and it stays takeable the
+    // whole time they are away.
+    var economy = CreateEconomy(Resolve(null));
+    var traveller = new Player { City = "Detroit", Turns = 10 };
+    var leaving = economy.Travel(traveller, "Chicago", ["Detroit", "Detroit"]);
+    AssertTrue(leaving.Summary.Contains("2 piece(s) of ground held out of town", StringComparison.Ordinal),
+        "the trip should name the ground it leaves behind");
+
+    // Ground in the town being flown to is not left behind at all, so it is not mentioned.
+    var arriving = new Player { City = "Detroit", Turns = 10 };
+    var landing = economy.Travel(arriving, "Chicago", ["Chicago"]);
+    AssertTrue(!landing.Summary.Contains("held out of town", StringComparison.Ordinal),
+        "ground in the destination is not ground left behind");
+
+    // And the last word: travel itself no longer asks whether anything is held. The check is a local
+    // function inside the endpoint, so this reads the seam rather than the behaviour - the same way the
+    // map page's clock is pinned down.
+    AssertTrue(!TravelIsRefusedForHeldGround(), "travel must not be refused for holding ground");
+}
+
+/// <summary>
+/// Reads the endpoint rather than trusting it. The blocker travel answers to is a local function with
+/// no other caller, and the rule that used to live in it was the one that made every trip start by
+/// giving up the map.
+/// </summary>
+static bool TravelIsRefusedForHeldGround()
+{
+    var root = SolutionRoot();
+    var source = File.ReadAllText(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Endpoints", "GameEndpoints.cs"));
+    var blocker = source[source.IndexOf("static async Task<string?> TravelBlockedReasonAsync", StringComparison.Ordinal)..];
+    // Up to the next local function, which is where this one ends. Slicing on a brace would be reading
+    // the file's line endings rather than its shape.
+    blocker = blocker[..blocker.IndexOf("static SeasonStandingResponse StandingFromResult", StringComparison.Ordinal)];
+    return blocker.Contains("Territories", StringComparison.Ordinal);
+}
+
 /// <summary>
 /// The bonuses have to arrive where they were promised. Each one lives at a single seam, and a seam
 /// that silently stops passing them through is the failure this pins down.
@@ -7434,6 +10513,57 @@ static void OptionPathsDiscoverAndWriteScalars()
     // The value written is the value read back.
     AssertEqual("7", GameOptionPaths.Read(options, "Combat.AttackTurnCost"));
     AssertTrue(GameOptionPaths.Read(options, "Nope.NotReal") is null, "reading an unknown path yields null");
+}
+
+/// <summary>
+/// A setting with a real limit is held to it, and says what the limit is.
+///
+/// The admin config editor checked that a value parsed and stopped there, which is not the same thing
+/// as checking it is usable. The settings that matter are the ones where a number past the limit does
+/// not tune anything - it breaks something, some time later, looking nothing like its cause: a chat
+/// line longer than the column it is stored in becomes a 500 on an ordinary message, and a chance
+/// above certainty is rolled against directly.
+/// </summary>
+static void SettingsWithARealLimitAreHeldToIt()
+{
+    var options = new GameOptions();
+    var byPath = GameOptionPaths.Describe(options).ToDictionary(x => x.Path, StringComparer.OrdinalIgnoreCase);
+
+    // The line length the game allows cannot pass the column it is written to. The two numbers are
+    // one constant, so this cannot drift the way two hand-copied limits would.
+    AssertEqual(ChatMessage.MaxBodyLength.ToString(), byPath["Chat.MaxLength"].Maximum);
+    AssertTrue(!GameOptionPaths.TryApply(options, "Chat.MaxLength", "5000", out var tooLong),
+        "a message length past the column is rejected");
+    AssertTrue(tooLong is not null && tooLong.Contains(ChatMessage.MaxBodyLength.ToString()),
+        $"the refusal names the limit, not just that there is one: {tooLong}");
+    AssertEqual(280, options.Chat.MaxLength);
+
+    // Right up to the column is fine. A limit that refused its own boundary would be off by one.
+    AssertTrue(GameOptionPaths.TryApply(options, "Chat.MaxLength", ChatMessage.MaxBodyLength.ToString(), out _),
+        "the column itself is a legal setting");
+
+    // Chances are rolled against a number between zero and one, without a clamp where they are read.
+    AssertTrue(!GameOptionPaths.TryApply(options, "Casino.FreeSpins.ChancePerSpin", "2", out _),
+        "a chance above certainty is rejected");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Combat.Round.LossRollChance", "1.5", out _),
+        "a fight cannot take somebody more often than always");
+    AssertTrue(GameOptionPaths.TryApply(options, "Casino.FreeSpins.ChancePerSpin", "0.5", out _),
+        "an ordinary chance is still accepted");
+    AssertEqual(0.5, options.Casino.FreeSpins.ChancePerSpin);
+
+    // A share of every wager, so a hundred is all of it and there is no more to give.
+    AssertTrue(!GameOptionPaths.TryApply(options, "Casino.Jackpot.ContributionPercent", "150", out _),
+        "the pot cannot be fed more than the wager that feeds it");
+    AssertTrue(GameOptionPaths.TryApply(options, "Casino.Jackpot.ContributionPercent", "100", out _),
+        "all of it is allowed, absurd as it would be");
+
+    // Everything else is unchanged: a setting without a declared limit still only has to be a number
+    // that is not negative, and must not start reporting bounds it does not have.
+    AssertTrue(byPath["Combat.AttackTurnCost"].Minimum is null && byPath["Combat.AttackTurnCost"].Maximum is null,
+        "a setting with no real limit reports none");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "-1", out _), "negatives are still rejected");
+    AssertTrue(GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "99999", out _),
+        "a setting with no ceiling still has none");
 }
 
 static void OptionOverridesLayerOverAppsettings()
@@ -8035,6 +11165,8 @@ static void CityRiskReachesTheDailyLoop()
     static Player Working(string city) => new()
     {
         City = city,
+        // The house is in the town being measured, which is the whole point of the comparison: what
+        // changes between these two players is the town, and nothing else may.
         Turns = 100,
         Pimps = 1,
         Hoes = 6,
@@ -8045,7 +11177,7 @@ static void CityRiskReachesTheDailyLoop()
         HoeHappiness = 90,
         ThugHappiness = 90,
         HoeCutPercent = 30,
-        Hideout = new Hideout { Tier = 1, StorageLevel = 3, SafeLevel = 3 }
+        Hideout = new Hideout { City = city, Tier = 1, StorageLevel = 3, SafeLevel = 3 }
     };
 }
 
@@ -8275,10 +11407,10 @@ static void MuleRunsArePricedAndFrozen()
 
     // Los Angeles is six turns out on the shipped map; Detroit is two.
     var player = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Condoms = 10, Beer = 10 };
-    player.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
+    player.Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 };
 
     // Without the room there are no runs at all: the intelligence centre is the gate, not a discount.
-    var roomless = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { Tier = 2 } };
+    var roomless = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { City = "Los Angeles", Tier = 2 } };
     AssertEqual(0, hideouts.ConcurrentRunCap(roomless.Hideout));
     AssertRuleError(
         () => mules.Launch(roomless, Pimp(roomless, "Vic", 100), "Detroit", "weed", 2, 10_000, 0, DateTime.UtcNow),
@@ -8356,13 +11488,13 @@ static void MuleRunsArePricedAndFrozen()
     AssertTrue(briefed > 0, "a briefing is not a guarantee");
     AssertTrue(mules.BustChancePercent(player, "New York", 6) > briefed, "more bodies are easier to notice");
 
-    var dry = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };
+    var dry = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 } };
     AssertRuleError(
         () => mules.Launch(dry, Pimp(dry, "Vic", 100), "Detroit", "weed", 3, 30_000, 0, launchedAt),
         "needs");
 
     var stockedWithContraband = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 20, Condoms = 10, Moonshine = 10 };
-    stockedWithContraband.Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 };
+    stockedWithContraband.Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 };
     var moonshineQuote = mules.Quote(stockedWithContraband, "Detroit", "weed", 3, 30_000);
     AssertEqual(0, moonshineQuote.BeerUsed);
     AssertEqual(moonshineQuote.BeerNeeded, moonshineQuote.MoonshineUsed);
@@ -8370,7 +11502,7 @@ static void MuleRunsArePricedAndFrozen()
     AssertEqual(10 - moonshineQuote.MoonshineUsed, stockedWithContraband.Moonshine);
 
     // Sending crew you do not have, or money you cannot cover, is refused rather than run on credit.
-    var thin = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 1, Hideout = new Hideout { Tier = 2, IntelligenceLevel = 1 } };
+    var thin = new Player { City = "Los Angeles", Cash = 200_000, Turns = 100, Hoes = 1, Hideout = new Hideout { City = "Los Angeles", Tier = 2, IntelligenceLevel = 1 } };
     AssertRuleError(
         () => mules.Launch(thin, Pimp(thin, "Vic", 100), "Detroit", "weed", 4, 30_000, 0, launchedAt),
         "hoe(s) to send");
@@ -8405,7 +11537,11 @@ static void MuleRunsSettleThreeWays()
     AssertEqual(30_000L - 135 * price, run.CashReturned);
     AssertEqual(135, lucky.Weed);
     AssertEqual(20, lucky.Hoes);
-    AssertEqual(30_000L - 135 * price, lucky.Cash);
+    // The change comes back into the safe rather than into the player's hand, for the same reason the
+    // cargo goes on to the shelves: a crew walked back into the house with it, and the player may have
+    // been in another town the whole time.
+    AssertEqual(30_000L - 135 * price, lucky.Hideout!.SafeCash);
+    AssertEqual(0L, lucky.Cash);
     AssertEqual(135, settled.UnitsDelivered);
     AssertTrue(!run.IsOut, "a settled run is no longer out");
 
@@ -9543,7 +12679,7 @@ static void AStrikeRefusesBeforeTheClick()
     var strikes = CreateStrikes(options);
 
     // Turns are checked before any of this, so give them enough that the ride is what refuses.
-    var attacker = new Player { Name = "You", City = "Detroit", Turns = 40, Thugs = 4, Pistols = 4, Coke = 500, CokePurity = 1, Poison = 10, Hideout = new Hideout() };
+    var attacker = new Player { Name = "You", City = "Detroit", Turns = 40, Thugs = 4, Pistols = 4, Coke = 500, CokePurity = 1, Poison = 10, Hideout = new Hideout { City = "Detroit" } };
 
     // Nothing parked: the jacking is refused, and it is refused by name.
     // Rich enough to be worth attacking at all: the anti-farm floor is checked before any of this,
@@ -9666,7 +12802,10 @@ static Player Attacker(GameOptions options, int rides = 0, int coke = 0) => new(
     Coke = coke,
     HoeHappiness = 100,
     ThugHappiness = 100,
-    Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 3 }
+    // The house is in the town they are standing in. A strike is thrown by the crew, and the crew are
+    // wherever the house is - so an attacker whose base was in a city they had never visited could not
+    // throw one at the person across the street.
+    Hideout = new Hideout { City = "Detroit", Tier = 2, StorageLevel = 4, SafeLevel = 3 }
 };
 
 static Player Defender(GameOptions options, int rides = 0) => new()
@@ -9682,7 +12821,7 @@ static Player Defender(GameOptions options, int rides = 0) => new()
     Rides = rides,
     HoeHappiness = 70,
     ThugHappiness = 70,
-    Hideout = new Hideout { Tier = 2, StorageLevel = 4, SafeLevel = 3 }
+    Hideout = new Hideout { City = "Detroit", Tier = 2, StorageLevel = 4, SafeLevel = 3 }
 };
 
 static CombatAttackRequest Strike(Player defender, string method, int coke = 0)
@@ -10310,10 +13449,19 @@ static void ATownsCounterCarriesWhatItsTraderCarries()
     AssertEqual(3, few.Available);
     AssertTrue(!few.Locked, "three left is still three for sale");
     cheap.Cash = 10_000_000;
-    cheap.Hideout = new Hideout { Tier = 4, StorageLevel = 6 };
+    cheap.Hideout = new Hideout { City = "Chicago", Tier = 4, StorageLevel = 6 };
     AssertRuleError(() => economy.BuyStoreItem(cheap, "medicine", 4, thin), "buying more than the counter has");
     economy.BuyStoreItem(cheap, "medicine", 3, thin);
+    // Bought at the counter in the town the buyer's house is in, so it goes straight on to the shelves.
+    // Carrying a crate through your own front door is not a decision worth a second click.
     AssertEqual(3, cheap.Medicine);
+    AssertEqual(0, cheap.Carried.Medicine);
+
+    // Bought anywhere else it stays in their hands, and has to be flown home before the crew see it.
+    var abroad = new Player { City = "Las Vegas", Cash = 10_000_000, Hideout = new Hideout { City = "Chicago", Tier = 4, StorageLevel = 6 } };
+    economy.BuyStoreItem(abroad, "medicine", 2);
+    AssertEqual(2, abroad.Carried.Medicine);
+    AssertEqual(0, abroad.Medicine);
 }
 
 // Asking the dealer what else is going: free once a cycle, then money and standing together, charged a
@@ -11637,6 +14785,24 @@ static EconomyService CreateEconomy(GameOptions? options = null, IGameRandom? ra
         new PimpRoster(Snapshot(resolved), new MinimumRandom()));
 }
 
+static CasinoService CreateCasino(GameDbContext db, GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new CasinoService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
+}
+
+static RouletteService CreateRoulette(GameDbContext db, GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new RouletteService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
+}
+
+static BlackjackService CreateBlackjack(GameDbContext db, GameOptions? options = null, IGameRandom? random = null)
+{
+    var resolved = Resolve(options);
+    return new BlackjackService(db, Snapshot(resolved), random ?? new MinimumRandom(), CreateEconomy(resolved));
+}
+
 /// <summary>
 /// Built without a database on purpose. The methods under test here decide what held ground is worth
 /// and how much of it a tier may run, and neither reads a row: the caller hands them the ground.
@@ -11673,6 +14839,7 @@ static GameOptions Resolve(GameOptions? options)
     resolved.Territory.ApplyDefaultsWhereEmpty();
     resolved.CityMarkets.ApplyDefaultsWhereEmpty(resolved.Territory.Cities());
     resolved.Store.ApplyDefaultsWhereEmpty();
+    resolved.Casino.ApplyDefaultsWhereEmpty();
     return resolved;
 }
 
@@ -11717,6 +14884,31 @@ static IOptions<T> Options<T>(T value) where T : class => new OptionsSnapshotStu
 ///
 /// One home, one message, and the message carries the directory it actually looked from.
 /// </summary>
+/// <summary>
+/// Every line of the client's own source, as one string.
+///
+/// The three tests that read across the language boundary used to open Client/src/main.tsx, back when
+/// that file was the entire client. Splitting it into pages broke one of them outright and quietly
+/// weakened another - the resource-key sweep still passed, because it checks that the client names
+/// nothing the server does not, and a file it can no longer see names nothing at all. That is the
+/// worse of the two failures: a test that goes green because it stopped looking.
+///
+/// So these read the tree rather than a file, and go on working wherever a component ends up living.
+/// </summary>
+static string ClientSource()
+{
+    var src = new DirectoryInfo(Path.Combine(SolutionRoot().FullName, "Client", "src"));
+    AssertTrue(src.Exists, $"the client source should be findable at {src.FullName}");
+
+    var files = src.GetFiles("*.ts", SearchOption.AllDirectories)
+        .Concat(src.GetFiles("*.tsx", SearchOption.AllDirectories))
+        .OrderBy(x => x.FullName, StringComparer.Ordinal)
+        .ToList();
+    AssertTrue(files.Count > 0, "the client should have some source to read");
+
+    return string.Join(Environment.NewLine, files.Select(x => File.ReadAllText(x.FullName)));
+}
+
 static DirectoryInfo SolutionRoot()
 {
     var found = new DirectoryInfo(AppContext.BaseDirectory);
@@ -11983,6 +15175,51 @@ sealed class MinimumRandom : IGameRandom
 }
 
 /// <summary>Every roll lands, for exercising a path rather than sampling it.</summary>
+/// <summary>
+/// Leaves a shuffle exactly as it found it.
+///
+/// Fisher-Yates swaps element i with one drawn from nought to i, so a generator that always returns
+/// the top of that range swaps every card with itself and the shoe comes out in build order. That
+/// makes the cards dealt to a test knowable without the test having to model the shuffle.
+/// </summary>
+/// <summary>
+/// A real shuffle from a fixed seed.
+///
+/// The other doubles here answer with one value, which is what makes them useful for walking a wheel
+/// or leaving a shoe alone - and useless for dealing a pair, because a Fisher-Yates driven by a
+/// constant only ever swaps against one index, so the first and third cards off such a shoe are never
+/// the same rank. This is a plain linear congruential generator: nothing worth trusting with money,
+/// and exactly enough to shuffle a shoe the same way twice.
+/// </summary>
+sealed class SeededRandom(int seed) : IGameRandom
+{
+    private uint _state = (uint)seed * 2_654_435_761u + 1u;
+
+    private uint Next()
+    {
+        _state = _state * 1_664_525u + 1_013_904_223u;
+        return _state;
+    }
+
+    public int NextInclusive(int min, int max)
+        => max <= min ? min : min + (int)(Next() % (uint)(max - min + 1));
+
+    public double NextDouble() => Next() / (double)uint.MaxValue;
+}
+
+sealed class NoShuffleRandom : IGameRandom
+{
+    public int NextInclusive(int min, int max) => max;
+    public double NextDouble() => 0;
+}
+
+/// <summary>Drops the ball in one named pocket, for walking a wheel one number at a time.</summary>
+sealed class FixedIntRandom(int value) : IGameRandom
+{
+    public int NextInclusive(int min, int max) => Math.Clamp(value, min, max);
+    public double NextDouble() => 0;
+}
+
 sealed class ZeroRandom : IGameRandom
 {
     public int NextInclusive(int min, int max) => min;

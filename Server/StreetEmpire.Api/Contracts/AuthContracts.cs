@@ -96,6 +96,7 @@ public sealed record AccountResponse(
     bool DiscordCombatNotices,
     bool DiscordCrewNotices,
     bool DiscordMarketNotices,
+    bool DiscordMachineNotices,
     bool DiscordConfigured,
     DateTime? DiscordLinkRewardClaimedAtUtc,
     DateTime CreatedAtUtc);
@@ -186,6 +187,7 @@ public sealed record ChangeNotificationPreferencesRequest(
     bool? DiscordCombatNotices,
     bool? DiscordCrewNotices,
     bool? DiscordMarketNotices,
+    bool? DiscordMachineNotices,
     bool? NoticeCombat = null,
     bool? NoticeCrew = null,
     bool? NoticeMarket = null);

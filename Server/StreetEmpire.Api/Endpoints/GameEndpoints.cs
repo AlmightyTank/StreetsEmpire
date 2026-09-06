@@ -61,6 +61,7 @@ internal static class GameEndpoints
             PimpRoster pimps,
             CombatMissionService combatMissions,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             StreetStrikeService strikes,
             AllianceService allianceRules,
             StandingsRecorder standings,
@@ -79,6 +80,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             if ((await clock.AdvanceAsync(player, now, db, ct)).Changed)
                 await db.SaveChangesAsync(ct);
             // Sampled from the busiest read in the game, behind a timer, so standings history builds up
@@ -87,6 +89,17 @@ internal static class GameEndpoints
 
             var netWorth = economy.CalculateNetWorth(player);
             var combatSince = now.AddDays(-1);
+            // Whose door each crew is at, read in one go rather than a name at a time.
+            var out_ = await pendingStrikes.OutAsync(player.Id, ct);
+            var targetNames = out_.Count == 0
+                ? new Dictionary<Guid, string>()
+                : await db.Players.AsNoTracking()
+                    .Where(x => out_.Select(y => y.DefenderId).Contains(x.Id))
+                    .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+            var strikesOut = out_
+                .Select(x => ToPendingStrike(x, targetNames.TryGetValue(x.DefenderId, out var name) ? name : "someone"))
+                .ToList();
+
             var recentAttacksMade = await db.CombatLogs.AsNoTracking()
                 .CountAsync(x => x.AttackerId == player.Id && x.CreatedAtUtc >= combatSince, ct);
             var recentDefenses = await db.CombatLogs.AsNoTracking()
@@ -179,6 +192,7 @@ internal static class GameEndpoints
                 player.Account.IsAdmin,
                 player.WalkthroughSeenAtUtc is null,
                 player.City,
+                ToLocation(player, hideouts),
                 currentMarket,
                 cityMarkets,
                 travel,
@@ -221,6 +235,9 @@ internal static class GameEndpoints
                 player.Coke,
                 player.Moonshine,
                 player.Cut,
+                ToStash(player.Carried, opts),
+                ToStash(hideouts.CarryCapacityFor(player), opts),
+                player.EquippedWeapon,
                 economy.ProductSellPrice(player.City, "weed"),
                 economy.ProductSellPrice(player.City, "coke"),
                 (int)Math.Round(player.CokePurity * 100),
@@ -236,6 +253,8 @@ internal static class GameEndpoints
                 pimps.Fallen(player).Take(12).Select(x => ToPimpResponse(x, commandingPimpIds)).ToList(),
                 ToCombatCrewResponse(combatCrew),
                 ToCombatStatus(player, now, player, opts, recentAttacksMade, recentDefenses, laneReadyAt),
+                await pendingStrikes.AnythingInboundAsync(player, now, ct),
+                strikesOut,
                 unreadAlerts,
                 economy.GetStore(player, await shelves.RemainingAsync(player.City, economy.GetStore(player), now, ct)),
                 ToStoreRep(player, opts, now),
@@ -256,6 +275,7 @@ internal static class GameEndpoints
             PlayerClock clock,
             EconomyService economy,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -263,6 +283,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var blockedReason = await TravelBlockedReasonAsync(db, player.Id, ct);
             if (blockedReason is not null)
                 return Results.BadRequest(new { error = blockedReason });
@@ -271,7 +292,13 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Travel(player, request.City);
+                // Where the player's ground stands, so the trip can name what it leaves behind. Read
+                // here because the economy service has no database by design.
+                var groundCities = await db.Territories.AsNoTracking()
+                    .Where(x => x.HolderId == player.Id)
+                    .Select(x => x.City)
+                    .ToListAsync(ct);
+                var result = economy.Travel(player, request.City, groundCities);
                 AddLog(db, player, before, "TRAVEL", TurnsSpentIn(result), result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -292,6 +319,7 @@ internal static class GameEndpoints
             ArrestService arrests,
             TerritoryService territories,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -299,6 +327,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var pendingAttack = await ActiveOutgoingMissionAsync(db, player.Id, ct);
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
@@ -351,6 +380,7 @@ internal static class GameEndpoints
             ArrestService arrests,
             TerritoryService territories,
             CombatResolutionService combatResolver,
+            PendingStrikeService pendingStrikes,
             CancellationToken ct) =>
         {
             var player = await current.GetAsync(ct);
@@ -358,6 +388,7 @@ internal static class GameEndpoints
 
             var now = DateTime.UtcNow;
             await combatResolver.ResolveDueAsync(now, ct);
+            await pendingStrikes.ResolveDueAsync(now, ct);
             var pendingAttack = await ActiveOutgoingMissionAsync(db, player.Id, ct);
             if (pendingAttack is not null)
                 return Results.BadRequest(new { error = PendingAttackMessage(pendingAttack) });
@@ -873,6 +904,91 @@ internal static class GameEndpoints
         }).RequireAuthorization();
 
 
+        // Moving stock and money across the hideout's own threshold. Separate from the bank endpoints
+        // above on purpose: the bank is reachable from every town and charges a trip for it, while the
+        // safe and the shelves are free and only reachable from the doorstep. Two different bargains,
+        // so two different doors.
+        app.MapPost("/api/game/hideout/stash", async (
+            StashRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            HideoutService hideouts,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            try
+            {
+                // A negative quantity is the same move in the other direction. One endpoint for both,
+                // because they are one rule - something can only move if where it is going has room -
+                // and two endpoints is two chances for the halves to disagree about guns.
+                var depositing = request.Quantity >= 0;
+                var result = hideouts.MoveStock(player, request.Item, Math.Abs(request.Quantity), depositing);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPost("/api/game/hideout/safe", async (
+            SafeRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            PlayerClock clock,
+            HideoutService hideouts,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            var now = DateTime.UtcNow;
+            await clock.AdvanceAsync(player, now, db, ct);
+            var before = Snapshot(player);
+            try
+            {
+                var result = hideouts.MoveCash(player, Math.Abs(request.Amount), request.Amount >= 0);
+                AddLog(db, player, before, "SAFE", 0, result.Summary, now);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
+        app.MapPut("/api/game/equip", async (
+            EquipRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            HideoutService hideouts,
+            CancellationToken ct) =>
+        {
+            var player = await current.GetAsync(ct);
+            if (player is null) return Results.Unauthorized();
+
+            try
+            {
+                var result = hideouts.Equip(player, request.Weapon);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(result);
+            }
+            catch (GameRuleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }).RequireAuthorization();
+
+
         app.MapPost("/api/game/hideout/recover", async (
             MoraleRecoveryRequest request,
             CurrentPlayerService current,
@@ -946,6 +1062,13 @@ internal static class GameEndpoints
             var player = await current.GetAsync(ct);
             if (player is null) return Results.Unauthorized();
             if (player.Hideout is null) return Results.BadRequest(new { error = "You have no hideout." });
+
+            if (!HideoutService.IsAtHideout(player) && !hideouts.CanControlLabsRemotely(player.Hideout))
+                return Results.BadRequest(new
+                {
+                    error = $"Your labs are in {player.Hideout.City} and you are in {player.City}. "
+                            + $"Working them from another town needs a level {gameOptions.Value.Hideout.RemoteLabControlLevel:N0} intelligence centre."
+                });
 
             var product = (request.Product ?? string.Empty).Trim().ToLowerInvariant();
             if (product is not ("weed" or "coke"))
@@ -1028,16 +1151,20 @@ internal static class GameEndpoints
                 .ThenBy(x => x.Id)
                 .FirstOrDefaultAsync(cancellationToken);
 
-        // Neither blocker is per-city, so travel is either open or shut for the whole panel. Shared by
-        // the dashboard, which reports the reason, and the travel post, which enforces it.
+        // Crew already out on the road is the only thing that pins a player to a town, and it pins them
+        // because a mission is fought where its attacker is standing: flying out mid-raid would move
+        // the fight after it started.
+        //
+        // Held ground used to pin them too, which meant every trip began by giving up the map. It does
+        // not any more. Ground stays held while its holder is away, pays out only in the town it is in,
+        // and can still be raided off somebody who is not there to watch it - so leaving it standing
+        // costs something without costing the trip.
+        //
+        // Shared by the dashboard, which reports the reason, and the travel post, which enforces it.
         static async Task<string?> TravelBlockedReasonAsync(GameDbContext db, Guid playerId, CancellationToken cancellationToken)
         {
             var pendingAttack = await ActiveOutgoingMissionAsync(db, playerId, cancellationToken);
-            if (pendingAttack is not null) return PendingAttackMessage(pendingAttack);
-
-            return await db.Territories.AsNoTracking().AnyAsync(x => x.HolderId == playerId, cancellationToken)
-                ? "Pull your garrisons off your ground before leaving town."
-                : null;
+            return pendingAttack is null ? null : PendingAttackMessage(pendingAttack);
         }
 
         // One finish, as the shelf and the table both show it. Shared so the dashboard panel and the

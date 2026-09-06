@@ -52,6 +52,7 @@ builder.Services.AddOptions<GameOptions>().PostConfigure<GameOptionOverrides>((o
     options.Territory.ApplyDefaultsWhereEmpty();
     options.CityMarkets.ApplyDefaultsWhereEmpty(options.Territory.Cities());
     options.Store.ApplyDefaultsWhereEmpty();
+    options.Casino.ApplyDefaultsWhereEmpty();
 });
 builder.Services.Configure<BotAutomationOptions>(builder.Configuration.GetSection("Bots"));
 builder.Services.AddDbContext<GameDbContext>(options =>
@@ -70,6 +71,9 @@ builder.Services.AddScoped<ArrestService>();
 builder.Services.AddScoped<GuidanceService>();
 builder.Services.AddScoped<TraderJobService>();
 builder.Services.AddScoped<TraderShelfService>();
+builder.Services.AddScoped<CasinoService>();
+builder.Services.AddScoped<RouletteService>();
+builder.Services.AddScoped<BlackjackService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<StandingsSchedule>();
 // Singleton for the same reason the standings gate is: it exists to stop every request in a busy
@@ -80,6 +84,7 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<EconomyService>();
 builder.Services.AddScoped<CombatService>();
 builder.Services.AddScoped<StreetStrikeService>();
+builder.Services.AddScoped<PendingStrikeService>();
 builder.Services.AddScoped<PrayerService>();
 builder.Services.AddScoped<TitleService>();
 builder.Services.AddScoped<AllianceService>();
@@ -100,6 +105,10 @@ builder.Services.AddHttpClient<DiscordGuildIntegration>(client => client.Timeout
 builder.Services.AddHttpClient<DiscordDirectMessages>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<DiscordGatewayState>();
 builder.Services.AddHostedService<DiscordGatewayService>();
+
+// Alerts the game already derives, delivered to the people who asked for them on Discord. A sweep
+// rather than a call at each writer, for the reason the service itself gives.
+builder.Services.AddHostedService<DiscordAlertSweep>();
 
 // Discord sign-in. Registered unconditionally so the endpoints exist and can say "not set up" for
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
@@ -521,6 +530,47 @@ app.UseAuthorization();
 // After authentication, so a request can be counted against the player who made it.
 app.UseRateLimiter();
 
+// Two requests that tried to change the same player at once.
+//
+// Player carries a concurrency token now, so the second write to land is refused by the database
+// rather than silently overwriting the first with a total computed from a balance that had already
+// been spent. That refusal arrives here as an exception, and what it means is worth saying precisely:
+// nothing was written. EF wraps a save in a transaction, so a conflicted save commits none of it.
+//
+// So this is a 409 and not a 500. The action did not happen, the player's money and turns are exactly
+// as they were, and doing it again will work - which is the whole of what the caller needs to know.
+// Written as middleware for the same reason the maintenance gate below is: every endpoint that spends
+// anything needs it, and one that has to be remembered per endpoint will be forgotten by the next one.
+//
+// The settlement passes that run at the top of many endpoints - combat resolving, strikes landing -
+// go through here too. A conflict there costs one refused request and nothing else: the fight is
+// still pending, the schedule still says it is due, and the next poll a few seconds later settles it
+// against rows it has just re-read. That is a straight improvement on losing the settlement quietly.
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next(context);
+    }
+    catch (DbUpdateConcurrencyException ex)
+    {
+        app.Logger.LogWarning(ex,
+            "Concurrent write to the same player answering {Method} {Path}. Nothing was saved.",
+            context.Request.Method, context.Request.Path);
+
+        // A response that has already started going out cannot be turned into a 409, and trying is
+        // how a truncated body becomes the error the client actually reports.
+        if (context.Response.HasStarted)
+            throw;
+
+        context.Response.Clear();
+        context.Response.StatusCode = StatusCodes.Status409Conflict;
+        await context.Response.WriteAsJsonAsync(
+            new { error = "That clashed with something else happening on your empire. Nothing changed - try it again." },
+            context.RequestAborted);
+    }
+});
+
 // Maintenance gate. Written as middleware rather than a per-endpoint check so a new gameplay endpoint
 // cannot forget it. Reads stay open so a locked-out player still sees their empire and the notice.
 app.Use(async (context, next) =>
@@ -591,6 +641,7 @@ app.MapTerritoryEndpoints();
 app.MapMarketEndpoints();
 app.MapMuleEndpoints();
 app.MapArrestEndpoints();
+app.MapCasinoEndpoints();
 app.MapTraderJobEndpoints();
 app.MapChatEndpoints();
 app.MapAdminPlayerEndpoints();

@@ -624,7 +624,13 @@ export function CasinoPage(ctx: PageContext) {
           <strong>Lanes</strong>
           <small className="text-body-tertiary">{money.format(clampedBet)} each, {money.format(totalBet)} total</small>
         </div>
-        <div className="btn-group w-100" role="group" aria-label="Paylines">
+        {/*
+          Nine buttons from the small breakpoint up, and a stepper below it. Nine lanes in a row on a
+          phone came out 35px wide - under a fingertip - and laying them out three by three worked but
+          spent a third of the machine on a number pad. The stepper is one line, and the lane names
+          underneath already say what the choice bought, so nothing is lost by not showing all nine.
+        */}
+        <div className="btn-group w-100 d-none d-sm-flex" role="group" aria-label="Paylines">
           {Array.from({ length: lineLimit }, (_, index) => index + 1).map(count =>
             <button
               className={`btn ${lineCount === count ? 'btn-primary' : 'btn-secondary'}`}
@@ -635,6 +641,28 @@ export function CasinoPage(ctx: PageContext) {
             >
               {count}
             </button>)}
+        </div>
+        <div className="lane-stepper d-sm-none" role="group" aria-label="Paylines">
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={busy || spinning || lineCount <= 1}
+            onClick={() => setPaylines(Math.max(1, lineCount - 1))}
+            aria-label="One lane fewer"
+          >
+            <i className="bi bi-chevron-left" aria-hidden="true" />
+          </button>
+          {/* Announced rather than silent, because the number is the only thing either button changes. */}
+          <strong aria-live="polite">{lineCount} of {lineLimit} lane{lineLimit === 1 ? '' : 's'}</strong>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={busy || spinning || lineCount >= lineLimit}
+            onClick={() => setPaylines(Math.min(lineLimit, lineCount + 1))}
+            aria-label="One lane more"
+          >
+            <i className="bi bi-chevron-right" aria-hidden="true" />
+          </button>
         </div>
         <small className="text-body-tertiary">
           {board.paylines.slice(0, lineCount).map(line => line.name).join(', ')}

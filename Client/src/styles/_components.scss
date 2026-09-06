@@ -1124,19 +1124,22 @@ input:focus-visible, textarea:focus-visible {
   gap: $spacer * .25;
   border-top: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
   padding-top: $spacer * .5;
+}
 
-  // Nine lanes will not sit in one row on a phone at a size anybody can hit - they came out 35px
-  // wide. A grid rather than a wrapped flex row, because wrapping stretches whatever lands on the
-  // last row: nine across a flex wrap gave seven slivers and two 156px buttons. Three by three is
-  // even, and every lane ends up bigger than the finger using it.
-  @include media-breakpoint-down(sm) {
-    .btn-group {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+// The phone's lane picker: one chevron either side of the count. It replaces the nine-button group
+// below sm rather than reflowing it, because nine lanes across a phone are 35px wide and nine laid
+// out three by three spend a third of the machine on a number pad. What the lanes actually bought is
+// already written under it, so the row itself only has to carry the number.
+.lane-stepper {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: $spacer * .5;
 
-      > .btn { margin: 0; }
-    }
-  }
+  // Wide enough to hit without reading, since these two are the whole control.
+  > .btn { min-inline-size: 3rem; }
+
+  > strong { text-align: center; }
 }
 
 // A button that is a label with its price underneath, rather than a word.

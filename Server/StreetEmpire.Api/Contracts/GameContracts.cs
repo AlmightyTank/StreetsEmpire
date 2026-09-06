@@ -2359,7 +2359,16 @@ public sealed record AdminBotHealthResponse(
     bool IsInSession,
     int SessionActionsLeft,
     DateTime? NextSessionAtUtc,
-    string Habits);
+    string Habits,
+
+    /// <summary>The character this rival is running, by name, so the admin can prefill an edit.</summary>
+    string Focus,
+    int PeakHourUtc,
+    int SessionsPerDay,
+    bool NeverSleeps,
+
+    /// <summary>Whether any of the above was chosen rather than drawn from the rival's own name.</summary>
+    bool IsDirected);
 
 public sealed record AdminOversightResponse(
     long MedianNetWorth,
@@ -2368,7 +2377,21 @@ public sealed record AdminOversightResponse(
     IReadOnlyList<AdminWealthBandResponse> WealthBands,
     IReadOnlyList<AdminMoverResponse> FastestMovers,
     IReadOnlyList<AdminMissionResponse> ActiveMissions,
-    IReadOnlyList<AdminBotHealthResponse> Bots);
+    IReadOnlyList<AdminBotHealthResponse> Bots,
+
+    /// <summary>Every character a rival can be given, so the admin picks from the real list.</summary>
+    IReadOnlyList<string> Personalities);
+
+/// <summary>
+/// How a rival should be built. Every field is optional and null means "take it from the name again",
+/// so an admin can pin one thing and leave the rest to the draw.
+/// </summary>
+public sealed record AdminBotCharacterRequest(
+    string? Focus,
+    int? PeakHourUtc,
+    int? SessionsPerDay,
+    bool? NeverSleeps,
+    string? Reason);
 
 public sealed record AdminLiveOpsRequest(bool? MaintenanceMode, string? MaintenanceMessage, string? Announcement, string? Reason);
 

@@ -54,11 +54,21 @@ internal sealed record BotSchedule(
         // not.
         var neverSleeps = bytes[3] / 255.0 < Math.Clamp(options.NeverSleepsShare, 0, 1);
 
+        // Anything the account was given outright wins over the draw, field by field: an admin who
+        // pinned an hour should not also have to pin how often, and one who set a rival to never sleep
+        // should keep the sessions its character earned.
+        // The band above shapes the draw; it does not overrule somebody who picked a number. An admin
+        // who asks for nine sittings against a house maximum of six wants the rival they asked for, and
+        // silently handing back six would look like the field had not saved. Still bounded, because the
+        // column is an int and the endpoint is not the only thing that can write one.
+        var account = bot.Account;
         return new BotSchedule(
-            sessions,
-            bytes[1] % 24,
+            account?.BotSessionsPerDay is { } chosen
+                ? Math.Clamp(chosen, 1, 48)
+                : Math.Clamp(sessions, minSessions, maxSessions),
+            ((account?.BotPeakHourUtc ?? bytes[1] % 24) % 24 + 24) % 24,
             Math.Clamp(options.ActiveWindowHours, 1, 24),
-            neverSleeps);
+            account?.BotNeverSleeps ?? neverSleeps);
     }
 
     /// <summary>Whether this rival keeps hours at all, and whether the given moment is inside them.</summary>

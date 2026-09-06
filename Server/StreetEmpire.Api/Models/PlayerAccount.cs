@@ -237,6 +237,18 @@ public sealed class PlayerAccount
     public string? BotFocus { get; set; }
 
     /// <summary>
+    /// The hours this rival was given on purpose, or null to take them from its name.
+    ///
+    /// Habits are hashed for the same reason characters are - a field of rivals has to be varied
+    /// without anybody writing each one down - and the hash stays the answer for everybody nobody has
+    /// an opinion about. These are for the ones somebody does: a rival put on the map to be found at a
+    /// particular hour, or to never sleep, is no use if its own name overrules that.
+    /// </summary>
+    public int? BotPeakHourUtc { get; set; }
+    public int? BotSessionsPerDay { get; set; }
+    public bool? BotNeverSleeps { get; set; }
+
+    /// <summary>
     /// When this rival's current sitting runs out. Null between sessions, which is what "logged off"
     /// means here. Kept on the account rather than the player because it is a fact about the thing
     /// driving the player, not about the empire.

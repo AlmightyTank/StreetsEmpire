@@ -4,7 +4,7 @@ import { adminApi, api, configApi, opsApi } from '../api'
 import type { AdminAuditEntry, AdminBetaKey, AdminBotHealth, AdminConfig, AdminConfigEntry,
   AdminCustomTitle, AdminCustomTitleDraft, AdminGameAnnouncement, AdminGameAnnouncementDraft,
   AdminOversight, AdminOverview, AdminPlayerDetail, AdminPlayerSummary, AnnouncementDeliverySettings,
-  BotDirective, CustomTitleCriteria, DiscordCrewChannelSyncResult, DiscordIntegrationSettings,
+  BotCharacter, BotDirective, CustomTitleCriteria, DiscordCrewChannelSyncResult, DiscordIntegrationSettings,
   DiscordRoleSyncResult, LiveOps, PlayerTarget, ActionResult, GameAnnouncement } from '../api'
 import { compactDateTime, money, number } from '../format'
 import { ActivityList, AdminMetric, betaKeyStatusClass, BUSY, Button, copyToClipboard,
@@ -1712,6 +1712,121 @@ function enforcementLabel(player: AdminPlayerSummary) {
 // Shown once on arrival and only when something actually happened. A popup that says the world stood
 // still while you were out is an interruption with nothing behind it.
 
+/**
+ * Builds a rival: which character it runs and when it plays.
+ *
+ * Every field can be handed back to the draw rather than only overwritten, which is why each one
+ * has a "from its name" option instead of a blank. A rival with nothing pinned is the normal case -
+ * the field is meant to vary without anybody writing it down - and an admin who pinned an hour to
+ * test something needs a way to put it back that is not guessing what the hash would have said.
+ */
+/** A switch in this page's own idiom, since the account page's toggle carries a detail line these do not want. */
+function DrawSwitch({ label, checked, disabled, onChange }: {
+  label: string,
+  checked: boolean,
+  disabled?: boolean,
+  onChange: (value: boolean) => void,
+}) {
+  return <label className="form-check form-switch d-flex align-items-center gap-2 mb-0">
+    <input
+      className="form-check-input"
+      type="checkbox"
+      checked={checked}
+      disabled={disabled}
+      onChange={event => onChange(event.target.checked)}
+    />
+    <span className="small">{label}</span>
+  </label>
+}
+
+function BotCharacterPanel({ bot, personalities, busy, onSave }: {
+  bot: AdminBotHealth,
+  personalities: string[],
+  busy: boolean,
+  onSave: (character: BotCharacter) => void,
+}) {
+  const [focus, setFocus] = useState<string>(bot.focus)
+  const [drawFocus, setDrawFocus] = useState(!bot.isDirected)
+  const [hour, setHour] = useState<number>(bot.peakHourUtc)
+  const [drawHour, setDrawHour] = useState(!bot.isDirected)
+  const [sittings, setSittings] = useState<number>(bot.sessionsPerDay)
+  const [drawSittings, setDrawSittings] = useState(!bot.isDirected)
+  const [sleeps, setSleeps] = useState<boolean>(bot.neverSleeps)
+  const [drawSleeps, setDrawSleeps] = useState(!bot.isDirected)
+
+  // Follow the row when the admin switches rivals without closing the panel, or the form would go
+  // on describing the last one.
+  useEffect(() => {
+    setFocus(bot.focus); setHour(bot.peakHourUtc); setSittings(bot.sessionsPerDay); setSleeps(bot.neverSleeps)
+    setDrawFocus(!bot.isDirected); setDrawHour(!bot.isDirected)
+    setDrawSittings(!bot.isDirected); setDrawSleeps(!bot.isDirected)
+  }, [bot.playerId, bot.focus, bot.peakHourUtc, bot.sessionsPerDay, bot.neverSleeps, bot.isDirected])
+
+  const save = () => onSave({
+    focus: drawFocus ? null : focus,
+    peakHourUtc: drawHour ? null : hour,
+    sessionsPerDay: drawSittings ? null : sittings,
+    neverSleeps: drawSleeps ? null : sleeps,
+  })
+
+  return <div className="border rounded p-3 mt-3 d-grid gap-3">
+    <div className="d-flex justify-content-between gap-3 align-items-baseline">
+      <strong>Build {bot.name}</strong>
+      <small className="text-body-tertiary">Running {bot.personality}, {bot.habits}</small>
+    </div>
+
+    <div className="control-row">
+      <label className="field grow">Character
+        <select className="form-select" value={focus} disabled={drawFocus} onChange={e => setFocus(e.target.value)}>
+          {personalities.map(name => <option value={name} key={name}>{name}</option>)}
+        </select>
+      </label>
+      <label className="field">Hour it peaks (UTC)
+        <input
+          className="form-control"
+          type="number"
+          min={0}
+          max={23}
+          value={hour}
+          disabled={drawHour}
+          onChange={e => setHour(Number(e.target.value))}
+        />
+      </label>
+      <label className="field">Sittings a day
+        <input
+          className="form-control"
+          type="number"
+          min={1}
+          max={48}
+          value={sittings}
+          disabled={drawSittings}
+          onChange={e => setSittings(Number(e.target.value))}
+        />
+      </label>
+    </div>
+
+    {/* One switch per field rather than one for the panel, because pinning an hour and leaving the
+        character to the draw is the ordinary case, not a corner of it. */}
+    <div className="d-flex flex-wrap gap-3">
+      <DrawSwitch label="Character from its name" checked={drawFocus} onChange={setDrawFocus} />
+      <DrawSwitch label="Hour from its name" checked={drawHour} onChange={setDrawHour} />
+      <DrawSwitch label="Sittings from its name" checked={drawSittings} onChange={setDrawSittings} />
+      <DrawSwitch label="Sleep from its name" checked={drawSleeps} onChange={setDrawSleeps} />
+      <DrawSwitch label="Never sleeps" checked={sleeps} disabled={drawSleeps} onChange={setSleeps} />
+    </div>
+
+    <div>
+      <Button className="btn btn-primary" blocked={busy && `${bot.name} is mid-action. Wait for it to land.`} onClick={save}>
+        Save character
+      </Button>
+      <small className="text-body-tertiary d-block mt-2">
+        Saving drops the sitting it had queued, so the new hours take effect from the next one rather
+        than stranding it outside hours it no longer keeps.
+      </small>
+    </div>
+  </div>
+}
+
 function BotDirectivePanel({ bot, targets, selfId, selfName, busy, onRun }: {
   bot: AdminBotHealth
   targets: AdminBotHealth[]
@@ -1817,6 +1932,8 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
   const [tickSeconds, setTickSeconds] = useState(auto.tickSeconds)
   const [roundsPerTick, setRoundsPerTick] = useState(auto.roundsPerTick)
   const [roster, setRoster] = useState<AdminBotHealth[]>([])
+  const [personalities, setPersonalities] = useState<string[]>([])
+  const [building, setBuilding] = useState<string | null>(null)
   const [rosterError, setRosterError] = useState('')
   const [working, setWorking] = useState<string | null>(null)
   const [directing, setDirecting] = useState<string | null>(null)
@@ -1827,7 +1944,9 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
     setWorking(playerId); setRosterError('')
     try {
       await run()
-      setRoster((await opsApi.oversight()).bots)
+      const fresh = await opsApi.oversight()
+      setRoster(fresh.bots)
+      setPersonalities(fresh.personalities)
     } catch (e) { setRosterError((e as Error).message) }
     finally { setWorking(null) }
   }
@@ -1837,7 +1956,7 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
   useEffect(() => { setTickSeconds(auto.tickSeconds); setRoundsPerTick(auto.roundsPerTick) }, [auto.tickSeconds, auto.roundsPerTick])
   useEffect(() => {
     opsApi.oversight()
-      .then((data: AdminOversight) => setRoster(data.bots))
+      .then((data: AdminOversight) => { setRoster(data.bots); setPersonalities(data.personalities) })
       .catch((e: unknown) => setRosterError((e as Error).message))
   }, [overview.generatedAtUtc])
 
@@ -1939,7 +2058,12 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
         <tbody>
           {roster.map(bot => <tr key={bot.playerId} className={rivalRowClass(bot)}>
             <td>{bot.name}</td>
-            <td>{bot.personality}</td>
+            <td>
+              {bot.personality}
+              {/* Said on the row rather than only in the editor: an admin scanning for the one they
+                  pinned should not have to open each of them to find it. */}
+              {bot.isDirected && <span className="badge text-bg-secondary ms-2">set</span>}
+            </td>
             <td>{money.format(bot.netWorth)}</td>
             <td>{bot.lastActionAtUtc ? `${number.format(bot.minutesIdle)}m` : 'never acted'}</td>
             <td>{bot.habits}</td>
@@ -1970,10 +2094,24 @@ function AdminAiTab({ ctx }: { ctx: PageContext & { overview: AdminOverview } })
               >
                 {directing === bot.playerId ? 'Close' : 'Direct'}
               </Button>
+              <Button
+                className="btn btn-secondary btn-sm"
+                blocked={working === bot.playerId && `${bot.name} is mid-action. Wait for it to land.`}
+                title="Choose its character and its hours"
+                onClick={() => setBuilding(id => id === bot.playerId ? null : bot.playerId)}
+              >
+                {building === bot.playerId ? 'Close' : 'Build'}
+              </Button>
             </td>
           </tr>)}
         </tbody>
       </table></div>}
+      {building && <BotCharacterPanel
+        bot={roster.find(x => x.playerId === building)!}
+        personalities={personalities}
+        busy={working === building}
+        onSave={character => void rivalAction(building, () => opsApi.setBotCharacter(building, character))}
+      />}
       {directing && <BotDirectivePanel
         bot={roster.find(x => x.playerId === directing)!}
         targets={roster.filter(x => x.playerId !== directing)}

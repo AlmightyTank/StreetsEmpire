@@ -2843,6 +2843,18 @@ export type TerritoryBoard = {
   away: Territory[]
 }
 
+/**
+ * How a rival should be built. Every field is optional and null means "take it from the name
+ * again", so one thing can be pinned without restating the rest.
+ */
+export type BotCharacter = {
+  focus: string | null
+  peakHourUtc: number | null
+  sessionsPerDay: number | null
+  neverSleeps: boolean | null
+  reason?: string | null
+}
+
 export type AdminBotHealth = {
   playerId: string
   name: string
@@ -2855,6 +2867,13 @@ export type AdminBotHealth = {
   sessionActionsLeft: number
   nextSessionAtUtc?: string | null
   habits: string
+  /** What it is running now, so an edit opens on the truth rather than on a blank. */
+  focus: string
+  peakHourUtc: number
+  sessionsPerDay: number
+  neverSleeps: boolean
+  /** Whether any of that was chosen, rather than drawn from the rival's own name. */
+  isDirected: boolean
 }
 export type AdminOversight = {
   medianNetWorth: number
@@ -2864,6 +2883,8 @@ export type AdminOversight = {
   fastestMovers: AdminMover[]
   activeMissions: AdminMission[]
   bots: AdminBotHealth[]
+  /** Every character a rival can be given, so the picker offers the real list. */
+  personalities: string[]
 }
 
 export type LiveOps = {
@@ -2980,6 +3001,8 @@ export type DiscordCommandRegistrationResult = {
 
 export const opsApi = {
   oversight: () => request<AdminOversight>('/api/admin/oversight'),
+  setBotCharacter: (playerId: string, body: BotCharacter) =>
+    request<{ ok: boolean }>(`/api/admin/bots/${playerId}/character`, { method: 'PUT', body: JSON.stringify(body) }),
   setBotPaused: (playerId: string, paused: boolean) =>
     request<ActionResult>(`/api/admin/bots/${playerId}/pause`, { method: 'PUT', body: JSON.stringify({ paused }) }),
   actNow: (playerId: string) =>

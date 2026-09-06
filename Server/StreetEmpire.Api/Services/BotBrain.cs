@@ -303,6 +303,16 @@ internal sealed record BotGrudgeProfile(double Weight, int MemoryHours)
         };
 }
 
+/// <summary>
+/// The characters by name, for the places that have to offer them rather than use them - the admin
+/// picker, and the seed templates that ask for one. Public because the contract carries it out to the
+/// client, where BotBrainFocus itself cannot go.
+/// </summary>
+public static class BotCharacters
+{
+    public static IReadOnlyList<string> Names { get; } = Enum.GetNames<BotBrainFocus>();
+}
+
 internal enum BotBrainFocus
 {
     BalancedOperator,

@@ -306,6 +306,7 @@ var tests = new (string Name, Action Test)[]
     ("news the game only ever worked out is written down", NewsTheGameOnlyEverWorkedOutIsWrittenDown),
     ("the labs report once an absence, not once an hour", TheLabsReportOncePerAbsence),
     ("a fat rival stays fat and badly armed", AFatRivalStaysFatAndBadlyArmed),
+    ("a rival can be built rather than drawn", ARivalCanBeBuiltRatherThanDrawn),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
     ("announcement delivery sends Discord embeds", AnnouncementDeliverySendsDiscordEmbeds),
@@ -5420,6 +5421,57 @@ static void DiscordDmsAreOptInAndSentByTheBot()
     AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "your own machinery is not DMd unasked");
     gameQuiet.DiscordMachineNotices = true;
     AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "and can be opted into");
+}
+
+static void ARivalCanBeBuiltRatherThanDrawn()
+{
+    var options = Resolve(new GameOptions());
+    var automation = new BotAutomationOptions();
+
+    var drawn = new PlayerAccount { Username = "ai_drawn", IsBot = true };
+    var (drawnBot, _) = AccountSetup.NewPlayer(drawn, "Drawn Rival", "Chicago", options, CreateRoster(options));
+    var fromName = BotSchedule.For(drawnBot, BotBrain.For(drawnBot), automation);
+
+    // Nothing pinned: the rival keeps the habits its own name gave it.
+    AssertTrue(fromName.PeakHourUtc is >= 0 and <= 23, "a drawn hour should be an hour of the day");
+
+    // One field pinned, and only that field moves. An admin who chose an hour should not also have to
+    // choose how often, and the character should stay whatever the name said.
+    drawn.BotPeakHourUtc = 21;
+    var pinnedHour = BotSchedule.For(drawnBot, BotBrain.For(drawnBot), automation);
+    AssertEqual(21, pinnedHour.PeakHourUtc);
+    AssertEqual(fromName.SessionsPerDay, pinnedHour.SessionsPerDay);
+    AssertEqual(fromName.NeverSleeps, pinnedHour.NeverSleeps);
+
+    // The rest pin independently.
+    drawn.BotSessionsPerDay = 9;
+    drawn.BotNeverSleeps = true;
+    drawn.BotFocus = nameof(BotBrainFocus.Banker);
+    var built = BotSchedule.For(drawnBot, BotBrain.For(drawnBot), automation);
+    AssertEqual(9, built.SessionsPerDay);
+    AssertTrue(built.NeverSleeps, "a rival told never to sleep should not keep hours");
+    AssertEqual(BotBrainFocus.Banker, BotBrain.For(drawnBot).Focus);
+
+    // And handing a field back to the draw restores exactly what the name said, rather than leaving
+    // whatever was last typed in.
+    drawn.BotPeakHourUtc = null;
+    drawn.BotSessionsPerDay = null;
+    drawn.BotNeverSleeps = null;
+    drawn.BotFocus = null;
+    var released = BotSchedule.For(drawnBot, BotBrain.For(drawnBot), automation);
+    AssertEqual(fromName.PeakHourUtc, released.PeakHourUtc);
+    AssertEqual(fromName.SessionsPerDay, released.SessionsPerDay);
+    AssertEqual(fromName.NeverSleeps, released.NeverSleeps);
+
+    // An hour outside the clock is folded onto it rather than trusted, since the column is an int and
+    // the endpoint is not the only thing that can write one.
+    drawn.BotPeakHourUtc = 26;
+    AssertEqual(2, BotSchedule.For(drawnBot, BotBrain.For(drawnBot), automation).PeakHourUtc);
+
+    // The picker offers every character, including the one that is never dealt at random.
+    AssertTrue(BotCharacters.Names.Contains(nameof(BotBrainFocus.CashHoarder)),
+        "an admin should be able to choose the character a seed cannot be dealt");
+    AssertEqual(Enum.GetNames<BotBrainFocus>().Length, BotCharacters.Names.Count);
 }
 
 static void AFatRivalStaysFatAndBadlyArmed()

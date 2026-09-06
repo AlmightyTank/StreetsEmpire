@@ -222,6 +222,56 @@ internal static class AdminOpsEndpoints
 
         // Runs one rival immediately, ignoring the cooldown that paces the loop. Useful for watching a
         // specific brain make a decision rather than waiting for its turn to come round.
+        // How a rival is built, rather than what it is doing. Kept apart from pause and act because
+        // those are about this minute and this is about the character the rival keeps having.
+        app.MapPut("/api/admin/bots/{playerId:guid}/character", async (
+            Guid playerId,
+            AdminBotCharacterRequest request,
+            CurrentPlayerService current,
+            GameDbContext db,
+            AdminService admins,
+            CancellationToken ct) =>
+        {
+            var admin = await current.GetAsync(ct);
+            if (admin is null) return Results.Unauthorized();
+            if (!admin.Account.IsAdmin) return Results.Forbid();
+
+            var bot = await db.Players.Include(x => x.Account)
+                .SingleOrDefaultAsync(x => x.Id == playerId && x.Account.IsBot, ct);
+            if (bot is null) return Results.NotFound(new { error = "No AI rival with that id." });
+
+            // Blank means "back to the draw" on every field, so an admin can undo one opinion without
+            // having to restate the others.
+            var focus = string.IsNullOrWhiteSpace(request.Focus) ? null : request.Focus.Trim();
+            if (focus is not null && !BotCharacters.Names.Contains(focus, StringComparer.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = $"There is no {focus} personality." });
+            if (request.PeakHourUtc is { } hour && hour is < 0 or > 23)
+                return Results.BadRequest(new { error = "An hour to play at is 0 to 23, in UTC." });
+            if (request.SessionsPerDay is { } sittings && sittings is < 1 or > 48)
+                return Results.BadRequest(new { error = "A rival plays between 1 and 48 times a day." });
+
+            bot.Account.BotFocus = focus;
+            bot.Account.BotPeakHourUtc = request.PeakHourUtc;
+            bot.Account.BotSessionsPerDay = request.SessionsPerDay;
+            bot.Account.BotNeverSleeps = request.NeverSleeps;
+
+            // The next sitting was worked out under the old habits, so it is dropped rather than left
+            // to strand a rival outside hours it no longer keeps.
+            bot.Account.BotNextSessionAtUtc = null;
+            bot.Account.BotSessionActionsLeft = 0;
+
+            var told = focus ?? "its own name";
+            admins.Record(admin.Account, "BotCharacter", bot,
+                $"{bot.Name} runs {told}"
+                + (request.PeakHourUtc is { } h ? $", peaking at {h:00}:00 UTC" : string.Empty)
+                + (request.SessionsPerDay is { } n ? $", {n:N0} sitting(s) a day" : string.Empty)
+                + (request.NeverSleeps is { } sleeps ? sleeps ? ", never sleeping" : ", keeping hours" : string.Empty),
+                request.Reason, DateTime.UtcNow);
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new { ok = true });
+        }).RequireAuthorization();
+
         app.MapPost("/api/admin/bots/{playerId:guid}/act", async (
             Guid playerId,
             CurrentPlayerService current,
@@ -553,7 +603,15 @@ internal static class AdminOpsEndpoints
                         bot.Account.IsBotInSession(now),
                         bot.Account.BotSessionActionsLeft,
                         bot.Account.BotNextSessionAtUtc,
-                        schedule.Describe());
+                        schedule.Describe(),
+                        brain.Focus.ToString(),
+                        schedule.PeakHourUtc,
+                        schedule.SessionsPerDay,
+                        schedule.NeverSleeps,
+                        bot.Account.BotFocus is not null
+                            || bot.Account.BotPeakHourUtc is not null
+                            || bot.Account.BotSessionsPerDay is not null
+                            || bot.Account.BotNeverSleeps is not null);
                 })
                 .OrderByDescending(x => x.MinutesIdle)
                 .ToList();
@@ -565,7 +623,8 @@ internal static class AdminOpsEndpoints
                 WealthStats.WealthBands(worths),
                 movers,
                 activeMissions,
-                botHealth));
+                botHealth,
+                BotCharacters.Names));
         }).RequireAuthorization();
 
 

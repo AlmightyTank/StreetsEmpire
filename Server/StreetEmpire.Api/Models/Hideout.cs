@@ -125,6 +125,24 @@ public sealed class Hideout
     public DateTime? LabsCollectedAtUtc { get; set; }
 
     /// <summary>
+    /// What the labs have made since the player last read about them.
+    ///
+    /// The labs pay out every hour whether or not anybody is watching, and each payout used to write
+    /// its own row - so a night away came back as a dozen identical lines burying everything that
+    /// happened once. The hours still pay separately, because the money has to land when it is earned;
+    /// what accumulates here is the telling of it, so one absence reads as one report of the size of
+    /// the absence.
+    ///
+    /// Cleared when the run is closed, which is when the player has seen the row it was writing into.
+    /// </summary>
+    public int PendingLabWeed { get; set; }
+    public int PendingLabCoke { get; set; }
+    public int PendingLabWeedSold { get; set; }
+    public int PendingLabCokeSold { get; set; }
+    public long PendingLabEarned { get; set; }
+    public int PendingLabHours { get; set; }
+
+    /// <summary>
     /// Whether each lab is actually running. On by default, because a lab you paid for should work.
     ///
     /// A switch exists because production is not free any more. Every unit sitting in the store draws

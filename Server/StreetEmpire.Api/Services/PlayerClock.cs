@@ -44,10 +44,9 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
 
         // Snapshotted again on purpose: sharing one snapshot with the build above would stamp the lab's
         // haul onto the build's log row as well, and both rows would claim the same weed.
-        var beforeLabs = Snapshot(player);
         var labs = hideouts.AccrueLabs(player, nowUtc);
         if (db is not null && labs.Any)
-            AddLog(db, player, beforeLabs, "LAB", 0, labs.Describe(), nowUtc);
+            await ReportLabsAsync(db, player, labs, nowUtc, ct);
 
         var moraleBonus = await territoryDb.Territories.AsNoTracking()
             .Where(x => x.HolderId == player.Id)
@@ -220,6 +219,80 @@ public sealed class PlayerClock(TurnService turns, HideoutService hideouts, Game
         return true;
     }
 
+    /// <summary>
+    /// Tells the player what the labs did, once per absence rather than once per hour.
+    ///
+    /// An hour of production is still an hour of production - the money lands when it is earned and
+    /// the clock above is untouched. This is only about the telling. While the row it is writing into
+    /// has not been read, the next hour is added to it and the sentence is rewritten for the larger
+    /// total; once the player has seen it, the next hour opens a new one.
+    ///
+    /// Which makes "seen" the boundary between one report and the next, and that is the right one: a
+    /// report exists to be read, so it is finished when it has been.
+    /// </summary>
+    private static async Task ReportLabsAsync(GameDbContext db, Player player, LabYield labs, DateTime nowUtc, CancellationToken ct)
+    {
+        var hideout = player.Hideout;
+        if (hideout is null) return;
+
+        var open = await db.ActionLogs
+            .Where(x => x.PlayerId == player.Id && x.Action == "LAB")
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+
+        var seen = player.CombatAlertsSeenAtUtc;
+        var stillOpen = open is not null && (seen is null || open.CreatedAtUtc > seen);
+        if (!stillOpen)
+        {
+            hideout.PendingLabWeed = 0;
+            hideout.PendingLabCoke = 0;
+            hideout.PendingLabWeedSold = 0;
+            hideout.PendingLabCokeSold = 0;
+            hideout.PendingLabEarned = 0;
+            hideout.PendingLabHours = 0;
+        }
+
+        hideout.PendingLabWeed += labs.Weed;
+        hideout.PendingLabCoke += labs.Coke;
+        hideout.PendingLabWeedSold += labs.WeedSold;
+        hideout.PendingLabCokeSold += labs.CokeSold;
+        hideout.PendingLabEarned += labs.Earned;
+        hideout.PendingLabHours += labs.Hours;
+
+        // The whole run said as one shift, which is what the sentence was always written to describe.
+        var run = labs with
+        {
+            Weed = hideout.PendingLabWeed,
+            Coke = hideout.PendingLabCoke,
+            WeedSold = hideout.PendingLabWeedSold,
+            CokeSold = hideout.PendingLabCokeSold,
+            Earned = hideout.PendingLabEarned,
+            Hours = hideout.PendingLabHours,
+        };
+
+        if (stillOpen)
+        {
+            open!.Summary = run.Describe();
+            // Restated rather than added to, because the fields now carry the run and not the hour.
+            open.CashDelta = hideout.PendingLabEarned;
+            open.WeedDelta = hideout.PendingLabWeed;
+            open.CokeDelta = hideout.PendingLabCoke;
+            open.CreatedAtUtc = nowUtc;
+            return;
+        }
+
+        db.ActionLogs.Add(new GameActionLog
+        {
+            PlayerId = player.Id,
+            Action = "LAB",
+            Summary = run.Describe(),
+            CashDelta = hideout.PendingLabEarned,
+            WeedDelta = hideout.PendingLabWeed,
+            CokeDelta = hideout.PendingLabCoke,
+            CreatedAtUtc = nowUtc,
+        });
+    }
     public int SecondsUntilNextTick(Player player, DateTime nowUtc)
         => turns.SecondsUntilNextTick(player, nowUtc);
 

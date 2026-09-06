@@ -63,7 +63,7 @@ internal static class StartingState
         player.CasinoRep = 0;
         // The cage settles up at the end of a season whether you collected or not. Carrying a balance
         // across would be last season's play buying this season's turns.
-        player.CasinoComps = 0;
+        player.CasinoCompsCents = 0;
         player.CasinoFreeSpins = 0;
         player.CasinoFreeSpinMachine = null;
         player.CasinoFreeSpinBet = 0;

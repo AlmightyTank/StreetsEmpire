@@ -217,8 +217,19 @@ public sealed class Player : IStash
     /// Held in dollars rather than in points because every one of them is redeemed for something with
     /// a price, and a currency that has to be mentally converted before it means anything is a
     /// currency nobody spends.
+    ///
+    /// Kept in cents, as a whole number, for the reason <see cref="Cash"/> is a long: this is money,
+    /// and money in a double is money that drifts. It is added to a few cents at a time - a hundredth
+    /// of every wager - so a season of play is tens of thousands of additions, each one landing on a
+    /// binary fraction that cannot represent a tenth of a cent exactly. The error is invisible per
+    /// spin and cumulative by construction, and it lands on a balance players spend.
+    ///
+    /// Cents rather than whole dollars because the accrual is inherently smaller than a dollar: at a
+    /// hundredth of the stake, a fifty dollar hand earns fifty cents, and a currency that rounded
+    /// that to nothing would pay out only to people betting in hundreds. The cage still talks in
+    /// whole dollars - see CasinoService.CompsFor - because that is what the rewards are priced in.
     /// </summary>
-    public double CasinoComps { get; set; }
+    public long CasinoCompsCents { get; set; }
 
     /// <summary>
     /// Spins the house owes this player, and the ticket they are owed on.

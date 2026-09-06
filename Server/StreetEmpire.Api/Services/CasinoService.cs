@@ -90,7 +90,7 @@ public sealed class CasinoService(
         var heatBefore = player.Heat;
         var granted = turns > 0 ? (int)Math.Min(turns, turnCap - player.Turns) : 0;
 
-        player.CasinoComps = Math.Max(0, player.CasinoComps - reward.Cost);
+        player.CasinoCompsCents = Math.Max(0, player.CasinoCompsCents - CompCents(reward.Cost));
         player.Turns += granted;
         player.Cash += cash;
         player.Heat = Math.Max(0, player.Heat - Math.Max(0, reward.Heat));
@@ -168,7 +168,7 @@ public sealed class CasinoService(
         var pot = SeedFor(machine) + ContributionFrom(wagered + (onTheHouse ? 0 : totalBet));
 
         var repBefore = player.CasinoRep;
-        var compsBefore = player.CasinoComps;
+        var compsBefore = player.CasinoCompsCents;
         player.Turns -= turnCost;
         if (!onTheHouse)
         {
@@ -176,7 +176,7 @@ public sealed class CasinoService(
             // Standing and comps are both rated on what a player stakes. The house is not going to pay
             // itself standing for money it handed over.
             player.CasinoRep = Math.Max(0, player.CasinoRep + RepFor(machine, totalBet));
-            player.CasinoComps = Math.Max(0, player.CasinoComps + totalBet * Math.Max(0, config.CompsPerDollarWagered));
+            player.CasinoCompsCents = Math.Max(0, player.CasinoCompsCents + config.CompsCentsFor(totalBet));
         }
 
         var reel = ReelStrip(config.SymbolsFor(machine));
@@ -248,7 +248,7 @@ public sealed class CasinoService(
         return new CasinoSpin(
             transaction,
             Math.Max(0, (int)Math.Floor(player.CasinoRep) - (int)Math.Floor(repBefore)),
-            Math.Max(0, (int)Math.Floor(player.CasinoComps) - (int)Math.Floor(compsBefore)),
+            Math.Max(0, (int)(CompDollars(player.CasinoCompsCents) - CompDollars(compsBefore))),
             turnCost,
             jackpot,
             onTheHouse,
@@ -429,6 +429,18 @@ public sealed class CasinoService(
             owed > 0 ? player.CasinoFreeSpinBet * player.CasinoFreeSpinLanes : 0);
     }
 
+    /// <summary>
+    /// Cents to the whole dollars the cage talks in, rounded down.
+    ///
+    /// Down rather than to nearest, because this is the figure a player is shown and then spends
+    /// against: rounding up would print a balance that buys something it cannot pay for, and being
+    /// refused at the price the page just quoted is worse than the missing penny.
+    /// </summary>
+    internal static long CompDollars(long cents) => cents / 100;
+
+    /// <summary>The other way, for a reward priced in dollars.</summary>
+    private static long CompCents(long dollars) => dollars * 100;
+
     private CasinoCompsResponse CompsFor(Player player)
     {
         var config = _options.Casino;
@@ -437,7 +449,7 @@ public sealed class CasinoService(
             : Math.Max(1, (int)Math.Ceiling(1 / config.CompsPerDollarWagered));
 
         return new CasinoCompsResponse(
-            (long)Math.Floor(player.CasinoComps),
+            CompDollars(player.CasinoCompsCents),
             perComp,
             config.CompRewards.Select(reward =>
             {
@@ -467,9 +479,9 @@ public sealed class CasinoService(
         if (CasinoRep.LevelOf(player, _options) < required)
             return $"{reward.Name} is for {_options.Casino.LevelName(required)} and above.";
 
-        return player.CasinoComps >= reward.Cost
+        return player.CasinoCompsCents >= CompCents(reward.Cost)
             ? null
-            : $"{reward.Cost:C0} in comps. You are holding {(long)Math.Floor(player.CasinoComps):C0}.";
+            : $"{reward.Cost:C0} in comps. You are holding {CompDollars(player.CasinoCompsCents):C0}.";
     }
 
     private CasinoJackpotRulesResponse JackpotRules()

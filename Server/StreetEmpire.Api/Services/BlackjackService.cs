@@ -307,7 +307,7 @@ public sealed class BlackjackService(
     {
         player.Cash -= amount;
         player.CasinoRep = Math.Max(0, player.CasinoRep + RepFor(table, amount));
-        player.CasinoComps = Math.Max(0, player.CasinoComps + amount * Math.Max(0, _options.Casino.CompsPerDollarWagered));
+        player.CasinoCompsCents = Math.Max(0, player.CasinoCompsCents + _options.Casino.CompsCentsFor(amount));
     }
 
     private static PlayerHand Active(BlackjackHand round, List<PlayerHand> hands)

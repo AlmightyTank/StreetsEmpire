@@ -45,7 +45,12 @@ public sealed class AdminService(
         // accrues in are not something anybody is going to type into an admin form.
         ["rep"] = new(p => (long)Math.Floor(p.StoreRep), (p, v) => p.StoreRep = v, int.MaxValue),
         ["casinoRep"] = new(p => (long)Math.Floor(p.CasinoRep), (p, v) => p.CasinoRep = v, int.MaxValue),
-        ["casinoComps"] = new(p => (long)Math.Floor(p.CasinoComps), (p, v) => p.CasinoComps = v, int.MaxValue)
+        // Comps are held in cents and adjusted in dollars, because dollars are what the cage prices
+        // its menu in and what an admin reading a support ticket is being told.
+        ["casinoComps"] = new(
+            p => CasinoService.CompDollars(p.CasinoCompsCents),
+            (p, v) => p.CasinoCompsCents = (long)v * 100,
+            int.MaxValue)
     };
 
     public static IReadOnlyCollection<string> AdjustableResources => Resources.Keys.ToList();

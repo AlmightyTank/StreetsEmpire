@@ -99,6 +99,7 @@ var tests = new (string Name, Action Test)[]
     ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
     ("a claimed comp hands over turns, cash and quiet", ACompHandsOverWhatItPromises),
     ("comps reset with the season", CompsResetWithTheSeason),
+    ("a season of small wagers adds up to exactly what it should", CompsDoNotDriftOverASeason),
     ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
     ("a free spin pays for none of the floor it plays on", FreeSpinsPayForNoneOfTheFloor),
     ("every roulette bet carries the wheel's own edge and no other", RouletteEdgeIsTheZeroesAndNothingElse),
@@ -2310,8 +2311,8 @@ static void CompsAreRatedOnTheWager()
     // Same stake, same comps, opposite results.
     AssertEqual(10, paying.CompsEarned);
     AssertEqual(10, cold.CompsEarned);
-    AssertEqual(10d, winner.CasinoComps);
-    AssertEqual(10d, loser.CasinoComps);
+    AssertEqual(1_000L, winner.CasinoCompsCents);
+    AssertEqual(1_000L, loser.CasinoCompsCents);
 }
 
 /// <summary>
@@ -2329,7 +2330,7 @@ static void CompsAreGatedByStandingAndPaidFor()
     var casino = CreateCasino(db, options, new ZeroRandom());
 
     // Holding the price but standing at the door.
-    player.CasinoComps = 50_000;
+    player.CasinoCompsCents = 50_000 * 100L;
     player.CasinoRep = 0;
     AssertRuleError(() => casino.ClaimComp(player, "backroom"), "a walk-in claims a reward held for regulars");
 
@@ -2340,14 +2341,14 @@ static void CompsAreGatedByStandingAndPaidFor()
 
     // Standing, but nothing to pay with.
     player.CasinoRep = 500;
-    player.CasinoComps = 10;
+    player.CasinoCompsCents = 10 * 100L;
     AssertRuleError(() => casino.ClaimComp(player, "backroom"), "a regular claims a reward they cannot afford");
     AssertRuleError(() => casino.ClaimComp(player, "nothing-like-this"), "a reward that does not exist is claimed");
 
     // The cage never goes below nothing, however the menu is priced.
-    player.CasinoComps = 600;
+    player.CasinoCompsCents = 600 * 100L;
     casino.ClaimComp(player, "room");
-    AssertEqual(100d, player.CasinoComps);
+    AssertEqual(100 * 100L, player.CasinoCompsCents);
 }
 
 static void ACompHandsOverWhatItPromises()
@@ -2363,7 +2364,7 @@ static void ACompHandsOverWhatItPromises()
         Turns = 5,
         Heat = 30,
         CasinoRep = 500,
-        CasinoComps = 5_000,
+        CasinoCompsCents = 5_000 * 100L,
         Hideout = new Hideout()
     };
     var casino = CreateCasino(db, options, new ZeroRandom());
@@ -2376,20 +2377,20 @@ static void ACompHandsOverWhatItPromises()
     AssertEqual(30, player.Turns);
     AssertEqual(1_750L, player.Cash);
     AssertEqual(18d, player.Heat);
-    AssertEqual(3_000d, player.CasinoComps);
+    AssertEqual(3_000 * 100L, player.CasinoCompsCents);
 
     // Heat stops at nothing rather than going negative and buying immunity to the next raid.
     player.Heat = 4;
-    player.CasinoComps = 5_000;
+    player.CasinoCompsCents = 5_000 * 100L;
     player.Turns = 0;
     casino.ClaimComp(player, "backroom");
     AssertEqual(0d, player.Heat);
 
     // A full turn bank refuses the room rather than charging for turns it cannot hand over.
-    player.CasinoComps = 5_000;
+    player.CasinoCompsCents = 5_000 * 100L;
     player.Turns = Resolve(options).MaxTurnsFor(player);
     AssertRuleError(() => casino.ClaimComp(player, "room"), "a comped room is claimed with a full turn bank");
-    AssertEqual(5_000d, player.CasinoComps);
+    AssertEqual(5_000 * 100L, player.CasinoCompsCents);
 }
 
 static void CompsResetWithTheSeason()
@@ -2398,13 +2399,51 @@ static void CompsResetWithTheSeason()
     var seasons = CreateSeasons(world);
     var now = new DateTime(2026, 9, 4, 3, 0, 0, DateTimeKind.Utc);
     var player = world.Member("Whale", cash: 500_000);
-    player.CasinoComps = 40_000;
+    player.CasinoCompsCents = 40_000 * 100L;
     world.Db.SaveChanges();
 
     seasons.CurrentAsync(now, default).GetAwaiter().GetResult();
     seasons.RollAsync(now.AddDays(world.Options.Seasons.LengthDays), default).GetAwaiter().GetResult();
 
-    AssertEqual(0d, player.CasinoComps);
+    AssertEqual(0L, player.CasinoCompsCents);
+}
+
+/// <summary>
+/// A whole season of small wagers is worth exactly the sum of them.
+///
+/// The reason comps are a whole number of cents rather than a double of dollars. A hundredth of a
+/// wager is very often a value binary floating point cannot hold - a five dollar hand earns five
+/// cents, and 0.05 is not representable - so the old balance was a running total of approximations.
+/// One spin's error is far below a penny and completely invisible; the point is that it never
+/// cancels, because it is the same error every time, on a balance that is added to tens of thousands
+/// of times a season and then spent.
+///
+/// Ten thousand five dollar hands is an ordinary season for somebody who plays. Rated at a hundredth
+/// that is five hundred dollars of comps, and it has to be five hundred exactly rather than five
+/// hundred and something.
+/// </summary>
+static void CompsDoNotDriftOverASeason()
+{
+    var casino = new CasinoOptions { CompsPerDollarWagered = 0.01 };
+    var player = new Player();
+
+    for (var hand = 0; hand < 10_000; hand++)
+        player.CasinoCompsCents += casino.CompsCentsFor(5);
+
+    AssertEqual(50_000L, player.CasinoCompsCents);
+    AssertEqual(500L, CasinoService.CompDollars(player.CasinoCompsCents));
+
+    // The same run through a double, which is what this replaced. Kept as a live comparison rather
+    // than an assertion about a number, so this says why the column changed rather than merely that
+    // it did - and stays honest if a future runtime rounds differently.
+    var asADouble = 0d;
+    for (var hand = 0; hand < 10_000; hand++)
+        asADouble += 5 * 0.01;
+
+    AssertTrue(asADouble != 500d,
+        "the double total should not be exactly 500, or this test is no longer demonstrating anything");
+    AssertTrue(Math.Abs(asADouble - 500d) < 0.01,
+        "and it should be wrong by far less than a penny, which is what made it invisible");
 }
 
 /// <summary>
@@ -2896,7 +2935,7 @@ static void FreeSpinsPayForNoneOfTheFloor()
     var casino = CreateCasino(db, options, new ZeroRandom());
     var potBefore = casino.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive;
     var repBefore = player.CasinoRep;
-    var compsBefore = player.CasinoComps;
+    var compsBefore = player.CasinoCompsCents;
 
     var free = casino.SpinSlotsAsync(player, "free", 100, 9, DateTime.UtcNow.AddMinutes(1), default).GetAwaiter().GetResult();
     db.SaveChanges();
@@ -2905,7 +2944,7 @@ static void FreeSpinsPayForNoneOfTheFloor()
     AssertEqual(0, free.RepEarned);
     AssertEqual(0, free.CompsEarned);
     AssertEqual(repBefore, player.CasinoRep);
-    AssertEqual(compsBefore, player.CasinoComps);
+    AssertEqual(compsBefore, player.CasinoCompsCents);
 
     // The stake is still written down - it is what the paytable multiplied - but it put nothing in,
     // so it comes off nothing either. Subtracting it here reported a sixty dollar loss to a player
@@ -5690,7 +5729,7 @@ static void TheClientNeverAsksForAGoodThatDoesNotExist()
     // Crossing the language boundary is the point: no test on either side alone could have caught it.
     var root = SolutionRoot();
 
-    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    var client = ClientSource();
 
     // Everything the server will answer to, from the three lists that decide it.
     var known = new HashSet<string>(StringComparer.Ordinal);
@@ -5750,7 +5789,7 @@ static void GuidanceOnlyPointsWhereTheClientCanGo()
 {
     var root = SolutionRoot();
 
-    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    var client = ClientSource();
 
     // The client's own mapping, read out of it: name -> page, the tab when it names one, and the area
     // within the tab when it names that too. All three parts optional after the page, because a
@@ -7099,7 +7138,7 @@ static void TheVersionIsWrittenDownOnce()
     AssertTrue(viteConfig.Contains("VERSION"), "vite should read the VERSION file");
     AssertTrue(viteConfig.Contains("__APP_VERSION__"), "vite should define the token the client reads");
 
-    var client = File.ReadAllText(Path.Combine(root.FullName, "Client", "src", "main.tsx"));
+    var client = ClientSource();
     AssertTrue(client.Contains("__APP_VERSION__"), "the client should show the token, not a typed number");
 
     // The page title, which was the fifth copy and outlived the fix that was supposed to remove all
@@ -7110,16 +7149,17 @@ static void TheVersionIsWrittenDownOnce()
     AssertTrue(indexHtml.Contains("__APP_VERSION__"), "the page title should carry the token, not a typed number");
 
     // And nothing should have gone back to writing one down. The changelog and the release notes name
-    // versions on purpose and are history; these four are the ones that have to move together.
-    foreach (var (path, what) in new[]
+    // versions on purpose and are history; these are the ones that have to move together.
+    foreach (var (text, what) in new[]
     {
-        (Path.Combine("Client", "src", "main.tsx"), "the client"),
-        (Path.Combine("Client", "package.json"), "the client manifest"),
-        (Path.Combine("Client", "index.html"), "the page title"),
-        (Path.Combine("Server", "StreetEmpire.Api", "Program.cs"), "the server"),
+        // The whole client tree rather than one file of it, because a number typed into a page module
+        // is the same mistake in a place a named file would no longer be looking.
+        (ClientSource(), "the client"),
+        (File.ReadAllText(Path.Combine(root.FullName, "Client", "package.json")), "the client manifest"),
+        (File.ReadAllText(Path.Combine(root.FullName, "Client", "index.html")), "the page title"),
+        (File.ReadAllText(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Program.cs")), "the server"),
     })
     {
-        var text = File.ReadAllText(Path.Combine(root.FullName, path));
         AssertTrue(!text.Contains($"\"{declared}\"") && !text.Contains($">{declared}<"),
             $"{what} names the version literally again - it should be reading it from VERSION");
     }
@@ -14029,6 +14069,31 @@ static IOptions<T> Options<T>(T value) where T : class => new OptionsSnapshotStu
 ///
 /// One home, one message, and the message carries the directory it actually looked from.
 /// </summary>
+/// <summary>
+/// Every line of the client's own source, as one string.
+///
+/// The three tests that read across the language boundary used to open Client/src/main.tsx, back when
+/// that file was the entire client. Splitting it into pages broke one of them outright and quietly
+/// weakened another - the resource-key sweep still passed, because it checks that the client names
+/// nothing the server does not, and a file it can no longer see names nothing at all. That is the
+/// worse of the two failures: a test that goes green because it stopped looking.
+///
+/// So these read the tree rather than a file, and go on working wherever a component ends up living.
+/// </summary>
+static string ClientSource()
+{
+    var src = new DirectoryInfo(Path.Combine(SolutionRoot().FullName, "Client", "src"));
+    AssertTrue(src.Exists, $"the client source should be findable at {src.FullName}");
+
+    var files = src.GetFiles("*.ts", SearchOption.AllDirectories)
+        .Concat(src.GetFiles("*.tsx", SearchOption.AllDirectories))
+        .OrderBy(x => x.FullName, StringComparer.Ordinal)
+        .ToList();
+    AssertTrue(files.Count > 0, "the client should have some source to read");
+
+    return string.Join(Environment.NewLine, files.Select(x => File.ReadAllText(x.FullName)));
+}
+
 static DirectoryInfo SolutionRoot()
 {
     var found = new DirectoryInfo(AppContext.BaseDirectory);

@@ -77,11 +77,11 @@ public sealed class RouletteService(
             throw new GameRuleException($"That is {staked:C0} on the cloth and you are carrying {player.Cash:C0}.");
 
         var repBefore = player.CasinoRep;
-        var compsBefore = player.CasinoComps;
+        var compsBefore = player.CasinoCompsCents;
         player.Turns -= turnCost;
         player.Cash -= staked;
         player.CasinoRep = Math.Max(0, player.CasinoRep + RepFor(table, staked));
-        player.CasinoComps = Math.Max(0, player.CasinoComps + staked * Math.Max(0, _options.Casino.CompsPerDollarWagered));
+        player.CasinoCompsCents = Math.Max(0, player.CasinoCompsCents + _options.Casino.CompsCentsFor(staked));
 
         var pocket = SpinWheel(table);
         var settled = placed.Select(bet => Settle(bet, pocket)).ToList();
@@ -112,7 +112,7 @@ public sealed class RouletteService(
             ColourOf(pocket),
             settled,
             Math.Max(0, (int)Math.Floor(player.CasinoRep) - (int)Math.Floor(repBefore)),
-            Math.Max(0, (int)Math.Floor(player.CasinoComps) - (int)Math.Floor(compsBefore)),
+            Math.Max(0, (int)(CasinoService.CompDollars(player.CasinoCompsCents) - CasinoService.CompDollars(compsBefore))),
             turnCost);
     }
 

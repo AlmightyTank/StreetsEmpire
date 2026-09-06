@@ -2092,6 +2092,22 @@ public sealed class CasinoOptions
     /// </summary>
     public double CompsPerDollarWagered { get; set; } = 0.01;
 
+    /// <summary>
+    /// What a wager is worth in comps, in whole cents.
+    ///
+    /// Here rather than at the three tables that rate play, because slots, roulette and blackjack all
+    /// have to agree about what a dollar through them is worth, and three copies of one multiplication
+    /// is three chances for them not to.
+    ///
+    /// The rounding happens once, here, on the way in. That is the whole point of holding the balance
+    /// in cents: every wager becomes a whole number of them before it is added to anything, so a
+    /// season of play is a sum of integers rather than a running total of binary fractions.
+    /// </summary>
+    public long CompsCentsFor(long wagered)
+        => wagered <= 0
+            ? 0
+            : (long)Math.Round(wagered * Math.Max(0, CompsPerDollarWagered) * 100, MidpointRounding.AwayFromZero);
+
     public List<CompRewardOptions> CompRewards { get; set; } = [];
     public CasinoJackpotOptions Jackpot { get; set; } = new();
     public CasinoFreeSpinOptions FreeSpins { get; set; } = new();

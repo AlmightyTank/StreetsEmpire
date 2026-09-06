@@ -907,7 +907,11 @@ const casinoGameNames: Record<CasinoGame, string> = {
 }
 
 function CasinoGames({ game, onPick }: { game: CasinoGame, onPick: (game: CasinoGame) => void }) {
-  return <div className="btn-group" role="group" aria-label="Casino games">
+  // The strip is rendered into two different parents - a grid column of its own on the other two
+  // games, and a wrapper div on slots - so left to itself it stretched on one and sat at its own
+  // width on the others. Same three words, two widths, depending on which one you had open. It
+  // carries its own width now so the parent cannot decide it.
+  return <div className="casino-games btn-group" role="group" aria-label="Casino games">
     {(['slots', 'roulette', 'blackjack'] as const).map(key =>
       <button
         className={`btn ${game === key ? 'btn-primary' : 'btn-secondary'}`}

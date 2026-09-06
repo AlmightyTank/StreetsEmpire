@@ -682,6 +682,25 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
+// Slots, Roulette, Blackjack. Full width on a phone, where three tabs across the screen are three
+// comfortable targets and a ragged strip looks like a mistake; its own width from md up, where
+// stretching three words across a desk is the thing that would look wrong.
+.casino-games {
+  inline-size: 100%;
+
+  // Equal thirds rather than three widths set by how long each word happens to be. Filling the row
+  // with content-sized buttons still reads as an accident, just a different one.
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+
+  > .btn { margin: 0; }
+
+  @include media-breakpoint-up(md) {
+    display: inline-flex;
+    inline-size: auto;
+  }
+}
+
 // The stake box and its two shortcuts, which control-row would otherwise stack into three
 // full-width rows on a phone. A bet is four characters; Min and Max are a word each. Putting them
 // on one line gives the machine back two rows of height on the screen with the least of it, and

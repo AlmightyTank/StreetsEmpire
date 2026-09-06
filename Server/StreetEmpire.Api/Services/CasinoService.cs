@@ -256,6 +256,13 @@ public sealed class CasinoService(
             player.CasinoFreeSpins);
     }
 
+    /// <summary>
+    /// What the floor has taken off this player, across every game on it.
+    ///
+    /// Deliberately not per-game: the slots ledger below it is about the machines, and this is the
+    /// answer to the larger question of how the casino has treated somebody. It counts plays rather
+    /// than spins, because two of the three games do not have reels.
+    /// </summary>
     public async Task<CasinoStatsResponse> StatsAsync(Guid playerId, CancellationToken ct)
     {
         var stats = await db.CasinoTransactions.AsNoTracking()
@@ -381,10 +388,18 @@ public sealed class CasinoService(
             transaction.CreatedAtUtc);
     }
 
+    /// <summary>
+    /// The last few pulls, and only pulls.
+    ///
+    /// Every game on the floor writes to the same ledger table, but this one is read into a grid of
+    /// reels with a lane count and a pot against it. A blackjack hand has none of those, so it came
+    /// out as a table key with dashes where the cards should be - a row that is not wrong so much as
+    /// meaningless. The other games each keep their own ledger where their own columns mean something.
+    /// </summary>
     private async Task<IReadOnlyList<CasinoTransactionResponse>> RecentAsync(Guid playerId, int take, CancellationToken ct)
     {
         var rows = await db.CasinoTransactions.AsNoTracking()
-            .Where(x => x.PlayerId == playerId)
+            .Where(x => x.PlayerId == playerId && x.GameType == SlotsGame)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.Id)
             .Take(Math.Clamp(take, 1, 50))

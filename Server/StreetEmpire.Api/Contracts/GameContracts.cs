@@ -406,8 +406,12 @@ public sealed record CasinoRepResponse(
     /// <summary>Standing earned by a spin that buys every lane at the machine's top stake.</summary>
     double RepPerFullTicket);
 
+/// <param name="Plays">
+/// Every stake taken on the floor, not only the ones with reels behind them - a hand of blackjack and
+/// a turn of the wheel are both a play.
+/// </param>
 public sealed record CasinoStatsResponse(
-    int Spins,
+    int Plays,
     long Wagered,
     long Won,
     long Net);

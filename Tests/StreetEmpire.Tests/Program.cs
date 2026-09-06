@@ -113,6 +113,7 @@ var tests = new (string Name, Action Test)[]
     ("insurance holds the round still until it is answered", BlackjackInsuranceHoldsTheRound),
     ("insurance is settled on the hole card alone", BlackjackInsuranceSettlesOnTheHoleCard),
     ("a hand can be given up for half where the table takes it", BlackjackSurrenderPaysHalfBack),
+    ("the slots ledger holds slots and the stats hold the floor", SlotsLedgerIsSlotsAlone),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -1915,7 +1916,7 @@ static void CasinoSlotsSpendCashAndWriteTransaction()
     AssertEqual(1, transaction.Paylines);
     AssertEqual(0, transaction.WinningPaylines);
     AssertEqual("a,b,c,c,c,c,c,c,c,c,c,c,c,c,c", transaction.Outcome);
-    AssertEqual(1, stats.Spins);
+    AssertEqual(1, stats.Plays);
     AssertEqual(100L, stats.Wagered);
     AssertEqual(-100L, stats.Net);
     AssertEqual(1, board.Recent.Count);
@@ -2879,6 +2880,61 @@ static void BlackjackSurrenderPaysHalfBack()
     splitDb.SaveChanges();
     AssertRuleError(() => split.SurrenderAsync(splitPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult(),
         "a split hand is given up");
+}
+
+/// <summary>
+/// The slots ledger carries pulls, and the floor's stats carry everything.
+///
+/// Every game writes to one transactions table, which is right - it is one cage. But the ledger on the
+/// slots page is drawn as a grid of reels with a lane count and a pot beside it, and a hand of cards
+/// has none of those: it came out as a table key with dashes across the row. The split is which
+/// question is being asked. "What have the machines been doing" is the machines; "what has this place
+/// done to me" is the whole floor, cards and wheel included.
+/// </summary>
+static void SlotsLedgerIsSlotsAlone()
+{
+    var options = BlackjackOptions();
+    options.Casino.SlotMachines = [new SlotMachineOptions { Key = "test", Name = "Test", MinBet = 10, MaxBet = 1_000 }];
+    options.Casino.SlotSymbols =
+    [
+        // No multipliers at all, so the pull is a deterministic loser and the money is easy to read.
+        new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1 }
+    ];
+
+    using var db = BlackjackDb();
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
+    var now = DateTime.UtcNow;
+
+    // One pull and one hand, both settled, both in the same transactions table.
+    var casino = CreateCasino(db, options, new ScriptedRandom(0.0));
+    casino.SpinSlotsAsync(player, "test", 100, 1, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var pit = CreateBlackjack(db, options, new NoShuffleRandom());
+    pit.DealAsync(player, "pit", 100, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    var round = pit.BoardAsync(player, default).GetAwaiter().GetResult().Round;
+    if (round is not null && round.InPlay)
+    {
+        pit.StandAsync(player, now, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+    }
+
+    // Two plays are on the floor's record.
+    var stats = casino.StatsAsync(player.Id, default).GetAwaiter().GetResult();
+    AssertEqual(2, stats.Plays);
+    AssertEqual(200L, stats.Wagered);
+
+    // One of them is a pull, and only that one is in the ledger that draws reels.
+    var board = casino.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1, board.Recent.Count);
+    AssertEqual("slots", board.Recent[0].GameType);
+    AssertTrue(board.Recent.All(x => x.GameType == "slots"), "the slots ledger holds nothing else");
+
+    // And the hand is still on its own ledger, where the columns mean something.
+    var pitBoard = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(1, pitBoard.Recent.Count);
+    AssertEqual("pit", pitBoard.Recent[0].TableKey);
 }
 
 /// <summary>

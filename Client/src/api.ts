@@ -236,7 +236,8 @@ export type CasinoReputation = {
 }
 
 export type CasinoStats = {
-  spins: number
+  /** Every stake taken on the floor, cards and wheel included. */
+  plays: number
   wagered: number
   won: number
   net: number

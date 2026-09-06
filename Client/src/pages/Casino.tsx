@@ -713,7 +713,7 @@ export function CasinoPage(ctx: PageContext) {
     </section>
 
     <section className="card p-3">
-      <div className="panel-title"><h2>Casino Stats</h2><span>{number.format(board.stats.spins)} spins</span></div>
+      <div className="panel-title"><h2>Casino Stats</h2><span>{number.format(board.stats.plays)} plays</span></div>
       <div className="d-grid gtc-2 gap-2">
         <AdminMetric label="Wagered" value={money.format(board.stats.wagered)} />
         <AdminMetric label="Returned" value={money.format(board.stats.won)} />
@@ -735,7 +735,7 @@ export function CasinoPage(ctx: PageContext) {
     </section>
 
     <section className="card p-3 gcol-full">
-      <div className="panel-title"><h2>Casino Ledger</h2><span>Recent pulls</span></div>
+      <div className="panel-title"><h2>Slots Ledger</h2><span>Recent pulls</span></div>
       {board.recent.length === 0
         ? <p className="text-body-tertiary mb-0">No spins yet.</p>
         : <div className="table-responsive">

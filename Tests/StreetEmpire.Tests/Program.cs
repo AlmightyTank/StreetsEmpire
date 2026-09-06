@@ -110,6 +110,9 @@ var tests = new (string Name, Action Test)[]
     ("a hand settles on what the two totals are", BlackjackSettlesOnTheTotals),
     ("a split pair becomes two hands against one dealer", BlackjackSplitsIntoTwoHands),
     ("split aces take one card and stop", BlackjackSplitAcesTakeOneCard),
+    ("insurance holds the round still until it is answered", BlackjackInsuranceHoldsTheRound),
+    ("insurance is settled on the hole card alone", BlackjackInsuranceSettlesOnTheHoleCard),
+    ("a hand can be given up for half where the table takes it", BlackjackSurrenderPaysHalfBack),
     ("every rival prices a trip and a bond against its own crew", EveryRivalPricesATripAgainstItsCrew),
     ("city markets change product sale prices", CityMarketsChangeProductSalePrices),
     ("travel changes city and spends the town's distance", TravelChangesCityAndSpendsTheTownsDistance),
@@ -2587,7 +2590,11 @@ static GameOptions BlackjackOptions()
                 Enabled = true,
                 SpinTurnCost = 1,
                 Decks = 1,
-                Tables = [new BlackjackTableOptions { Key = "pit", Name = "Pit", MinBet = 100, MaxBet = 10_000 }]
+                Tables =
+                [
+                    new BlackjackTableOptions { Key = "pit", Name = "Pit", MinBet = 100, MaxBet = 10_000 },
+                    new BlackjackTableOptions { Key = "soft", Name = "Soft", MinBet = 100, MaxBet = 10_000, AllowsSurrender = true }
+                ]
             }
         }
     };
@@ -2602,7 +2609,8 @@ static GameOptions BlackjackOptions()
 /// which is both deterministic and the actual code path.
 /// </summary>
 static (BlackjackService Pit, GameDbContext Db, Player Player, BlackjackHand Round) DealUntil(
-    GameOptions options, Func<IReadOnlyList<string>, bool> wanted, string looking)
+    GameOptions options, Func<IReadOnlyList<string>, bool> wanted, string looking,
+    string tableKey = "pit", bool awaitingInsurance = false)
 {
     for (var seed = 1; seed <= 4_000; seed++)
     {
@@ -2611,11 +2619,16 @@ static (BlackjackService Pit, GameDbContext Db, Player Player, BlackjackHand Rou
             .Options);
         var player = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
         var pit = CreateBlackjack(db, options, new SeededRandom(seed));
-        var round = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        var round = pit.DealAsync(player, tableKey, 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
         db.SaveChanges();
 
-        var hands = pit.View(player, round).Hands;
-        if (hands.Count == 1 && wanted(hands[0].Cards) && !BlackjackStatus.IsOver(round.Status))
+        // A round waiting on insurance refuses every other move, so unless that is what the caller is
+        // after it is not a round anybody can play and the search keeps going.
+        var view = pit.View(player, round);
+        if (view.Hands.Count == 1
+            && view.AwaitingInsurance == awaitingInsurance
+            && wanted(view.Hands[0].Cards)
+            && !BlackjackStatus.IsOver(round.Status))
             return (pit, db, player, round);
 
         db.Dispose();
@@ -2705,6 +2718,167 @@ static void BlackjackSplitAcesTakeOneCard()
     // Whatever they made, neither is paid as a natural: a natural is the hand as it was dealt.
     AssertTrue(after.Hands.All(x => x.Status != BlackjackStatus.PlayerBlackjack),
         "twenty-one after a split is twenty-one, not blackjack");
+}
+
+/// <summary>
+/// While the dealer is showing an ace and the question has not been answered, the table does nothing.
+///
+/// This is the part of insurance that is easy to get wrong: the offer comes before anybody looks at
+/// the hole card, so a round that is asking cannot settle itself, cannot deal another card, and must
+/// not show what is underneath - because showing it is exactly what the answer is worth.
+/// </summary>
+static void BlackjackInsuranceHoldsTheRound()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options, _ => true, "an ace up", awaitingInsurance: true);
+    using var _ = db;
+
+    var view = pit.View(player, round);
+    AssertTrue(view.AwaitingInsurance, "an ace up is asked about");
+    AssertTrue(view.InPlay, "and the round is still live while it is being asked");
+    // Half the stake, and the hole card is still face down whatever it happens to be.
+    AssertEqual(50L, view.InsuranceCost);
+    AssertEqual(1, view.DealerCards.Count);
+    AssertEqual("A", view.DealerCards[0][0].ToString());
+
+    // Nothing else is on offer until it is answered.
+    AssertRuleError(() => pit.HitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a card is drawn with insurance outstanding");
+    AssertRuleError(() => pit.StandAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is stood with insurance outstanding");
+    AssertRuleError(() => pit.DoubleAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is doubled with insurance outstanding");
+    AssertRuleError(() => pit.SplitAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is split with insurance outstanding");
+    AssertTrue(!view.Hands[0].CanDouble && !view.Hands[0].CanSplit && !view.Hands[0].CanSurrender,
+        "and the table offers none of them either");
+
+    // Declining costs nothing and puts the round back in the player's hands.
+    var cash = player.Cash;
+    pit.InsuranceAsync(player, false, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(cash, player.Cash);
+    AssertEqual(0L, round.InsuranceBet);
+    AssertTrue(!pit.View(player, round).AwaitingInsurance, "the question is asked once");
+    AssertRuleError(() => pit.InsuranceAsync(player, true, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "insurance is taken after the answer was given");
+}
+
+/// <summary>
+/// Insurance is decided by the hole card and nothing else, and against a dealer natural it pays for
+/// exactly the hand it was covering.
+///
+/// Two to one on half the stake returns the whole stake, so a covered hand lost to a natural is a
+/// wash. That is the sales pitch. It is still the worst bet on the floor, because the hole card is a
+/// ten four times in thirteen and two to one is the price of one in three - the walk-away is the
+/// point of the test, not the value.
+/// </summary>
+static void BlackjackInsuranceSettlesOnTheHoleCard()
+{
+    var options = BlackjackOptions();
+    var paid = false;
+    var lost = false;
+
+    // Which of the two a seed gives is not knowable until the dealer looks, so this takes insurance on
+    // ace-up deals until both have turned up.
+    for (var seed = 1; seed <= 4_000 && !(paid && lost); seed++)
+    {
+        using var db = BlackjackDb();
+        var player = new Player { Id = Guid.NewGuid(), Cash = 1_000_000, Turns = 50, CasinoRep = 100_000, Hideout = new Hideout() };
+        var pit = CreateBlackjack(db, options, new SeededRandom(seed));
+        var start = player.Cash;
+
+        var round = pit.DealAsync(player, "pit", 100, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+        if (!pit.View(player, round).AwaitingInsurance) continue;
+
+        pit.InsuranceAsync(player, true, DateTime.UtcNow, default).GetAwaiter().GetResult();
+        db.SaveChanges();
+
+        // Half the stake goes up whichever way it lands, and it is added to what the round cost.
+        AssertEqual(50L, round.InsuranceBet);
+        var view = pit.View(player, round);
+
+        if (round.InsurancePayout > 0)
+        {
+            paid = true;
+            // The side stake back plus two to one on it.
+            AssertEqual(150L, round.InsurancePayout);
+            AssertTrue(!view.InPlay, "a dealer natural settles the round as soon as insurance is answered");
+            AssertEqual(21, view.DealerBest);
+            AssertEqual(2, view.DealerCards.Count);
+            AssertEqual(150L, round.Bet);
+
+            // A losing hand covered by insurance is a wash: the stake comes back through the side bet.
+            if (view.Hands[0].Status == BlackjackStatus.DealerWin)
+                AssertEqual(start, player.Cash);
+        }
+        else if (view.InPlay)
+        {
+            lost = true;
+            // No natural under there, so the side bet is gone and the hand is still to be played.
+            AssertEqual(0L, round.InsurancePayout);
+            AssertEqual(start - 150, player.Cash);
+            AssertTrue(view.DealerCards.Count == 1, "and the hole card stays down while the hand goes on");
+        }
+    }
+
+    AssertTrue(paid, "no seed in four thousand put a ten under an ace");
+    AssertTrue(lost, "no seed in four thousand put anything else under one");
+}
+
+/// <summary>
+/// A hand given up pays half the stake back, ends the round where it stands, and is only offered by a
+/// table that takes it.
+///
+/// The dealer does not draw afterwards, which is the tell that the hand really is over rather than
+/// being played out cheaply: there is nothing left for those cards to beat.
+/// </summary>
+static void BlackjackSurrenderPaysHalfBack()
+{
+    var options = BlackjackOptions();
+    var (pit, db, player, round) = DealUntil(options, _ => true, "a hand at a table that takes surrenders", tableKey: "soft");
+    using var _ = db;
+
+    var dealt = pit.View(player, round);
+    AssertTrue(dealt.Hands[0].CanSurrender, "a fresh hand at this table can be given up");
+    var cash = player.Cash;
+
+    pit.SurrenderAsync(player, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var view = pit.View(player, round);
+    AssertEqual(BlackjackStatus.Surrendered, round.Status);
+    AssertTrue(!view.InPlay, "giving the hand up ends the round");
+    // Half of a hundred back, and the round is stamped and paid like any other.
+    AssertEqual(50L, round.Payout);
+    AssertEqual(cash + 50, player.Cash);
+    AssertEqual(-50L, view.NetResult);
+    AssertTrue(round.SettledAtUtc is not null, "a given-up hand is stamped");
+    // Nothing left to beat, so the dealer never turned another card.
+    AssertEqual(2, view.DealerCards.Count);
+
+    // One row in the ledger, saying what it was.
+    var board = pit.BoardAsync(player, default).GetAwaiter().GetResult();
+    AssertEqual(BlackjackStatus.Surrendered, board.Recent[0].Status);
+    AssertEqual(-50L, board.Recent[0].NetResult);
+
+    // A table that does not take surrenders does not take them.
+    var (cheap, cheapDb, cheapPlayer, cheapRound) = DealUntil(options, _ => true, "a hand at the cheap table");
+    using var __ = cheapDb;
+    AssertTrue(!cheap.View(cheapPlayer, cheapRound).Hands[0].CanSurrender, "the cheap table does not offer it");
+    AssertRuleError(() => cheap.SurrenderAsync(cheapPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a hand is given up at a table that does not take surrenders");
+
+    // And a hand that has been split has to be played out.
+    var (split, splitDb, splitPlayer, _) = DealUntil(options,
+        cards => BlackjackService.Value(cards[0]) == BlackjackService.Value(cards[1]) && cards[0][0] != 'A',
+        "a pair at a table that takes surrenders", tableKey: "soft");
+    using var ___ = splitDb;
+    split.SplitAsync(splitPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    splitDb.SaveChanges();
+    AssertRuleError(() => split.SurrenderAsync(splitPlayer, DateTime.UtcNow, default).GetAwaiter().GetResult(),
+        "a split hand is given up");
 }
 
 /// <summary>

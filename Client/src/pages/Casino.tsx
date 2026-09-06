@@ -998,6 +998,7 @@ function BlackjackPanel(ctx: PageContext) {
     : status === 'won' ? 'You take it'
     : status === 'push' ? 'Push'
     : status === 'split' ? 'Split decision'
+    : status === 'surrendered' ? 'Given up'
     : status === 'stood' ? 'Waiting on the dealer'
     : 'The house takes it'
 
@@ -1010,6 +1011,7 @@ function BlackjackPanel(ctx: PageContext) {
         {' '}{board.blackjackPaysNumerator} to {board.blackjackPaysDenominator}, you may split up to
         {' '}{board.maxSplits} time{board.maxSplits === 1 ? '' : 's'} a round, and the shoe is
         shuffled every hand so there is nothing to count.
+        {board.insuranceEnabled && ' Insurance is offered whenever the dealer shows an ace, and taking it is the worst bet in the building.'}
       </p>
       <div className="d-grid gtc-fill-220 gap-2 mt-3">
         {board.tables.map(t => <button
@@ -1046,6 +1048,26 @@ function BlackjackPanel(ctx: PageContext) {
                 </div>
               </div>
 
+            {round.awaitingInsurance && <div className="border border-warning rounded p-3 d-grid gap-2">
+              <div>
+                <strong>The dealer is showing an ace.</strong>
+                <div className="text-body-tertiary small">
+                  Insurance costs {money.format(round.insuranceCost)} and pays 2 to 1 if the card underneath is
+                  worth ten. Four ranks in thirteen are, so this is a bet the house wants you to take.
+                </div>
+              </div>
+              <div className="control-row">
+                <Button
+                  className="btn btn-secondary"
+                  blocked={firstReason(busy && BUSY, !round.canInsure && `Insurance is ${money.format(round.insuranceCost)} and you are carrying ${money.format(dashboard.cash)}.`)}
+                  onClick={() => void run(() => api.blackjackMove('insure'))}
+                >Insure {money.format(round.insuranceCost)}</Button>
+                <Button className="btn btn-primary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('decline'))}>
+                  No insurance
+                </Button>
+              </div>
+            </div>}
+
             {/* One hand usually, several after a split, and the one being played is ringed. */}
             <div className="d-grid gap-2">
               {round.hands.map(hand => <div
@@ -1065,7 +1087,7 @@ function BlackjackPanel(ctx: PageContext) {
                   {hand.cards.map((card, i) => <PlayingCard card={card} index={i} key={`${card}-${i}`} />)}
                 </div>
 
-                {hand.isActive && <div className="control-row mt-1">
+                {hand.isActive && !round.awaitingInsurance && <div className="control-row mt-1">
                   <Button className="btn btn-primary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('hit'))}>Hit</Button>
                   <Button className="btn btn-secondary" blocked={busy && BUSY} onClick={() => void run(() => api.blackjackMove('stand'))}>Stand</Button>
                   <Button
@@ -1078,6 +1100,11 @@ function BlackjackPanel(ctx: PageContext) {
                     blocked={busy && BUSY}
                     onClick={() => void run(() => api.blackjackMove('split'))}
                   >Split {money.format(hand.bet)}</Button>}
+                  {hand.canSurrender && <Button
+                    className="btn btn-outline-secondary"
+                    blocked={busy && BUSY}
+                    onClick={() => void run(() => api.blackjackMove('surrender'))}
+                  >Surrender for {money.format(Math.floor(hand.bet / 2))}</Button>}
                 </div>}
               </div>)}
               </div>
@@ -1088,9 +1115,13 @@ function BlackjackPanel(ctx: PageContext) {
                 <strong>{round.hands.length > 1 ? `${round.hands.length} hands` : verdictOf(round.status)}</strong>
                 <span className={`tnum ${round.netResult > 0 ? 'text-success' : 'text-body-secondary'}`}>{signedMoney(countedNet)}</span>
               </div>
-              <small className="text-body-tertiary">
+              <small className="text-body-tertiary d-block">
                 Dealer {round.dealerBest} against {round.hands.map(h => h.best).join(', ')}. {money.format(round.bet)} down, {money.format(countedPayout)} back.
               </small>
+              {round.insuranceBet > 0 && <small className="text-body-tertiary d-block">
+                Insurance {money.format(round.insuranceBet)}
+                {round.insurancePayout > 0 ? ` paid ${money.format(round.insurancePayout)}.` : ' went down with it.'}
+              </small>}
             </div>}
           </div>
         : <p className="text-body-tertiary">Nothing dealt. Put a bet up and the dealer will take it.</p>}

@@ -45,6 +45,8 @@ export type BlackjackTable = {
   maxBet: number
   minRepLevel: number
   minRepLevelName?: string | null
+  /** Whether this table lets a hand be given up for half the stake. */
+  allowsSurrender: boolean
   locked: boolean
   lockedReason?: string | null
 }
@@ -62,6 +64,7 @@ export type BlackjackHand = {
   isActive: boolean
   canDouble: boolean
   canSplit: boolean
+  canSurrender: boolean
 }
 
 export type BlackjackRound = {
@@ -77,6 +80,13 @@ export type BlackjackRound = {
   status: string
   payout: number
   netResult: number
+  /** The dealer is showing an ace and nothing can be decided until this is answered. */
+  awaitingInsurance: boolean
+  insuranceCost: number
+  canInsure: boolean
+  /** What went up on insurance, which is nothing when it was declined. */
+  insuranceBet: number
+  insurancePayout: number
 }
 
 export type BlackjackRowHand = {
@@ -109,6 +119,7 @@ export type BlackjackBoard = {
   blackjackPaysNumerator: number
   blackjackPaysDenominator: number
   maxSplits: number
+  insuranceEnabled: boolean
   round?: BlackjackRound | null
   recent: BlackjackRow[]
 }
@@ -2470,7 +2481,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ tableKey, bet }),
   }),
-  blackjackMove: (move: 'hit' | 'stand' | 'double' | 'split') =>
+  blackjackMove: (move: 'hit' | 'stand' | 'double' | 'split' | 'surrender' | 'insure' | 'decline') =>
     request<BlackjackAction>(`/api/game/casino/blackjack/${move}`, { method: 'POST' }),
   spinRoulette: (tableKey: string, bets: RouletteStake[]) => request<RouletteSpin>('/api/game/casino/roulette/spin', {
     method: 'POST',

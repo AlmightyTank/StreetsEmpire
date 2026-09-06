@@ -118,7 +118,7 @@ internal static class CasinoEndpoints
             }
         }).RequireAuthorization();
 
-        foreach (var move in new[] { "hit", "stand", "double", "split" })
+        foreach (var move in new[] { "hit", "stand", "double", "split", "surrender", "insure", "decline" })
         {
             var chosen = move;
             app.MapPost($"/api/game/casino/blackjack/{chosen}", async (
@@ -139,6 +139,9 @@ internal static class CasinoEndpoints
                         "hit" => await blackjack.HitAsync(player, now, ct),
                         "double" => await blackjack.DoubleAsync(player, now, ct),
                         "split" => await blackjack.SplitAsync(player, now, ct),
+                        "surrender" => await blackjack.SurrenderAsync(player, now, ct),
+                        "insure" => await blackjack.InsuranceAsync(player, true, now, ct),
+                        "decline" => await blackjack.InsuranceAsync(player, false, now, ct),
                         _ => await blackjack.StandAsync(player, now, ct)
                     };
 

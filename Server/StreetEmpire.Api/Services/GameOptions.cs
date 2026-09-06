@@ -2456,6 +2456,15 @@ public sealed class BlackjackOptions
     public int MaxSplits { get; set; } = 3;
 
     /// <summary>
+    /// Whether the house offers insurance when the dealer shows an ace.
+    ///
+    /// It pays two to one on a bet that the hole card is a ten, and only four ranks in thirteen are,
+    /// so it is the worst bet on the floor and the most famous one. It is here because a blackjack
+    /// table without it is not a blackjack table, not because anybody should ever take it.
+    /// </summary>
+    public bool InsuranceEnabled { get; set; } = true;
+
+    /// <summary>
     /// Whether split aces take one card each and stop.
     ///
     /// Every house makes this exception. A pair of aces that could be resplit and drawn on freely is
@@ -2480,6 +2489,7 @@ public sealed class BlackjackOptions
                 Key = "pit",
                 Name = "The Pit",
                 Blurb = "Six decks, a dealer who stands on everything, and no help at all.",
+                AllowsSurrender = false,
                 MinBet = 100,
                 MaxBet = 10_000,
                 MinCasinoRepLevel = 2,
@@ -2489,7 +2499,8 @@ public sealed class BlackjackOptions
             {
                 Key = "high",
                 Name = "The High Table",
-                Blurb = "One hand at a time and nobody watching the clock.",
+                Blurb = "One hand at a time, nobody watching the clock, and a hand you can walk away from.",
+                AllowsSurrender = true,
                 MinBet = 5_000,
                 MaxBet = 250_000,
                 MinCasinoRepLevel = 4,
@@ -2508,6 +2519,15 @@ public sealed class BlackjackTableOptions
     public long MaxBet { get; set; } = 10_000;
     public int MinCasinoRepLevel { get; set; } = 1;
     public long MinNetWorth { get; set; }
+
+    /// <summary>
+    /// Whether a hand can be given up for half the stake before the dealer draws.
+    ///
+    /// Late surrender, so it is only ever offered once the dealer has been shown not to be holding a
+    /// natural. It is worth about a tenth of a percent to somebody who uses it correctly and nothing
+    /// at all to everybody else, which is why the cheap table does not have it and the dear one does.
+    /// </summary>
+    public bool AllowsSurrender { get; set; }
 }
 
 public sealed class RouletteTableOptions

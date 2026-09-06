@@ -51,13 +51,19 @@ public sealed record BlackjackHandView(
     long NetResult,
     bool IsActive,
     bool CanDouble,
-    bool CanSplit);
+    bool CanSplit,
+    bool CanSurrender);
 
 /// <param name="DealerCards">
 /// What the dealer is showing. While a round is live this is the up card alone - the hole card is
 /// dealt at the same time as everything else and never leaves the server until the round is over.
 /// </param>
 /// <param name="DealerBest">Read off the cards above, so it gives nothing away either.</param>
+/// <param name="AwaitingInsurance">
+/// Whether the dealer is showing an ace and the table is waiting on that question before anything
+/// else can happen. Nothing about the hand can be decided until it is answered.
+/// </param>
+/// <param name="InsuranceBet">What went up on insurance, which is nothing when it was declined.</param>
 public sealed record BlackjackRoundView(
     long Id,
     string TableKey,
@@ -68,7 +74,12 @@ public sealed record BlackjackRoundView(
     bool InPlay,
     string Status,
     long Payout,
-    long NetResult);
+    long NetResult,
+    bool AwaitingInsurance,
+    long InsuranceCost,
+    bool CanInsure,
+    long InsuranceBet,
+    long InsurancePayout);
 
 public sealed record BlackjackTableResponse(
     string Key,
@@ -78,6 +89,7 @@ public sealed record BlackjackTableResponse(
     long MaxBet,
     int MinRepLevel,
     string? MinRepLevelName,
+    bool AllowsSurrender,
     bool Locked,
     string? LockedReason);
 
@@ -109,6 +121,7 @@ public sealed record BlackjackBoardResponse(
     int BlackjackPaysNumerator,
     int BlackjackPaysDenominator,
     int MaxSplits,
+    bool InsuranceEnabled,
     BlackjackRoundView? Round,
     IReadOnlyList<BlackjackRowResponse> Recent);
 

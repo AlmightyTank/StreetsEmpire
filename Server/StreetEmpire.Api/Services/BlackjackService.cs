@@ -41,6 +41,7 @@ public sealed class BlackjackService(
             config.BlackjackPaysNumerator,
             config.BlackjackPaysDenominator,
             Math.Max(0, config.MaxSplits),
+            config.InsuranceEnabled,
             live is null ? null : ViewOf(player, live),
             (await RecentAsync(player.Id, _options.Casino.HistoryDepth, ct)).ToList());
     }
@@ -99,8 +100,15 @@ public sealed class BlackjackService(
             CreatedAtUtc = nowUtc
         };
 
+        // Insurance is offered before anybody looks at the hole card, so a round that is asking has to
+        // hold still - no natural settles itself until the question has been answered, because settling
+        // it would be looking. It is only asked when the player could actually cover it: a question
+        // with one possible answer is not a question, it is a click.
+        var insuranceCost = bet / 2;
+        if (config.InsuranceEnabled && dealerCards[0][0] == 'A' && insuranceCost > 0 && player.Cash >= insuranceCost)
+            round.InsuranceOffered = true;
         // A natural settles itself: nobody is asked whether they want another card on twenty-one.
-        if (Best(first) == 21 || Best(dealerCards) == 21)
+        else if (Best(first) == 21 || Best(dealerCards) == 21)
             Finish(player, round, nowUtc);
 
         db.BlackjackHands.Add(round);
@@ -111,6 +119,7 @@ public sealed class BlackjackService(
     public async Task<BlackjackHand> HitAsync(Player player, DateTime nowUtc, CancellationToken ct)
     {
         var round = await LiveRoundAsync(player.Id, ct) ?? throw new GameRuleException("There is no hand in front of you.");
+        EnsureInsuranceAnswered(round);
         var deck = Read(round.DeckJson);
         var hands = ReadHands(round.HandsJson);
         var hand = Active(round, hands);
@@ -128,6 +137,7 @@ public sealed class BlackjackService(
     public async Task<BlackjackHand> StandAsync(Player player, DateTime nowUtc, CancellationToken ct)
     {
         var round = await LiveRoundAsync(player.Id, ct) ?? throw new GameRuleException("There is no hand in front of you.");
+        EnsureInsuranceAnswered(round);
         var hands = ReadHands(round.HandsJson);
         Active(round, hands).Status = BlackjackStatus.Stood;
         round.HandsJson = WriteHands(hands);
@@ -139,6 +149,7 @@ public sealed class BlackjackService(
     public async Task<BlackjackHand> DoubleAsync(Player player, DateTime nowUtc, CancellationToken ct)
     {
         var round = await LiveRoundAsync(player.Id, ct) ?? throw new GameRuleException("There is no hand in front of you.");
+        EnsureInsuranceAnswered(round);
         var hands = ReadHands(round.HandsJson);
         var hand = Active(round, hands);
 
@@ -176,6 +187,7 @@ public sealed class BlackjackService(
     public async Task<BlackjackHand> SplitAsync(Player player, DateTime nowUtc, CancellationToken ct)
     {
         var round = await LiveRoundAsync(player.Id, ct) ?? throw new GameRuleException("There is no hand in front of you.");
+        EnsureInsuranceAnswered(round);
         var config = _options.Casino.Blackjack;
         var hands = ReadHands(round.HandsJson);
         var hand = Active(round, hands);
@@ -217,6 +229,100 @@ public sealed class BlackjackService(
     }
 
     /// <summary>
+    /// Answers the insurance question, which is also the moment the dealer looks at the hole card.
+    ///
+    /// Insurance is a side bet of half the stake that the hole card is worth ten, and it pays two to
+    /// one. Two to one is a fair price on one card in three; the hole card is a ten four times in
+    /// thirteen. The house holds about seven percent of everything put up here, which is more than
+    /// twice what it holds on the hand itself, and that gap is the whole reason the bet exists.
+    /// </summary>
+    public async Task<BlackjackHand> InsuranceAsync(Player player, bool take, DateTime nowUtc, CancellationToken ct)
+    {
+        var round = await LiveRoundAsync(player.Id, ct) ?? throw new GameRuleException("There is no hand in front of you.");
+        if (!AwaitingInsurance(round))
+            throw new GameRuleException("Nobody has offered you insurance.");
+
+        var hands = ReadHands(round.HandsJson);
+        var cost = InsuranceCost(hands);
+
+        if (take)
+        {
+            if (player.Cash < cost)
+                throw new GameRuleException($"Insurance is {cost:C0} and you are carrying {player.Cash:C0}.");
+
+            var table = _options.Casino.Blackjack.Table(round.TableKey);
+            if (table is not null) Stake(player, table, cost);
+            else player.Cash -= cost;
+            round.InsuranceBet = cost;
+            round.Bet += cost;
+        }
+
+        round.InsuranceAnswered = true;
+
+        // The dealer looks now. Insurance is decided on what is under there and nothing that happens
+        // afterwards can change it, so it is settled here and carried to the payout.
+        var dealerCards = Read(round.DealerCardsJson);
+        var dealerNatural = Best(dealerCards) == 21;
+        if (dealerNatural) round.InsurancePayout = round.InsuranceBet * 3;
+
+        // And now the settle the question was holding back.
+        if (dealerNatural || Best(hands[0].Cards) == 21) Finish(player, round, nowUtc);
+        return round;
+    }
+
+    /// <summary>
+    /// Gives the hand up for half the stake, before the dealer draws anything.
+    ///
+    /// Late surrender: by the time it can be asked for, the dealer has already been shown not to be
+    /// holding a natural, because a natural settles the round where it stands. It is the only move in
+    /// the game that ends a hand without playing it, so it is the first two cards only, never after a
+    /// split, and only at a table that offers it.
+    /// </summary>
+    public async Task<BlackjackHand> SurrenderAsync(Player player, DateTime nowUtc, CancellationToken ct)
+    {
+        var round = await LiveRoundAsync(player.Id, ct) ?? throw new GameRuleException("There is no hand in front of you.");
+        EnsureInsuranceAnswered(round);
+
+        var table = _options.Casino.Blackjack.Table(round.TableKey);
+        if (table is null || !table.AllowsSurrender)
+            throw new GameRuleException($"{table?.Name ?? "This table"} does not take surrenders.");
+
+        var hands = ReadHands(round.HandsJson);
+        var hand = Active(round, hands);
+
+        if (round.Splits > 0 || hands.Count > 1)
+            throw new GameRuleException("A hand that has been split has to be played out.");
+        if (hand.Cards.Count != 2)
+            throw new GameRuleException("Surrender is for the first two cards.");
+
+        hand.Status = BlackjackStatus.Surrendered;
+        // Half back, and the house keeps the odd dollar on anything odd. Every table here is priced in
+        // whole hundreds, so on anything anybody can actually bet this is exact.
+        hand.Payout = hand.Bet / 2;
+
+        round.HandsJson = WriteHands(hands);
+        Advance(player, round, hands, nowUtc);
+        return round;
+    }
+
+    /// <summary>Whether the table is waiting on an insurance answer and nothing else.</summary>
+    private static bool AwaitingInsurance(BlackjackHand round) => round.InsuranceOffered && !round.InsuranceAnswered;
+
+    private static void EnsureInsuranceAnswered(BlackjackHand round)
+    {
+        if (AwaitingInsurance(round))
+            throw new GameRuleException("The dealer is showing an ace and is waiting on insurance.");
+    }
+
+    /// <summary>
+    /// Half the stake, which is what insurance costs wherever it is offered.
+    ///
+    /// Read off the first hand rather than off the round, because the round's total is what insurance
+    /// is about to be added to and taking half of that would price the bet off itself.
+    /// </summary>
+    private static long InsuranceCost(List<PlayerHand> hands) => hands.Count == 0 ? 0 : hands[0].Bet / 2;
+
+    /// <summary>
     /// Moves to the next hand that still wants a decision, or ends the player's side of the round.
     ///
     /// A hand can arrive already finished - split aces, or a split that made twenty-one - so this
@@ -245,8 +351,9 @@ public sealed class BlackjackService(
         var dealerCards = Read(round.DealerCardsJson);
         var dealerNatural = dealerCards.Count == 2 && Best(dealerCards) == 21;
 
-        // No reason to draw if every hand has already gone over: the cards would only be burned.
-        if (hands.Any(x => Best(x.Cards) <= 21) && !dealerNatural)
+        // No reason to draw if every hand has gone over or been given up: there is nothing left for the
+        // dealer to beat and the cards would only be burned.
+        if (hands.Any(x => x.Status != BlackjackStatus.Surrendered && Best(x.Cards) <= 21) && !dealerNatural)
             while (DealerDraws(dealerCards))
                 dealerCards.Add(Draw(deck));
 
@@ -256,6 +363,13 @@ public sealed class BlackjackService(
 
         foreach (var hand in hands)
         {
+            // A hand that was given up settled itself at half the stake and is not played against.
+            if (hand.Status == BlackjackStatus.Surrendered)
+            {
+                payout += hand.Payout;
+                continue;
+            }
+
             var best = Best(hand.Cards);
             // A natural is two cards on the hand as dealt. Twenty-one made after a split is twenty-one
             // and is paid like it, which is the rule every house in the world keeps.
@@ -276,6 +390,9 @@ public sealed class BlackjackService(
 
             payout += hand.Payout;
         }
+
+        // Insurance was decided when the dealer looked and rides along to the same settle.
+        payout += round.InsurancePayout;
 
         round.DeckJson = Write(deck);
         round.DealerCardsJson = Write(dealerCards);
@@ -403,6 +520,9 @@ public sealed class BlackjackService(
         var over = BlackjackStatus.IsOver(round.Status);
         var shown = over ? dealerCards : dealerCards.Take(1).ToList();
         var active = round.ActiveHand;
+        var awaiting = AwaitingInsurance(round);
+        var insuranceCost = InsuranceCost(hands);
+        var surrenders = config.Table(round.TableKey)?.AllowsSurrender == true;
 
         return new BlackjackRoundView(
             round.Id,
@@ -411,6 +531,8 @@ public sealed class BlackjackService(
             hands.Select((hand, index) =>
             {
                 var live = !over && index == active && hand.Status == BlackjackStatus.Playing;
+                // Nothing about the hand is decidable while the table is waiting on insurance.
+                var decidable = live && !awaiting;
                 return new BlackjackHandView(
                     index,
                     hand.Cards,
@@ -422,19 +544,27 @@ public sealed class BlackjackService(
                     hand.Payout - hand.Bet,
                     live,
                     // Doubling and splitting are both first-two-cards decisions, and both need the money.
-                    live && !hand.Doubled && hand.Cards.Count == 2 && player.Cash >= hand.Bet,
-                    live
+                    decidable && !hand.Doubled && hand.Cards.Count == 2 && player.Cash >= hand.Bet,
+                    decidable
                         && hand.Cards.Count == 2
                         && Value(hand.Cards[0]) == Value(hand.Cards[1])
                         && round.Splits < Math.Max(0, config.MaxSplits)
-                        && player.Cash >= hand.Bet);
+                        && player.Cash >= hand.Bet,
+                    // Surrender hands money back rather than taking it, so it needs no cash check -
+                    // only a table that takes it and a hand nobody has touched yet.
+                    decidable && surrenders && hand.Cards.Count == 2 && round.Splits == 0 && hands.Count == 1);
             }).ToList(),
             shown,
             over ? Best(dealerCards) : Best(shown),
             !over,
             round.Status,
             round.Payout,
-            round.Payout - round.Bet);
+            round.Payout - round.Bet,
+            awaiting,
+            insuranceCost,
+            awaiting && player.Cash >= insuranceCost,
+            round.InsuranceBet,
+            round.InsurancePayout);
     }
 
     public BlackjackRoundView View(Player player, BlackjackHand round) => ViewOf(player, round);
@@ -475,6 +605,7 @@ public sealed class BlackjackService(
                 table.MaxBet,
                 Math.Max(1, table.MinCasinoRepLevel),
                 table.MinCasinoRepLevel > 1 ? _options.Casino.LevelName(table.MinCasinoRepLevel) : null,
+                table.AllowsSurrender,
                 locked is not null,
                 locked);
         });

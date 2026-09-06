@@ -56,6 +56,32 @@ public sealed class BlackjackHand
     /// <summary>How many times the player has split in this round, against the house limit.</summary>
     public int Splits { get; set; }
 
+    /// <summary>
+    /// Whether the dealer showed an ace and the player was asked about insurance.
+    ///
+    /// The question has to be recorded rather than worked out from the up card, because it is only
+    /// asked when the player can actually cover it - and a round that was never asked must not sit
+    /// waiting for an answer that is not coming.
+    /// </summary>
+    public bool InsuranceOffered { get; set; }
+
+    /// <summary>
+    /// Whether they have answered. While an offer is outstanding the table is waiting on this and
+    /// nothing else: no card is dealt and the dealer does not look at the hole card, because looking
+    /// is what the answer is worth.
+    /// </summary>
+    public bool InsuranceAnswered { get; set; }
+
+    /// <summary>What went up on insurance. Zero when it was declined or never offered.</summary>
+    public long InsuranceBet { get; set; }
+
+    /// <summary>
+    /// What insurance returned - the side stake back plus two to one, so three times what went up, or
+    /// nothing at all. Kept apart from the round's payout until the settle so the two can be told
+    /// apart afterwards.
+    /// </summary>
+    public long InsurancePayout { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? SettledAtUtc { get; set; }
 }
@@ -75,6 +101,9 @@ public static class BlackjackStatus
 
     /// <summary>A round with more than one hand in it, which cannot be described by any single one.</summary>
     public const string Split = "split";
+
+    /// <summary>Given up before the dealer drew, for half the stake back.</summary>
+    public const string Surrendered = "surrendered";
 
     public static bool IsOver(string status) => status != Playing;
 }

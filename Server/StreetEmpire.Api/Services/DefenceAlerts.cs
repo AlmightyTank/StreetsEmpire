@@ -158,7 +158,6 @@ public static class DefenceAlerts
             "SALE" => new AlertResponse($"log-{logId}", "sale", "Something of yours sold", summary, "good", unread, createdAtUtc),
             "TRAVEL" => new AlertResponse($"log-{logId}", "travel", "You have landed", summary, "good", unread, createdAtUtc),
             "WORKSHOP" => new AlertResponse($"log-{logId}", "workshop", "Off the bench", summary, "good", unread, createdAtUtc),
-            "CASINO" => new AlertResponse($"log-{logId}", "casino", "The house owes you", summary, "good", unread, createdAtUtc),
             // Losing one is news as surely as gaining one, and the summary is the half that says which
             // happened - so the tone is read off the sentence rather than assumed to be good.
             "TITLE" when summary.Contains("took", StringComparison.Ordinal)
@@ -238,8 +237,6 @@ public static class DefenceAlerts
                // written by the same tick that writes LAB and had simply never been listed here, so a
                // finished craft was news the bell did not show and the DMs could not send.
                || log.Action == "WORKSHOP"
-               // The house paying out on a ticket it owed you.
-               || log.Action == "CASINO"
                // Held by one player at a time and taken off them by somebody else's week, so gaining
                // one is something that happens to you rather than something you did.
                || log.Action == "TITLE"

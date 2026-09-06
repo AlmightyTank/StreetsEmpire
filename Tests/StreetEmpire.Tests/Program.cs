@@ -5433,7 +5433,6 @@ static void NewsTheGameOnlyEverWorkedOutIsWrittenDown()
     {
         ("TRAVEL", "You have landed in Miami.", "travel"),
         ("WORKSHOP", "Two pistols came off the bench.", "workshop"),
-        ("CASINO", "The house owes you 3 free spins.", "casino"),
         ("TITLE", "You are now the Butcher.", "title"),
         ("TRADERJOB", "The book settled up on weed in Chicago.", "traderjob"),
         ("CREWNOTICE", "The Eastside Table climbed to #3 on the crew board.", "crew"),
@@ -5444,6 +5443,14 @@ static void NewsTheGameOnlyEverWorkedOutIsWrittenDown()
         AssertTrue(alert is not null, $"{action} should describe itself as an alert");
         AssertEqual(kind, alert!.Kind);
     }
+
+    // A casino row is not one of them, and briefly was. Every spin, hand and roulette round writes
+    // CASINO, so listing it here turned the whole floor into bell alerts headed "The house owes you" -
+    // for a thing the player did, at the screen, on purpose. Winnings reach the world news feed on
+    // their cash swing, which is where they belong; the player who pulled the handle needs no telling.
+    AssertTrue(!DefenceAlerts.IsNotification("CASINO", "Spun sidewalk slots across 9 lane(s) and won."),
+        "a spin is something the player watched happen");
+    AssertEqual(null, DefenceAlerts.ToAlert(1, "CASINO", "Spun sidewalk slots and won.", DateTime.UtcNow, null));
 
     // WORKSHOP is the one that was already being written and had simply never been listed as news, so
     // a finished craft was invisible to the bell as well as to Discord. Worth its own line.

@@ -868,7 +868,6 @@ public sealed partial class DiscordGuildIntegration
         "labs" or "hideout" or "workshop" => LinkRow(("Open the hideout", "crew")),
         "mule" or "traderjob" => LinkRow(("Open the business", "market")),
         "travel" => LinkRow(("Back on the street", "street")),
-        "casino" => LinkRow(("Collect your spins", "casino")),
         "title" => LinkRow(("See the board", "seasons")),
         _ => LinkRow(("Open Street Empire", "overview")),
     };

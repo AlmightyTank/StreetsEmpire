@@ -240,6 +240,18 @@ public sealed class CasinoService(
             // themselves, which is the difference between a run of luck and a machine that never stops.
             awarded = Math.Max(1, config.FreeSpins.Award);
             player.CasinoFreeSpins += awarded;
+            // News rather than activity, even though it lands inside a spin the player asked for: what
+            // it says is that there is something waiting for them next time, and that is worth carrying
+            // to somebody who has already closed the tab.
+            db.ActionLogs.Add(new GameActionLog
+            {
+                PlayerId = player.Id,
+                Action = "CASINO",
+                Summary = awarded == 1
+                    ? "The house owes you a free spin."
+                    : $"The house owes you {awarded:N0} free spins.",
+                CreatedAtUtc = nowUtc
+            });
             player.CasinoFreeSpinMachine = machine.Key;
             player.CasinoFreeSpinBet = bet;
             player.CasinoFreeSpinLanes = paylines;

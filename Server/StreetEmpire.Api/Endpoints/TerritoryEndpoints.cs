@@ -50,10 +50,28 @@ internal static class TerritoryEndpoints
                 .OrderBy(x => x.Name)
                 .ToListAsync(ct);
 
+            // Ground standing in other towns. Leaving town no longer means giving up the map, so a
+            // holder can be a flight away from their own corners - and what is out there still counts
+            // against the holding cap, still keeps its garrison away from home, and can still be raided
+            // off somebody who is not there to see it happen. Listed separately rather than mixed into
+            // the town's map, because these are pieces to keep track of and that is a map to fight over.
+            var away = await db.Territories.AsNoTracking()
+                .Include(x => x.Holder)
+                .Include(x => x.GarrisonPimp)
+                .Where(x => x.HolderId == player.Id && x.City != player.City)
+                .OrderBy(x => x.City)
+                .ThenBy(x => x.Name)
+                .ToListAsync(ct);
+
             var config = gameOptions.Value.Territory;
             var mine = all.Where(x => x.HolderId == player.Id).ToList();
             var cap = territories.HoldingCapFor(player.Hideout);
+            // Counted across every town, because the cap is. Counting only what is underfoot would offer
+            // a claim the claim endpoint then refused, which is the one thing this page exists to avoid.
+            var held = mine.Count + away.Count;
             var free = await territories.FreeThugsAsync(player, ct);
+            // Ground pays out only in the town you are standing in, so what is away is worth nothing
+            // until its holder is back on it. That is the price of leaving it standing.
             var effects = territories.EffectsFor(mine);
             var cityControl = player.AllianceId is { } allianceId
                 ? (await territories.ControlledCitiesForAllianceAsync(allianceId, ct))
@@ -62,7 +80,7 @@ internal static class TerritoryEndpoints
 
             return Results.Ok(new TerritoryBoardResponse(
                 player.City,
-                mine.Count,
+                held,
                 cap,
                 config.MinimumGarrison,
                 config.MaxGarrisonThugs,
@@ -78,7 +96,8 @@ internal static class TerritoryEndpoints
                     ? null
                     : new AllianceCityControlResponse(cityControl.City, cityControl.Territories, cityControl.BonusThugs),
                 Ladder(gameOptions.Value, player),
-                all.Select(x => Describe(x, player, territories, pimps, now, mine.Count, cap, free, config, gameOptions.Value)).ToList()));
+                all.Select(x => Describe(x, player, territories, pimps, now, held, cap, free, config, gameOptions.Value)).ToList(),
+                away.Select(x => Describe(x, player, territories, pimps, now, held, cap, free, config, gameOptions.Value)).ToList()));
         }).RequireAuthorization();
 
 
@@ -262,10 +281,14 @@ internal static class TerritoryEndpoints
     {
         var type = territories.TypeOf(ground.Type);
         var mine = ground.HolderId == player.Id;
+        var here = TerritoryService.SameCity(player, ground);
         var settled = ground.ProtectedUntilUtc is { } until && until > nowUtc;
 
         string? blocked = null;
-        if (mine) blocked = null;
+        // Your own ground in another town. Everything the page offers on a piece needs somebody standing
+        // on it except walking away, so the one thing it can still say is which of those this is.
+        if (mine && !here) blocked = $"In {ground.City}. From here you can only give it up.";
+        else if (mine) blocked = null;
         else if (settled) blocked = "Just changed hands. Settled for now.";
         else if (ground.HolderId is null && held >= cap) blocked = $"You already run {held} of {cap} pieces of ground.";
         else if (ground.HolderId is null && freeThugs < config.MinimumGarrison) blocked = $"You need {config.MinimumGarrison} free thugs to hold it.";
@@ -274,7 +297,7 @@ internal static class TerritoryEndpoints
 
         // Only ever offered on your own ground, and only the rung immediately above what is standing.
         // A ladder shown against somebody else's corner would be a price list for a thing you cannot buy.
-        var next = mine ? config.DevelopmentAfter(ground.DevelopmentLevel) : null;
+        var next = mine && here ? config.DevelopmentAfter(ground.DevelopmentLevel) : null;
         var tier = player.Hideout?.Tier ?? 1;
 
         return new TerritoryResponse(

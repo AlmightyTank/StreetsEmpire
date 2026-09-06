@@ -1150,7 +1150,12 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
             });
     }
 
-    public ActionResultResponse Travel(Player player, string? city)
+    /// <param name="groundCities">
+    /// The town of every piece of ground this player holds, so the trip can say what it is leaving
+    /// standing. Read by the endpoint rather than here because this service has no database by design,
+    /// and empty for the callers that are not testing that sentence.
+    /// </param>
+    public ActionResultResponse Travel(Player player, string? city, IReadOnlyList<string>? groundCities = null)
     {
         TravelGate.EnsureLanded(player);
         var destination = _options.CityMarkets.ResolveCity(city)
@@ -1184,9 +1189,16 @@ public sealed class EconomyService(IOptionsSnapshot<GameOptions> options, IGameR
         var behind = player.Hideout is { } home && !string.Equals(home.City, destination, StringComparison.OrdinalIgnoreCase)
             ? $" Your hideout, your crew and everything on the shelves stay in {home.City}."
             : string.Empty;
+        // Ground used to be the one thing a trip could not leave behind: you gave it up or you stayed.
+        // Now it stays held, which makes the two things nobody would guess worth saying out loud - it
+        // earns nothing until you are standing in its town again, and it is raidable the whole time.
+        var left = groundCities?.Count(x => !string.Equals(x, destination, StringComparison.OrdinalIgnoreCase)) ?? 0;
+        var ground = left > 0
+            ? $" You leave {left:N0} piece(s) of ground held out of town: still yours, still raidable, and paying you nothing until you are back on it."
+            : string.Empty;
         var summary = seizure.Busted
-            ? $"Left {from} for {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices} {landing}{behind}"
-            : $"Left {from} for {destination} clean. {prices} {landing}{behind}";
+            ? $"Left {from} for {destination}, but got stopped on the way in. {SeizureSummary(seizure)} {prices} {landing}{behind}{ground}"
+            : $"Left {from} for {destination} clean. {prices} {landing}{behind}{ground}";
 
         return new ActionResultResponse(
             summary,

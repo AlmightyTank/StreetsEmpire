@@ -91,6 +91,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
             entity.Property(x => x.DiscordCombatNotices).HasDefaultValue(false);
             entity.Property(x => x.DiscordCrewNotices).HasDefaultValue(false);
             entity.Property(x => x.DiscordMarketNotices).HasDefaultValue(false);
+            entity.Property(x => x.DiscordMachineNotices).HasDefaultValue(false);
             entity.Ignore(x => x.HasPassword);
             entity.HasOne(x => x.Player)
                 .WithOne(x => x.Account)

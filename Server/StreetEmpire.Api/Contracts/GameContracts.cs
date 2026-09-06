@@ -1018,7 +1018,13 @@ public sealed record TerritoryBoardResponse(
     AllianceCityControlResponse? AllianceCityControl,
     /// <summary>The whole development ladder, so the page can show what is ahead rather than one rung.</summary>
     IReadOnlyList<TerritoryDevelopmentRungResponse> DevelopmentLadder,
-    IReadOnlyList<TerritoryResponse> Territories);
+    IReadOnlyList<TerritoryResponse> Territories,
+    /// <summary>
+    /// Ground this player holds in other towns. Empty for anybody who has not left one behind. It is not
+    /// part of <see cref="Territories"/> because that is the town's whole map, rivals included, and this
+    /// is only ever your own - held from a distance, paying nothing, and still worth taking off you.
+    /// </summary>
+    IReadOnlyList<TerritoryResponse> Away);
 
 /// <summary>One rung of the ladder as the map page lists it.</summary>
 public sealed record TerritoryDevelopmentRungResponse(

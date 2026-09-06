@@ -82,6 +82,27 @@ public sealed class GameSetting
     public int? BotTickSeconds { get; set; }
     public int? BotRoundsPerTick { get; set; }
 
+    /// <summary>
+    /// Who held each title at the last sample, as {"key":"playerId"}.
+    ///
+    /// Titles are derived from a rolling window of fights rather than awarded, so there is no moment
+    /// anything could hook to say a player earned one. Comparing the board against what it said last
+    /// time is what turns a derived standing into an event - and this is where last time lives.
+    /// </summary>
+    public string? TitleHoldersJson { get; set; }
+
+    /// <summary>Where each crew stood on the board at the last sample, as {"allianceId":rank}.</summary>
+    public string? CrewRanksJson { get; set; }
+
+    /// <summary>
+    /// The progressive at the last time the floor was told about it, so a jackpot climbing past a
+    /// notable number is announced once rather than every couple of minutes for the rest of the day.
+    /// </summary>
+    public long? JackpotAnnouncedAmount { get; set; }
+
+    /// <summary>When crew reports last went out, so the cadence survives a restart.</summary>
+    public DateTime? CrewReportsPostedAtUtc { get; set; }
+
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     public string? UpdatedBy { get; set; }
 }

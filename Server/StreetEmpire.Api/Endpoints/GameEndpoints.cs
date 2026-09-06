@@ -292,7 +292,13 @@ internal static class GameEndpoints
             var before = Snapshot(player);
             try
             {
-                var result = economy.Travel(player, request.City);
+                // Where the player's ground stands, so the trip can name what it leaves behind. Read
+                // here because the economy service has no database by design.
+                var groundCities = await db.Territories.AsNoTracking()
+                    .Where(x => x.HolderId == player.Id)
+                    .Select(x => x.City)
+                    .ToListAsync(ct);
+                var result = economy.Travel(player, request.City, groundCities);
                 AddLog(db, player, before, "TRAVEL", TurnsSpentIn(result), result.Summary, now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(result);
@@ -1145,16 +1151,20 @@ internal static class GameEndpoints
                 .ThenBy(x => x.Id)
                 .FirstOrDefaultAsync(cancellationToken);
 
-        // Neither blocker is per-city, so travel is either open or shut for the whole panel. Shared by
-        // the dashboard, which reports the reason, and the travel post, which enforces it.
+        // Crew already out on the road is the only thing that pins a player to a town, and it pins them
+        // because a mission is fought where its attacker is standing: flying out mid-raid would move
+        // the fight after it started.
+        //
+        // Held ground used to pin them too, which meant every trip began by giving up the map. It does
+        // not any more. Ground stays held while its holder is away, pays out only in the town it is in,
+        // and can still be raided off somebody who is not there to watch it - so leaving it standing
+        // costs something without costing the trip.
+        //
+        // Shared by the dashboard, which reports the reason, and the travel post, which enforces it.
         static async Task<string?> TravelBlockedReasonAsync(GameDbContext db, Guid playerId, CancellationToken cancellationToken)
         {
             var pendingAttack = await ActiveOutgoingMissionAsync(db, playerId, cancellationToken);
-            if (pendingAttack is not null) return PendingAttackMessage(pendingAttack);
-
-            return await db.Territories.AsNoTracking().AnyAsync(x => x.HolderId == playerId, cancellationToken)
-                ? "Pull your garrisons off your ground before leaving town."
-                : null;
+            return pendingAttack is null ? null : PendingAttackMessage(pendingAttack);
         }
 
         // One finish, as the shelf and the table both show it. Shared so the dashboard panel and the

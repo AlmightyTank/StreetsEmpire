@@ -171,6 +171,11 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
             ?? throw new GameRuleException("That ground does not exist.");
         if (ground.HolderId != player.Id)
             throw new GameRuleException("You can only work up ground you hold.");
+        // Work gets started where the ground is. A holder can be a country away from a piece now that
+        // leaving town no longer means giving it up, and money that turns into a building has to be
+        // spent standing on the plot rather than wired to it.
+        if (!SameCity(player, ground))
+            throw new GameRuleException($"{ground.Name} is in {ground.City} and you are in {player.City}. Work starts where the ground is.");
         if (ground.DevelopingToLevel is not null)
             throw new GameRuleException($"Work is already going on at {ground.Name}.");
 
@@ -290,6 +295,13 @@ public sealed class TerritoryService(GameDbContext db, IOptionsSnapshot<GameOpti
             Raze(territory);
             return (territory, true);
         }
+        // Ground in a town the holder is not standing in can be walked away from but not reinforced.
+        // Posting thugs onto it from another city would move crew across the country the instant it was
+        // asked for, which is the one thing the flight clock exists to stop. Giving it up is a release
+        // rather than a posting, so it is allowed from anywhere - refusing that as well would strand a
+        // garrison on ground its holder had decided to drop until they had flown back to drop it.
+        if (!SameCity(player, territory))
+            throw new GameRuleException($"{territory.Name} is in {territory.City} and you are in {player.City}. From here you can only give it up.");
         if (thugs > config.MaxGarrisonThugs)
             throw new GameRuleException($"One piece of ground can hold {config.MaxGarrisonThugs:N0} defender(s).");
 

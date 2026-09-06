@@ -106,6 +106,10 @@ builder.Services.AddHttpClient<DiscordDirectMessages>(client => client.Timeout =
 builder.Services.AddSingleton<DiscordGatewayState>();
 builder.Services.AddHostedService<DiscordGatewayService>();
 
+// Alerts the game already derives, delivered to the people who asked for them on Discord. A sweep
+// rather than a call at each writer, for the reason the service itself gives.
+builder.Services.AddHostedService<DiscordAlertSweep>();
+
 // Discord sign-in. Registered unconditionally so the endpoints exist and can say "not set up" for
 // themselves; whether the button is ever shown is decided by DiscordOptions.IsConfigured, which is
 // false until a client id and secret arrive from user-secrets or the environment.

@@ -150,6 +150,30 @@ public sealed class PlayerAccount
     public bool DiscordMarketNotices { get; set; }
 
     /// <summary>
+    /// Your own machinery reporting in over Discord: labs, builds, mules, ground finishing being
+    /// worked up.
+    ///
+    /// The bell shows these to everybody because a panel nobody asked for costs nothing to ignore. A
+    /// DM is not that - it arrives wherever the person is - so the category the in-game feed treats as
+    /// uncategorised needs a switch of its own before any of it may be sent.
+    /// </summary>
+    public bool DiscordMachineNotices { get; set; }
+
+    /// <summary>
+    /// The high-water mark of what has already been sent to Discord, so a sweep can find what is new
+    /// without sending anything twice.
+    ///
+    /// Deliberately not the same field as the bell's CombatAlertsSeenAtUtc. That one moves when the
+    /// player looks at the game, and driving DMs off it would mean the people who play most are the
+    /// ones who never hear anything - and that the moment somebody stopped reading, every alert they
+    /// had ever ignored would be posted to them again.
+    ///
+    /// Null means this account has never been swept. The first sweep sets it to now and sends nothing,
+    /// so linking Discord does not open with a recital of everything that has ever happened to you.
+    /// </summary>
+    public DateTime? DiscordAlertsSentAtUtc { get; set; }
+
+    /// <summary>
     /// When Discord was last asked what this account is called, which is not the same question as when
     /// it was connected. Stamped whether or not anything had moved: "we asked and nothing had changed"
     /// is the answer the account page needs, and an unstamped one reads as never having asked.

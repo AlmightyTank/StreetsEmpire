@@ -2083,6 +2083,8 @@ export type Account = {
   discordCombatNotices: boolean
   discordCrewNotices: boolean
   discordMarketNotices: boolean
+  /** Your own machinery - labs, builds, mules - over DM. Off unless asked for, unlike the bell. */
+  discordMachineNotices: boolean
   /** False when the server has no Discord credentials, which hides the connect button entirely. */
   discordConfigured: boolean
   discordLinkRewardClaimedAtUtc: string | null
@@ -2204,6 +2206,7 @@ export const api = {
     discordCombatNotices: boolean,
     discordCrewNotices: boolean,
     discordMarketNotices: boolean,
+    discordMachineNotices: boolean,
     noticeCombat: boolean,
     noticeCrew: boolean,
     noticeMarket: boolean) =>
@@ -2218,6 +2221,7 @@ export const api = {
         discordCombatNotices,
         discordCrewNotices,
         discordMarketNotices,
+        discordMachineNotices,
         noticeCombat,
         noticeCrew,
         noticeMarket,
@@ -2834,6 +2838,9 @@ export type TerritoryBoard = {
   allianceCityControl?: AllianceCityControl | null
   developmentLadder: TerritoryDevelopmentRung[]
   territories: Territory[]
+  // Your own ground in other towns. Not part of `territories`, which is the whole of the town you are
+  // standing in, rivals included. Empty for anybody who has never left a piece behind.
+  away: Territory[]
 }
 
 export type AdminBotHealth = {

@@ -5,6 +5,29 @@
 ## 0.3.0
 
 ### Changed
+- **Ground stays held when you leave town.** Travel used to be refused outright to anybody holding
+  ground, so every trip began by giving up the map: pull the garrisons, lose the work in the ground,
+  fly, and start again. Nobody with a real map ever travelled, which made the city markets a thing you
+  read about rather than a thing you used.
+
+  It stays yours now. What keeps that from being free is the three things that come with it. Ground
+  pays out only in the town it stands in, so an empire away from its ground earns nothing from it. The
+  garrison is still away from home, so those thugs are off your roster the whole time you are gone.
+  And it is still raidable by anybody standing next to it, which is the part you cannot answer from
+  another city - the warning arrives, and you are a flight away from it.
+
+  From out of town the only thing you can do to a piece is walk away from it. Reinforcing it or
+  starting work on it would move crew and money across the country the instant they were asked for,
+  which is the one thing the flight clock exists to stop. Giving it up is a release rather than a
+  posting, so that one works from anywhere; refusing it as well would strand a garrison on ground its
+  holder had already decided to drop.
+
+  The map page grew a section for it, because a town's map is one town and ground left standing
+  elsewhere would otherwise be invisible - and invisible ground is still holding thugs off your roster.
+  It counts against your holding cap wherever it is, so the page and the claim endpoint can no longer
+  disagree about how much you run. The trip itself says what it is leaving behind, since both halves of
+  that are things nobody would guess.
+
 - **A strike can cross the country, and the drive is the mechanic.** Splitting the hideout out gave
   every house a town, which left the four strikes hitting places their crew could not have reached.
   They can reach them now, and what distance costs is not really the price - it is the warning.

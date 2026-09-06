@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StreetEmpire.Api.Data;
@@ -11,9 +12,11 @@ using StreetEmpire.Api.Data;
 namespace StreetEmpire.Api.Migrations
 {
     [DbContext(typeof(GameDbContext))]
-    partial class GameDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260906140817_DerivedStandingsNews")]
+    partial class DerivedStandingsNews
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1460,9 +1463,6 @@ namespace StreetEmpire.Api.Migrations
 
                     b.Property<string>("CrewRanksJson")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("CrewReportsPostedAtUtc")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DiscordAnnouncementUsername")
                         .HasMaxLength(80)

@@ -143,6 +143,7 @@ var tests = new (string Name, Action Test)[]
     ("ground is worth what has been put into it", GroundIsWorthWhatWasPutIntoIt),
     ("a bigger building actually lets you hold more ground", ABiggerBuildingHoldsMoreGround),
     ("working ground up costs money, turns and time", WorkingGroundUpIsPaidForUpFront),
+    ("ground stays held when its holder leaves town", GroundStaysHeldWhenItsHolderLeavesTown),
     ("a pimp posted to ground only helps if they fight", GarrisonPimpBonusOnlyForEnforcers),
     ("ground bonuses reach the activities they boost", TerritoryBonusesReachTheirActivities),
     ("hideout tier build charges up front and lands on time", HideoutTierBuildChargesUpFrontAndLandsOnTime),
@@ -301,6 +302,8 @@ var tests = new (string Name, Action Test)[]
     ("every alert kind answers to a switch or to none on purpose", EveryAlertKindAnswersToASwitch),
     ("a new column does not switch anything off for anybody", ANewColumnDoesNotSwitchAnythingOff),
     ("Discord DMs are opt-in and sent by the bot", DiscordDmsAreOptInAndSentByTheBot),
+    ("the Discord alert sweep says what the bell says, once", TheDiscordAlertSweepSaysWhatTheBellSaysOnce),
+    ("news the game only ever worked out is written down", NewsTheGameOnlyEverWorkedOutIsWrittenDown),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
     ("announcement delivery sends Discord embeds", AnnouncementDeliverySendsDiscordEmbeds),
@@ -308,6 +311,8 @@ var tests = new (string Name, Action Test)[]
     ("Discord role sync selects city, crew, and title roles", DiscordRoleSyncSelectsCityCrewAndTitleRoles),
     ("Discord crew channel sync creates private crew rooms", DiscordCrewChannelSyncCreatesPrivateCrewRooms),
     ("Discord server commands resolve through the API", DiscordServerCommandsResolveThroughTheApi),
+    ("Discord crew subcommands answer their own question", DiscordCrewSubcommandsAnswerTheirOwnQuestion),
+    ("the Discord status says the game's name between everything else", TheDiscordStatusSaysTheGamesNameBetweenEverythingElse),
     ("a session outlives nothing it should", ASessionOutlivesNothingItShould),
     ("the sweep never takes a fight that has not happened yet", TheSweepNeverTakesAFightInFlight),
     ("a chosen title leads, and survives losing it", AChosenTitleLeadsAndSurvivesLosingIt),
@@ -5346,7 +5351,7 @@ static void ANewColumnDoesNotSwitchAnythingOff()
         AssertEqual(true, property!.GetDefaultValue());
     }
 
-    foreach (var name in new[] { "DiscordSecurityNotices", "DiscordCombatNotices", "DiscordCrewNotices", "DiscordMarketNotices" })
+    foreach (var name in new[] { "DiscordSecurityNotices", "DiscordCombatNotices", "DiscordCrewNotices", "DiscordMarketNotices", "DiscordMachineNotices" })
     {
         var property = account.FindProperty(name);
         AssertTrue(property is not null, $"{name} should be mapped");
@@ -5359,6 +5364,8 @@ static void ANewColumnDoesNotSwitchAnythingOff()
     AssertTrue(fresh.NoticeCombat && fresh.NoticeCrew && fresh.NoticeMarket, "a new account hears everything");
     AssertTrue(!fresh.DiscordSecurityNotices && !fresh.DiscordCombatNotices && !fresh.DiscordCrewNotices && !fresh.DiscordMarketNotices,
         "Discord DMs are opt-in");
+    AssertTrue(!fresh.DiscordMachineNotices, "so is being DMd about your own machinery");
+    AssertEqual(null, fresh.DiscordAlertsSentAtUtc);
 }
 
 static void DiscordDmsAreOptInAndSentByTheBot()
@@ -5409,6 +5416,205 @@ static void DiscordDmsAreOptInAndSentByTheBot()
     gameQuiet.DiscordCombatNotices = true;
     AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Combat), "combat can be opted into");
     AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Market), "one Discord game switch should not imply another");
+
+    // The category the in-game bell lets through unasked. A panel nobody opened costs nothing; a DM
+    // arrives wherever the person is, so this one has a switch of its own and starts off.
+    AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "your own machinery is not DMd unasked");
+    gameQuiet.DiscordMachineNotices = true;
+    AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "and can be opted into");
+}
+
+static void NewsTheGameOnlyEverWorkedOutIsWrittenDown()
+{
+    // Six things players asked to hear about. Four of them now write a log row where they happen, and
+    // this is the half that decides whether a row is news at all - so if a kind is missing here it is
+    // missing from the bell and from Discord at the same time, silently.
+    foreach (var (action, summary, kind) in new[]
+    {
+        ("TRAVEL", "You have landed in Miami.", "travel"),
+        ("WORKSHOP", "Two pistols came off the bench.", "workshop"),
+        ("CASINO", "The house owes you 3 free spins.", "casino"),
+        ("TITLE", "You are now the Butcher.", "title"),
+        ("TRADERJOB", "The book settled up on weed in Chicago.", "traderjob"),
+        ("CREWNOTICE", "The Eastside Table climbed to #3 on the crew board.", "crew"),
+    })
+    {
+        AssertTrue(DefenceAlerts.IsNotification(action, summary), $"{action} should count as news");
+        var alert = DefenceAlerts.ToAlert(1, action, summary, DateTime.UtcNow, null);
+        AssertTrue(alert is not null, $"{action} should describe itself as an alert");
+        AssertEqual(kind, alert!.Kind);
+    }
+
+    // WORKSHOP is the one that was already being written and had simply never been listed as news, so
+    // a finished craft was invisible to the bell as well as to Discord. Worth its own line.
+    AssertTrue(DefenceAlerts.IsNotification("WORKSHOP", "Two pistols came off the bench."),
+        "a craft coming off the bench is news, not activity");
+
+    // Losing a title is news by the same argument that gaining one is, and the sentence is what tells
+    // the two apart.
+    AssertEqual("bad", DefenceAlerts.ToAlert(1, "TITLE", "Boss took the Butcher off you.", DateTime.UtcNow, null)!.Tone);
+    AssertEqual("good", DefenceAlerts.ToAlert(1, "TITLE", "You are now the Butcher.", DateTime.UtcNow, null)!.Tone);
+
+    // The book is somebody paying you, so it answers to the same switch a sale does rather than to none.
+    AssertEqual(AlertCategory.Market, DefenceAlerts.CategoryOf("traderjob"));
+    AssertEqual(AlertCategory.Crew, DefenceAlerts.CategoryOf("crew"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("travel"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("casino"));
+    AssertEqual(AlertCategory.Always, DefenceAlerts.CategoryOf("title"));
+
+    // A flight that lands writes the row itself, on the clock, rather than being noticed later by
+    // whoever happens to look. This is the whole reason travel could not be reported before: there was
+    // no moment anything could hook, only an arrival time quietly falling into the past.
+    var options = Resolve(new GameOptions());
+    var snapshot = Snapshot(options);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"landing-{Guid.NewGuid()}")
+        .Options);
+    var (player, _) = AccountSetup.NewPlayer(
+        new PlayerAccount { Username = "flier" }, "Flier", "Miami", options, CreateRoster(options));
+    db.Players.Add(player);
+    db.SaveChanges();
+
+    var hideouts = new HideoutService(snapshot);
+    var economy = CreateEconomy(options);
+    var clock = new PlayerClock(
+        new TurnService(snapshot, CreateRoster(options)),
+        hideouts,
+        db,
+        new MinimumRandom(),
+        new MuleService(snapshot, hideouts),
+        economy,
+        new ArrestService(db, snapshot, new MinimumRandom(), hideouts, CreateRoster(options)),
+        new TerritoryService(db, snapshot),
+        new AllianceService(db, snapshot, economy, hideouts));
+
+    var landedAt = DateTime.UtcNow;
+    player.TravelArrivesAtUtc = landedAt.AddMinutes(-1);
+    clock.AdvanceAsync(player, landedAt, db).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    var landing = db.ActionLogs.Where(x => x.PlayerId == player.Id && x.Action == "TRAVEL").ToList();
+    AssertEqual(1, landing.Count);
+    AssertTrue(landing[0].Summary.Contains("Miami"), "the landing should say where you came down");
+    AssertEqual(null, player.TravelArrivesAtUtc);
+
+    // And once only. A second tick on somebody already standing on the ground must not keep announcing
+    // a flight that is over.
+    clock.AdvanceAsync(player, landedAt.AddMinutes(1), db).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(1, db.ActionLogs.Count(x => x.PlayerId == player.Id && x.Action == "TRAVEL"));
+}
+
+static void TheDiscordAlertSweepSaysWhatTheBellSaysOnce()
+{
+    var now = new DateTime(2026, 9, 5, 12, 0, 0, DateTimeKind.Utc);
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-sweep-{Guid.NewGuid()}")
+        .Options);
+    var options = Resolve(new GameOptions());
+
+    var account = new PlayerAccount
+    {
+        Username = "sam",
+        DiscordUserId = "777777777777777777",
+        DiscordCombatNotices = true
+    };
+    var (player, _) = AccountSetup.NewPlayer(account, "Sam", "Chicago", options, CreateRoster(options));
+    // A real attacker rather than a loose id. Attacker is a required navigation, so the Include the
+    // sweep does is an inner join - a raid by nobody is a row that silently does not exist.
+    var (raider, _) = AccountSetup.NewPlayer(new PlayerAccount { Username = "tony" }, "Tony", "Chicago", options, CreateRoster(options));
+    db.Players.AddRange(player, raider);
+
+    // One of each half the sweep reads: a raid, which is a CombatLog, and a mule coming home, which is
+    // an action log row the bell classifies as news.
+    db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = raider.Id,
+        DefenderId = player.Id,
+        Outcome = "Victory",
+        Method = AttackMethods.Raid,
+        Summary = "Somebody went through the door.",
+        CreatedAtUtc = now.AddMinutes(-1)
+    });
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = player.Id,
+        Action = "MULE",
+        Summary = "Your mule is back with the load.",
+        CreatedAtUtc = now.AddMinutes(-1)
+    });
+    db.SaveChanges();
+
+    var links = (string _) => (IReadOnlyList<object>?)[new { type = 1 }];
+    var sender = new DiscordDirectMessages(
+        new HttpClient(new RecordingHttpHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"id":"444444444444444444"}""")
+        })),
+        db,
+        Options(new DiscordIntegrationOptions()),
+        NullLogger<DiscordDirectMessages>.Instance);
+
+    // First pass: an account nobody has swept before is marked caught up and told nothing at all.
+    // Linking Discord must not open with a recital of everything that has ever happened.
+    AssertEqual(0, DiscordAlertSweep.SweepAsync(db, sender, links, now, default).GetAwaiter().GetResult());
+    AssertEqual(now, db.Accounts.Single(x => x.Username == "sam").DiscordAlertsSentAtUtc);
+
+    // Something happens after the watermark, and the raid goes out - but not the mule, because the
+    // switch governing your own machinery is still off.
+    db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = raider.Id,
+        DefenderId = player.Id,
+        Outcome = "Victory",
+        Method = AttackMethods.Raid,
+        Summary = "They came back for the rest.",
+        CreatedAtUtc = now.AddMinutes(1)
+    });
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = player.Id,
+        Action = "MULE",
+        Summary = "Your mule is back again.",
+        CreatedAtUtc = now.AddMinutes(1)
+    });
+    db.SaveChanges();
+
+    var later = now.AddMinutes(2);
+    AssertEqual(1, DiscordAlertSweep.SweepAsync(db, sender, links, later, default).GetAwaiter().GetResult());
+    AssertEqual(later, db.Accounts.Single(x => x.Username == "sam").DiscordAlertsSentAtUtc);
+
+    // The same rows again, and nothing goes out a second time. This is the whole point of the
+    // watermark: a sweep every two minutes must not be a raid alert every two minutes.
+    AssertEqual(0, DiscordAlertSweep.SweepAsync(db, sender, links, later.AddMinutes(2), default).GetAwaiter().GetResult());
+
+    // Turning the machinery switch on picks the mule up on the next thing that happens, through the
+    // same classifier the bell uses - so the DM and the bell can never disagree about what counts.
+    db.Accounts.Single(x => x.Username == "sam").DiscordMachineNotices = true;
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = player.Id,
+        Action = "MULE",
+        Summary = "Your mule is back once more.",
+        CreatedAtUtc = later.AddMinutes(3)
+    });
+    db.SaveChanges();
+    AssertEqual(1, DiscordAlertSweep.SweepAsync(db, sender, links, later.AddMinutes(4), default).GetAwaiter().GetResult());
+
+    // An account that has asked for nothing is never read at all, however much happens to it.
+    var quiet = new PlayerAccount { Username = "quiet", DiscordUserId = "888888888888888888" };
+    var (quietPlayer, _) = AccountSetup.NewPlayer(quiet, "Quiet", "Miami", options, CreateRoster(options));
+    db.Players.Add(quietPlayer);
+    db.ActionLogs.Add(new GameActionLog
+    {
+        PlayerId = quietPlayer.Id,
+        Action = "BUST",
+        Summary = "The door came in.",
+        CreatedAtUtc = later.AddMinutes(5)
+    });
+    db.SaveChanges();
+    AssertEqual(0, DiscordAlertSweep.SweepAsync(db, sender, links, later.AddMinutes(6), default).GetAwaiter().GetResult());
+    AssertEqual(null, db.Accounts.Single(x => x.Username == "quiet").DiscordAlertsSentAtUtc);
 }
 
 static void GameUpdatesShowWhatIsVisibleAndStillNew()
@@ -5722,6 +5928,8 @@ static void DiscordCrewChannelSyncCreatesPrivateCrewRooms()
         Snapshot(options),
         CreateEconomy(options),
         new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
         new DiscordGatewayState(),
         NullLogger<DiscordGuildIntegration>.Instance);
 
@@ -5747,6 +5955,136 @@ static void DiscordCrewChannelSyncCreatesPrivateCrewRooms()
     AssertTrue(http.Requests.Any(x => x.Method == "PATCH" && x.Uri.EndsWith("/channels/555555555555555555", StringComparison.Ordinal)),
         "existing mapped channels should be kept in sync");
 }
+
+static void TheDiscordStatusSaysTheGamesNameBetweenEverythingElse()
+{
+    // A status bar has no room for commas, and nobody says "fourteen million eight hundred thousand".
+    AssertEqual("$950", DiscordGatewayService.Compact(950));
+    AssertEqual("$14.8K", DiscordGatewayService.Compact(14_800));
+    AssertEqual("$14.8M", DiscordGatewayService.Compact(14_800_000));
+    AssertEqual("$5M", DiscordGatewayService.Compact(5_000_000));
+    AssertEqual("$2.4B", DiscordGatewayService.Compact(2_400_000_000));
+
+    // The rotation is off unless somebody asks for it, because an IDENTIFY already carries the default
+    // line - a server that never sets this has a correct status and no queries running behind it.
+    AssertEqual(0, new DiscordIntegrationOptions().PresenceRotateSeconds);
+
+    // And the window the status counts players over is the one /online reports, rather than a second
+    // number that would disagree with it in the same server.
+    AssertEqual(15, DiscordGuildIntegration.OnlineWindowMinutes);
+}
+
+static void DiscordCrewSubcommandsAnswerTheirOwnQuestion()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase($"discord-crew-{Guid.NewGuid()}")
+        .Options);
+    var options = Resolve(new GameOptions());
+
+    var crew = new Alliance { Name = "The Eastside Table", Treasury = 250_000, DefensiveThugs = 40 };
+    var rival = new Alliance { Name = "Southside", Treasury = 10_000 };
+    db.Alliances.AddRange(crew, rival);
+
+    var bossAccount = new PlayerAccount { Username = "sam", DiscordUserId = "777777777777777777" };
+    var (boss, _) = AccountSetup.NewPlayer(bossAccount, "Sam", "Chicago", options, CreateRoster(options));
+    boss.Alliance = crew;
+    boss.AllianceRank = AllianceRank.Boss;
+    boss.Cash += 500_000;
+    var (soldier, _) = AccountSetup.NewPlayer(new PlayerAccount { Username = "lee" }, "Lee", "Chicago", options, CreateRoster(options));
+    soldier.Alliance = crew;
+    soldier.AllianceRank = AllianceRank.Soldier;
+    var (outsider, _) = AccountSetup.NewPlayer(new PlayerAccount { Username = "kim" }, "Kim", "Miami", options, CreateRoster(options));
+    outsider.Alliance = rival;
+    db.Players.AddRange(boss, soldier, outsider);
+    db.SaveChanges();
+
+    db.Territories.AddRange(
+        new Territory { Name = "South Side", City = "Chicago", Type = "corner", HolderId = boss.Id, GarrisonThugs = 3 },
+        new Territory { Name = "Downtown", City = "Chicago", Type = "corner", HolderId = soldier.Id, GarrisonThugs = 25 },
+        new Territory { Name = "Ocean Drive", City = "Miami", Type = "corner", HolderId = outsider.Id, GarrisonThugs = 9 });
+    db.AllianceWars.Add(new AllianceWar
+    {
+        DeclaringAllianceId = crew.Id,
+        TargetAllianceId = rival.Id,
+        DeclaredById = boss.Id,
+        Status = AllianceWarStatuses.Active,
+        Stake = 100_000,
+        DeclaringScore = 4,
+        TargetScore = 1,
+        StartedAtUtc = DateTime.UtcNow.AddHours(-1),
+        EndsAtUtc = DateTime.UtcNow.AddHours(5)
+    });
+    db.CombatLogs.Add(new CombatLog
+    {
+        AttackerId = boss.Id,
+        DefenderId = outsider.Id,
+        Outcome = "Victory",
+        Method = AttackMethods.Raid,
+        Summary = "Through the door.",
+        CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+    });
+    db.SaveChanges();
+
+    var service = new DiscordGuildIntegration(
+        new HttpClient(),
+        db,
+        Options(new DiscordIntegrationOptions { PublicUrl = "https://streetsempire.example/" }),
+        Snapshot(options),
+        CreateEconomy(options),
+        new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
+        new DiscordGatewayState(),
+        NullLogger<DiscordGuildIntegration>.Instance);
+
+    // The subcommand is part of the name, because who may see the answer differs between them: a board
+    // of crews is a board, and a crew treasury is not. Read from the raw callback before dispatch, so
+    // the deferral and the answer cannot disagree about it.
+    using var callback = JsonDocument.Parse("""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "crew", "options": [ { "name": "leaderboard", "type": 1, "options": [] } ] }
+        }
+        """);
+    AssertEqual("crew leaderboard", DiscordGuildIntegration.CommandName(callback));
+    AssertTrue(!DiscordGuildIntegration.AnswersEphemerally("crew leaderboard"), "a board of crews is public");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("crew status"), "a crew treasury is not");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("crew territories"), "where ground is thin is not");
+
+    var status = CrewCommand(service, "status");
+    AssertTrue(status.Contains("The Eastside Table"), "status should resolve the caller's own crew");
+    AssertTrue(status.Contains("2 member(s)"), "status should count the members");
+    AssertTrue(status.Contains("Ground held: 2"), "status should count only this crew's ground");
+
+    var members = CrewCommand(service, "members");
+    AssertTrue(members.IndexOf("Sam") < members.IndexOf("Lee"), "members should lead with the highest rank");
+    AssertTrue(!members.Contains("Kim"), "another crew's members are not this crew's members");
+
+    // Thinnest first, because the useful question is which ground would fall tonight.
+    var ground = CrewCommand(service, "territories");
+    AssertTrue(ground.IndexOf("South Side") < ground.IndexOf("Downtown"), "the thinnest garrison should lead");
+    AssertTrue(!ground.Contains("Ocean Drive"), "another crew's ground is not this crew's ground");
+
+    var wars = CrewCommand(service, "wars");
+    AssertTrue(wars.Contains("Southside"), "a war should name the other crew");
+    AssertTrue(wars.Contains("4 to 1"), "and read the score from this crew's side");
+
+    var board = CrewCommand(service, "leaderboard");
+    AssertTrue(board.IndexOf("The Eastside Table") < board.IndexOf("Southside"), "the richer crew leads the board");
+    AssertTrue(board.Contains("<- you"), "the caller's own crew is marked on it");
+
+    AssertTrue(CrewCommand(service, "activity").Contains("Sam"), "activity should name who has been fighting");
+}
+
+static string CrewCommand(DiscordGuildIntegration service, string sub)
+    => DiscordResponseContent(service.HandleInteractionAsync(JsonDocument.Parse($$"""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "crew", "options": [ { "name": "{{sub}}", "type": 1, "options": [] } ] }
+        }
+        """), default).GetAwaiter().GetResult());
 
 static void DiscordServerCommandsResolveThroughTheApi()
 {
@@ -5777,10 +6115,12 @@ static void DiscordServerCommandsResolveThroughTheApi()
     var service = new DiscordGuildIntegration(
         new HttpClient(),
         db,
-        Options(new DiscordIntegrationOptions()),
+        Options(new DiscordIntegrationOptions { PublicUrl = "https://streetsempire.example/" }),
         Snapshot(options),
         CreateEconomy(options),
         new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
         new DiscordGatewayState(),
         NullLogger<DiscordGuildIntegration>.Instance);
 
@@ -5798,8 +6138,21 @@ static void DiscordServerCommandsResolveThroughTheApi()
     AssertEqual(2, interactionType);
     AssertEqual("999999999999999999", applicationId);
     AssertEqual("interaction-token", token);
-    using var deferred = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse()));
+    // Who sees an answer is settled by the deferral and cannot be moved afterwards, so the name has to
+    // be readable from the raw callback before anything is dispatched.
+    AssertEqual("rank", DiscordGuildIntegration.CommandName(callback));
+    using var deferred = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse(ephemeral: false)));
     AssertEqual(5, deferred.RootElement.GetProperty("type").GetInt32());
+    AssertEqual(0, deferred.RootElement.GetProperty("data").GetProperty("flags").GetInt32());
+    using var privateDeferral = JsonDocument.Parse(JsonSerializer.Serialize(DiscordGuildIntegration.DeferredInteractionResponse(ephemeral: true)));
+    AssertEqual(64, privateDeferral.RootElement.GetProperty("data").GetProperty("flags").GetInt32());
+
+    // A command nobody has classified answers the caller alone. This is the arm that matters: the cost
+    // of forgetting to list a command is a private answer shown to a whole channel, so the default has
+    // to be the safe one rather than the convenient one.
+    AssertTrue(!DiscordGuildIntegration.AnswersEphemerally("rank"), "rank is a public lookup");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("wallet"), "an unclassified command stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally(null), "a callback naming no command stays private");
 
     var callerResponse = DiscordCommand(service, "rank");
     AssertTrue(callerResponse.Contains("Runner"), "rank should resolve the Discord caller to their linked empire");
@@ -5823,6 +6176,141 @@ static void DiscordServerCommandsResolveThroughTheApi()
     var streetWire = DiscordCommand(service, "streetwire");
     AssertTrue(streetWire.Contains("Street Wire live"), "streetwire should read the canonical in-game update feed");
     AssertTrue(streetWire.Contains("v0.4.0"), "streetwire should include version data from the update record");
+
+    // The link button, checked after the trip through the follow-up payload rather than before it. That
+    // is the half worth having: every real interaction is deferred, so an answer that carries its
+    // buttons only on the first reply carries them nowhere.
+    AssertEqual("https://streetsempire.example/#/updates", DiscordResponseButton(service, "streetwire"));
+    AssertEqual("https://streetsempire.example/#/market", DiscordResponseButton(service, "market"));
+
+    // No public address means no buttons at all, rather than a row of links into somebody else's
+    // localhost - which would look like it worked.
+    var unaddressed = new DiscordGuildIntegration(
+        new HttpClient(),
+        db,
+        Options(new DiscordIntegrationOptions()),
+        Snapshot(options),
+        CreateEconomy(options),
+        new TitleService(db, Snapshot(options), CreateEconomy(options)),
+        CreateCasino(db, options),
+        new SeasonService(db, Snapshot(options), CreateEconomy(options), CreateRoster(options), new SeasonSchedule()),
+        new DiscordGatewayState(),
+        NullLogger<DiscordGuildIntegration>.Instance);
+    AssertEqual(null, DiscordResponseButton(unaddressed, "streetwire"));
+
+    // /play is the one command with nothing behind it but a link, so with no address configured it has
+    // nothing to say - and says that, rather than offering a button into a developer's laptop.
+    AssertEqual("https://streetsempire.example/", DiscordResponseButton(service, "play"));
+    AssertTrue(DiscordCommand(unaddressed, "play").Contains("PublicUrl"),
+        "with nowhere to point, /play should name the setting an admin has to fill in");
+
+    // /me is the private front door: it reads out a bank balance, so it must never be a public answer.
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("me"), "/me reads a bank balance and stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("casino"), "/casino reads comps and stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("travel"), "being in the air is raid intel and stays private");
+    AssertTrue(DiscordGuildIntegration.AnswersEphemerally("crew"), "a crew treasury stays private");
+    AssertTrue(!DiscordGuildIntegration.AnswersEphemerally("jackpot"), "/jackpot is advertising and is public");
+
+    var me = DiscordCommand(service, "me");
+    AssertTrue(me.Contains("Runner"), "/me should resolve the caller through their linked account");
+    AssertTrue(me.Contains("rank #2"), "/me should carry the same rank the standings query gives");
+    AssertTrue(me.Contains("Chicago"), "/me should say where the player is");
+
+    // The board counts everybody the in-game rank counts, so /leaderboard and /me cannot disagree about
+    // who is above whom.
+    var board = DiscordCommand(service, "leaderboard");
+    AssertTrue(board.IndexOf("Boss") < board.IndexOf("Runner"), "the richer empire should come first");
+    AssertTrue(board.Contains("1. Boss"), "the leaderboard should be numbered from the top");
+
+    // Nobody has a session in this world, so the honest answer is nobody - not a bot-inflated count.
+    AssertTrue(DiscordCommand(service, "online").Contains("Nobody has been on"),
+        "/online should report the empty window rather than counting simulated players");
+
+    var season = DiscordCommand(service, "season");
+    AssertTrue(season.Contains("No season is running"),
+        "/season should say so rather than opening a season because somebody typed a slash command");
+    AssertEqual(0, db.Seasons.Count());
+
+    var crew = DiscordCommand(service, "crew", ("crew", "Nobody Here"));
+    AssertTrue(crew.Contains("No Street Empire crew named Nobody Here"), "an unknown crew should be named back");
+
+    // The dealer's board. Read straight off the open rows rather than through BookAsync, which tops a
+    // thin book up - a slash command must not quietly write jobs into a town.
+    AssertTrue(DiscordCommand(service, "wanted").Contains("The book is empty in Chicago"),
+        "an empty book should say so rather than inventing work");
+    AssertEqual(0, db.TraderJobs.Count());
+
+    db.TraderJobs.AddRange(
+        new TraderJob
+        {
+            City = "Chicago",
+            Kind = TraderJobKind.Supply,
+            Reason = TraderJobReason.ShelfGap,
+            Good = "weed",
+            Quantity = 40,
+            PricePerUnit = 250,
+            PostedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(6)
+        },
+        // Filled, so it is off the board however long it has left to run.
+        new TraderJob
+        {
+            City = "Chicago",
+            Kind = TraderJobKind.Product,
+            Reason = TraderJobReason.Deal,
+            Good = "coke",
+            Quantity = 10,
+            PricePerUnit = 9_000,
+            PostedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(6),
+            FilledAtUtc = DateTime.UtcNow.AddMinutes(-1)
+        },
+        // Somebody else's town.
+        new TraderJob
+        {
+            City = "Miami",
+            Kind = TraderJobKind.Supply,
+            Reason = TraderJobReason.Favour,
+            Good = "medicine",
+            Quantity = 5,
+            PricePerUnit = 400,
+            PostedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            ExpiresAtUtc = DateTime.UtcNow.AddHours(6)
+        });
+    db.SaveChanges();
+
+    var wanted = DiscordCommand(service, "wanted");
+    AssertTrue(wanted.Contains("The book in Chicago"), "/wanted should default to the caller's own town");
+    AssertTrue(wanted.Contains("40 weed"), "the board should say how much is still wanted");
+    AssertTrue(wanted.Contains("counter is dry"), "a shelf gap is the one job with a consequence, so it is marked");
+    AssertTrue(!wanted.Contains("coke"), "a filled job is off the board");
+    AssertTrue(!wanted.Contains("medicine"), "another town's book is not this town's book");
+    AssertTrue(DiscordCommand(service, "wanted", ("city", "Miami")).Contains("medicine"),
+        "a named city should override the caller's own");
+
+    var travel = DiscordCommand(service, "travel");
+    AssertTrue(travel.Contains("You are in Chicago"), "/travel should start from where the caller is");
+    AssertTrue(travel.Contains("Miami"), "/travel should list the towns the caller is not in");
+    AssertTrue(!travel.Contains("Chicago - "), "/travel should not offer a flight to the city you are standing in");
+}
+
+/// <summary>The url on the first link button of a command's answer, as it survives the follow-up edit.</summary>
+static string? DiscordResponseButton(DiscordGuildIntegration service, string command)
+{
+    var response = service.HandleInteractionAsync(JsonDocument.Parse($$"""
+        {
+          "type": 2,
+          "member": { "user": { "id": "777777777777777777" } },
+          "data": { "name": "{{command}}", "options": [] }
+        }
+        """), default).GetAwaiter().GetResult();
+
+    using var json = JsonDocument.Parse(
+        JsonSerializer.Serialize(DiscordGuildIntegration.InteractionMessagePayload(response)));
+    var rows = json.RootElement.GetProperty("components");
+    return rows.GetArrayLength() == 0
+        ? null
+        : rows[0].GetProperty("components")[0].GetProperty("url").GetString();
 }
 
 static string DiscordCommand(DiscordGuildIntegration service, string command, params (string Name, string Value)[] options)
@@ -9750,6 +10238,103 @@ static void WorkingGroundUpIsPaidForUpFront()
     AssertTrue(gaveUp, "dropping under the minimum gives the ground up");
     AssertEqual(0, given.DevelopmentLevel);
     AssertTrue(given.DevelopingToLevel is null, "and takes the unfinished work with it");
+}
+
+
+/// <summary>
+/// Leaving town used to mean giving up the map: travel was refused outright while a player held any
+/// ground, so every trip began by walking away from everything they had taken. Ground stays held now.
+///
+/// What keeps that from being free is the three things that come with it. It pays out only in the town
+/// it stands in, so an empire away from its ground earns nothing from it. Its garrison is still away
+/// from home, so the thugs on it are gone from the roster the whole time. And it is still raidable by
+/// anybody standing next to it, which is the part the holder cannot answer from another city.
+/// </summary>
+static void GroundStaysHeldWhenItsHolderLeavesTown()
+{
+    using var world = NewCrewWorld();
+    var options = world.Options;
+    var service = new TerritoryService(world.Db, Snapshot(options));
+    var now = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+
+    var holder = world.Member("Holder", thugs: 30, cash: 100_000);
+    holder.BankCash = 5_000_000;
+    holder.Turns = 200;
+    holder.Hideout!.Tier = 2;
+
+    var ground = new Territory { City = "Detroit", Name = "The Docks", Type = "dock", HolderId = holder.Id, GarrisonThugs = 10 };
+    world.Db.Territories.Add(ground);
+    world.Db.SaveChanges();
+
+    // Nothing in the travel path pulls the garrison off, so the flight leaves it exactly as it stood.
+    holder.City = "Chicago";
+    AssertEqual(holder.Id, ground.HolderId);
+    AssertEqual(10, ground.GarrisonThugs);
+
+    // And the crew standing on it is still spoken for. A garrison that stopped counting the moment its
+    // holder left town would make holding ground free for anybody willing to fly.
+    AssertEqual(20, service.FreeThugsAsync(holder, default).GetAwaiter().GetResult());
+
+    // What cannot be done from a country away is anything that moves crew or money onto the ground.
+    // Both would cross the map the instant they were asked for, which is what the flight clock exists
+    // to stop.
+    AssertRuleError(() => service.SetGarrisonAsync(holder, ground.Id, 20, null, default).GetAwaiter().GetResult(),
+        "reinforcing ground in a town the holder is not standing in");
+    AssertRuleError(() => service.DevelopAsync(holder, ground.Id, now, default).GetAwaiter().GetResult(),
+        "starting work on ground in a town the holder is not standing in");
+    AssertEqual(10, ground.GarrisonThugs);
+
+    // Walking away is the exception, because it is a release rather than a posting. Refusing it too
+    // would strand a garrison on ground its holder had already decided to drop.
+    var (given, gaveUp) = service.SetGarrisonAsync(holder, ground.Id, 0, null, default).GetAwaiter().GetResult();
+    AssertTrue(gaveUp, "ground can be given up from another town");
+    AssertTrue(given.HolderId is null, "and it goes back to being nobody's");
+    world.Db.SaveChanges();
+    AssertEqual(30, service.FreeThugsAsync(holder, default).GetAwaiter().GetResult());
+
+    // Back home, the same calls work. The rule is about distance, not about the ground.
+    holder.City = "Detroit";
+    var reclaimed = service.ClaimAsync(holder, ground.Id, 10, null, now, default).GetAwaiter().GetResult();
+    AssertEqual(10, reclaimed.GarrisonThugs);
+    world.Db.SaveChanges();
+    service.SetGarrisonAsync(holder, ground.Id, 15, null, default).GetAwaiter().GetResult();
+    AssertEqual(15, ground.GarrisonThugs);
+
+    // The trip says what it is leaving standing, because both halves of that are things nobody would
+    // guess: the ground keeps paying nothing until its holder is back on it, and it stays takeable the
+    // whole time they are away.
+    var economy = CreateEconomy(Resolve(null));
+    var traveller = new Player { City = "Detroit", Turns = 10 };
+    var leaving = economy.Travel(traveller, "Chicago", ["Detroit", "Detroit"]);
+    AssertTrue(leaving.Summary.Contains("2 piece(s) of ground held out of town", StringComparison.Ordinal),
+        "the trip should name the ground it leaves behind");
+
+    // Ground in the town being flown to is not left behind at all, so it is not mentioned.
+    var arriving = new Player { City = "Detroit", Turns = 10 };
+    var landing = economy.Travel(arriving, "Chicago", ["Chicago"]);
+    AssertTrue(!landing.Summary.Contains("held out of town", StringComparison.Ordinal),
+        "ground in the destination is not ground left behind");
+
+    // And the last word: travel itself no longer asks whether anything is held. The check is a local
+    // function inside the endpoint, so this reads the seam rather than the behaviour - the same way the
+    // map page's clock is pinned down.
+    AssertTrue(!TravelIsRefusedForHeldGround(), "travel must not be refused for holding ground");
+}
+
+/// <summary>
+/// Reads the endpoint rather than trusting it. The blocker travel answers to is a local function with
+/// no other caller, and the rule that used to live in it was the one that made every trip start by
+/// giving up the map.
+/// </summary>
+static bool TravelIsRefusedForHeldGround()
+{
+    var root = SolutionRoot();
+    var source = File.ReadAllText(Path.Combine(root.FullName, "Server", "StreetEmpire.Api", "Endpoints", "GameEndpoints.cs"));
+    var blocker = source[source.IndexOf("static async Task<string?> TravelBlockedReasonAsync", StringComparison.Ordinal)..];
+    // Up to the next local function, which is where this one ends. Slicing on a brace would be reading
+    // the file's line endings rather than its shape.
+    blocker = blocker[..blocker.IndexOf("static SeasonStandingResponse StandingFromResult", StringComparison.Ordinal)];
+    return blocker.Contains("Territories", StringComparison.Ordinal);
 }
 
 /// <summary>

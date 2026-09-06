@@ -3874,6 +3874,9 @@ function TerritoryPage(ctx: PageContext) {
         Each piece holds up to {board.maxGarrisonThugs}, and a raid can send up to {board.maxRaidThugs}.
         You have <strong>{number.format(board.freeThugs)}</strong> free of {number.format(dashboard.thugs)}.
         Claiming empty ground costs {board.claimTurnCost} turns; taking it off somebody costs a raid and one of your two lanes.
+        {/* The cap counts every town and this map shows one, so a holder with ground elsewhere would
+            otherwise read a number that does not match what is in front of them. */}
+        {board.away.length > 0 && <> Your {board.held} counts {board.away.length} piece(s) standing in other towns, listed below.</>}
       </p>
       {anyEffect
         ? <div className="d-flex flex-wrap gap-2 mt-3">
@@ -3886,6 +3889,51 @@ function TerritoryPage(ctx: PageContext) {
         : <p className="text-body-tertiary small mt-3">You hold no ground yet, so nothing out there is working for you.</p>}
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
     </section>
+
+    {board.away.length > 0 && <section className="card p-3 gcol-full">
+      <div className="panel-title">
+        <h2>Held Out Of Town</h2>
+        <span>{board.away.length} piece(s)</span>
+      </div>
+      {/* The map above is one town, so ground left standing elsewhere would otherwise be invisible -
+          and invisible ground is still holding thugs off your roster and still worth raiding. This is
+          the only place it can be seen from here, and giving it up is the only thing that can be done
+          to it without flying back. */}
+      <p>
+        You left these standing when you left town. They stay yours and they stay worth taking, but they
+        pay you nothing until you are back in their city, and the thugs on them are away from home the
+        whole time. Fly back to reinforce or work them up; from here you can only walk away.
+      </p>
+      <div className="d-grid gtc-fill-268 gap-2 mt-3">
+        {board.away.map(t => <div
+          className="d-grid gap-1 align-content-start border rounded bg-body-tertiary p-3 border-start-thick border-start-success"
+          key={t.id}
+        >
+          <div className="d-flex justify-content-between align-items-baseline gap-2">
+            <strong className="text-body">{t.name}</strong>
+            <em className="eyebrow fst-normal">{t.city}</em>
+          </div>
+          <span className="text-body-secondary small">
+            {t.typeLabel}, {number.format(t.garrisonThugs)} thug(s) on it
+          </span>
+          {t.garrisonPimpName && <span className="text-success-emphasis small">
+            Run by {t.garrisonPimpName}{t.garrisonBonusPercent > 0 ? ` (+${t.garrisonBonusPercent}% defence)` : ''}
+          </span>}
+          {t.developmentLevel > 0 && <span className="text-info-emphasis small">
+            {t.developmentName} ground{t.developmentDefencePercent > 0 ? `, +${t.developmentDefencePercent}% to whoever holds it` : ''}
+          </span>}
+          {t.developing && <small className="text-warning small">
+            Work under way: {t.developing.name} in {timeUntil(t.developing.completesAtUtc)}
+          </small>}
+          <div className="territory-actions d-flex flex-wrap align-items-end gap-1 mt-1">
+            {/* Walking away razes whatever is in the ground, same as it does at home, so it says so. */}
+            <Button className="btn btn-secondary btn-sm" blocked={busy && BUSY}
+              title={`Gives up ${t.name} and loses the work in it.`}
+              onClick={() => void run(() => api.setGarrison(t.id, 0, null))}>Give up</Button>
+          </div>
+        </div>)}
+      </div>
+    </section>}
 
     <section className="card p-3 gcol-full">
       <div className="panel-title">

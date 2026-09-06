@@ -74,6 +74,12 @@ internal static class TraderJobEndpoints
                 if (job.Reason == TraderJobReason.ShelfGap)
                     await shelves.RestockAsync(job.City, job.Good, result.Delivered, now, ct);
                 AddLog(db, player, before, "JOB", 0, result.Summary);
+                // The delivery is activity - the player asked for it. Completing the job is the other
+                // thing that just happened: the premium lands, and on a job filled over several trips
+                // that can be days after it was taken on. Its own row, read by the bell and the DMs.
+                if (result.Completed)
+                    AddLog(db, player, Snapshot(player), "TRADERJOB", 0,
+                        $"The book settled up on {TradeGoods.Label(job.Good).ToLowerInvariant()} in {job.City}.", now);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new ActionResultResponse(
                     result.Summary,

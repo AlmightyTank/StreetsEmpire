@@ -156,6 +156,15 @@ public static class DefenceAlerts
             // own comment where it is written - but it was never in this list, so it sat in the seller's
             // activity looking like something they did while they were asleep.
             "SALE" => new AlertResponse($"log-{logId}", "sale", "Something of yours sold", summary, "good", unread, createdAtUtc),
+            "TRAVEL" => new AlertResponse($"log-{logId}", "travel", "You have landed", summary, "good", unread, createdAtUtc),
+            "WORKSHOP" => new AlertResponse($"log-{logId}", "workshop", "Off the bench", summary, "good", unread, createdAtUtc),
+            "CASINO" => new AlertResponse($"log-{logId}", "casino", "The house owes you", summary, "good", unread, createdAtUtc),
+            // Losing one is news as surely as gaining one, and the summary is the half that says which
+            // happened - so the tone is read off the sentence rather than assumed to be good.
+            "TITLE" when summary.Contains("took", StringComparison.Ordinal)
+                => new AlertResponse($"log-{logId}", "title", "You lost a title", summary, "bad", unread, createdAtUtc),
+            "TITLE" => new AlertResponse($"log-{logId}", "title", "You earned a title", summary, "good", unread, createdAtUtc),
+            "TRADERJOB" => new AlertResponse($"log-{logId}", "traderjob", "The book settled up", summary, "good", unread, createdAtUtc),
             "CREWNOTICE" => CrewNotice(logId, summary, unread, createdAtUtc),
             // Legacy rows from before passive crew notices got their own action. Ordinary hire, fire
             // and crew-setting rows were also CREW, so only the known notice wording is allowed here.
@@ -222,6 +231,21 @@ public static class DefenceAlerts
                || log.Action == "BUST"
                // A run settles on the clock rather than on a request, so it is news, not activity.
                || log.Action == "MULE"
+               // A flight lands on the clock while the player is doing something else, which is the
+               // definition above. Starting the flight was the action.
+               || log.Action == "TRAVEL"
+               // A craft comes off the bench on the clock, exactly as a lab yield does. This was
+               // written by the same tick that writes LAB and had simply never been listed here, so a
+               // finished craft was news the bell did not show and the DMs could not send.
+               || log.Action == "WORKSHOP"
+               // The house paying out on a ticket it owed you.
+               || log.Action == "CASINO"
+               // Held by one player at a time and taken off them by somebody else's week, so gaining
+               // one is something that happens to you rather than something you did.
+               || log.Action == "TITLE"
+               // The book settling up, which lands on a delivery that may be days after the job was
+               // taken on.
+               || log.Action == "TRADERJOB"
                // The arrest itself is reported in the shift that caused it, which is activity. This is
                // the deadline running out while nobody was looking, which is the definition above.
                || log.Action == "ARREST"
@@ -258,7 +282,8 @@ public static class DefenceAlerts
     {
         "attack" or "bust" or "ground" => AlertCategory.Combat,
         "crew" or "arrest" => AlertCategory.Crew,
-        "sale" => AlertCategory.Market,
+        // The book is business, and belongs with the other switch about somebody paying you.
+        "sale" or "traderjob" => AlertCategory.Market,
         _ => AlertCategory.Always,
     };
 

@@ -1122,6 +1122,7 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
   const [discordCombat, setDiscordCombat] = useState(account.discordCombatNotices)
   const [discordCrew, setDiscordCrew] = useState(account.discordCrewNotices)
   const [discordMarket, setDiscordMarket] = useState(account.discordMarketNotices)
+  const [discordMachine, setDiscordMachine] = useState(account.discordMachineNotices)
   const [bellCombat, setBellCombat] = useState(account.noticeCombat)
   const [bellCrew, setBellCrew] = useState(account.noticeCrew)
   const [bellMarket, setBellMarket] = useState(account.noticeMarket)
@@ -1134,12 +1135,14 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
     setDiscordCombat(account.discordCombatNotices)
     setDiscordCrew(account.discordCrewNotices)
     setDiscordMarket(account.discordMarketNotices)
+    setDiscordMachine(account.discordMachineNotices)
     setBellCombat(account.noticeCombat)
     setBellCrew(account.noticeCrew)
     setBellMarket(account.noticeMarket)
   }, [account.syncDiscordAvatar, account.emailSecurityNotices, account.emailCombatNotices, account.emailAllianceNotices,
       account.discordSecurityNotices, account.discordCombatNotices, account.discordCrewNotices,
-      account.discordMarketNotices, account.noticeCombat, account.noticeCrew, account.noticeMarket])
+      account.discordMarketNotices, account.discordMachineNotices,
+      account.noticeCombat, account.noticeCrew, account.noticeMarket])
 
   const changed = syncDiscord !== account.syncDiscordAvatar
     || security !== account.emailSecurityNotices
@@ -1149,6 +1152,7 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
     || discordCombat !== account.discordCombatNotices
     || discordCrew !== account.discordCrewNotices
     || discordMarket !== account.discordMarketNotices
+    || discordMachine !== account.discordMachineNotices
     || bellCombat !== account.noticeCombat
     || bellCrew !== account.noticeCrew
     || bellMarket !== account.noticeMarket
@@ -1165,6 +1169,7 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
         discordCombat,
         discordCrew,
         discordMarket,
+        discordMachine,
         bellCombat,
         bellCrew,
         bellMarket),
@@ -1172,7 +1177,7 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
   }
 
   return <section className="card p-3 gcol-xl-full">
-    <div className="panel-title"><h2>Alerts</h2><span>{security || combat || alliance || discordSecurity || discordCombat || discordCrew || discordMarket ? 'On' : 'Quiet'}</span></div>
+    <div className="panel-title"><h2>Alerts</h2><span>{security || combat || alliance || discordSecurity || discordCombat || discordCrew || discordMarket || discordMachine ? 'On' : 'Quiet'}</span></div>
     <form className="d-grid gap-3" onSubmit={save}>
       <label className={`form-check form-switch border rounded bg-body-secondary p-3 ps-5 ${!account.discordConnected ? 'text-body-tertiary' : ''}`}>
         <input
@@ -1269,6 +1274,18 @@ function AccountAlertsPanel({ account, busy, run }: AccountPanel) {
             checked={discordMarket}
             disabled={!account.discordConnected}
             onChange={setDiscordMarket}
+          />
+          {/*
+            The bell shows these to everybody, because a panel nobody asked for costs nothing to
+            ignore. A DM is not that - it arrives wherever you are - so your own machinery gets a
+            switch here that it does not need there.
+          */}
+          <NoticeToggle
+            label="Your own machinery"
+            detail={account.discordConnected ? 'Labs, builds, mules and ground finishing while you were somewhere else.' : 'Connect Discord before turning this on.'}
+            checked={discordMachine}
+            disabled={!account.discordConnected}
+            onChange={setDiscordMachine}
           />
         </div>
       </div>

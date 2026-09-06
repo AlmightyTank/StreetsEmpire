@@ -1604,6 +1604,19 @@ input:focus-visible, textarea:focus-visible {
   inset-block:
     calc((100% - var(--slot-gap) * 2) / 6 - var(--slot-label-block) / 2)
     calc((100% - var(--slot-gap) * 2) / 6 + var(--slot-label-block) / 2);
+  // Both sizes are stated even though the four insets above already describe the box, because an svg
+  // is a replaced element: the viewBox gives it an intrinsic 2:1 ratio, and a replaced element with
+  // auto sizes takes that ratio over the box it was given rather than stretching into it. The line was
+  // being drawn into 142px of a 200px box, anchored at the top - so the first row landed right and
+  // every row under it was drawn short, 29px on the middle row and 58px on the bottom.
+  //
+  // It reads as a desktop-clean bug because a wide floor draws square reels, and a square reel makes
+  // the grid nearly 2:1 all by itself, which is the ratio the svg was going to use anyway. Only the
+  // portrait reels a phone gets pull the two apart.
+  //
+  // Same arithmetic as the insets, halves doubled: the box is the grid less one column and one row.
+  inline-size: calc(100% - (100% - var(--slot-gap) * 4) / 5);
+  block-size: calc(100% - (100% - var(--slot-gap) * 2) / 3);
   z-index: 4;
   pointer-events: none;
   overflow: visible;

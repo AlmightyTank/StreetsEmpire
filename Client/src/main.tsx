@@ -13,7 +13,7 @@ import { ActivityList, AdminMetric, betaKeyStatusClass, BUSY, Button, copyToClip
   useSecondHand, SectionTabs, timeLeft,
   updateSeverityClass, useRouteTab, useSecondsTicker, WORKING, type Blocked } from './ui'
 import { awayFromHideout, flowPage, flowTarget, goToFlow, pageMeta, primaryPages, spendable,
-  type AppPage, type GoTo, type PageContext } from './pagecontext'
+  type AppPage, type GoTo, type PageContext, type RefreshScope } from './pagecontext'
 
 /*
   The casino, fetched when somebody walks onto the floor rather than shipped to everybody who loads
@@ -1280,6 +1280,28 @@ function App() {
     }
   }
 
+  /**
+   * The numbers in the header, and nothing else.
+   *
+   * A full refresh is seven requests: both ladders, world news, the target list, combat history and
+   * the mission list. Almost nothing moves any of them. An action that only moves money and turns can
+   * say so, and the casino is where that matters - it is the one room where somebody takes an action
+   * every second or two, and it was spending fifteen requests on each one.
+   */
+  const refreshDashboard = async () => {
+    try {
+      const d = await api.dashboard()
+      setDashboard(d)
+      setTickSeconds(d.secondsUntilNextTurnTick)
+      setHoeCut(d.hoeCutPercent)
+      setError('')
+    } catch (e) {
+      // Being signed out needs the whole teardown, which lives in refresh rather than twice.
+      if ((e as Error).message === 'Unauthorized') await refresh()
+      else setError((e as Error).message)
+    }
+  }
+
   // A boolean, not the mission array: depending on the array rebuilt the interval on every poll.
   const hasActiveMission = combatMissions.some(mission => mission.status !== 'Complete')
   const hadActiveMission = useRef(false)
@@ -1520,13 +1542,14 @@ function App() {
     void api.discardDiscordTicket().catch(() => {})
   }
 
-  const act = async (fn: () => Promise<ActionResult | unknown>) => {
+  const act = async (fn: () => Promise<ActionResult | unknown>, after: RefreshScope = 'full') => {
     setBusy(true); setError(''); setNotice(''); setLastBreakdown(null)
     try {
       const result = await fn() as ActionResult | undefined
       if (result?.summary) setNotice(result.summary)
       if (result?.breakdown) setLastBreakdown(result.breakdown)
-      await refresh()
+      if (after === 'full') await refresh()
+      else if (after === 'dashboard') await refreshDashboard()
     } catch (e) { setError((e as Error).message) }
     finally { setBusy(false) }
   }
@@ -1823,6 +1846,7 @@ function App() {
   const visiblePages = (Object.keys(pageMeta) as AppPage[]).filter(page => page !== 'admin' || adminOverview)
   const contentContext: PageContext = {
     dashboard,
+    refreshDashboard,
     adminOverview,
     leaders,
     cityLeaders,

@@ -120,6 +120,16 @@ export function spendable(dashboard: Dashboard) {
   return dashboard.cash + dashboard.bankCash + (dashboard.hideout.atHideout ? dashboard.hideout.safeCash : 0)
 }
 
+/**
+ * What an action needs re-read once it has been taken.
+ *
+ * "full" is everything on the screen and costs seven requests. "dashboard" is the money, the turns
+ * and the clock, which is all most actions actually move. "none" is for a caller that wants to say
+ * when itself - the slots hold the numbers back until the reels have landed, because a balance that
+ * updates before the last reel stops has told the player the answer.
+ */
+export type RefreshScope = 'full' | 'dashboard' | 'none'
+
 /** Why a hideout action cannot be taken from here, or false when it can. */
 export function awayFromHideout(dashboard: Dashboard, what: string) {
   return !dashboard.hideout.atHideout
@@ -160,6 +170,7 @@ export type PageContext = {
   managementCapacity: number
   setActivePage: GoTo
   refresh: () => Promise<void>
+  refreshDashboard: () => Promise<void>
   setTargetQuery: (query: string) => void
   setStreetTurns: (turns: number) => void
   setAutoBuySupplies: (enabled: boolean) => void
@@ -175,7 +186,7 @@ export type PageContext = {
   setCommanderId: (id: number | null) => void
   setStoreQty: React.Dispatch<React.SetStateAction<Record<string, number>>>
   setSellQty: React.Dispatch<React.SetStateAction<Record<'weed' | 'coke', number>>>
-  act: (fn: () => Promise<ActionResult | unknown>) => Promise<void>
+  act: (fn: () => Promise<ActionResult | unknown>, after?: RefreshScope) => Promise<void>
   searchTargets: (event: FormEvent<HTMLFormElement>) => void
   inspectTarget: (playerId: string) => void
   attackTarget: (defenderId: string) => void

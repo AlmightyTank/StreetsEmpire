@@ -340,7 +340,7 @@ function slotPaylinePoints(cells: number[]) {
 
 
 export function CasinoPage(ctx: PageContext) {
-  const { dashboard, busy, refresh, act } = ctx
+  const { dashboard, busy, refresh, refreshDashboard, act } = ctx
   const [board, setBoard] = useState<CasinoBoard | null>(null)
   const [activeKey, setActiveKey] = useState('')
   const [bet, setBet] = useState(10)
@@ -405,10 +405,11 @@ export function CasinoPage(ctx: PageContext) {
     const started = window.performance.now()
     let spin: SlotSpin | null = null
     setStoppedColumns(0)
+    // Nothing is re-read here. The reels are still turning and the balance is the answer.
     await act(async () => {
       spin = await api.spinSlots(active.key, clampedBet, lineCount)
       return spin
-    })
+    }, 'none')
     // Asserted because the assignment happens inside the callback handed to act, which TypeScript's
     // flow analysis does not follow - without this it still reads the variable as its initialiser.
     const settled = spin as SlotSpin | null
@@ -461,7 +462,9 @@ export function CasinoPage(ctx: PageContext) {
       await wait(timing.gap + (column - 1) * timing.ramp + (held ? timing.anticipate : 0))
     }
     setAnticipating(false)
-    await refresh()
+    // A jackpot is the one spin that changes something outside this room - it goes out on the wire -
+    // so that alone is worth the whole screen. Every other spin only moved the money.
+    await (settled.transaction.jackpot ? refresh() : refreshDashboard())
   }
 
   const claimComp = async (rewardKey: string) => {
@@ -470,14 +473,13 @@ export function CasinoPage(ctx: PageContext) {
       const result = await api.claimComp(rewardKey)
       claimed = result
       return result
-    })
+    }, 'dashboard')
     // Same reason the spin path asserts: the assignment happens inside the callback handed to act,
     // which TypeScript's flow analysis does not follow.
     const settled = claimed as ClaimedComp | null
     if (!settled) return
     setCompNote(settled.summary)
     setBoard(settled.board)
-    await refresh()
   }
 
   if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Casino Floor</h2><span>Closed</span></div><p>{loadError}</p></section>
@@ -928,7 +930,7 @@ function PlayingCard({ card, index = 0, flip = false, small = false }: {
  * front of you is the game.
  */
 function BlackjackPanel(ctx: PageContext) {
-  const { dashboard, busy, refresh, act } = ctx
+  const { dashboard, busy, refreshDashboard, act } = ctx
   const [board, setBoard] = useState<BlackjackBoard | null>(null)
   const [tableKey, setTableKey] = useState('')
   const [bet, setBet] = useState(0)
@@ -963,18 +965,19 @@ function BlackjackPanel(ctx: PageContext) {
 
   const run = async (call: () => Promise<BlackjackAction>) => {
     let next: BlackjackAction | null = null
+    // The move comes back with the board, the cash and the turns on it, so the only thing left to
+    // re-read is the header. This is the fastest room in the game to click through.
     await act(async () => {
       const result = await call()
       next = result
       return result
-    })
+    }, 'dashboard')
     const done = next as BlackjackAction | null
     if (done) {
       setBoard(done.board)
       // A live round comes back on the board; a settled one only ever comes back here.
       setFinished(done.round.inPlay ? null : done.round)
     }
-    await refresh()
   }
 
   if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Blackjack</h2><span>Closed</span></div><p>{loadError}</p></section>
@@ -1181,7 +1184,7 @@ function BlackjackPanel(ctx: PageContext) {
  * same name and much better odds.
  */
 function RoulettePanel(ctx: PageContext) {
-  const { dashboard, busy, refresh, act } = ctx
+  const { dashboard, busy, refreshDashboard, act } = ctx
   const [board, setBoard] = useState<RouletteBoard | null>(null)
   const [tableKey, setTableKey] = useState('')
   const [chip, setChip] = useState(0)
@@ -1264,7 +1267,7 @@ function RoulettePanel(ctx: PageContext) {
     setLast(settled)
     setBoard(settled.board)
     setStakes([])
-    await refresh()
+    await refreshDashboard()
   }
 
   if (loadError) return <section className="card p-3"><div className="panel-title"><h2>Roulette</h2><span>Closed</span></div><p>{loadError}</p></section>

@@ -1273,31 +1273,36 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
-// Five square reels do not fit a phone. The column is about 55px wide there, and a reel needs 92 for
-// its face, its label and its padding - so the aspect-ratio was deriving a 92px width from the 92px
-// row and every reel sat overlapping the two beside it, four pixels of the last one hanging off the
-// screen. Square is the thing that gives here, rather than the fifth reel or the label under it: the
-// reels go portrait on a narrow screen and every one of them stays whole and in view.
+// The phone drops the names off the reels.
+//
+// Five names will not fit five columns of a 375px screen. Everything that was done to make them -
+// portrait reels, a two-line label block, a smaller font under 360px, the padding taken off the label
+// - was paying to keep a word in a 55px box, and the word was already on screen twice: the paytable
+// sits directly above the machine and the win list directly below already reads "2 Cash Stack on low
+// dip". The reels were the one place the name was redundant and the one place it cost anything.
+//
+// So the reels are square again at the width of their own column, the symbol grows into the space the
+// label was using, and the machine gives back about a third of its height.
 @include media-breakpoint-down(md) {
-  .slot-reel { aspect-ratio: auto; }
+  .slot-reels {
+    // Nothing under the symbol, so the symbol is the cell. The payline overlay corrects itself by half
+    // this to find a symbol's centre inside a cell, and with no label there is nothing to correct for
+    // - a value left over from the labelled layout would push every line off the symbols by 20px.
+    --slot-label-block: 0px;
 
-  // A 320px screen leaves the reel 42px wide, and 8px of padding on each side spends 16 of them on
-  // nothing - which is what pushed the label past the box it sits in after the font had already been
-  // cut. The face is drawn at its own size, so the padding is the part with room to give.
-  @media (max-width: 359.98px) {
-    .slot-reel { padding: .25rem; }
+    // Bounded below the column so the face never outgrows the box: a column runs about 44px at 320 and
+    // 63px at 412, and the reel keeps a little padding inside that.
+    --slot-face-size: clamp(30px, 10vw, 50px);
   }
 
-  // Going portrait leaves a 55px reel, and the two-word symbols - Crew Crown, Gold Chain, Low-Rider -
-  // no longer fit on the single line the label was built for. They wrapped and the second line was cut
-  // off by the reel overflow, so half the floor read as "Crew C" and "Low-".
-  //
-  // The block gets a second line rather than the label being truncated, because the symbol name is the
-  // whole point of the face above it. line-height has to come off the variable to do that: the two are
-  // the same number by default, which is what pins a one-line label, and a two-line one needs the box
-  // doubled while each line stays where it was. The payline overlay measures itself off the variable
-  // rather than off a constant, so it follows the taller block on its own.
-  .slot-reels { --slot-label-block: 2.5rem; }
+  .slot-reel {
+    // The 92px floor was the height of a face plus a label plus its padding. Without the label the
+    // aspect-ratio in the base rule is free to make the reel square at whatever the column gives it.
+    min-height: 0;
+    padding: .25rem;
+  }
+
+  .slot-reel-label { display: none; }
 }
 
 .slot-reel-window {
@@ -1608,24 +1613,6 @@ input:focus-visible, textarea:focus-visible {
   block-size: var(--slot-label-block);
   text-align: center;
   padding-inline: .25rem;
-
-  // After the rule above rather than beside the block override higher up, because both are one class
-  // deep and the later one wins: stated first, this was quietly losing to the line-height it exists to
-  // replace, and the two-line labels stayed cut off at the same height as before.
-  @include media-breakpoint-down(md) {
-    line-height: 1.25rem;
-
-    // The reel is 37px of usable width on a phone once its border and padding are taken out, and
-    // "Crown" is 43px with this padding on. The word was being shaved by the reel edge, so the
-    // padding goes: centred text in a 55px box does not need indenting away from its own border.
-    padding-inline: 0;
-  }
-
-  // Narrower again on the smallest phones still sold. A 320px screen leaves the reel 42px across, and
-  // "Crown" wants 43 of them at the size above - so the longest symbol on the floor lost its last
-  // letter to the reel edge. A raw query rather than a breakpoint because sm is 576px, and 375 and 360
-  // have the room to keep the larger text.
-  @media (max-width: 359.98px) { font-size: .65rem; }
 }
 
 // A winning line should run through the middle of the symbols it is drawing a

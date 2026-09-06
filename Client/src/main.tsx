@@ -8289,7 +8289,13 @@ function ConfigRow({ entry, draft, locked, onDraft, onSave, onClear }: {
   return <div className={`config-row d-grid gap-2 align-items-center border-top py-2 ${entry.isOverridden ? 'border-primary' : ''}`}>
     <div className="config-copy d-grid gap-1 min-w-0">
       <strong>{entry.path}</strong>
-      <span>{entry.type}{entry.isOverridden ? ' / overridden' : ' / from appsettings'}</span>
+      <span>
+        {entry.type}{entry.isOverridden ? ' / overridden' : ' / from appsettings'}
+        {/* Stated rather than discovered by being refused. These are the settings where a number past
+            the limit breaks something - a line too long for the column, a chance above certainty - so
+            the bound is worth reading before you type over it rather than after. */}
+        {entry.minimum != null && entry.maximum != null && ` / ${entry.minimum} to ${entry.maximum}`}
+      </span>
     </div>
     <input className="form-control" value={draft} onChange={e => onDraft(e.target.value)} />
     <Button className="btn btn-primary btn-sm" blocked={firstReason(

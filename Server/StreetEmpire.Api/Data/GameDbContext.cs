@@ -198,6 +198,10 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
         {
             entity.HasIndex(x => x.Name).IsUnique();
             entity.Property(x => x.Name).HasMaxLength(32);
+            // Every write to a player carries the version it was read at, so two overlapping requests
+            // cannot both spend the same cash. See Player.Version, and StampPlayerVersions below for
+            // what moves it.
+            entity.Property(x => x.Version).IsConcurrencyToken();
             // The rack, and the total across it, are views over the four gun columns rather than columns.
             entity.Ignore(x => x.Armoury);
             entity.Ignore(x => x.Weapons);
@@ -605,7 +609,7 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(x => x.City).HasMaxLength(64);
             entity.Property(x => x.AuthorName).HasMaxLength(32);
-            entity.Property(x => x.Body).HasMaxLength(400);
+            entity.Property(x => x.Body).HasMaxLength(ChatMessage.MaxBodyLength);
             // A line outlives the person who said it: the name is already kept beside it, so losing the
             // author should blank the link rather than delete what they said.
             entity.HasOne(x => x.Author)
@@ -824,5 +828,42 @@ public sealed class GameDbContext(DbContextOptions<GameDbContext> options) : DbC
                 .HasForeignKey(x => x.CombatMissionId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+    }
+
+    // Both entry points, because the game saves through the async one and the tests through both, and
+    // a token that only moves down one of the two paths is worse than no token at all: it would hold
+    // in the code that is exercised and quietly not hold in the code that is not.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampPlayerVersions();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        StampPlayerVersions();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Moves the concurrency token on every player this save is about to change.
+    ///
+    /// EF builds the WHERE from the value the row was read at and the SET from the value now, so
+    /// incrementing here is what makes the update say "and only if nobody has touched this player
+    /// since I read them". Without the increment the token never changes and the check passes for
+    /// everybody, which is a concurrency token in name and a lost update in practice.
+    ///
+    /// Only Modified entities. A player being inserted has nothing to conflict with, and a delete
+    /// already matches on the version it was read at.
+    ///
+    /// A save that throws will have stamped a number that never reached the database, so a caller who
+    /// retries skips an integer. Nothing reads this but the WHERE clause, and the WHERE clause is
+    /// built from the original value, so a gap costs nothing.
+    /// </summary>
+    private void StampPlayerVersions()
+    {
+        foreach (var entry in ChangeTracker.Entries<Player>())
+            if (entry.State == EntityState.Modified)
+                entry.Entity.Version++;
     }
 }

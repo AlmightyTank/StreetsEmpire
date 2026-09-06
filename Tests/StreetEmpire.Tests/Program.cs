@@ -90,6 +90,11 @@ var tests = new (string Name, Action Test)[]
     ("a progressive grows on every wager and pays out whole", CasinoProgressivePaysThePot),
     ("a progressive needs every lane bought", CasinoProgressiveNeedsEveryLane),
     ("a dropped pot starts again from the seed", CasinoProgressiveResetsToSeed),
+    ("the pot pays the meter the board is showing, to the pound", CasinoProgressivePaysWhatTheMeterReads),
+    ("the meter is measured from the last drop and not from the beginning", CasinoProgressiveCountsOnlySinceTheLastDrop),
+    ("the meter asks the database for a range and not for a sift", TheProgressiveReadsARangeOfTheLedger),
+    ("two overlapping requests cannot spend the same money twice", OverlappingWritesToOnePlayerAreRefused),
+    ("a player's version only moves when the player does", ThePlayerVersionMovesOnlyOnAChange),
     ("comps are rated on the wager, win or lose", CompsAreRatedOnTheWager),
     ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
     ("a claimed comp hands over turns, cash and quiet", ACompHandsOverWhatItPromises),
@@ -150,6 +155,7 @@ var tests = new (string Name, Action Test)[]
     ("account lockout blocks banned and suspended players", AccountLockoutBlocksBannedAndSuspended),
     ("wealth stats describe the distribution", WealthStatsDescribeTheDistribution),
     ("option paths discover and write scalar tuning", OptionPathsDiscoverAndWriteScalars),
+    ("a setting with a real limit is held to it, and says what it is", SettingsWithARealLimitAreHeldToIt),
     ("option overrides layer over appsettings values", OptionOverridesLayerOverAppsettings),
     ("anti-farm refuses mismatched fights", AntiFarmRefusesMismatchedFights),
     ("anti-farm decays loot for repeat victories", AntiFarmDecaysRepeatLoot),
@@ -3140,6 +3146,219 @@ static void CasinoProgressiveResetsToSeed()
 
     var rebuilding = cold.BoardAsync(player, default).GetAwaiter().GetResult();
     AssertEqual(1_090L, rebuilding.SlotMachines.Single().Progressive);
+}
+
+/// <summary>
+/// What the winner is handed is what the meter said, exactly.
+///
+/// The house takes a percentage of what has been staked and drops the fraction. That is one rounding
+/// and it belongs to the total, but the pot used to be worked out as the meter so far plus this
+/// spin's slice costed separately - two floors instead of one, which can only ever lose money. Every
+/// stake here is 135, a tenth of which is 13.5, so the two ways of counting disagree on the second
+/// spin and the winner used to be paid a pound less than the board went on to advertise.
+/// </summary>
+static void CasinoProgressivePaysWhatTheMeterReads()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 50, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // A full ticket at 15 a lane: 135 staked, a tenth of which is 13.5 and counts as 13.
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    cold.SpinSlotsAsync(player, "pot", 15, 9, now, default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(1_013L, cold.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive);
+
+    // 270 staked across the two, a tenth of which is 27 exactly. Counted the old way this was 13 + 13.
+    var hot = CreateCasino(db, options, new ScriptedRandom(0.9));
+    var spin = hot.SpinSlotsAsync(player, "pot", 15, 9, now.AddMinutes(1), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(1_027L, spin.JackpotWon);
+    AssertEqual(1_027L, db.CasinoJackpotDrops.Single().Amount);
+}
+
+/// <summary>
+/// A dropped pot is a line under the ledger, and the meter starts again below it.
+///
+/// The reset itself is covered elsewhere. What this pins is that the wagers on the far side of a drop
+/// stay on the far side of it once play carries on - the reading has to be the seed plus the stakes
+/// since, and never the seed plus everything the machine has ever taken.
+/// </summary>
+static void CasinoProgressiveCountsOnlySinceTheLastDrop()
+{
+    var options = ProgressiveOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 100_000, Turns = 500, Hideout = new Hideout() };
+    var now = new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc);
+
+    // A thousand through the machine before anybody wins anything.
+    var cold = CreateCasino(db, options, new ScriptedRandom(0.0));
+    for (var i = 0; i < 10; i++)
+    {
+        cold.SpinSlotsAsync(player, "pot", 100, 1, now.AddMinutes(i), default).GetAwaiter().GetResult();
+        db.SaveChanges();
+    }
+    AssertEqual(1_100L, cold.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive);
+
+    // Somebody takes it.
+    CreateCasino(db, options, new ScriptedRandom(0.9))
+        .SpinSlotsAsync(player, "pot", 100, 9, now.AddMinutes(20), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    AssertEqual(1, db.CasinoJackpotDrops.Count());
+
+    // Two hundred more through it afterwards. The meter reads the seed and those two hundred alone -
+    // not the two thousand the machine has taken in its life.
+    var after = CreateCasino(db, options, new ScriptedRandom(0.0));
+    after.SpinSlotsAsync(player, "pot", 100, 1, now.AddMinutes(30), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+    after.SpinSlotsAsync(player, "pot", 100, 1, now.AddMinutes(31), default).GetAwaiter().GetResult();
+    db.SaveChanges();
+
+    AssertEqual(1_020L, after.BoardAsync(player, default).GetAwaiter().GetResult().SlotMachines.Single().Progressive);
+}
+
+/// <summary>
+/// The shape of the query behind the meter, which is the whole reason it was rewritten.
+///
+/// The total was right before and is right now; what was wrong was the cost of arriving at it. The
+/// old reading asked, for every wager the machine had ever taken, whether a jackpot had dropped at or
+/// after it - a correlated subquery per row, so opening the casino page re-read the season's play,
+/// and so did every pull. The cut-off is one timestamp, read once, and comparing against it is a
+/// range on the index the table already carries.
+///
+/// Asserted on the SQL rather than on a stopwatch, because the difference is a query plan and a
+/// timing test would only notice once the table was large enough to hurt.
+/// </summary>
+static void TheProgressiveReadsARangeOfTheLedger()
+{
+    var options = new DbContextOptionsBuilder<GameDbContext>()
+        .UseNpgsql("Host=localhost;Database=translation_only;Username=none")
+        .Options;
+    using var db = new GameDbContext(options);
+    var casino = CreateCasino(db, ProgressiveOptions(), new ScriptedRandom(0.0));
+    var machine = ProgressiveOptions().Casino.SlotMachines.Single();
+
+    var sinceADrop = casino.WagersSince(machine, new DateTime(2026, 9, 4, 1, 0, 0, DateTimeKind.Utc)).ToQueryString();
+
+    // The drop is a value compared against, not a table joined to and asked about per row.
+    AssertTrue(!sinceADrop.Contains("CasinoJackpotDrops", StringComparison.OrdinalIgnoreCase),
+        $"the meter should not touch the drops table per row:\n{sinceADrop}");
+    AssertTrue(!sinceADrop.Contains("EXISTS", StringComparison.OrdinalIgnoreCase),
+        $"the meter should not sift the ledger with a subquery:\n{sinceADrop}");
+
+    // Read off the WHERE alone. Every column of the row is in the SELECT either way, so the whole
+    // statement cannot tell the two readings apart - only what the database is asked to filter on can.
+    AssertTrue(WhereClauseOf(sinceADrop).Contains("CreatedAtUtc", StringComparison.OrdinalIgnoreCase),
+        $"the meter should bound the ledger by time:\n{sinceADrop}");
+
+    // A machine that has never dropped has nothing to bound by and must not invent one.
+    var never = casino.WagersSince(machine, null).ToQueryString();
+    AssertTrue(!WhereClauseOf(never).Contains("CreatedAtUtc", StringComparison.OrdinalIgnoreCase),
+        $"a machine that has never paid out counts everything:\n{never}");
+
+    // And the cut-off itself is one grouped read the database does the counting for. If this fell back
+    // to the client it would load every jackpot ever dropped to find the newest one per machine, which
+    // is the same fault in a smaller table.
+    var lines = casino.LastDropQuery().ToQueryString();
+    AssertTrue(lines.Contains("MAX(", StringComparison.OrdinalIgnoreCase),
+        $"the newest drop per machine is an aggregate in the database:\n{lines}");
+    AssertTrue(lines.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase),
+        $"the drops are grouped by machine in the database:\n{lines}");
+
+    static string WhereClauseOf(string sql)
+    {
+        var where = sql.LastIndexOf("WHERE", StringComparison.OrdinalIgnoreCase);
+        return where < 0 ? string.Empty : sql[where..];
+    }
+}
+
+/// <summary>
+/// Two requests in flight at once cannot both spend the same balance.
+///
+/// This is the shape of nearly every rule in the game - read the player, check they can afford it,
+/// take it, save - and each request gets its own DbContext and its own copy of the row. Both used to
+/// read the same cash, both agree the purchase was affordable, and both write, with the second
+/// writing a total computed from money the first had already spent. The row carries a version now, so
+/// the write built on the stale read is refused rather than applied.
+///
+/// Two contexts over one database is exactly what two overlapping requests are.
+/// </summary>
+static void OverlappingWritesToOnePlayerAreRefused()
+{
+    var name = Guid.NewGuid().ToString();
+    var options = new DbContextOptionsBuilder<GameDbContext>().UseInMemoryDatabase(name).Options;
+    var playerId = Guid.NewGuid();
+
+    using (var seed = new GameDbContext(options))
+    {
+        seed.Players.Add(new Player { Id = playerId, Name = "Spender", Cash = 100, Hideout = new Hideout() });
+        seed.SaveChanges();
+    }
+
+    using var first = new GameDbContext(options);
+    using var second = new GameDbContext(options);
+
+    // Both read the same hundred pounds before either of them has spent it.
+    var asFirstSawThem = first.Players.Single(x => x.Id == playerId);
+    var asSecondSawThem = second.Players.Single(x => x.Id == playerId);
+    AssertEqual(100L, asFirstSawThem.Cash);
+    AssertEqual(100L, asSecondSawThem.Cash);
+
+    asFirstSawThem.Cash -= 100;
+    first.SaveChanges();
+
+    asSecondSawThem.Cash -= 100;
+    try
+    {
+        second.SaveChanges();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        // The refusal is the point, and so is what it left behind: one purchase, one hundred pounds.
+        using var after = new GameDbContext(options);
+        AssertEqual(0L, after.Players.Single(x => x.Id == playerId).Cash);
+        return;
+    }
+
+    throw new InvalidOperationException(
+        "The second write was accepted, so both requests spent the same hundred pounds.");
+}
+
+/// <summary>
+/// The token moves on a change and stays put otherwise.
+///
+/// Both halves are load-bearing. If it never moved, the version in every WHERE clause would match
+/// forever and the check above would pass for everybody - a concurrency token in name and a lost
+/// update in practice. If it moved on a save that changed nothing about the player, ordinary traffic
+/// would collide with itself and refuse work that never conflicted with anything.
+/// </summary>
+static void ThePlayerVersionMovesOnlyOnAChange()
+{
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+
+    var player = new Player { Id = Guid.NewGuid(), Name = "Ledger", Cash = 10, Hideout = new Hideout() };
+    db.Players.Add(player);
+    db.SaveChanges();
+
+    // Nothing to conflict with on the way in.
+    AssertEqual(0, player.Version);
+
+    player.Cash += 5;
+    db.SaveChanges();
+    AssertEqual(1, player.Version);
+
+    // A save about somebody else entirely leaves this player's version where it was.
+    db.ActionLogs.Add(new GameActionLog { PlayerId = player.Id, Action = "TEST", Summary = "Nothing about the player." });
+    db.SaveChanges();
+    AssertEqual(1, player.Version);
 }
 
 /// <summary>
@@ -9439,6 +9658,57 @@ static void OptionPathsDiscoverAndWriteScalars()
     // The value written is the value read back.
     AssertEqual("7", GameOptionPaths.Read(options, "Combat.AttackTurnCost"));
     AssertTrue(GameOptionPaths.Read(options, "Nope.NotReal") is null, "reading an unknown path yields null");
+}
+
+/// <summary>
+/// A setting with a real limit is held to it, and says what the limit is.
+///
+/// The admin config editor checked that a value parsed and stopped there, which is not the same thing
+/// as checking it is usable. The settings that matter are the ones where a number past the limit does
+/// not tune anything - it breaks something, some time later, looking nothing like its cause: a chat
+/// line longer than the column it is stored in becomes a 500 on an ordinary message, and a chance
+/// above certainty is rolled against directly.
+/// </summary>
+static void SettingsWithARealLimitAreHeldToIt()
+{
+    var options = new GameOptions();
+    var byPath = GameOptionPaths.Describe(options).ToDictionary(x => x.Path, StringComparer.OrdinalIgnoreCase);
+
+    // The line length the game allows cannot pass the column it is written to. The two numbers are
+    // one constant, so this cannot drift the way two hand-copied limits would.
+    AssertEqual(ChatMessage.MaxBodyLength.ToString(), byPath["Chat.MaxLength"].Maximum);
+    AssertTrue(!GameOptionPaths.TryApply(options, "Chat.MaxLength", "5000", out var tooLong),
+        "a message length past the column is rejected");
+    AssertTrue(tooLong is not null && tooLong.Contains(ChatMessage.MaxBodyLength.ToString()),
+        $"the refusal names the limit, not just that there is one: {tooLong}");
+    AssertEqual(280, options.Chat.MaxLength);
+
+    // Right up to the column is fine. A limit that refused its own boundary would be off by one.
+    AssertTrue(GameOptionPaths.TryApply(options, "Chat.MaxLength", ChatMessage.MaxBodyLength.ToString(), out _),
+        "the column itself is a legal setting");
+
+    // Chances are rolled against a number between zero and one, without a clamp where they are read.
+    AssertTrue(!GameOptionPaths.TryApply(options, "Casino.FreeSpins.ChancePerSpin", "2", out _),
+        "a chance above certainty is rejected");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Combat.Round.LossRollChance", "1.5", out _),
+        "a fight cannot take somebody more often than always");
+    AssertTrue(GameOptionPaths.TryApply(options, "Casino.FreeSpins.ChancePerSpin", "0.5", out _),
+        "an ordinary chance is still accepted");
+    AssertEqual(0.5, options.Casino.FreeSpins.ChancePerSpin);
+
+    // A share of every wager, so a hundred is all of it and there is no more to give.
+    AssertTrue(!GameOptionPaths.TryApply(options, "Casino.Jackpot.ContributionPercent", "150", out _),
+        "the pot cannot be fed more than the wager that feeds it");
+    AssertTrue(GameOptionPaths.TryApply(options, "Casino.Jackpot.ContributionPercent", "100", out _),
+        "all of it is allowed, absurd as it would be");
+
+    // Everything else is unchanged: a setting without a declared limit still only has to be a number
+    // that is not negative, and must not start reporting bounds it does not have.
+    AssertTrue(byPath["Combat.AttackTurnCost"].Minimum is null && byPath["Combat.AttackTurnCost"].Maximum is null,
+        "a setting with no real limit reports none");
+    AssertTrue(!GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "-1", out _), "negatives are still rejected");
+    AssertTrue(GameOptionPaths.TryApply(options, "Combat.AttackTurnCost", "99999", out _),
+        "a setting with no ceiling still has none");
 }
 
 static void OptionOverridesLayerOverAppsettings()

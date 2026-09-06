@@ -159,7 +159,13 @@ public sealed class CasinoService(
         // included, the way a real meter ticks up as you play it.
         // A spin on the house puts nothing into the meter, because nothing went in. It can still take
         // it: the pot is everybody's money and the machine does not ask whose turn paid for the pull.
-        var pot = await PotAsync(machine, ct) + (onTheHouse ? 0 : ContributionFrom(totalBet));
+        //
+        // The stake joins the running total before the percentage is taken, rather than being turned
+        // into its own contribution and added on. ContributionFrom floors, and flooring twice can only
+        // ever lose money, so the old way paid a pot up to a pound short of what the very same rows
+        // say the meter stood at - visible as the board reading higher a second after somebody won it.
+        var wagered = await WageredSinceLastDropAsync(machine, ct);
+        var pot = SeedFor(machine) + ContributionFrom(wagered + (onTheHouse ? 0 : totalBet));
 
         var repBefore = player.CasinoRep;
         var compsBefore = player.CasinoComps;
@@ -273,27 +279,76 @@ public sealed class CasinoService(
     /// </summary>
     public async Task<IReadOnlyDictionary<string, long>> PotsAsync(CancellationToken ct)
     {
-        var wagered = await db.CasinoTransactions.AsNoTracking()
-            .Where(x => x.GameType == SlotsGame && !x.IsFreeSpin)
-            .Where(x => !db.CasinoJackpotDrops.Any(drop => drop.MachineKey == x.MachineKey && drop.WonAtUtc >= x.CreatedAtUtc))
-            .GroupBy(x => x.MachineKey)
-            .Select(g => new { Machine = g.Key, Total = g.Sum(x => x.BetAmount) })
-            .ToListAsync(ct);
+        // One small query for the lines, then one indexed range per machine. The floor is a handful
+        // of machines out of configuration rather than a number that grows with play, so this is a
+        // fixed count of cheap reads; what it replaces was a single query that got slower every spin.
+        var lines = await LastDropsAsync(ct);
+        var pots = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var machine in _options.Casino.SlotMachines)
+            pots[machine.Key] = SeedFor(machine)
+                + ContributionFrom(await WageredSinceAsync(machine, lines.GetValueOrDefault(machine.Key), ct));
 
-        var contributions = wagered.ToDictionary(x => x.Machine, x => ContributionFrom(x.Total), StringComparer.OrdinalIgnoreCase);
-        return _options.Casino.SlotMachines.ToDictionary(
-            machine => machine.Key,
-            machine => SeedFor(machine) + contributions.GetValueOrDefault(machine.Key),
-            StringComparer.OrdinalIgnoreCase);
+        return pots;
     }
 
     private async Task<long> PotAsync(SlotMachineOptions machine, CancellationToken ct)
+        => SeedFor(machine) + ContributionFrom(await WageredSinceLastDropAsync(machine, ct));
+
+    /// <summary>
+    /// When each machine last paid its progressive out, for the machines that ever have.
+    ///
+    /// One row per jackpot ever dropped, so this reads a table that stays small no matter how long
+    /// the season runs.
+    /// </summary>
+    private async Task<Dictionary<string, DateTime>> LastDropsAsync(CancellationToken ct)
     {
-        var wagered = await db.CasinoTransactions.AsNoTracking()
-            .Where(x => x.GameType == SlotsGame && x.MachineKey == machine.Key && !x.IsFreeSpin)
-            .Where(x => !db.CasinoJackpotDrops.Any(drop => drop.MachineKey == machine.Key && drop.WonAtUtc >= x.CreatedAtUtc))
-            .SumAsync(x => (long?)x.BetAmount, ct) ?? 0;
-        return SeedFor(machine) + ContributionFrom(wagered);
+        var lines = await LastDropQuery().ToListAsync(ct);
+        return lines.ToDictionary(x => x.Machine, x => x.Last, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Internal, like <see cref="WagersSince"/>, so a test can read the SQL. The aggregate has to be
+    /// worked out by the database - a group-by that fell back to the client would load every jackpot
+    /// ever dropped to answer a question about the newest one per machine.
+    /// </summary>
+    internal IQueryable<MachineDrop> LastDropQuery()
+        => db.CasinoJackpotDrops.AsNoTracking()
+            .GroupBy(x => x.MachineKey)
+            .Select(g => new MachineDrop(g.Key, g.Max(x => x.WonAtUtc)));
+
+    private async Task<long> WageredSinceLastDropAsync(SlotMachineOptions machine, CancellationToken ct)
+    {
+        var lastDrop = await db.CasinoJackpotDrops.AsNoTracking()
+            .Where(x => x.MachineKey == machine.Key)
+            .MaxAsync(x => (DateTime?)x.WonAtUtc, ct);
+        return await WageredSinceAsync(machine, lastDrop, ct);
+    }
+
+    /// <summary>
+    /// What has gone through one machine since it last paid its progressive out, before the house's
+    /// percentage is taken off it.
+    ///
+    /// The cut-off is read first and then compared, rather than asked about per row. This used to be
+    /// a correlated "no drop happened at or after this spin" on every transaction, which says the
+    /// same thing and makes the database prove it once for every row it has ever written - a full
+    /// scan of the season's play, on every pull and every time anybody opened the casino page. A
+    /// timestamp to compare against turns it into a range on the index the table already carries.
+    /// </summary>
+    private async Task<long> WageredSinceAsync(SlotMachineOptions machine, DateTime? lastDrop, CancellationToken ct)
+        => await WagersSince(machine, lastDrop).SumAsync(x => (long?)x.BetAmount, ct) ?? 0;
+
+    /// <summary>
+    /// The rows the meter is the sum of. Internal so a test can read the SQL this becomes, because
+    /// the property that matters here is not the total - it is that the database is asked for a range
+    /// off an index rather than made to sift the season a row at a time.
+    /// </summary>
+    internal IQueryable<CasinoTransaction> WagersSince(SlotMachineOptions machine, DateTime? lastDrop)
+    {
+        var wagers = db.CasinoTransactions.AsNoTracking()
+            .Where(x => x.GameType == SlotsGame && x.MachineKey == machine.Key && !x.IsFreeSpin);
+
+        // A machine that has never dropped counts everything it has ever taken.
+        return lastDrop is { } since ? wagers.Where(x => x.CreatedAtUtc > since) : wagers;
     }
 
     public CasinoTransactionResponse ToResponse(CasinoTransaction transaction)
@@ -739,6 +794,9 @@ public sealed record CasinoSpin(
     int FreeSpinsLeft);
 
 public sealed record CompClaim(CompRewardOptions Reward, int TurnsGranted, long CashPaid, double HeatCleared, string Summary);
+
+/// <summary>When one machine last paid its progressive out. The line the meter is measured from.</summary>
+internal sealed record MachineDrop(string Machine, DateTime Last);
 
 internal sealed record SlotScore(long Payout, int WinningPaylines);
 

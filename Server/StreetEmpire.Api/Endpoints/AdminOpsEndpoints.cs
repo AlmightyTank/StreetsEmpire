@@ -388,7 +388,9 @@ internal static class AdminOpsEndpoints
                     x.Type,
                     x.CurrentValue,
                     active.TryGetValue(x.Path, out var value) ? value : null,
-                    active.ContainsKey(x.Path)))
+                    active.ContainsKey(x.Path),
+                    x.Minimum,
+                    x.Maximum))
                 .ToList();
 
             return Results.Ok(new AdminConfigResponse(overrides.Version, active.Count, settings));

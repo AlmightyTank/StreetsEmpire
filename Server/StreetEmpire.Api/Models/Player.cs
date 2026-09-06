@@ -452,6 +452,24 @@ public sealed class Player : IStash
     /// <summary>Named pimps, active and fallen. <see cref="Pimps"/> counts the active ones.</summary>
     public List<Pimp> Crew { get; set; } = [];
 
+    /// <summary>
+    /// Optimistic concurrency token, in the same spirit as <see cref="BetaKey.Version"/> and for a
+    /// much larger reason.
+    ///
+    /// Nearly every rule in this game is written as read the player, check they can afford it, take
+    /// it, save. Two requests that overlap each get their own DbContext and their own copy of this
+    /// row, so both read the same cash, both agree the purchase is affordable, and both write - and
+    /// the second write is computed from a balance that no longer exists. The money comes off once
+    /// and the goods arrive twice. Double-clicking will not do it; two requests genuinely in flight
+    /// together will, and the casino was the worst of it, where two winning spins could each read the
+    /// same progressive meter and walk off with the whole of it.
+    ///
+    /// Stamped in <see cref="Data.GameDbContext.SaveChangesAsync(bool, CancellationToken)"/> rather
+    /// than at the hundred-odd places that spend something, because a rule that has to be remembered
+    /// at every call site is a rule that holds until somebody adds the hundred-and-first.
+    /// </summary>
+    public int Version { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<GameActionLog> ActionLogs { get; set; } = [];
     public List<CombatLog> AttacksMade { get; set; } = [];

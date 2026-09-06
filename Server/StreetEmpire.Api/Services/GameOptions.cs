@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using StreetEmpire.Api.Models;
 
 namespace StreetEmpire.Api.Services;
@@ -332,6 +333,12 @@ public sealed class CombatRoundOptions
 
     public double CrewLossRate { get; set; } = 0.06;
     public double WeaponLossRate { get; set; } = 0.04;
+
+    /// <summary>
+    /// Whether a round of a fight takes anybody, as a fraction of one. Rolled against directly, so
+    /// one is the ceiling: above it every round of every fight costs somebody.
+    /// </summary>
+    [Range(0, 1)]
     public double LossRollChance { get; set; } = 0.55;
 }
 
@@ -2564,7 +2571,13 @@ public sealed class CasinoFreeSpinOptions
     /// </summary>
     public bool Enabled { get; set; }
 
-    /// <summary>The chance a paid pull ends with the house owing you some, as a fraction of one.</summary>
+    /// <summary>
+    /// The chance a paid pull ends with the house owing you some, as a fraction of one.
+    ///
+    /// Rolled against directly rather than clamped where it is read, so one is genuinely the ceiling:
+    /// above it every pull would owe another and the machine would never stop paying for itself.
+    /// </summary>
+    [Range(0, 1)]
     public double ChancePerSpin { get; set; } = 0.02;
 
     /// <summary>How many are owed when it happens.</summary>
@@ -2586,7 +2599,11 @@ public sealed class CasinoJackpotOptions
     /// The share of every wager that feeds the pot, as a percentage. It comes out of the return the
     /// paytable would otherwise have paid and goes back to the floor in one lump, so the money the
     /// house holds does not move - only how lumpy the giving back is.
+    ///
+    /// A percentage of the wager, so a hundred is all of it. Past that the meter would grow faster
+    /// than the money going into it and the floor would pay out more than it ever took.
     /// </summary>
+    [Range(0, 100)]
     public double ContributionPercent { get; set; } = 1.0;
 
     /// <summary>Which symbol counts towards the pot. Matched against the symbol keys on the reels.</summary>
@@ -3374,7 +3391,13 @@ public sealed class ChatOptions
     /// <summary>
     /// Characters in one message. Long enough to say something, short enough that nobody can push the
     /// rest of the room off the screen with a single paste.
+    ///
+    /// The ceiling is the database column and not a matter of taste. Raised above it, this setting
+    /// would let a player write a line the game accepts and the database refuses - a 500 on an
+    /// ordinary message, arriving some time after the change that caused it and looking nothing like
+    /// its cause.
     /// </summary>
+    [Range(1, ChatMessage.MaxBodyLength)]
     public int MaxLength { get; set; } = 280;
 
     /// <summary>

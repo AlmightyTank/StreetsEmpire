@@ -2499,7 +2499,11 @@ public sealed record AdminConfigEntryResponse(
     string Type,
     string EffectiveValue,
     string? OverrideValue,
-    bool IsOverridden);
+    bool IsOverridden,
+    // Null for the settings that only have to be a number. Stated for the ones with a real limit, so
+    // the page can print it beside the box rather than let an admin find it by being refused.
+    string? Minimum,
+    string? Maximum);
 
 public sealed record AdminConfigResponse(
     int Version,

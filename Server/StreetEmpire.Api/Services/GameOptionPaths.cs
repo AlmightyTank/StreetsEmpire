@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Reflection;
 
@@ -42,8 +43,20 @@ public static class GameOptionPaths
             return false;
         }
 
+        // A declared range wins where there is one, because it is the specific rule and the sign check
+        // below is only the general one. See BoundsOf for what these are and why they are not merely
+        // taste: past them a setting stops being a tuning value and starts being a fault.
+        if (BoundsOf(property) is { } bounds && converted is not bool)
+        {
+            var number = Convert.ToDouble(converted, CultureInfo.InvariantCulture);
+            if (number < bounds.Minimum || number > bounds.Maximum)
+            {
+                error = $"'{path}' has to be between {Format(bounds.Minimum)} and {Format(bounds.Maximum)}.";
+                return false;
+            }
+        }
         // Negative tuning values are almost always a typo and several formulas assume non-negative.
-        if (converted is int i && i < 0 || converted is long l && l < 0 || converted is double d && d < 0)
+        else if (converted is int i && i < 0 || converted is long l && l < 0 || converted is double d && d < 0)
         {
             error = $"'{path}' cannot be negative.";
             return false;
@@ -72,7 +85,15 @@ public static class GameOptionPaths
             if (IsScalar(property.PropertyType))
             {
                 if (property.CanWrite)
-                    found.Add(new GameOptionPath(path, FriendlyType(property.PropertyType), Format(property.GetValue(instance))));
+                {
+                    var bounds = BoundsOf(property);
+                    found.Add(new GameOptionPath(
+                        path,
+                        FriendlyType(property.PropertyType),
+                        Format(property.GetValue(instance)),
+                        bounds is null ? null : Format(bounds.Value.Minimum),
+                        bounds is null ? null : Format(bounds.Value.Maximum)));
+                }
                 continue;
             }
 
@@ -156,6 +177,33 @@ public static class GameOptionPaths
             _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
         };
 
+    /// <summary>
+    /// The limits declared on a setting, or null for one that only has to be a number.
+    ///
+    /// Read off a [Range] on the property rather than kept in a table here, so the limit lives beside
+    /// the value it constrains and is read by whoever is next to change the default. A table in this
+    /// file would be a second list to keep in step with the first, and the failure it exists to
+    /// prevent is exactly the failure of two lists that disagree.
+    ///
+    /// These are not opinions about balance. They are the points past which a setting breaks
+    /// something: a length the database column cannot hold, a share of one rolled against directly, a
+    /// percentage that would pay out more than it took.
+    /// </summary>
+    private static (double Minimum, double Maximum)? BoundsOf(PropertyInfo property)
+    {
+        var range = property.GetCustomAttribute<RangeAttribute>();
+        if (range is null)
+            return null;
+
+        return (Convert.ToDouble(range.Minimum, CultureInfo.InvariantCulture),
+                Convert.ToDouble(range.Maximum, CultureInfo.InvariantCulture));
+    }
+
+    private static string Format(double value)
+        => value == Math.Floor(value) && Math.Abs(value) < 1e15
+            ? ((long)value).ToString(CultureInfo.InvariantCulture)
+            : value.ToString(CultureInfo.InvariantCulture);
+
     private static string FriendlyType(Type type)
         => type == typeof(bool) ? "boolean" : type == typeof(double) ? "decimal" : "whole number";
 
@@ -170,4 +218,14 @@ public static class GameOptionPaths
            && type.Namespace == typeof(GameOptions).Namespace;
 }
 
-public sealed record GameOptionPath(string Path, string Type, string CurrentValue);
+/// <summary>
+/// One editable setting. <paramref name="Minimum"/> and <paramref name="Maximum"/> are null for the
+/// settings that only have to be a number, and stated for the ones with a real limit so the admin
+/// page can say so rather than leaving it to be discovered by being refused.
+/// </summary>
+public sealed record GameOptionPath(
+    string Path,
+    string Type,
+    string CurrentValue,
+    string? Minimum = null,
+    string? Maximum = null);

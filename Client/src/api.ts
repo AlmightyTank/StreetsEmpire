@@ -1806,16 +1806,52 @@ export type BotAutomationStatus = {
  * again in eight seconds. Both used to arrive as the same bare Error.
  */
 export class RequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly retryAfterSeconds?: number) {
     super(message)
     this.name = 'RequestError'
   }
 
-  /** The server understood and said no, rather than never having answered at all. */
-  get refused() { return this.status >= 400 && this.status < 500 && this.status !== 401 }
+  /**
+   * The server understood and said no for good, rather than never having answered at all.
+   *
+   * 409 and 429 are deliberately not refusals even though they are both 4xx. A 409 is two of your own
+   * requests having landed on the same second - the server wrote nothing and the same call will work
+   * on the next tick - and a 429 is being asked to come back shortly. Treating either as final is how
+   * a window that was only ever busy gets closed as though it had been deleted.
+   */
+  get refused() {
+    return this.status >= 400 && this.status < 500
+      && this.status !== 401 && this.status !== 409 && this.status !== 429
+  }
+}
+
+/*
+  When the server has asked us to come back later, and when that stops being true.
+
+  The game is played by polling - missions every five seconds, chat every eight, a fistful of calls
+  after every action - so being rate limited is the one failure that gets worse by being ignored. The
+  timers do not know they were refused, so they fire again on schedule, and a client that answers
+  "slow down" by asking again at the same rate is the reason it stays limited. The server has been
+  saying exactly how long to wait since the limiter was written; nothing was reading it.
+
+  Module-level rather than per-caller because the limit is per player, not per screen: every timer in
+  the app is behind one bucket on the server, so there is no point in each of them finding out
+  separately. One of them takes the 429 and the rest wait with it.
+*/
+let quietUntilMs = 0
+
+/** Seconds still owed to the server, or 0 when nothing is. */
+function quietFor(): number {
+  return Math.max(0, Math.ceil((quietUntilMs - Date.now()) / 1000))
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  // Refused here rather than sent and refused there. The answer would be the same 429, and asking
+  // anyway is precisely the behaviour the limiter is trying to stop.
+  const owed = quietFor()
+  if (owed > 0)
+    throw new RequestError(`Too many requests. Try again in ${owed}s.`, 429, owed)
+
   const uploadingForm = options?.body instanceof FormData
   const response = await fetch(url, {
     credentials: 'include',
@@ -1831,7 +1867,17 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       const body = await response.json()
       if (body?.error) message = body.error
     } catch { /* empty */ }
-    throw new RequestError(message, response.status)
+
+    let retryAfter: number | undefined
+    if (response.status === 429) {
+      // Capped both ways. A header that never arrives still has to back something off, or the loop
+      // carries on at full speed; a header that arrives absurd must not lock the app up for an hour.
+      const asked = Number(response.headers.get('Retry-After'))
+      retryAfter = Number.isFinite(asked) && asked > 0 ? Math.min(asked, 60) : 5
+      quietUntilMs = Date.now() + retryAfter * 1000
+    }
+
+    throw new RequestError(message, response.status, retryAfter)
   }
 
   if (response.status === 204) return undefined as T
@@ -2974,6 +3020,9 @@ export type AdminConfigEntry = {
   effectiveValue: string
   overrideValue?: string | null
   isOverridden: boolean
+  /** Set only where the setting has a real limit - a database column, a share of one, a percentage. */
+  minimum?: string | null
+  maximum?: string | null
 }
 
 export type AdminConfig = {

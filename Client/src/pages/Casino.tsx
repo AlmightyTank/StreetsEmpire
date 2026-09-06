@@ -668,7 +668,7 @@ export function CasinoPage(ctx: PageContext) {
           {board.paylines.slice(0, lineCount).map(line => line.name).join(', ')}
         </small>
       </div>
-      <div className="control-row">
+      <div className="control-row bet-row">
         <label className="field">Bet / lane
           <input
             className="form-control"

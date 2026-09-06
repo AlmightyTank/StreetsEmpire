@@ -682,6 +682,27 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
+// The stake box and its two shortcuts, which control-row would otherwise stack into three
+// full-width rows on a phone. A bet is four characters; Min and Max are a word each. Putting them
+// on one line gives the machine back two rows of height on the screen with the least of it, and
+// none of the three gets harder to hit for being beside the others.
+//
+// After .control-row rather than inside it: both selectors are two deep, so the later one is what
+// undoes the full-width labels the block above sets below md.
+.bet-row {
+  @include media-breakpoint-down(md) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: end;
+
+    > label, > label.grow { inline-size: auto; }
+
+    // Spin stays a row of its own, full width. It is the button that costs money, and it should
+    // not sit at the same size as the two that only fill a box in.
+    > :last-child { grid-column: 1 / -1; }
+  }
+}
+
 // The controls on a territory card sit at 78px, which fits a garrison size and
 // nothing else - except the pimp select, which carries a name.
 .territory-actions > label { width: 78px; }

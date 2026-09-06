@@ -456,8 +456,21 @@ input:focus-visible, textarea:focus-visible {
 
 .room-copy {
   display: grid;
+  // Both halves are needed and neither is enough alone. The track has to be allowed to shrink, and
+  // the lines inside it have to be allowed to shrink with it - a grid item stops at its longest
+  // unbreakable run otherwise, and one long job description then widens the column, the card and the
+  // page under it. It showed up first on a 320px screen, but nothing about it is a width: a wordier
+  // line does the same thing on any phone.
+  grid-template-columns: minmax(0, 1fr);
   gap: $spacer * .25;
   min-width: 0;
+
+  > * { min-width: 0; }
+
+  // Bootstrap badges never wrap, which is right for a badge holding a count and wrong for these:
+  // the reason a job exists is a whole sentence - "Promised it to Third Ward Corner and came up
+  // short" - and nowrap made it one 312px line that no amount of shrinking above could answer.
+  .badge { white-space: normal; }
 }
 
 // A player in the target list. Rank, name, what they are worth - with the town
@@ -1105,9 +1118,25 @@ input:focus-visible, textarea:focus-visible {
 // A labelled group of controls under a rule, with a caption underneath.
 .control-block {
   display: grid;
+  // The block sits on a nine-column minimum otherwise, because the lane group inside it will not go
+  // narrower than its nine buttons - and on a 320px screen that pushed the whole page sideways.
+  grid-template-columns: minmax(0, 1fr);
   gap: $spacer * .25;
   border-top: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
   padding-top: $spacer * .5;
+
+  // Nine lanes will not sit in one row on a phone at a size anybody can hit - they came out 35px
+  // wide. A grid rather than a wrapped flex row, because wrapping stretches whatever lands on the
+  // last row: nine across a flex wrap gave seven slivers and two 156px buttons. Three by three is
+  // even, and every lane ends up bigger than the finger using it.
+  @include media-breakpoint-down(sm) {
+    .btn-group {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+
+      > .btn { margin: 0; }
+    }
+  }
 }
 
 // A button that is a label with its price underneath, rather than a word.
@@ -1166,6 +1195,13 @@ input:focus-visible, textarea:focus-visible {
 .slot-reel {
   position: relative;
   z-index: 1;
+  // A grid item will not shrink below its own content unless it is told to, and an aspect-ratio
+  // paired with a min-height turns that floor into a width: the 92px below became a 92px minimum
+  // *width* through the 1/1 ratio, so on a 375px phone five reels sat 92px wide in 55px columns,
+  // overlapping each other and pushing the page four pixels past the viewport. The reels go
+  // portrait on a narrow screen now instead of square, and stay square from the width up where the
+  // column is wider than the floor.
+  min-width: 0;
   min-height: 92px;
   aspect-ratio: 1 / 1;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -1192,6 +1228,33 @@ input:focus-visible, textarea:focus-visible {
     background: rgba($gold, .1) !important;
     box-shadow: inset 0 0 0 1px rgba($gold, .18), 0 0 .75rem rgba($gold, .16);
   }
+}
+
+// Five square reels do not fit a phone. The column is about 55px wide there, and a reel needs 92 for
+// its face, its label and its padding - so the aspect-ratio was deriving a 92px width from the 92px
+// row and every reel sat overlapping the two beside it, four pixels of the last one hanging off the
+// screen. Square is the thing that gives here, rather than the fifth reel or the label under it: the
+// reels go portrait on a narrow screen and every one of them stays whole and in view.
+@include media-breakpoint-down(md) {
+  .slot-reel { aspect-ratio: auto; }
+
+  // A 320px screen leaves the reel 42px wide, and 8px of padding on each side spends 16 of them on
+  // nothing - which is what pushed the label past the box it sits in after the font had already been
+  // cut. The face is drawn at its own size, so the padding is the part with room to give.
+  @media (max-width: 359.98px) {
+    .slot-reel { padding: .25rem; }
+  }
+
+  // Going portrait leaves a 55px reel, and the two-word symbols - Crew Crown, Gold Chain, Low-Rider -
+  // no longer fit on the single line the label was built for. They wrapped and the second line was cut
+  // off by the reel overflow, so half the floor read as "Crew C" and "Low-".
+  //
+  // The block gets a second line rather than the label being truncated, because the symbol name is the
+  // whole point of the face above it. line-height has to come off the variable to do that: the two are
+  // the same number by default, which is what pins a one-line label, and a two-line one needs the box
+  // doubled while each line stays where it was. The payline overlay measures itself off the variable
+  // rather than off a constant, so it follows the taller block on its own.
+  .slot-reels { --slot-label-block: 2.5rem; }
 }
 
 .slot-reel-window {
@@ -1502,6 +1565,24 @@ input:focus-visible, textarea:focus-visible {
   block-size: var(--slot-label-block);
   text-align: center;
   padding-inline: .25rem;
+
+  // After the rule above rather than beside the block override higher up, because both are one class
+  // deep and the later one wins: stated first, this was quietly losing to the line-height it exists to
+  // replace, and the two-line labels stayed cut off at the same height as before.
+  @include media-breakpoint-down(md) {
+    line-height: 1.25rem;
+
+    // The reel is 37px of usable width on a phone once its border and padding are taken out, and
+    // "Crown" is 43px with this padding on. The word was being shaved by the reel edge, so the
+    // padding goes: centred text in a 55px box does not need indenting away from its own border.
+    padding-inline: 0;
+  }
+
+  // Narrower again on the smallest phones still sold. A 320px screen leaves the reel 42px across, and
+  // "Crown" wants 43 of them at the size above - so the longest symbol on the floor lost its last
+  // letter to the reel edge. A raw query rather than a breakpoint because sm is 576px, and 375 and 360
+  // have the room to keep the larger text.
+  @media (max-width: 359.98px) { font-size: .65rem; }
 }
 
 // A winning line should run through the middle of the symbols it is drawing a

@@ -39,4 +39,12 @@ internal sealed record BotTemplate(
     int Coke,
     int HoeCutPercent,
     double HoeHappiness,
-    double ThugHappiness);
+    double ThugHappiness,
+
+    /// <summary>
+    /// The personality to give this rival, or null to let it take one from its name.
+    ///
+    /// Named for the seeds whose whole reason for existing is how they behave: a house dealt a fat
+    /// safe and a rack of pistols is only a target if it also has the temperament to leave both alone.
+    /// </summary>
+    string? Focus = null);

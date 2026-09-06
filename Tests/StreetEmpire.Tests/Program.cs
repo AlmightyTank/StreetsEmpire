@@ -305,6 +305,7 @@ var tests = new (string Name, Action Test)[]
     ("the Discord alert sweep says what the bell says, once", TheDiscordAlertSweepSaysWhatTheBellSaysOnce),
     ("news the game only ever worked out is written down", NewsTheGameOnlyEverWorkedOutIsWrittenDown),
     ("the labs report once an absence, not once an hour", TheLabsReportOncePerAbsence),
+    ("a fat rival stays fat and badly armed", AFatRivalStaysFatAndBadlyArmed),
     ("game updates show what is visible and still new", GameUpdatesShowWhatIsVisibleAndStillNew),
     ("announcement delivery settings use saved webhooks before config", AnnouncementDeliverySettingsUseSavedWebhooksBeforeConfig),
     ("announcement delivery sends Discord embeds", AnnouncementDeliverySendsDiscordEmbeds),
@@ -3676,14 +3677,10 @@ static GameOptions ProgressiveOptions()
 static void EveryRivalPricesATripAgainstItsCrew()
 {
     var focuses = Enum.GetValues<BotBrainFocus>();
-    var seen = new Dictionary<BotBrainFocus, BotBrain>();
-    // The focus is hashed out of the player's identity rather than chosen, so the personalities are
-    // collected by walking names until every one of them has turned up.
-    for (var i = 0; seen.Count < focuses.Length && i < 500; i++)
-    {
-        var brain = BotBrain.For(new Player { Name = $"Rival {i}" });
-        seen[brain.Focus] = brain;
-    }
+    // Asked for by name rather than hunted for by hash. Most personalities are dealt from a hash of
+    // the rival's identity, but not all of them are reachable that way any more - the hoarder is a
+    // part written for seeded rivals - and every one of them still has to price a trip sanely.
+    var seen = focuses.ToDictionary(x => x, x => BotBrain.For(BotWithFocus(x)));
 
     AssertEqual(focuses.Length, seen.Count);
     foreach (var (focus, brain) in seen)
@@ -5423,6 +5420,50 @@ static void DiscordDmsAreOptInAndSentByTheBot()
     AssertTrue(!DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "your own machinery is not DMd unasked");
     gameQuiet.DiscordMachineNotices = true;
     AssertTrue(DiscordDirectMessages.WantsGameDm(gameQuiet, AlertCategory.Always), "and can be opted into");
+}
+
+static void AFatRivalStaysFatAndBadlyArmed()
+{
+    var options = Resolve(new GameOptions());
+
+    // The seeded targets exist, carry their money where a raid can reach it, and ask for the
+    // temperament that keeps it there.
+    var fat = BotSeeding.BotTemplates().Where(x => x.Focus == nameof(BotBrainFocus.CashHoarder)).ToList();
+    AssertTrue(fat.Count >= 3, "there should be a fat rival to hit in more than one town");
+    AssertEqual(fat.Count, fat.Select(x => x.City).Distinct().Count());
+    foreach (var one in fat)
+    {
+        AssertTrue(one.CashBonus > one.BankCash * 20,
+            $"{one.Name} should carry its take in the front room, not the safe");
+        AssertTrue(one.Weapons < one.Thugs * 2, $"{one.Name} should have a pistol each and nothing spare");
+        AssertTrue(one.Hoes >= 90 && one.Thugs >= 40, $"{one.Name} should be a grown house");
+    }
+
+    // The character is taken from the account when one was asked for, and from the name when it was
+    // not - so a seeded target cannot be dealt the sense to bank it.
+    var asked = new PlayerAccount { Username = "ai_fat", IsBot = true, BotFocus = nameof(BotBrainFocus.CashHoarder) };
+    var (fatBot, _) = AccountSetup.NewPlayer(asked, "Fat One", "Houston", options, CreateRoster(options));
+    var hoarder = BotBrain.For(fatBot);
+    AssertEqual(BotBrainFocus.CashHoarder, hoarder.Focus);
+    AssertTrue(hoarder.StaysOnPistols, "the whole point is that it never buys a better gun");
+    AssertTrue(hoarder.DepositTripWorthMultiple > 40, "and will not walk a pile to the bank for less than a fortune");
+
+    // Nobody else is dealt it, however the hash falls. Checked across many identities rather than one,
+    // because the draw is a hash and one sample proves nothing.
+    var dealt = new HashSet<BotBrainFocus>();
+    for (var i = 0; i < 400; i++)
+    {
+        var account = new PlayerAccount { Username = $"ai_{i}", IsBot = true };
+        var (bot, _) = AccountSetup.NewPlayer(account, $"Rival {i}", "Chicago", options, CreateRoster(options));
+        dealt.Add(BotBrain.For(bot).Focus);
+    }
+    AssertTrue(!dealt.Contains(BotBrainFocus.CashHoarder),
+        "the hoarder is a part written for seeds, not one anybody falls into");
+    AssertTrue(dealt.Count >= 6, "and the rest of the field is still varied");
+
+    // Which also means adding it changed nobody: the draw is over the same seven it always was.
+    AssertTrue(!dealt.Contains(BotBrainFocus.CashHoarder) && dealt.All(x => x != BotBrainFocus.CashHoarder),
+        "existing rivals keep the character their name already gave them");
 }
 
 static void TheLabsReportOncePerAbsence()
@@ -11458,16 +11499,28 @@ static void BotSchedulesLookLikePeople()
 /// <summary>Finds a rival whose seed lands on the wanted personality, so a focus can be tested directly.</summary>
 static BotSchedule ScheduleFor(BotBrainFocus focus, BotAutomationOptions options)
 {
-    for (var seed = 0; seed < 4096; seed++)
-    {
-        var id = new Guid(seed, 0, 0, [0, 0, 0, 0, 0, 0, 0, 0]);
-        var bot = new Player { Id = id, AccountId = id, Name = $"Seed {seed}" };
-        var brain = BotBrain.For(bot);
-        if (brain.Focus == focus)
-            return BotSchedule.For(bot, brain, options);
-    }
+    var bot = BotWithFocus(focus);
+    return BotSchedule.For(bot, BotBrain.For(bot), options);
+}
 
-    throw new InvalidOperationException($"No seed produced a {focus} rival.");
+/// <summary>
+/// A rival wearing the personality asked for.
+///
+/// This used to walk thousands of seeds until a hash happened to land on the wanted one, which worked
+/// while every personality was reachable that way. One is not: a rival can now be given its character
+/// outright, and the hoarder is only ever given. Asking is also simply the better test - it says which
+/// personality is under examination instead of leaving it to a search.
+/// </summary>
+static Player BotWithFocus(BotBrainFocus focus)
+{
+    var id = new Guid((int)focus + 1, 0, 0, [0, 0, 0, 0, 0, 0, 0, 0]);
+    return new Player
+    {
+        Id = id,
+        AccountId = id,
+        Name = $"{focus} Rival",
+        Account = new PlayerAccount { Username = $"ai_{focus}", IsBot = true, BotFocus = focus.ToString() }
+    };
 }
 
 /// <summary>

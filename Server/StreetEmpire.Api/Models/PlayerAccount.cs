@@ -227,6 +227,16 @@ public sealed class PlayerAccount
     public bool IsBotPaused { get; set; }
 
     /// <summary>
+    /// The personality a seeded rival was given on purpose, or null to take one from its name.
+    ///
+    /// Every rival used to draw its character from a hash of its own identity, which is right for a
+    /// field that only has to be varied. It is not enough when a particular kind of rival is the point:
+    /// a house seeded fat and badly armed is only a target if it also has the temperament to stay that
+    /// way, and a hash would have handed two thirds of them the sense to bank it.
+    /// </summary>
+    public string? BotFocus { get; set; }
+
+    /// <summary>
     /// When this rival's current sitting runs out. Null between sessions, which is what "logged off"
     /// means here. Kept on the account rather than the player because it is a fact about the thing
     /// driving the player, not about the empire.

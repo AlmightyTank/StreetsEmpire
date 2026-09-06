@@ -26,6 +26,7 @@ internal static class BotSeeding
             Username = template.Username,
             PasswordHash = "BOT_ACCOUNT_DISABLED",
             IsBot = true,
+            BotFocus = template.Focus,
             CreatedAtUtc = createdAtUtc
         };
 
@@ -104,6 +105,22 @@ internal static class BotSeeding
 
         new("ai_gulf_marchetti", "Gulf Marchetti", "Houston", 19_000, 8_000, 58, 3, 30, 13, 230, 185, 16, 175, 56, 40, 94, 89),
         new("ai_derrick_salas", "Derrick Salas", "Houston", 7_000, 16_000, 19, 5, 17, 21, 135, 270, 27, 38, 14, 30, 80, 96),
-        new("ai_bayou_kincaid", "Bayou Kincaid", "Houston", 11_500, 9_500, 33, 3, 23, 12, 175, 170, 15, 100, 34, 35, 88, 90)
+        new("ai_bayou_kincaid", "Bayou Kincaid", "Houston", 11_500, 9_500, 33, 3, 23, 12, 175, 170, 15, 100, 34, 35, 88, 90),
+
+        // The fat ones. Grown houses carrying their whole take in the front room, armed with a pistol
+        // each and no standing to buy anything better - a raid worth planning rather than another
+        // rival of the same size as the last.
+        //
+        // What makes them targets is the split rather than the total: the cash bonus is where the
+        // money sits and the bank figure is nominal, so almost all of it is reachable. A crew that
+        // large would ordinarily have bought its way up the gun rack long ago, and the Cash Hoarder
+        // temperament is what stops it - without that a hash would have made two of these three sensible
+        // within a week and there would be nothing left to hit.
+        new("ai_sunday_ledbetter", "Sunday Ledbetter", "Atlanta", 185_000, 3_000, 90, 4, 96, 44, 420, 380, 46, 240, 88, 30, 74, 71,
+            nameof(BotBrainFocus.CashHoarder)),
+        new("ai_fat_marchetti", "Fat Marchetti", "Las Vegas", 305_000, 4_500, 105, 5, 124, 58, 520, 460, 60, 300, 110, 30, 72, 69,
+            nameof(BotBrainFocus.CashHoarder)),
+        new("ai_gilt_vaughn", "Gilt Vaughn", "Houston", 430_000, 2_500, 120, 6, 148, 72, 640, 540, 74, 355, 132, 25, 70, 67,
+            nameof(BotBrainFocus.CashHoarder))
     ];
 }

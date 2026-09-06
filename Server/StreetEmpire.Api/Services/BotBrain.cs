@@ -76,12 +76,42 @@ internal sealed record BotBrain(
     /// A named pimp is outside this entirely - every personality goes for one, because bail buys back
     /// a specialty and a loyalty history that hiring cannot, and all of them need somebody to command.
     /// </summary>
-    int BailMoraleFloor)
+    int BailMoraleFloor,
+
+    /// <summary>
+    /// Whether this personality never buys past a pistol, however rich it gets.
+    ///
+    /// Everything else reaches for the best gun it can pay for, which is what makes a wealthy rival's
+    /// house genuinely harder to break than a poor one of the same size. The exception exists to break
+    /// that link on purpose: a house that is worth robbing and armed like it is not.
+    /// </summary>
+    bool StaysOnPistols = false)
 {
+    /// <summary>
+    /// The characters a rival can be dealt at random.
+    ///
+    /// Not every value of the enum. The hoarder is a part written for seeded rivals rather than one
+    /// anybody falls into, and putting it in the rotation would have re-dealt every rival already in
+    /// the world - the draw is a hash modulo the number of characters, so adding one changes the
+    /// answer for all of them.
+    /// </summary>
+    private static readonly BotBrainFocus[] Dealt =
+    [
+        BotBrainFocus.BalancedOperator,
+        BotBrainFocus.ResourceManager,
+        BotBrainFocus.BigSpender,
+        BotBrainFocus.MoraleNeglecter,
+        BotBrainFocus.ProductRunner,
+        BotBrainFocus.CrewBuilder,
+        BotBrainFocus.Banker,
+    ];
+
     public static BotBrain For(Player bot)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{bot.AccountId:N}:{bot.Id:N}:{bot.Name}"));
-        var focus = (BotBrainFocus)(bytes[0] % Enum.GetValues<BotBrainFocus>().Length);
+        var focus = Enum.TryParse<BotBrainFocus>(bot.Account?.BotFocus, ignoreCase: true, out var asked)
+            ? asked
+            : Dealt[bytes[0] % Dealt.Length];
         var patience = bytes[1] / 255.0;
         var risk = bytes[2] / 255.0;
         var appetite = bytes[3] / 255.0;
@@ -123,6 +153,19 @@ internal sealed record BotBrain(
                 58, 2, 1, 2, 2.1, 5, 2, 4, 2,
                 0.28, 4_000, 10_000, 0.55, 2, 4, 2, 6, 0.12,
                 14, 55, 3, 13, 0.35, 72),
+            // Fat, slow, and armed like it is still its first week.
+            //
+            // It earns like a grown house and spends like one on everything except the gun rack and the
+            // bank: it will not walk a pile to the safe for less than sixty times the fare, and when it
+            // finally does it leaves most of it behind. The money piles up where a raid can reach it,
+            // which is the whole point of the character.
+            BotBrainFocus.CashHoarder => new BotBrain(
+                "Cash Hoarder", focus, 16 + (int)(patience * 9), 44 + (int)(patience * 12), 0.14, 0.72,
+                1.6, 1.0, 2.2, 3, 0.8, 1.0, 1.3, 2_000, 120, 300,
+                55, 88, 35, 65, 80, 10, 70, 75, 45, 35, 2,
+                65, 0, 0, 0, 4.5, 4, 2, 4, 4,
+                0.45, 6_000, 15_000, 0.6, 3, 5, 3, 7, 0.16,
+                14, 50, 3, 60, 0.2, 62, StaysOnPistols: true),
             BotBrainFocus.Banker => new BotBrain(
                 "Banker", focus, 20 + (int)(patience * 10), 50 + (int)(patience * 14), 0.18, 0.78,
                 1.15, 1.3, 1.7, 3, 0.85, 0.95, 0.55, 2_000, 70, 180,
@@ -268,5 +311,8 @@ internal enum BotBrainFocus
     MoraleNeglecter,
     ProductRunner,
     CrewBuilder,
-    Banker
+    Banker,
+
+    /// <summary>Rich, badly armed, and in no hurry to bank any of it. Seeded rather than dealt.</summary>
+    CashHoarder
 }

@@ -1167,7 +1167,7 @@ public sealed class BotSimulationService(
     /// </summary>
     private string WeaponFor(Player bot, BotBrain brain)
     {
-        if (bot.Weapons < bot.Thugs)
+        if (bot.Weapons < bot.Thugs || brain.StaysOnPistols)
             return WeaponTiers.Pistol;
 
         var spare = Math.Max(0, bot.Cash - CashReserve(bot, brain));
@@ -1193,7 +1193,9 @@ public sealed class BotSimulationService(
     /// </summary>
     private int TryBuyStanding(Player bot, BotBrain brain, DateTime actionTimeUtc)
     {
-        if (bot.Weapons < bot.Thugs || StoreRep.InvestmentReadyAt(bot, actionTimeUtc) is not null)
+        // A rival that will never buy past a pistol has no use for the standing that sells rifles, and
+        // the money it would spend here is the money that makes it worth robbing.
+        if (bot.Weapons < bot.Thugs || brain.StaysOnPistols || StoreRep.InvestmentReadyAt(bot, actionTimeUtc) is not null)
             return 0;
         // Nothing to climb towards: at the top rung the money is better spent on the shop itself.
         if (_options.Store.NextLevelAfter(bot.StoreRep) is null)

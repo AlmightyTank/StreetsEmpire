@@ -314,7 +314,11 @@ input:focus-visible, textarea:focus-visible {
 .tab-bar {
   z-index: 1030;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  // minmax(0, 1fr) rather than a bare 1fr, for the reason the utilities file
+  // gives for the same choice: a bare fraction refuses to go below its content,
+  // so 'Overview' and 'Business' held the bar 35px wider than a 320px phone and
+  // the whole page scrolled sideways to fit them.
+  grid-auto-columns: minmax(0, 1fr);
   background-color: $surface-deep;
   background-image: $surface-rail;
   // Clears the home indicator on a notched phone, costs nothing on one without.
@@ -327,6 +331,13 @@ input:focus-visible, textarea:focus-visible {
     background-color: $surface !important;
     background-image: none !important;
     border-color: transparent;
+    // And the label goes quietly when the track it is in is narrower than the
+    // word, rather than taking the page with it.
+    min-width: 0;
+    padding-inline: $spacer * .25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .btn.bg-primary {
@@ -374,24 +385,66 @@ input:focus-visible, textarea:focus-visible {
   border-bottom: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
 }
 
-// A row of figures that has to survive a 320px screen. The turn clock is the
-// first thing to go, because it is the one whose absence you can work out from
-// the count beside it.
+// A row of figures that has to survive a 320px screen.
+//
+// It did not. Three figures, a chevron and two icon buttons want about 428px and
+// a 390px phone has 358 of them, so every page scrolled sideways by 54 - the
+// same defect this file took off the status strip twice already, arriving a
+// third time through the thing that replaced it.
+//
+// Three things give the room back. The figures shrink and clip rather than
+// standing at their full width and pushing the row wider, which needs min-width
+// on each of them because a flex item will not go below its content otherwise.
+// The gap between them is a gap between three short numbers rather than between
+// paragraphs. And the turn clock goes first on a narrow screen, because it is
+// the one figure whose absence you can work out from the count beside it.
 .status-figures {
   text-decoration: none;
   font-size: .92rem;
   // It is a button so it can be tapped and announced, and a button's own minimum
   // height would make the bar half as tall again for nothing.
   min-height: 0 !important;
+  gap: $spacer * .5 !important;
+  // The backstop. Everything below gives the row room by choice; this is what
+  // stops anything that still does not fit from taking the page sideways with it.
+  overflow: hidden;
 
   strong { font-weight: 600; }
 
-  @media (max-width: 359.98px) {
+  // Each figure can be squeezed, and the one being squeezed says so rather than
+  // spilling into the one beside it.
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  // The chevron is the one thing that must never be the part that is clipped:
+  // it is what says the rest of the numbers are behind this.
+  > .bi { flex: 0 0 auto; }
+
+  @media (max-width: 419.98px) {
     .status-tick { display: none; }
+  }
+
+  // Under 380 the little icons go and the figures stay whole. They are keys to
+  // three numbers that already carry their own units - a dollar sign, a pair of
+  // counts, a word - so they are the cheapest 60px on the row, and cheaper than
+  // clipping 'Hunted' to 'Hunt...' on the screen where heat matters most.
+  @media (max-width: 379.98px) {
+    > span > .bi { display: none; }
   }
 }
 
 .status-heat strong { font-weight: 600; }
+
+// The two handles keep their 44px target and give back the padding around it,
+// which is 32px of a row that has none to spare.
+.status-summary .btn.px-3 {
+  @include media-breakpoint-down(md) {
+    padding-inline: $spacer * .5 !important;
+  }
+}
 
 // Two lines only while the player is away from their hideout, which is the state
 // that decides whether half the buttons on the screen will do anything.

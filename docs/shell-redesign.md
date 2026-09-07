@@ -30,9 +30,12 @@ player opens the game for, are both two taps deep behind a word that means nothi
 
 ## What a phone pays
 
-On an 812px screen, per page: 16px of padding, a 70px page header, roughly 300px of status strip,
-54px of section tabs, a 50px chat dock and a 78px tab bar. Five hundred and sixty-eight pixels of
-furniture, and two hundred and forty-four left for the game.
+On a 390x812 screen, per page: 16px of padding, a 66px page header, 298px of status strip, 44px of
+section tabs, a 61px chat dock and the 53px tab bar. The first card started 473px down, and the strip
+of screen between it and the dock was 225px.
+
+Measured against `3650873`, before any of the work below. After Phase 1 the same card starts at 151px
+and the playable strip is 608px - see the phase list at the end.
 
 **M1 — The status strip is the largest thing on every page, and it is not the page.**
 Eight tiles, two columns, four rows. `_components.scss:381` records that it once ate 415px and that a
@@ -185,11 +188,28 @@ server's `GuidancePages`. Add an id redirect in `route.ts` so shared links survi
   holds at the top of the viewport through a 700px scroll, and the page gains no horizontal overflow
   from the negative margin that takes it out to the padding edge.
 - M2 — the heading is clipped below `md` and the bell moves to the end of the row. Header measured
-  66px before, 44px after, plus the row's own bottom margin halved.
+  66px before, 44px after, plus the row's own bottom margin halved - and zero once Phase 1 moved the
+  bell out of it entirely.
+
+**Phase 1 — the phone shell. Done.**
+
+- M1 — three figures pinned in one 58px line, the other five a tap below them, and the town joining
+  them only while it disagrees with the hideout's (79px then). The bell moves in, which empties the
+  page header on a phone and takes it to zero.
+- M4 — the page's one verb appears along the bottom once the real button has left the screen, and is
+  not there at all while it has not. Street and the slots have one; the shop, the bench and the map
+  are lists of small actions with no single dominant verb, and were left alone.
+- M5 — chat is a sheet on a phone: nothing on screen minimised, the whole screen open, and the log
+  takes 664px where it had 179. `--chat-dock-height` is gone and the page's bottom padding clears one
+  bar rather than two.
+- M6 — Next Moves and the opening ladder lead the home page instead of coming fifth and seventh.
+  Readiness and Inventory arrive shut on a phone.
+
+Measured, at 390x812: the first card moved from 473px down to 151px, and the playable strip from
+225px to 608px - 2.7x. The estimate in the first draft of this document was 244px to 582px, so the
+shape was right and the result is a little better than the arithmetic promised.
 
 **Still to do below.**
-
-**Phase 1 — the phone shell.** M1, M4, M5, M6. This is the 568px to 230px, and the headline win.
 
 **Phase 2 — the map.** Five destinations, the overflow into a top-bar menu, Alliance into War, the
 renames with redirects, and N1 through the copy.

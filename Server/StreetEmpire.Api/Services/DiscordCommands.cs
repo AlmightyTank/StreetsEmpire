@@ -197,6 +197,7 @@ public sealed partial class DiscordGuildIntegration
 
         var name = data.GetProperty("name").GetString()?.Trim().ToLowerInvariant();
         var discordUserId = DiscordUserId(root);
+        await LoadPublicAddressAsync(ct);
         // Named apart from the injected options rather than shadowing them, so a command body below can
         // still reach the bot's own settings - which is how any of them get a link to the game.
         var (sub, commandOptions) = Arguments(data);
@@ -430,7 +431,7 @@ public sealed partial class DiscordGuildIntegration
     {
         var row = LinkRow(("Play Street Empire", null), ("The casino floor", "casino"));
         return row is null
-            ? Say("Street Empire has not been told its own address yet, so there is no link to hand you. An admin can set Discord:PublicUrl.")
+            ? Say("Street Empire has not been told its own address yet, so there is no link to hand you. An admin can set it under Admin -> Discord.")
             : Say("Build your empire on the streets.", row);
     }
 
@@ -1041,6 +1042,27 @@ public sealed partial class DiscordGuildIntegration
         };
     }
 
+    private string? _publicAddress;
+    private bool _publicAddressKnown;
+
+    /// <summary>
+    /// Read where the game lives, once, so the link builders below can stay synchronous.
+    ///
+    /// The address is a stored setting with configuration underneath it, which makes finding it a
+    /// database read - and it is wanted at the bottom of twenty command bodies that have no business
+    /// knowing that. Every entry point that can produce a button calls this first; DeepLink reads what
+    /// it left behind, and falls back to configuration if nobody did.
+    ///
+    /// Public because the alert sweep needs it too: the sweep hands AlertLinkRow around as a plain
+    /// delegate, which cannot go and fetch anything on its own.
+    /// </summary>
+    public async Task LoadPublicAddressAsync(CancellationToken ct)
+    {
+        if (_publicAddressKnown) return;
+        _publicAddress = Effective(await SettingsRowAsync(ct)).PublicUrl;
+        _publicAddressKnown = true;
+    }
+
     /// <summary>
     /// A link into the running game, or null when nobody has said where the game is.
     ///
@@ -1051,7 +1073,7 @@ public sealed partial class DiscordGuildIntegration
     /// </summary>
     private string? DeepLink(string? page = null)
     {
-        var root = options.Value.PublicUrl?.Trim();
+        var root = (_publicAddressKnown ? _publicAddress : options.Value.PublicUrl)?.Trim();
         if (string.IsNullOrWhiteSpace(root)
             || !Uri.TryCreate(root, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))

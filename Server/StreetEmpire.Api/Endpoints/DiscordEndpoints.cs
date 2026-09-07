@@ -74,6 +74,11 @@ internal static class DiscordEndpoints
                     settings.DiscordGuildId = DiscordGuildIntegration.NormalizeSnowflake(request.GuildId);
                     changes.Add("Discord guild id updated");
                 }
+                if (request.PublicUrl is not null)
+                {
+                    settings.DiscordPublicUrl = DiscordGuildIntegration.NormalizePublicUrl(request.PublicUrl);
+                    changes.Add(settings.DiscordPublicUrl is null ? "Discord public address cleared" : "Discord public address updated");
+                }
                 if (request.LinkedRoleId is not null)
                 {
                     settings.DiscordLinkedRoleId = DiscordGuildIntegration.NormalizeSnowflake(request.LinkedRoleId);

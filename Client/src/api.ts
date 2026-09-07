@@ -2946,6 +2946,7 @@ export type DiscordIntegrationSettings = {
   applicationId?: string | null
   guildId?: string | null
   publicKeyConfigured: boolean
+  publicUrl?: string | null
   linkedRoleId?: string | null
   topTenRoleId?: string | null
   crewBossRoleId?: string | null
@@ -3023,6 +3024,7 @@ export const opsApi = {
     applicationId?: string | null
     publicKey?: string | null
     guildId?: string | null
+    publicUrl?: string | null
     linkedRoleId?: string | null
     topTenRoleId?: string | null
     crewBossRoleId?: string | null

@@ -79,6 +79,9 @@ public sealed class DiscordAlertSweep(
             var db = scope.ServiceProvider.GetRequiredService<GameDbContext>();
             var dms = scope.ServiceProvider.GetRequiredService<DiscordDirectMessages>();
             var links = scope.ServiceProvider.GetRequiredService<DiscordGuildIntegration>();
+            // Read the game's address once for the whole pass. AlertLinkRow is handed on below as a
+            // plain delegate and has no way to fetch a setting for itself, so it is primed here.
+            await links.LoadPublicAddressAsync(ct);
             await SweepAsync(db, dms, links.AlertLinkRow, DateTime.UtcNow, ct);
             await AnnounceJackpotAsync(scope.ServiceProvider, db, dms, links, ct);
             await PostCrewReportsAsync(scope.ServiceProvider, db, dms, links, DateTime.UtcNow, ct);

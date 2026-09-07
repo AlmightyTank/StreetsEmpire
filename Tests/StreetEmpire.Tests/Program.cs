@@ -100,6 +100,7 @@ var tests = new (string Name, Action Test)[]
     ("a claimed comp hands over play and nothing else", ACompHandsOverWhatItPromises),
     ("a comped pull opens the room it is for", ACompedPullOpensTheRoomItIsFor),
     ("the cage does not sell a comment in the config", TheCageDoesNotSellACommentInTheConfig),
+    ("the public address is read the way it is pasted", ThePublicAddressIsReadTheWayItIsPasted),
     ("comps reset with the season", CompsResetWithTheSeason),
     ("a season of small wagers adds up to exactly what it should", CompsDoNotDriftOverASeason),
     ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
@@ -2461,6 +2462,25 @@ static void ACompedPullOpensTheRoomItIsFor()
     // by nothing.
     AssertEqual(900L, spin.Transaction.BetAmount);
     AssertEqual(100_000L + spin.Transaction.PayoutAmount, player.Cash);
+}
+
+static void ThePublicAddressIsReadTheWayItIsPasted()
+{
+    // Whatever the admin pastes out of the browser bar, the stored value is a bare origin the link
+    // builder can hang '/#/casino' off without thinking about slashes.
+    AssertEqual("https://streetempire.example", DiscordGuildIntegration.NormalizePublicUrl("https://streetempire.example"));
+    AssertEqual("https://streetempire.example", DiscordGuildIntegration.NormalizePublicUrl("  https://streetempire.example/  "));
+    AssertEqual("http://localhost:5173", DiscordGuildIntegration.NormalizePublicUrl("http://localhost:5173/"));
+
+    // Blank takes the address off rather than failing, which is how a bot pointed at a dead host is
+    // quieted from the admin panel.
+    AssertTrue(DiscordGuildIntegration.NormalizePublicUrl(null) is null, "a missing address clears");
+    AssertTrue(DiscordGuildIntegration.NormalizePublicUrl("   ") is null, "a blank address clears");
+
+    // And anything that would render as a button going nowhere is refused at the panel instead.
+    AssertRuleError(() => DiscordGuildIntegration.NormalizePublicUrl("streetempire.example"), "an address with no scheme is stored");
+    AssertRuleError(() => DiscordGuildIntegration.NormalizePublicUrl("ftp://streetempire.example"), "an address the browser cannot open is stored");
+    AssertRuleError(() => DiscordGuildIntegration.NormalizePublicUrl("javascript:alert(1)"), "a script url is stored as an address");
 }
 
 static void TheCageDoesNotSellACommentInTheConfig()
@@ -6111,6 +6131,7 @@ static void DiscordRoleSyncSelectsCityCrewAndTitleRoles()
         "111111111111111111",
         "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
         "222222222222222222",
+        "https://streetempire.example",
         "100000000000000001",
         "100000000000000002",
         "100000000000000003",
@@ -6463,8 +6484,8 @@ static void DiscordServerCommandsResolveThroughTheApi()
     // /play is the one command with nothing behind it but a link, so with no address configured it has
     // nothing to say - and says that, rather than offering a button into a developer's laptop.
     AssertEqual("https://streetsempire.example/", DiscordResponseButton(service, "play"));
-    AssertTrue(DiscordCommand(unaddressed, "play").Contains("PublicUrl"),
-        "with nowhere to point, /play should name the setting an admin has to fill in");
+    AssertTrue(DiscordCommand(unaddressed, "play").Contains("Admin -> Discord"),
+        "with nowhere to point, /play should name the screen an admin fills the address in on");
 
     // /me is the private front door: it reads out a bank balance, so it must never be a public answer.
     AssertTrue(DiscordGuildIntegration.AnswersEphemerally("me"), "/me reads a bank balance and stays private");

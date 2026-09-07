@@ -36,6 +36,12 @@ public sealed class GameSetting
     /// <summary>Discord public key, used to verify interaction callbacks.</summary>
     public string? DiscordPublicKey { get; set; }
 
+    /// <summary>
+    /// Where the game lives, so the bot's messages can offer a way back into it. Null falls back to
+    /// configuration, and neither one set means the bot writes no link buttons at all.
+    /// </summary>
+    public string? DiscordPublicUrl { get; set; }
+
     /// <summary>The guild where Street Empire roles are managed.</summary>
     public string? DiscordGuildId { get; set; }
 

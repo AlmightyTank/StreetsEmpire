@@ -518,6 +518,7 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
   const [discordPublicKey, setDiscordPublicKey] = useState('')
   const [discordApplicationId, setDiscordApplicationId] = useState('')
   const [discordGuildId, setDiscordGuildId] = useState('')
+  const [discordPublicUrl, setDiscordPublicUrl] = useState('')
   const [discordLinkedRoleId, setDiscordLinkedRoleId] = useState('')
   const [discordTopTenRoleId, setDiscordTopTenRoleId] = useState('')
   const [discordCrewBossRoleId, setDiscordCrewBossRoleId] = useState('')
@@ -555,6 +556,7 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
     setDiscord(next)
     setDiscordApplicationId(next.applicationId ?? '')
     setDiscordGuildId(next.guildId ?? '')
+    setDiscordPublicUrl(next.publicUrl ?? '')
     setDiscordLinkedRoleId(next.linkedRoleId ?? '')
     setDiscordTopTenRoleId(next.topTenRoleId ?? '')
     setDiscordCrewBossRoleId(next.crewBossRoleId ?? '')
@@ -664,6 +666,9 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
         publicKey: discordPublicKey.trim() || null,
         applicationId: discordApplicationId.trim() || null,
         guildId: discordGuildId.trim() || null,
+        // Sent raw rather than nulled-when-blank, like the maps below: an emptied box has to be able
+        // to take the address back off, or a bot left pointing at a dead host cannot be quieted.
+        publicUrl: discordPublicUrl.trim(),
         linkedRoleId: discordLinkedRoleId.trim() || null,
         topTenRoleId: discordTopTenRoleId.trim() || null,
         crewBossRoleId: discordCrewBossRoleId.trim() || null,
@@ -1006,6 +1011,11 @@ function AdminUpdatesPanel({ busy }: { busy: boolean }) {
               <input className="form-control" value={discordGuildId} onChange={event => setDiscordGuildId(event.target.value)} placeholder="123456789012345678" />
             </label>
           </div>
+          <label className="field">
+            Public address
+            <input className="form-control" value={discordPublicUrl} onChange={event => setDiscordPublicUrl(event.target.value)} placeholder="https://streetempire.example" />
+            <small className="form-text">Where players reach the game. Every link button the bot writes is built from this, and it writes none until it is set.</small>
+          </label>
           <label className="field">
             Public key
             <input className="form-control" type="password" value={discordPublicKey} onChange={event => setDiscordPublicKey(event.target.value)} placeholder={discord?.publicKeyConfigured ? 'Paste a replacement public key' : '64-character application public key'} autoComplete="off" />

@@ -33,8 +33,12 @@ public sealed class DiscordIntegrationOptions
     /// address. The OAuth ReturnUrl is the closest thing and it is the wrong answer: that is where a
     /// sign-in is put down, not where the game is, and the two stop agreeing the moment sign-in moves.
     ///
-    /// Blank means the bot writes no buttons at all. A button pointing at somebody else's localhost is
-    /// worse than no button, because it looks like it works.
+    /// The fallback under whatever the admin panel has stored, like the token and the guild id above:
+    /// this is a value the first person to stand the game up needs before they have an admin account
+    /// to type it into, and the one they will want to change later without a deploy.
+    ///
+    /// Blank in both means the bot writes no buttons at all. A button pointing at somebody else's
+    /// localhost is worse than no button, because it looks like it works.
     /// </summary>
     public string PublicUrl { get; set; } = string.Empty;
 
@@ -125,6 +129,7 @@ public sealed partial class DiscordGuildIntegration(
             effective.ApplicationId,
             effective.GuildId,
             !string.IsNullOrWhiteSpace(effective.PublicKey),
+            effective.PublicUrl,
             effective.LinkedRoleId,
             effective.TopTenRoleId,
             effective.CrewBossRoleId,
@@ -703,6 +708,7 @@ public sealed partial class DiscordGuildIntegration(
             First(row.DiscordApplicationId, fallback.ApplicationId),
             First(row.DiscordPublicKey, fallback.PublicKey),
             First(row.DiscordGuildId, fallback.GuildId),
+            First(row.DiscordPublicUrl, fallback.PublicUrl),
             First(row.DiscordLinkedRoleId, fallback.LinkedRoleId),
             First(row.DiscordTopTenRoleId, fallback.TopTenRoleId),
             First(row.DiscordCrewBossRoleId, fallback.CrewBossRoleId),
@@ -722,6 +728,7 @@ public sealed partial class DiscordGuildIntegration(
         string? ApplicationId,
         string? PublicKey,
         string? GuildId,
+        string? PublicUrl,
         string? LinkedRoleId,
         string? TopTenRoleId,
         string? CrewBossRoleId,

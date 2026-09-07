@@ -34,6 +34,25 @@ public sealed partial class DiscordGuildIntegration
         return trimmed.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// The address the game answers on, as a bare origin the bot can hang a path off.
+    ///
+    /// Refused rather than repaired when it is not an absolute http(s) address, because the failure
+    /// this is guarding against is silent: a bad address still renders as a button, and a button that
+    /// goes nowhere is worse than no button at all. The trailing slash comes off here so the link
+    /// builder never has to decide whether it is looking at one.
+    /// </summary>
+    public static string? NormalizePublicUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim().TrimEnd('/');
+        if (trimmed.Length is 0 or > 256
+            || !Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            throw new GameRuleException("The public address must be the full address of the game, like https://streetempire.example.");
+        return trimmed;
+    }
+
     public static string? NormalizeBotToken(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;

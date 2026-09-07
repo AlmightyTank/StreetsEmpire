@@ -140,19 +140,33 @@ rail on a desktop. A player who learns one does not know the other.
 
 | | |
 | --- | --- |
-| **Home** | alerts · next moves · ladder |
-| **Streets** | shift · supplies · bank |
+| **Streets** | alerts · next moves · shift · supplies · bank |
 | **Empire** | crew · hideout · bench |
 | **Trade** | shop · flea · runs · travel |
 | **War** | targets · map · missions · alliance |
 
-Everything else — Casino, Seasons, Updates, Account, Admin, Logout — moves to a menu in the top bar,
-grouped under headings, so the bottom bar is the loop and nothing else. Travel joins Trade because a
-trip is a purchase priced in turns and fare. Alliance joins War because wars, pacts, assist calls and
-the thug pool are combat, and it gives those nine panels the tabs they have always needed.
+Everything else — Casino, Seasons, Updates, Account, Admin, Logout — stays behind More, which stays
+in the bottom bar. Travel joins Trade because a trip is a purchase priced in turns and fare. Alliance
+joins War because wars, pacts, assist calls and the thug pool are combat, and it gives those nine
+panels the tabs they have always needed.
 
-Home earns its slot only if it stops being a lobby and becomes the answer to "what needs me". If it
-cannot be cut to that, fold it into Streets and give the fifth slot back to Alliance.
+### Revised after measuring: a phone tab bar holds five labels
+
+The first draft of this section moved the overflow to a menu in the top bar and kept five slots for
+the game. Both halves of that turn out not to fit. Measured against the shipped shell at 430, 390,
+360 and 320px:
+
+- **A third icon in the status bar overflows the page.** The row already carries three figures and two
+  handles; one more pushes it 6px past a 390px screen and 34px past a 320px one. The top right is also
+  the hardest corner of a phone to reach, which is the worst place for the only route to six
+  destinations when the bar it came from is the easiest.
+- **Six labelled slots do not fit either.** At 390px "Streets" and "Empire" ellipsize; dropping the
+  label to 12px rescues 390 and still fails at 360.
+
+Five slots, one of which must be More, leaves four for the game. So the recommendation is to fold
+**Home into Streets** — alerts, Next Moves and the ladder become the top of the page a session starts
+on — and the bar reads **Streets · Empire · Trade · War · More**. That keeps the names, keeps More
+under a thumb, and still gets War out of the sheet, which is what this section is for.
 
 A bar that reorders itself under the player's thumb is worse than one that never moves, so: badges,
 not shuffling. War carries a dot when a strike is inbound or an assist is called; Home carries the
@@ -194,7 +208,7 @@ server's `GuidancePages`. Add an id redirect in `route.ts` so shared links survi
 **Phase 1 — the phone shell. Done.**
 
 - M1 — three figures pinned in one 58px line, the other five a tap below them, and the town joining
-  them only while it disagrees with the hideout's (79px then). The bell moves in, which empties the
+  them only while it disagrees with the hideout's (95px then). The bell moves in, which empties the
   page header on a phone and takes it to zero.
 - M4 — the page's one verb appears along the bottom once the real button has left the screen, and is
   not there at all while it has not. Street and the slots have one; the shop, the bench and the map
@@ -211,8 +225,8 @@ shape was right and the result is a little better than the arithmetic promised.
 
 **Still to do below.**
 
-**Phase 2 — the map.** Five destinations, the overflow into a top-bar menu, Alliance into War, the
-renames with redirects, and N1 through the copy.
+**Phase 2 — the map.** Five destinations with More among them, the sheet behind it grouped under
+headings, Alliance into War, the renames with redirects, and N1 through the copy.
 
 **Phase 3 — the wide shell.** D3 (the context column), D1 (icons in the rail), D4 (two grammars),
 D7 (the palette), D6 (de-duplication).

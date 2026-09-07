@@ -464,7 +464,7 @@ function AccountProfilePanel({ account, dashboard, busy, run, fail, onTab }: Acc
           <ProfileBadgeStrip badges={account.profileBadges ?? []} />
         </div>
       </div>
-      <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
+      <div className="tnum d-grid gtc-2 gtc-md-4 gap-2 mb-3">
         <AdminMetric label="Player name" value={account.playerName} />
         <AdminMetric label="Username" value={account.username} />
         <AdminMetric label="Ways in" value={`${open.length} of 2`} />

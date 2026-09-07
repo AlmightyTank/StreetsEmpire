@@ -258,31 +258,24 @@ input:focus-visible, textarea:focus-visible {
   @include media-breakpoint-up(md) { position: static; }
 }
 
-// On a phone the plate gives up its border and padding - two right-aligned lines
-// read perfectly well without a box drawn round them - and the page title takes
-// the squeeze, because a truncated page name is still legible and a truncated
-// player name is not.
+// On a phone the plate goes entirely, rather than being squeezed thinner.
+//
+// It used to keep 124px and the page title took the difference, on the theory
+// that a clipped page name is still legible - which held for 'Overview' and not
+// for 'Raids & Ma...' or the caption above it reading 'The clock and the recor'.
+// The price was worth paying for something the screen said only once. It does
+// not: the city and the rank each have a tile of their own two rows below, and a
+// player's own name is the one fact on the page they were never going to need
+// looking up. Everything the plate carried survives it.
 .player-plate {
-  min-width: 0;
-  border: 0 !important;
-  background: none !important;
-  padding: 0 !important;
-
-  strong, span {
-    max-width: 124px;
-    text-align: right;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  display: none !important;
 
   @include media-breakpoint-up(md) {
+    display: grid !important;
     min-width: 220px;
     border: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color) !important;
     background: var(--#{$prefix}tertiary-bg) !important;
     padding: $spacer * .5 !important;
-
-    strong, span { max-width: none; }
   }
 }
 
@@ -398,6 +391,33 @@ input:focus-visible, textarea:focus-visible {
 .stat {
   min-width: 0;
   @include media-breakpoint-up(md) { min-width: 138px; }
+}
+
+// The same eight facts on a phone, in two thirds of the height.
+//
+// The strip was 415px of an 812px screen: more than half the phone spent on a
+// readout before a single thing you could act on. None of that was the numbers -
+// it was a 1rem box padding eight times over, and a gap between three lines that
+// only needs to separate them. What is cut here is space, and what is bought is
+// the top of the page underneath.
+@include media-breakpoint-down(md) {
+  .stat {
+    padding: .45rem .6rem !important;
+    gap: .1rem !important;
+
+    .eyebrow { font-size: .72rem; line-height: 1.25; }
+    > strong { font-size: 1.05rem; }
+
+    // And the detail line wraps instead of being cut off mid-word. Every page of
+    // the game was showing '6 heat, nobody loo...' in the corner of the Heat tile,
+    // because a truncation that fits on a desktop column still has to fit here.
+    > small {
+      white-space: normal;
+      overflow: visible;
+      font-size: .72rem;
+      line-height: 1.3;
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -960,6 +980,28 @@ input:focus-visible, textarea:focus-visible {
 
 @include media-breakpoint-down(md) {
   .alert-bell { position: static !important; }
+
+  // What a thumb has to hit.
+  //
+  // A checkbox is sized off the font by default, which came out at 14px on the
+  // shop rows and 16px on the street - a target smaller than the finger aiming
+  // at it, next to other targets. Nothing about these layouts needed them that
+  // small; they were just never asked about. The switch grows with them so it
+  // still reads as a switch rather than a wide checkbox.
+  .form-check-input {
+    min-width: 1.25rem;
+    min-height: 1.25rem;
+  }
+
+  .form-switch .form-check-input { min-width: 2.5rem; }
+
+  // A disclosure is a control too, and 'What Sidewalk Slots pays' was a 24px one.
+  summary { padding-block: .35rem; }
+
+  // A badge inherits its size from whatever it sits in, and inside a <small> that
+  // bottomed out at 10.5px - which is under the size anything on a phone should
+  // be asked to be read at, whatever it says.
+  .badge { font-size: max(.72rem, .75em); }
 }
 
 // The count on the bell sits on its shoulder rather than beside it, so the

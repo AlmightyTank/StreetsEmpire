@@ -768,18 +768,24 @@ export function CasinoPage(ctx: PageContext) {
         ? <p className="text-body-tertiary mb-0">No spins yet.</p>
         : <div className="table-responsive">
             <table className="table table-sm game-table align-middle mb-0">
-              <thead><tr><th>Machine</th><th>Grid</th><th>Lines</th><th>Bet</th><th>Payout</th><th>Pot</th><th>Net</th><th>When</th></tr></thead>
+              {/* Four of the eight columns stand down on a phone. The table was 542px wide inside a
+                  309px card, so the ledger could only be read by dragging it sideways past the edge of
+                  the screen - and what came back first was the grid picture and the pot, neither of
+                  which is why anybody opens a ledger. What stays is the question it answers: which
+                  machine, what it cost, what came back, when. Payout goes because Net already says it
+                  against the bet beside it. */}
+              <thead><tr><th>Machine</th><th className="d-none d-md-table-cell">Grid</th><th className="d-none d-md-table-cell">Lines</th><th>Bet</th><th className="d-none d-md-table-cell">Payout</th><th className="d-none d-md-table-cell">Pot</th><th>Net</th><th>When</th></tr></thead>
               <tbody>
                 {board.recent.map(entry => <tr key={entry.id}>
                   <td>{entry.machineName}{entry.jackpotAmount > 0
                     ? <span className="badge text-bg-warning ms-2">Pot</span>
                     : entry.jackpot ? <span className="badge text-bg-primary ms-2">Top</span> : null}
                     {entry.isFreeSpin && <span className="badge text-bg-secondary ms-2">Free</span>}</td>
-                  <td><SlotMiniGrid symbols={entry.symbols} wins={entry.wins} /></td>
-                  <td>{entry.wins.length}/{entry.paylines}</td>
+                  <td className="d-none d-md-table-cell"><SlotMiniGrid symbols={entry.symbols} wins={entry.wins} /></td>
+                  <td className="d-none d-md-table-cell">{entry.wins.length}/{entry.paylines}</td>
                   <td className={entry.isFreeSpin ? 'text-body-tertiary' : undefined}>{money.format(entry.betAmount)}</td>
-                  <td>{money.format(entry.payoutAmount)}</td>
-                  <td className={entry.jackpotAmount > 0 ? 'text-warning' : 'text-body-tertiary'}>
+                  <td className="d-none d-md-table-cell">{money.format(entry.payoutAmount)}</td>
+                  <td className={`d-none d-md-table-cell ${entry.jackpotAmount > 0 ? 'text-warning' : 'text-body-tertiary'}`}>
                     {entry.jackpotAmount > 0 ? money.format(entry.jackpotAmount) : '-'}
                   </td>
                   <td className={entry.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(entry.netResult)}</td>
@@ -1189,16 +1195,19 @@ function BlackjackPanel(ctx: PageContext) {
         ? <p className="text-body-tertiary mb-0">No hands yet.</p>
         : <div className="table-responsive">
             <table className="table table-sm game-table align-middle mb-0">
-              <thead><tr><th>Table</th><th>You</th><th>Dealer</th><th>Result</th><th>Bet</th><th>Net</th><th>When</th></tr></thead>
+              {/* Three columns stand down on a phone, and Result is the third of them: a hand that
+                  went your way is already a green Net and one that did not is already a red one, so
+                  the word for it was the widest thing on the row saying the least. */}
+              <thead><tr><th className="d-none d-md-table-cell">Table</th><th>You</th><th className="d-none d-md-table-cell">Dealer</th><th className="d-none d-md-table-cell">Result</th><th>Bet</th><th>Net</th><th>When</th></tr></thead>
               <tbody>
                 {board.recent.map(row => <tr key={row.id}>
-                  <td>{row.tableName}</td>
+                  <td className="d-none d-md-table-cell">{row.tableName}</td>
                   <td><span className="d-grid gap-1">{row.hands.map((h, hi) => <span className="d-inline-flex gap-1 align-items-center" key={hi}>
                     {h.cards.map((c, i) => <PlayingCard card={c} small key={i} />)}
                     <span className="text-body-tertiary ms-1">{h.best}</span>
                   </span>)}</span></td>
-                  <td><span className="d-inline-flex gap-1 align-items-center">{row.dealerCards.map((c, i) => <PlayingCard card={c} small key={i} />)}<span className="text-body-tertiary ms-1">{row.dealerBest}</span></span></td>
-                  <td>{row.status.replace('_', ' ')}</td>
+                  <td className="d-none d-md-table-cell"><span className="d-inline-flex gap-1 align-items-center">{row.dealerCards.map((c, i) => <PlayingCard card={c} small key={i} />)}<span className="text-body-tertiary ms-1">{row.dealerBest}</span></span></td>
+                  <td className="d-none d-md-table-cell">{row.status.replace('_', ' ')}</td>
                   <td>{money.format(row.bet)}</td>
                   <td className={row.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(row.netResult)}</td>
                   <td>{new Date(row.settledAtUtc).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
@@ -1454,16 +1463,16 @@ function RoulettePanel(ctx: PageContext) {
         ? <p className="text-body-tertiary mb-0">No spins yet.</p>
         : <div className="table-responsive">
             <table className="table table-sm game-table align-middle mb-0">
-              <thead><tr><th>Table</th><th>Pocket</th><th>Bets</th><th>Staked</th><th>Payout</th><th>Net</th><th>When</th></tr></thead>
+              <thead><tr><th className="d-none d-md-table-cell">Table</th><th>Pocket</th><th className="d-none d-md-table-cell">Bets</th><th>Staked</th><th className="d-none d-md-table-cell">Payout</th><th>Net</th><th>When</th></tr></thead>
               <tbody>
                 {board.recent.map(row => <tr key={row.id}>
-                  <td>{row.tableName}</td>
+                  <td className="d-none d-md-table-cell">{row.tableName}</td>
                   <td><span className={`roulette-pocket is-small is-${row.colour}`}>{row.pocket}</span></td>
-                  <td title={row.bets.map(b => `${b.label} ${money.format(b.amount)}`).join(', ')}>
+                  <td className="d-none d-md-table-cell" title={row.bets.map(b => `${b.label} ${money.format(b.amount)}`).join(', ')}>
                     {row.bets.filter(b => b.payout > 0).length}/{row.bets.length}
                   </td>
                   <td>{money.format(row.staked)}</td>
-                  <td>{money.format(row.payoutAmount)}</td>
+                  <td className="d-none d-md-table-cell">{money.format(row.payoutAmount)}</td>
                   <td className={row.netResult >= 0 ? 'text-success' : 'text-danger'}>{signedMoney(row.netResult)}</td>
                   <td>{new Date(row.createdAtUtc).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</td>
                 </tr>)}

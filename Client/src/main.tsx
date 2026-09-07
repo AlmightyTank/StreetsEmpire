@@ -2138,7 +2138,7 @@ function OverviewPage(ctx: PageContext) {
       <section className="card p-3 hero-panel d-grid align-content-between">
         <span className="eyebrow">Empire Snapshot</span>
         <h2 className="fs-1 my-2 mb-3">{dashboard.name}</h2>
-        <div className="tnum d-grid gtc-1 gtc-md-3 gap-2">
+        <div className="tnum d-grid gtc-2 gtc-md-3 gap-2">
           <AdminMetric label="Net worth" value={money.format(dashboard.netWorth)} />
           <AdminMetric label="Crew" value={number.format(totalCrew)} />
           <AdminMetric label="Turns" value={`${dashboard.turns}/${dashboard.maxTurns}`} />
@@ -2567,7 +2567,7 @@ function CrewCorePage(ctx: PageContext) {
         <CrewCard name="Hoes" count={dashboard.hoes} cap={dashboard.hideout.maxHoes} desc={`${dashboard.hoeHappiness.toFixed(0)}% morale / ${dashboard.hoeCutPercent}% cut`} tone={moraleTone(dashboard.hoeHappiness)} trend={<MoraleArrow trend={dashboard.moraleTrend} crew="hoe" />} />
         <CrewCard name="Thugs" count={dashboard.thugs} cap={dashboard.hideout.maxThugs} desc={`${dashboard.thugHappiness.toFixed(0)}% morale / ${weaponCoverage.toFixed(0)}% armed`} tone={moraleTone(dashboard.thugHappiness)} trend={<MoraleArrow trend={dashboard.moraleTrend} crew="thug" />} />
       </div>
-      <div className="d-grid gtc-1 gtc-md-5 gap-2 mt-3">
+      <div className="d-grid gtc-2 gtc-md-5 gap-2 mt-3">
         <AdminMetric label="Free pimps" value={number.format(combatCrew.availablePimps)} />
         <AdminMetric label="Free thugs" value={number.format(combatCrew.availableThugs)} />
         <AdminMetric label="Free weapons" value={number.format(combatCrew.availableWeapons)} />
@@ -2729,7 +2729,7 @@ function HideoutPage(ctx: PageContext) {
         goods the store cannot take are left in the street. What you are carrying is a separate and
         much smaller pile - it is below, and it is the only part that travels with you.
       </p>
-      <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-3 gap-2 mt-3">
+      <div className="tnum d-grid gtc-2 gtc-md-3 gap-2 mt-3">
         <CapacityBar label="Pimps" used={dashboard.pimps} cap={hideout.maxPimps} />
         <CapacityBar label="Hoes" used={dashboard.hoes} cap={hideout.maxHoes} />
         <CapacityBar label="Thugs" used={dashboard.thugs} cap={hideout.maxThugs} />
@@ -4321,7 +4321,7 @@ function MarketCorePage(ctx: PageContext) {
   return <div className="d-grid gtc-1 gtc-xl-split-92 gap-3 align-items-start">
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Inventory</h2><span>{dashboard.city} prices, travel on Overview</span></div>
-      <div className="tnum d-grid gtc-1 gtc-sm-2 gtc-md-5 gap-2 mt-3">
+      <div className="tnum d-grid gtc-2 gtc-md-5 gap-2 mt-3">
         <InventoryCard name="Condoms" count={dashboard.condoms} note="Hoe upkeep" />
         <InventoryCard name="Beer" count={dashboard.beer} note="Thug upkeep" />
         {/* One card a gun. A single "weapons" number would hide the only thing that matters about
@@ -4870,7 +4870,7 @@ function CombatMissionsPanel({ ctx }: { ctx: PageContext }) {
   return <>
     <section className="card p-3 gcol-full">
       <div className="panel-title"><h2>Active Missions</h2><span>{active.length} active</span></div>
-      <div className="tnum d-grid gtc-1 gtc-md-4 gap-2 mb-3">
+      <div className="tnum d-grid gtc-2 gtc-md-4 gap-2 mb-3">
         <AdminMetric label="Available pimps" value={number.format(crew.availablePimps)} />
         <AdminMetric label="Available thugs" value={number.format(crew.availableThugs)} />
         <AdminMetric label="Available weapons" value={number.format(crew.availableWeapons)} />

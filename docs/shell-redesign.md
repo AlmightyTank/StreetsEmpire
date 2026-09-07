@@ -44,9 +44,15 @@ the full eight as a sheet, and gaining a second warning line only while the play
 hideout. Chrome that appears because the state calls for it rather than standing there permanently.
 
 **M2 — The page title repeats what the lit tab already says.** `main.tsx:1977`. Two labels for one
-fact, and the duplicate costs ~70px on the screen with the least of it. The player plate beside it is
-already hidden on phones for exactly this reason. *Fix:* drop the header below `md`; move the alert
-bell, which is a control rather than a label, into the new status bar.
+fact, on the screen with the least room to say anything twice. The player plate beside it is already
+hidden on phones for exactly this reason. *Fix:* clip the heading below `md` — clipped rather than
+removed, since it is the page's only `h1` — and move the alert bell, which is a control rather than a
+label, into the new status bar.
+
+The heading and its kicker are ~66px, but the row does not shrink by that much: the bell is 44px tall
+and holds it open. Clipping the heading buys about 30px on its own, measured; the remaining ~36px
+arrives in Phase 1, when the bell moves into the status bar and the header row goes entirely. The
+first draft of this document credited M2 with the whole 70px, which was the two moves counted as one.
 
 **M3 — Section tabs scroll away, on the longest pages in the game.** Hideout runs four panels and a
 room list, Runs five, Map five. Changing tab means scrolling back to the top first. *Fix:* pin the
@@ -168,8 +174,20 @@ server's `GuidancePages`. Add an id redirect in `route.ts` so shared links survi
 
 ## What to do first
 
-**Phase 0 — repairs.** No design decisions in any of them. D2 (`auto-fit` the strip), D5 (route the
-casino game), M3 (sticky tabs below `md`), M2 (drop the header below `md`).
+**Phase 0 — repairs. Done.** No design decisions in any of them.
+
+- D2 — the strip is `repeat(auto-fit, minmax(138px, 1fr))` and the `overflow-x` is gone. Measured at a
+  768px viewport: the strip's scroll width and client width are both 634px, so there is nothing to
+  scroll to, and the eight tiles lay out in two rows. One row again by 1440px.
+- D5 — the casino game goes through `useRouteTab`, so `#/casino/blackjack` survives a reload. The
+  three rooms are one list now, which is also the set the address bar will accept.
+- M3 — the section strip is `position: sticky` below `md`, in the bottom bar's colours. Measured: it
+  holds at the top of the viewport through a 700px scroll, and the page gains no horizontal overflow
+  from the negative margin that takes it out to the padding edge.
+- M2 — the heading is clipped below `md` and the bell moves to the end of the row. Header measured
+  66px before, 44px after, plus the row's own bottom margin halved.
+
+**Still to do below.**
 
 **Phase 1 — the phone shell.** M1, M4, M5, M6. This is the 568px to 230px, and the headline win.
 

@@ -378,19 +378,32 @@ input:focus-visible, textarea:focus-visible {
 //
 // Set here rather than with a gtc-* utility because a utility carries !important
 // and would win against the wider layout below it.
+//
+// Above md the strip was eight fixed tracks with overflow-x on top, which is the
+// same sideways scroller this file removed from the phone, put back one
+// breakpoint higher. Eight 138px tracks and their gaps want about 1160px; the
+// content column at the md breakpoint is 768 less the 86px rail and 48px of
+// padding, so 634 - and cash and heat went off the right-hand edge again, on
+// every laptop between 768 and roughly 1250.
+//
+// auto-fit rather than a count, so the strip fits as many tiles per row as there
+// is room for and wraps the rest: four across at md, seven or eight once the
+// window is wide enough to hold them. No scroller at any width, and the one row
+// everybody pictures still appears the moment it can.
 .status-strip {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 
   @include media-breakpoint-up(md) {
-    grid-template-columns: repeat(8, minmax(138px, 1fr));
-    overflow-x: auto;
-    scrollbar-gutter: stable;
+    grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
   }
 }
 
+// The floor above md is the track's now rather than the tile's. It was on the
+// tile to stop eight equal fractions squeezing a figure to nothing; minmax does
+// that job from the grid side, and a min-width here on top of it would only be a
+// second chance to overflow the row.
 .stat {
   min-width: 0;
-  @include media-breakpoint-up(md) { min-width: 138px; }
 }
 
 // The same eight facts on a phone, in two thirds of the height.

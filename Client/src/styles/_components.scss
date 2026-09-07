@@ -256,6 +256,32 @@ input:focus-visible, textarea:focus-visible {
   position: relative;
 
   @include media-breakpoint-up(md) { position: static; }
+
+  // Below md the heading goes and the bell is all that is left, so the row moves
+  // to the end rather than sitting where space-between put it with nothing on the
+  // other side of it. The header itself stays: it is what the alert panel is
+  // positioned against, and it is where the bell lives until the status bar is
+  // ready to take it.
+  @include media-breakpoint-down(md) {
+    justify-content: flex-end;
+    margin-bottom: $spacer * .5 !important;
+  }
+}
+
+// See the note beside this in main.tsx: the page name is already on the lit tab
+// in the bottom bar, and this is clipped rather than removed so the h1 survives
+// for anything reading the document rather than looking at it.
+@include media-breakpoint-down(md) {
+  .command-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 // On a phone the plate goes entirely, rather than being squeezed thinner.

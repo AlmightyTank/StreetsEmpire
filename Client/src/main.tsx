@@ -1981,7 +1981,16 @@ function App() {
 
     <section className="app-main min-w-0 mx-auto">
       <header className="command-header d-flex justify-content-between align-items-end gap-3 mb-3">
-        <div className="min-w-0 flex-fill">
+        {/*
+          Below md this is clipped rather than removed. The bottom bar lights the page you are on and
+          writes its name under the icon, so the heading and its kicker are the same fact said twice,
+          three inches apart, on the screen with the least room to say anything twice.
+
+          Clipped and not display:none because it is still the page's only h1. A screen reader
+          announces it, the document keeps a heading outline, and nothing that reads structure rather
+          than pixels can tell the difference.
+        */}
+        <div className="command-title min-w-0 flex-fill">
           <span className="eyebrow d-block text-truncate">{pageMeta[activePage].kicker}</span>
           <h1 className="mt-1 text-truncate">{pageMeta[activePage].label}</h1>
         </div>

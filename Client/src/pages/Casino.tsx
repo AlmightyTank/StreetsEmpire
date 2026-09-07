@@ -797,10 +797,12 @@ function CompRewardTile({ reward, busy, onClaim }: {
   busy: boolean
   onClaim: () => void
 }) {
+  // Named rather than counted. "4 pulls" says nothing on its own when the whole point of the more
+  // expensive comps is which machine they are pulls on.
   const gives = [
-    reward.turns > 0 && `${number.format(reward.turns)} turns`,
-    reward.cash > 0 && money.format(reward.cash),
-    reward.heat > 0 && `${number.format(reward.heat)} heat off`,
+    reward.freeSpins > 0 && `${number.format(reward.freeSpins)} pull${reward.freeSpins === 1 ? '' : 's'}`
+      + (reward.freeSpinMachineName ? ` on ${reward.freeSpinMachineName}` : ''),
+    reward.rep > 0 && `${number.format(reward.rep)} standing`,
   ].filter(Boolean).join(' / ')
 
   return <div className={`d-grid gap-1 border rounded p-2 ${reward.locked ? 'bg-body-tertiary opacity-75' : 'bg-body-tertiary border-primary'}`}>

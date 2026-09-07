@@ -97,7 +97,8 @@ var tests = new (string Name, Action Test)[]
     ("a player's version only moves when the player does", ThePlayerVersionMovesOnlyOnAChange),
     ("comps are rated on the wager, win or lose", CompsAreRatedOnTheWager),
     ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
-    ("a claimed comp hands over turns, cash and quiet", ACompHandsOverWhatItPromises),
+    ("a claimed comp hands over play and nothing else", ACompHandsOverWhatItPromises),
+    ("a comped pull opens the room it is for", ACompedPullOpensTheRoomItIsFor),
     ("comps reset with the season", CompsResetWithTheSeason),
     ("a season of small wagers adds up to exactly what it should", CompsDoNotDriftOverASeason),
     ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
@@ -2359,6 +2360,7 @@ static void CompsAreGatedByStandingAndPaidFor()
 
     // The cage never goes below nothing, however the menu is priced.
     player.CasinoCompsCents = 600 * 100L;
+    player.CasinoFreeSpins = 0;
     casino.ClaimComp(player, "room");
     AssertEqual(100 * 100L, player.CasinoCompsCents);
 }
@@ -2383,26 +2385,81 @@ static void ACompHandsOverWhatItPromises()
 
     var claim = casino.ClaimComp(player, "backroom");
 
-    AssertEqual(25, claim.TurnsGranted);
-    AssertEqual(750L, claim.CashPaid);
-    AssertEqual(12d, claim.HeatCleared);
-    AssertEqual(30, player.Turns);
-    AssertEqual(1_750L, player.Cash);
-    AssertEqual(18d, player.Heat);
+    // Play, and nothing outside this building: the turns, the cash and the heat are all where they were.
+    AssertEqual(2, claim.SpinsGranted);
+    AssertEqual(0, claim.RepGranted);
+    AssertEqual(2, player.CasinoFreeSpins);
+    AssertEqual("back", player.CasinoFreeSpinMachine);
+    AssertEqual(5, player.Turns);
+    AssertEqual(1_000L, player.Cash);
+    AssertEqual(30d, player.Heat);
     AssertEqual(3_000 * 100L, player.CasinoCompsCents);
 
-    // Heat stops at nothing rather than going negative and buying immunity to the next raid.
-    player.Heat = 4;
-    player.CasinoCompsCents = 5_000 * 100L;
-    player.Turns = 0;
-    casino.ClaimComp(player, "backroom");
-    AssertEqual(0d, player.Heat);
+    // The ticket is written at the machine's own floor across every lane, so it cannot be won cheap
+    // and spent dear.
+    AssertEqual(100L, player.CasinoFreeSpinBet);
+    AssertEqual(9, player.CasinoFreeSpinLanes);
 
-    // A full turn bank refuses the room rather than charging for turns it cannot hand over.
+    // A second ticket is refused rather than written over the pulls the house still owes.
+    player.CasinoCompsCents = 5_000 * 100L;
+    AssertRuleError(() => casino.ClaimComp(player, "room"), "a ticket is claimed over one still owed");
+
+    // Standing is the one comp that lasts, and it does not need a free machine to land on.
+    player.CasinoFreeSpins = 0;
+    var word = casino.ClaimComp(player, "standing");
+    AssertEqual(0, word.SpinsGranted);
+    AssertEqual(250, word.RepGranted);
+    AssertEqual(750d, player.CasinoRep);
+
+    // A full turn bank is no longer any of the cage's business. What it hands over is pulls, and a pull
+    // is spent a turn at a time like any other - so the comp that used to be refused here is claimable.
+    player.CasinoFreeSpins = 0;
     player.CasinoCompsCents = 5_000 * 100L;
     player.Turns = Resolve(options).MaxTurnsFor(player);
-    AssertRuleError(() => casino.ClaimComp(player, "room"), "a comped room is claimed with a full turn bank");
-    AssertEqual(5_000 * 100L, player.CasinoCompsCents);
+    casino.ClaimComp(player, "room");
+    AssertEqual(3, player.CasinoFreeSpins);
+
+    // And the cage never goes below nothing, however the menu is priced.
+    AssertEqual(4_500 * 100L, player.CasinoCompsCents);
+}
+
+static void ACompedPullOpensTheRoomItIsFor()
+{
+    var options = CompOptions();
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player
+    {
+        Id = Guid.NewGuid(),
+        Cash = 100_000,
+        Turns = 50,
+        // Walk-In: not enough standing for the back room, which is the whole point.
+        CasinoRep = 0,
+        CasinoCompsCents = 5_000 * 100L,
+        Hideout = new Hideout()
+    };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+
+    // Paid for, the rope holds.
+    AssertRuleError(() => casino.SpinSlotsAsync(player, "back", 100, 9, DateTime.UtcNow, default)
+        .GetAwaiter().GetResult(), "a walk-in buys their way into the back room");
+
+    // The comp that opens it is offered a rung below the machine, so this player can be sold one even
+    // though they cannot be sold the pull.
+    player.CasinoRep = 100;
+    casino.ClaimComp(player, "backroom");
+    AssertEqual(2, player.CasinoFreeSpins);
+
+    // Comped, the rope comes off. A ticket for a room you have not earned is what the comp is.
+    var spin = casino.SpinSlotsAsync(player, null, 0, 0, DateTime.UtcNow, default).GetAwaiter().GetResult();
+    AssertEqual("back", spin.Transaction.MachineKey);
+    AssertEqual(1, player.CasinoFreeSpins);
+    // And it cost the player nothing at the till. The ticket stakes 900 - the back room's floor across
+    // every lane - and none of it comes out of their cash, so they are up by whatever it paid and down
+    // by nothing.
+    AssertEqual(900L, spin.Transaction.BetAmount);
+    AssertEqual(100_000L + spin.Transaction.PayoutAmount, player.Cash);
 }
 
 static void CompsResetWithTheSeason()
@@ -3238,6 +3295,10 @@ static GameOptions CompOptions()
         {
             SpinTurnCost = 0,
             CompsPerDollarWagered = 0.01,
+            // On so a comped ticket can be spent, but never awarded by luck: the harness spins on a
+            // generator that returns zero, which is under any chance worth setting, so a live chance
+            // here would hand out free spins on every paid pull in the suite.
+            FreeSpins = new CasinoFreeSpinOptions { Enabled = true, ChancePerSpin = 0 },
             Levels =
             [
                 new CasinoRepLevelOptions { Level = 1, Name = "Walk-In", Rep = 0 },
@@ -3245,10 +3306,16 @@ static GameOptions CompOptions()
             ],
             CompRewards =
             [
-                new CompRewardOptions { Key = "room", Name = "A room upstairs", Cost = 500, Turns = 25 },
-                new CompRewardOptions { Key = "backroom", Name = "The back room", Cost = 2_000, Turns = 25, Cash = 750, Heat = 12, MinCasinoRepLevel = 2 }
+                new CompRewardOptions { Key = "room", Name = "A few on the house", Cost = 500, FreeSpins = 3, FreeSpinMachine = "any" },
+                new CompRewardOptions { Key = "backroom", Name = "The back room", Cost = 2_000, FreeSpins = 2, FreeSpinMachine = "back", MinCasinoRepLevel = 2 },
+                new CompRewardOptions { Key = "standing", Name = "A word to the pit boss", Cost = 1_000, Rep = 250, MinCasinoRepLevel = 2 }
             ],
-            SlotMachines = [new SlotMachineOptions { Key = "any", Name = "Any Slots", MinBet = 10, MaxBet = 100 }],
+            SlotMachines =
+            [
+                new SlotMachineOptions { Key = "any", Name = "Any Slots", MinBet = 10, MaxBet = 100 },
+                // Behind a rope this player cannot pass, which is the point of a comped pull on it.
+                new SlotMachineOptions { Key = "back", Name = "The Back Room", MinBet = 100, MaxBet = 1_000, MinCasinoRepLevel = 2 }
+            ],
             SlotSymbols = [new SlotSymbolOptions { Key = "a", Label = "A", Weight = 1, PairMultiplier = 0, TripleMultiplier = 0 }]
         }
     };

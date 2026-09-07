@@ -317,9 +317,9 @@ export type CompReward = {
   name: string
   blurb: string
   cost: number
-  turns: number
-  cash: number
-  heat: number
+  freeSpins: number
+  freeSpinMachineName?: string | null
+  rep: number
   minRepLevel: number
   minRepLevelName?: string | null
   locked: boolean
@@ -328,12 +328,10 @@ export type CompReward = {
 
 export type ClaimedComp = {
   summary: string
-  turnsGranted: number
-  cashPaid: number
-  heatCleared: number
-  turns: number
-  cash: number
-  heat: number
+  spinsGranted: number
+  repGranted: number
+  freeSpinsOwed: number
+  casinoRep: number
   board: CasinoBoard
 }
 

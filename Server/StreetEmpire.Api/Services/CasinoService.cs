@@ -78,31 +78,44 @@ public sealed class CasinoService(
         if (locked is not null)
             throw new GameRuleException(locked);
 
-        var turnCap = _options.MaxTurnsFor(player);
-        var turns = Math.Max(0, reward.Turns);
-        // Refused rather than trimmed. Handing back four turns of a comped room because the bank was
-        // nearly full, and charging the whole price for them, is the cage taking a night's play for
-        // something the player did not get.
-        if (turns > 0 && player.Turns >= turnCap)
-            throw new GameRuleException($"Your turn bank is full at {turnCap:N0}. {reward.Name} would be wasted.");
+        var spins = Math.Max(0, reward.FreeSpins);
+        // A ticket is only worth anything if the house honours tickets. With free spins switched off
+        // this would take the comps and hand back something that can never be played.
+        if (spins > 0 && !config.FreeSpins.Enabled)
+            throw new GameRuleException("The house is not comping pulls right now.");
+        var machine = spins > 0
+            ? config.Machine(reward.FreeSpinMachine)
+              ?? throw new GameRuleException("The cage cannot find that machine.")
+            : null;
 
-        var cash = Math.Max(0, reward.Cash);
-        var heatBefore = player.Heat;
-        var granted = turns > 0 ? (int)Math.Min(turns, turnCap - player.Turns) : 0;
+        // Refused rather than replaced. The ticket holds one machine and one stake, so writing a new
+        // one over pulls the house already owes would take them - and taking a Vault ticket off
+        // somebody to hand them a Sidewalk one is the worst version of that.
+        if (spins > 0 && player.CasinoFreeSpins > 0)
+            throw new GameRuleException(
+                $"The house still owes you {player.CasinoFreeSpins:N0} pull(s). Take those first.");
 
         player.CasinoCompsCents = Math.Max(0, player.CasinoCompsCents - CompCents(reward.Cost));
-        player.Turns += granted;
-        player.Cash += cash;
-        player.Heat = Math.Max(0, player.Heat - Math.Max(0, reward.Heat));
-        var heatCleared = Math.Round(heatBefore - player.Heat, 1);
+
+        if (machine is not null)
+        {
+            player.CasinoFreeSpins += spins;
+            player.CasinoFreeSpinMachine = machine.Key;
+            // The machine's own floor, every lane. A comped pull is the house showing you the room, not
+            // handing you a stake to size yourself.
+            player.CasinoFreeSpinBet = machine.MinBet;
+            player.CasinoFreeSpinLanes = SlotPaylines.Length;
+        }
+
+        var rep = Math.Max(0, reward.Rep);
+        player.CasinoRep += rep;
 
         var parts = new List<string>();
-        if (granted > 0) parts.Add($"{granted:N0} turns");
-        if (cash > 0) parts.Add($"{cash:C0}");
-        if (heatCleared > 0) parts.Add($"{heatCleared:N1} heat off the file");
-        var took = parts.Count == 0 ? "nothing anybody could point at" : string.Join(", ", parts);
+        if (spins > 0) parts.Add($"{spins:N0} pull(s) on {machine!.Name}");
+        if (rep > 0) parts.Add($"{rep:N0} standing");
+        var took = parts.Count == 0 ? "nothing anybody could point at" : string.Join(" and ", parts);
 
-        return new CompClaim(reward, granted, cash, heatCleared,
+        return new CompClaim(reward, spins, rep, 0,
             $"Took {reward.Name} off the cage for {reward.Cost:C0} in comps: {took}.");
     }
 
@@ -134,7 +147,10 @@ public sealed class CasinoService(
         var machine = config.Machine(machineKey) ?? config.SlotMachines.FirstOrDefault()
             ?? throw new GameRuleException("There are no slot machines on the floor.");
 
-        var locked = LockedReason(player, machine);
+        // The door is what a comped pull buys. A ticket for a room you have not earned is the whole
+        // point of the back-room comps, and the cage already refused to sell it to anybody without the
+        // standing to be offered it - checking the rope again here would make those comps unspendable.
+        var locked = onTheHouse ? null : LockedReason(player, machine);
         if (locked is not null)
             throw new GameRuleException(locked);
         if (paylines is < 1 || paylines > SlotPaylines.Length)
@@ -474,9 +490,9 @@ public sealed class CasinoService(
                     reward.Name,
                     reward.Blurb,
                     reward.Cost,
-                    Math.Max(0, reward.Turns),
-                    Math.Max(0, reward.Cash),
-                    Math.Max(0, reward.Heat),
+                    Math.Max(0, reward.FreeSpins),
+                    config.Machine(reward.FreeSpinMachine)?.Name,
+                    Math.Max(0, reward.Rep),
                     Math.Max(1, reward.MinCasinoRepLevel),
                     reward.MinCasinoRepLevel > 1 ? config.LevelName(reward.MinCasinoRepLevel) : null,
                     locked is not null,
@@ -820,7 +836,7 @@ public sealed record CasinoSpin(
     int FreeSpinsAwarded,
     int FreeSpinsLeft);
 
-public sealed record CompClaim(CompRewardOptions Reward, int TurnsGranted, long CashPaid, double HeatCleared, string Summary);
+public sealed record CompClaim(CompRewardOptions Reward, int SpinsGranted, int RepGranted, double Unused, string Summary);
 
 /// <summary>When one machine last paid its progressive out. The line the meter is measured from.</summary>
 internal sealed record MachineDrop(string Machine, DateTime Last);

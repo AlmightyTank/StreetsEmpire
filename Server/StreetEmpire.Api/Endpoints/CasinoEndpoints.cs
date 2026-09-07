@@ -238,18 +238,17 @@ internal static class CasinoEndpoints
             try
             {
                 var claim = casino.ClaimComp(player, request.RewardKey);
-                // No turns spent: this is the house paying out, and the reward itself is often turns.
+                // No turns spent and no money moved: what the cage pays out is play, and the pulls it
+                // owes are spent one turn at a time like any other.
                 AddLog(db, player, before, "COMP", 0, claim.Summary, now);
                 await db.SaveChangesAsync(ct);
 
                 return Results.Ok(new ClaimCompResponse(
                     claim.Summary,
-                    claim.TurnsGranted,
-                    claim.CashPaid,
-                    claim.HeatCleared,
-                    player.Turns,
-                    player.Cash,
-                    Math.Round(player.Heat, 1),
+                    claim.SpinsGranted,
+                    claim.RepGranted,
+                    player.CasinoFreeSpins,
+                    Math.Round(player.CasinoRep, 1),
                     await casino.BoardAsync(player, ct)));
             }
             catch (GameRuleException ex)

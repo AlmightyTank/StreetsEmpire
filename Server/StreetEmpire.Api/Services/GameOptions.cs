@@ -2248,42 +2248,56 @@ public sealed class CasinoOptions
         {
             CompRewards =
             [
+                // Every price is half of what the pulls stake, so the cage is a discount on play rather
+                // than an exchange rate against money. Each back-room comp is offered a rung below the
+                // machine it opens: standing is what the house rewards, and a comp is how it lets you
+                // see the next room before you have earned the right to walk in.
                 new CompRewardOptions
                 {
-                    Key = "room",
-                    Name = "A room upstairs",
-                    Blurb = "The house keeps one for people who play. Sleep it off and start again.",
-                    Cost = 500,
-                    Turns = 25
+                    Key = "pulls",
+                    Name = "A few on the house",
+                    Blurb = "The floor man nods at the machine you were already playing.",
+                    Cost = 180,
+                    FreeSpins = 4,
+                    FreeSpinMachine = "sidewalk"
                 },
                 new CompRewardOptions
                 {
-                    Key = "cage",
-                    Name = "The cage settles up",
-                    Blurb = "Walk to the window and take what you are owed in cash.",
-                    Cost = 1_000,
-                    Cash = 1_000,
+                    Key = "neon",
+                    Name = "The good machine",
+                    Blurb = "Not the one by the door. The one with the noise everybody looks up for.",
+                    Cost = 1_800,
+                    FreeSpins = 4,
+                    FreeSpinMachine = "neon"
+                },
+                new CompRewardOptions
+                {
+                    Key = "backroom",
+                    Name = "Into the back room",
+                    Blurb = "A rope comes off a stand for you. Whether the room is yours yet or not.",
+                    Cost = 9_000,
+                    FreeSpins = 2,
+                    FreeSpinMachine = "kingpin",
                     MinCasinoRepLevel = 2
                 },
                 new CompRewardOptions
                 {
-                    Key = "word",
-                    Name = "A word with the law",
-                    Blurb = "Somebody the house knows makes a call, and a file gets thinner.",
-                    Cost = 2_500,
-                    Heat = 20,
+                    Key = "vault",
+                    Name = "The Vault, once",
+                    Blurb = "One pull on the machine the house does not discuss. Make it count.",
+                    Cost = 45_000,
+                    FreeSpins = 1,
+                    FreeSpinMachine = "vault",
                     MinCasinoRepLevel = 3
                 },
                 new CompRewardOptions
                 {
-                    Key = "suite",
-                    Name = "The suite, and a car home",
-                    Blurb = "The floor manager stops calling you sir and starts using your name.",
-                    Cost = 10_000,
-                    Turns = 100,
-                    Cash = 5_000,
-                    Heat = 40,
-                    MinCasinoRepLevel = 4
+                    Key = "standing",
+                    Name = "A word to the pit boss",
+                    Blurb = "Your name goes in the book a little further up than it was.",
+                    Cost = 2_500,
+                    Rep = 250,
+                    MinCasinoRepLevel = 2
                 }
             ];
         }
@@ -2345,14 +2359,28 @@ public sealed class CompRewardOptions
     /// <summary>Dollars of comps it costs to claim.</summary>
     public long Cost { get; set; }
 
-    /// <summary>Turns handed back, up to whatever the player's hideout will hold.</summary>
-    public int Turns { get; set; }
+    /// <summary>
+    /// Pulls the house owes, and the machine it owes them on.
+    ///
+    /// Comps buy nothing outside this building. They used to pay out in turns, cash and a word with
+    /// the law, and the cash line fixed an exchange rate that priced everything else against it - a
+    /// board of four choices where three were arithmetic. What a comp is for now is play: another pull,
+    /// and a pull on a machine the door has not opened for you yet.
+    ///
+    /// Granted at the machine's own minimum across every lane, so a ticket cannot be won cheap and
+    /// spent dear, and priced at half of what it stakes.
+    /// </summary>
+    public int FreeSpins { get; set; }
+    public string? FreeSpinMachine { get; set; }
 
-    /// <summary>Cash paid at the window.</summary>
-    public long Cash { get; set; }
-
-    /// <summary>Points of heat taken off the file.</summary>
-    public double Heat { get; set; }
+    /// <summary>
+    /// Standing bought at the window rather than earned at the machine.
+    ///
+    /// The one comp that lasts: everything else here is a night, and this is the door itself. It is
+    /// what stops the ladder being a treadmill for anybody whose bankroll cannot reach the next room
+    /// on its own.
+    /// </summary>
+    public int Rep { get; set; }
 
     public int MinCasinoRepLevel { get; set; } = 1;
 }

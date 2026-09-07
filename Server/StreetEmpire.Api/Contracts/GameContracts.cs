@@ -325,9 +325,9 @@ public sealed record CompRewardResponse(
     string Name,
     string Blurb,
     long Cost,
-    int Turns,
-    long Cash,
-    double Heat,
+    int FreeSpins,
+    string? FreeSpinMachineName,
+    int Rep,
     int MinRepLevel,
     string? MinRepLevelName,
     bool Locked,
@@ -452,12 +452,10 @@ public sealed record SlotSpinResponse(
 
 public sealed record ClaimCompResponse(
     string Summary,
-    int TurnsGranted,
-    long CashPaid,
-    double HeatCleared,
-    long Turns,
-    long Cash,
-    double Heat,
+    int SpinsGranted,
+    int RepGranted,
+    int FreeSpinsOwed,
+    double CasinoRep,
     CasinoBoardResponse Board);
 
 public sealed record StoreSellRequest(string? ItemKey, int Quantity);

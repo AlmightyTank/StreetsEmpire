@@ -99,6 +99,7 @@ var tests = new (string Name, Action Test)[]
     ("standing gates the comp menu and comps pay for it", CompsAreGatedByStandingAndPaidFor),
     ("a claimed comp hands over play and nothing else", ACompHandsOverWhatItPromises),
     ("a comped pull opens the room it is for", ACompedPullOpensTheRoomItIsFor),
+    ("the cage does not sell a comment in the config", TheCageDoesNotSellACommentInTheConfig),
     ("comps reset with the season", CompsResetWithTheSeason),
     ("a season of small wagers adds up to exactly what it should", CompsDoNotDriftOverASeason),
     ("a free spin costs nothing and replays the pull that won it", FreeSpinsReplayThePullThatWonThem),
@@ -2460,6 +2461,31 @@ static void ACompedPullOpensTheRoomItIsFor()
     // by nothing.
     AssertEqual(900L, spin.Transaction.BetAmount);
     AssertEqual(100_000L + spin.Transaction.PayoutAmount, player.Cash);
+}
+
+static void TheCageDoesNotSellACommentInTheConfig()
+{
+    var options = CompOptions();
+    var config = Resolve(options).Casino;
+    // appsettings.json carries its notes as a "//" key, and a note that lands as its own array element
+    // binds to a reward with no key and no cost - a free tile on the floor with nothing behind it.
+    config.CompRewards.Insert(0, new CompRewardOptions { Cost = 0 });
+
+    // The menu the floor is drawn from never sees it.
+    AssertEqual(3, config.Menu().Count);
+    AssertTrue(config.Menu().All(x => !string.IsNullOrWhiteSpace(x.Key)), "the menu hides keyless rows");
+
+    // And it cannot be asked for by the empty name it would be drawn with.
+    AssertTrue(config.Reward(null) is null, "a null key finds nothing");
+    AssertTrue(config.Reward("") is null, "an empty key finds nothing");
+    AssertTrue(config.Reward("   ") is null, "a blank key finds nothing");
+
+    using var db = new GameDbContext(new DbContextOptionsBuilder<GameDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .Options);
+    var player = new Player { Id = Guid.NewGuid(), Cash = 10_000, Turns = 20, Hideout = new Hideout() };
+    var casino = CreateCasino(db, options, new ZeroRandom());
+    AssertRuleError(() => casino.ClaimComp(player, ""), "a keyless comp is claimed");
 }
 
 static void CompsResetWithTheSeason()

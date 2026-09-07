@@ -2332,8 +2332,18 @@ public sealed class CasinoOptions
     public CasinoRepLevelOptions? Level(int level)
         => Levels.FirstOrDefault(x => x.Level == level);
 
+    /// <summary>
+    /// The menu as the floor is allowed to show it. An entry with no key is not a reward - it is a
+    /// note somebody left in the array, or a half-written line - and the cage neither displays it
+    /// nor sells it. This config is hand-edited, so a keyless row is a typo, never an offer.
+    /// </summary>
+    public IReadOnlyList<CompRewardOptions> Menu()
+        => CompRewards.Where(x => !string.IsNullOrWhiteSpace(x.Key)).ToList();
+
     public CompRewardOptions? Reward(string? key)
-        => CompRewards.FirstOrDefault(x => string.Equals(x.Key, key?.Trim(), StringComparison.OrdinalIgnoreCase));
+        => string.IsNullOrWhiteSpace(key)
+            ? null
+            : Menu().FirstOrDefault(x => string.Equals(x.Key, key.Trim(), StringComparison.OrdinalIgnoreCase));
 
     public string LevelName(int level)
         => Level(level)?.Name ?? $"level {level}";

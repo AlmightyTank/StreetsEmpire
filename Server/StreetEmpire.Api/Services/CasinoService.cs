@@ -482,7 +482,7 @@ public sealed class CasinoService(
         return new CasinoCompsResponse(
             CompDollars(player.CasinoCompsCents),
             perComp,
-            config.CompRewards.Select(reward =>
+            config.Menu().Select(reward =>
             {
                 var locked = CompLockedReason(player, reward);
                 return new CompRewardResponse(

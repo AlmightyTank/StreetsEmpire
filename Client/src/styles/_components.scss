@@ -414,6 +414,31 @@ input:focus-visible, textarea:focus-visible {
 // what puts the panel across the content width rather than under a button.
 .status-bar .alert-bell { position: static; }
 
+// The page's one verb, along the bottom of a phone.
+//
+// See PrimaryAction in ui.tsx for why it comes and goes rather than simply
+// being there. It sits directly on the tab bar, in the same fill, so the two
+// read as one control surface rather than as a button floating over one.
+.primary-bar {
+  z-index: 1025;
+  // Its own offset rather than Bootstrap's bottom-0, which carries !important and
+  // would drop it straight onto the tab bar.
+  bottom: calc(53px + env(safe-area-inset-bottom));
+  padding: $spacer * .5 $spacer;
+  background-color: $surface-deep;
+  background-image: $surface-rail;
+  border-top: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
+}
+
+// And the page owes it the room, for exactly as long as it is there. Written as
+// a class the shell turns on with the bar rather than as a published height,
+// because unlike the status bar this one is a single fixed shape.
+.app-main.has-primary-bar {
+  @include media-breakpoint-down(md) {
+    padding-bottom: calc(78px + 60px + env(safe-area-inset-bottom));
+  }
+}
+
 // The section strip, pinned on a phone.
 //
 // Crew, Business, Raids and Seasons all open with one of these and all of them

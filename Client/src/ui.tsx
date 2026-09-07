@@ -55,8 +55,10 @@ export const BUSY = 'Hold on - your last move is still going through.'
 // The same thing said behind the admin desk, where the buttons act on the game rather than play it.
 export const WORKING = 'Hold on - the last request is still going through.'
 
-export function Button({ blocked, className, title, onClick, children, ...rest }: {
+export function Button({ blocked, className, title, onClick, children, ref: outer, ...rest }: {
   blocked?: Blocked
+  /** For a caller that has to watch the button itself - see PrimaryAction below. */
+  ref?: React.Ref<HTMLButtonElement | null>
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>) {
   const button = useRef<HTMLButtonElement>(null)
   const reason = firstReason(blocked)
@@ -82,7 +84,13 @@ export function Button({ blocked, className, title, onClick, children, ...rest }
 
   return <button
     {...rest}
-    ref={button}
+    // The tooltip above needs the node, and so does anyone who asked for it. Written rather than
+    // handed straight over, because there is already one ref here and a second cannot replace it.
+    ref={node => {
+      button.current = node
+      if (typeof outer === 'function') outer(node)
+      else if (outer) (outer as React.RefObject<HTMLButtonElement | null>).current = node
+    }}
     className={reason ? `${className ?? ''} is-blocked` : className}
     // Not the disabled attribute: this button keeps its place in the tab order precisely so that
     // someone who never touches a mouse can land on it and be told why it is off.
@@ -98,6 +106,89 @@ export function Button({ blocked, className, title, onClick, children, ...rest }
       onClick?.(event)
     }}
   >{children}</button>
+}
+
+/*
+  The one verb a page is for, kept in reach on a phone.
+
+  Every page here is taller than a phone and a few are taller than four of them, and the button the
+  page exists for is somewhere inside the first panel: Street's shift button sits under a district
+  picker, three figures, a storage notice and the supply panel. Reaching it from anywhere else on the
+  page means scrolling back to look for it.
+
+  So the button says where it is, and when it goes off the top of the screen a copy of it appears
+  along the bottom. Which is the whole reason it is done by watching rather than by simply drawing a
+  bar: while the real button is on screen the bar is not there at all and costs nothing, and the two
+  are never both in front of you saying the same thing twice.
+
+  A copy rather than a move, because the button belongs in the panel that explains it - the turns
+  field and the hoe cut beside it are what make "Work 20 Turns" mean anything.
+
+  Not every page has one of these. The shop, the bench and the map are lists of many small actions
+  with no single dominant verb, and a bar naming one of them would be picking a favourite. Only the
+  pages that really do come down to one button say so.
+*/
+export type PrimaryAction = { label: string, reason: string | null, run: () => void }
+
+const PrimaryActionSlot = React.createContext<((action: PrimaryAction | null) => void) | null>(null)
+
+export function PrimaryActionProvider({ publish, children }: {
+  publish: (action: PrimaryAction | null) => void
+  children: ReactNode
+}) {
+  return <PrimaryActionSlot.Provider value={publish}>{children}</PrimaryActionSlot.Provider>
+}
+
+/**
+ * A page's dominant button. Draws exactly the Button it replaces, and additionally says when it has
+ * left the screen so the shell can stand in for it.
+ */
+export function PrimaryAction({ blocked, onClick, className, children }: {
+  blocked?: Blocked
+  onClick: () => void
+  className?: string
+  /** A string rather than any node: the bar along the bottom has to say the same words. */
+  children: string
+}) {
+  const publish = React.useContext(PrimaryActionSlot)
+  const button = useRef<HTMLButtonElement | null>(null)
+  const [away, setAway] = useState(false)
+  const reason = firstReason(blocked)
+
+  // Read through a ref so that the copy always runs this render's handler, without the effect below
+  // having to re-run on a closure that is new every time anyway.
+  const run = useRef(onClick)
+  run.current = onClick
+
+  useEffect(() => {
+    const node = button.current
+    if (!node || !publish) return
+    /*
+      The bottom margin is where the bar's own top edge is: its 53px above the tab bar plus the 61px
+      of itself. Off the bottom of the screen the button therefore stops counting as visible exactly
+      as it reaches the strip the bar will occupy, so the bar only ever covers a button that was
+      already behind it. Set higher and the bar appears over a button somebody can still see; set
+      lower and there is a band where neither is reachable.
+
+      It cannot read env(safe-area-inset-bottom), so on a notched phone the real edge is up to 34px
+      higher than this and a button inside that band is covered without the bar knowing. Worth less
+      than reading a computed style on every scroll to find out.
+    */
+    const observer = new IntersectionObserver(
+      ([entry]) => setAway(!entry.isIntersecting),
+      { rootMargin: '0px 0px -116px 0px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [publish])
+
+  useEffect(() => {
+    if (!publish) return
+    if (!away) { publish(null); return }
+    publish({ label: children, reason, run: () => run.current() })
+    return () => publish(null)
+  }, [publish, away, children, reason])
+
+  return <Button className={className} blocked={blocked} onClick={onClick} ref={button}>{children}</Button>
 }
 
 /**

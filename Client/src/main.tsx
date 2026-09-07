@@ -10,7 +10,7 @@ import { clampText, compactDateTime, money, number, signedMoney, tightMoney, wai
 import { ActivityList, AdminMetric, betaKeyStatusClass, BUSY, Button, copyToClipboard,
   DismissibleMessage, firstReason, percent, StatusRow, updateCategories, updateCategoryClass,
   bannerClass, countdown, PlayerAvatar, PlayerName, ProfileBadgeStrip, profileAccentClass, secondsUntil, timeUntil, updateSeverities,
-  useSecondHand, SectionTabs, timeLeft,
+  useSecondHand, SectionTabs, timeLeft, PrimaryAction, PrimaryActionProvider, type PrimaryAction as PrimaryActionShape,
   updateSeverityClass, useRouteTab, useSecondsTicker, WORKING, type Blocked } from './ui'
 import { awayFromHideout, flowPage, flowTarget, goToFlow, pageMeta, primaryPages, spendable,
   type AppPage, type GoTo, type PageContext, type RefreshScope } from './pagecontext'
@@ -1166,11 +1166,19 @@ function App() {
   // the status bar can wear it.
   const [chatUnread, setChatUnread] = useState(0)
 
+  // The page's one button, while it is off the top of the screen. Null the rest of the time, which is
+  // most of the time and is why the bar costs nothing when it is not needed. See PrimaryAction in ui.
+  const [primary, setPrimary] = useState<PrimaryActionShape | null>(null)
+
   const setStatusBarHeight = useCallback((height: number) => {
     document.documentElement.style.setProperty('--status-bar-height', `${height}px`)
   }, [])
   const setActivePage: GoTo = (page, tab, area) => {
     setPage(page)
+    // The old page's button is not on this one. Its own PrimaryAction clears it on the way out too,
+    // but the unmount lands a beat after the paint, and a bar naming the last page's verb for a frame
+    // is a bar somebody can press.
+    setPrimary(null)
     writeRoute(page, tab)
     if (area) setScrollRequest({ area, id: ++scrollRequests.current })
   }
@@ -2003,7 +2011,7 @@ function App() {
       <button className="btn btn-outline-danger w-100" onClick={() => void act(api.logout)}>Logout</button>
     </aside>
 
-    <section className="app-main min-w-0 mx-auto">
+    <section className={`app-main min-w-0 mx-auto ${primary ? 'has-primary-bar' : ''}`}>
       {/*
         Below md the whole of this is clipped away and the bell moves into the status bar, which
         leaves the header a zero-height element carrying one heading.
@@ -2056,8 +2064,18 @@ function App() {
         </div>}
       </section>
 
-      {renderPage(activePage, contentContext)}
+      <PrimaryActionProvider publish={setPrimary}>
+        {renderPage(activePage, contentContext)}
+      </PrimaryActionProvider>
     </section>
+
+    {/*
+      The page's verb, along the bottom, for as long as the real button is off the screen. It carries
+      the same blocked reason, so a bar that will not go still says why.
+    */}
+    {primary && <div className="primary-bar d-md-none position-fixed start-0 end-0">
+      <Button className="btn btn-primary w-100" blocked={primary.reason} onClick={primary.run}>{primary.label}</Button>
+    </div>}
   </main>
 }
 
@@ -2527,7 +2545,7 @@ function StreetPage(ctx: PageContext) {
           hoeCut > 80 && 'Anything over 80% and you are working for them. Eighty is the ceiling.',
           hoeCut === dashboard.hoeCutPercent && `The cut is already ${dashboard.hoeCutPercent}%.`,
         )} onClick={() => void act(() => api.setHoeCut(hoeCut))}>Save Cut</Button>
-        <Button className="btn btn-primary" blocked={firstReason(
+        <PrimaryAction className="btn btn-primary" blocked={firstReason(
           busy && BUSY,
           awayFromHideout(dashboard, 'Working a shift'),
           !!pendingOutgoingAttack && 'Your crew is out on a job. Nobody is left to work a shift.',
@@ -2535,7 +2553,7 @@ function StreetPage(ctx: PageContext) {
           streetTurns < 1 && 'Set the shift to at least one turn.',
           streetTurns > dashboard.turns && `A ${streetTurns}-turn shift costs more turns than you have. You have ${dashboard.turns}.`,
           streetTurns > maxStreetTurns && `Your storage can supply this crew for ${number.format(maxStreetTurns)} turn${maxStreetTurns === 1 ? '' : 's'} at most.`,
-        )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</Button>
+        )} onClick={() => void act(() => api.workStreet(streetTurns, autoBuySupplies, district || undefined))}>{pendingOutgoingAttack ? 'Crew Out' : `Work ${streetTurns} Turn${streetTurns === 1 ? '' : 's'}`}</PrimaryAction>
         <button className="btn btn-secondary" type="button" disabled={busy || maxStreetTurns < 1} onClick={() => setStreetTurns(clampedStreetTurns)}>Max</button>
       </div>
       <label className={`d-flex align-items-start gap-2 mt-3 border rounded px-3 py-2 ${autoBuySupplies ? 'border-primary bg-body-tertiary' : 'bg-body-tertiary'}`}>

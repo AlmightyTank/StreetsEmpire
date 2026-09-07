@@ -4,7 +4,7 @@ import type { BlackjackAction, BlackjackBoard, BlackjackRound, CasinoBoard, Casi
   CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin,
   SlotWin } from '../api'
 import { money, number, signedMoney, wait } from '../format'
-import { AdminMetric, BUSY, Button, firstReason, useRouteTab, type Blocked } from '../ui'
+import { AdminMetric, BUSY, Button, firstReason, PrimaryAction, useRouteTab, type Blocked } from '../ui'
 import type { PageContext } from '../pagecontext'
 
 /*
@@ -691,11 +691,11 @@ export function CasinoPage(ctx: PageContext) {
         </label>
         <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(active.minBet)}>Min</button>
         <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => setBet(Math.min(active.maxBet, Math.floor(dashboard.cash / lineCount)))}>Max</button>
-        <Button className="btn btn-primary" blocked={spinBlocked} onClick={() => void runSpin()}>
+        <PrimaryAction className="btn btn-primary" blocked={spinBlocked} onClick={() => void runSpin()}>
           {onTheHouse
             ? `Free spin (${board.freeSpins.owed} left)`
             : `Spin ${money.format(totalBet)}${board.spinTurnCost > 0 ? ` / ${board.spinTurnCost}t` : ''}`}
-        </Button>
+        </PrimaryAction>
       </div>
       {lastSpin && verdict && !spinning && <div className={`border rounded p-3 mt-3 ${verdict.edge}`}>
         <div className="d-flex justify-content-between gap-3 align-items-baseline">

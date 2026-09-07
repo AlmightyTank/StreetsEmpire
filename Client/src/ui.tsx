@@ -370,13 +370,19 @@ export function PlayerName({ playerId, children, className }: {
 }
 
 // strip only draws them.
+//
+// The strip pins itself to the top of the screen on a phone, which is what the
+// section-tabs class is for. The pages under it are the longest in the game -
+// the hideout is four panels and a room list, the runs page five - and a strip
+// that scrolls away means changing tab starts with scrolling back up to find the
+// tabs. A flick on a desktop; a journey on a phone.
 export function SectionTabs<T extends string>({ label, tabs, active, onActive }: {
   label: string
   tabs: { key: NoInfer<T>, label: string }[]
   active: T
   onActive: (key: T) => void
 }) {
-  return <nav className="nav nav-pills gap-2" aria-label={label}>
+  return <nav className="section-tabs nav nav-pills gap-2" aria-label={label}>
     {tabs.map(tab => <button
       className={`nav-link ${active === tab.key ? 'active' : ''}`}
       type="button"

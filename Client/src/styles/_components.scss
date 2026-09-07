@@ -325,6 +325,37 @@ input:focus-visible, textarea:focus-visible {
   height: 4px;
 }
 
+// The section strip, pinned on a phone.
+//
+// Crew, Business, Raids and Seasons all open with one of these and all of them
+// are tall: the hideout is four panels and a room list, the runs page is five,
+// the map another five. The strip sat at the top of the content and scrolled off
+// with it, so changing tab began by scrolling back up to find the tabs - which on
+// a phone is most of the page, twice, to move one screen sideways.
+//
+// It takes the bottom bar's colours on purpose. The two of them are then one
+// piece of furniture with the game between: the pages across the bottom, the
+// sections across the top, and neither ever more than a thumb away.
+//
+// Pinned only where it is needed. On a desktop the strip is already in sight
+// beside a rail that never moves, and there is nothing to buy.
+@include media-breakpoint-down(md) {
+  .section-tabs {
+    position: sticky;
+    top: 0;
+    // Under the alert panel, which drops from the header above it, and under the
+    // bottom bar. Over everything that merely scrolls.
+    z-index: 1010;
+    // Out to the edges of the page's own padding, so it reads as a bar rather
+    // than as pills with the page showing either side of them.
+    margin-inline: -$spacer;
+    padding: $spacer * .5 $spacer;
+    background-color: $surface-deep;
+    background-image: $surface-rail;
+    border-bottom: var(--#{$prefix}border-width) solid var(--#{$prefix}border-color);
+  }
+}
+
 .modal-backdrop-soft {
   z-index: 1070;
   background: rgba($black, .64);

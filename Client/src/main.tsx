@@ -541,7 +541,11 @@ type ChatDockState = 'open' | 'minimised' | 'closed'
  * The open windows are remembered across page changes and reloads, because a window that closes itself
  * when you go to work the streets is the thing this whole dock exists to stop.
  */
-function ChatWindows({ dashboard, busy }: { dashboard: Dashboard, busy: boolean }) {
+function ChatWindows({ dashboard, busy, onUnread }: {
+  dashboard: Dashboard
+  busy: boolean
+  onUnread: (count: number) => void
+}) {
   const [open, setOpen] = useState<number[]>(() => {
     try { return JSON.parse(localStorage.getItem(chatOpenKey) ?? '[]') as number[] }
     catch { return [] }
@@ -574,15 +578,16 @@ function ChatWindows({ dashboard, busy }: { dashboard: Dashboard, busy: boolean 
       conversationId={id}
       onClose={() => closeOne(id)}
     />)}
-    <ChatDock dashboard={dashboard} busy={busy} onOpenConversation={openOne} />
+    <ChatDock dashboard={dashboard} busy={busy} onOpenConversation={openOne} onUnread={onUnread} />
   </>
 }
 
 /** The rooms, and the list of everything you have open elsewhere. */
-function ChatDock({ dashboard, busy, onOpenConversation }: {
+function ChatDock({ dashboard, busy, onOpenConversation, onUnread }: {
   dashboard: Dashboard
   busy: boolean
   onOpenConversation: (id: number) => void
+  onUnread: (count: number) => void
 }) {
   const [state, setState] = useState<ChatDockState>(() => {
     const saved = localStorage.getItem(chatDockKey)
@@ -665,31 +670,24 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
   const over = draft.length > max
 
   /*
-    How much of the bottom of the screen this is sitting on, published for the page to pad itself by.
+    Opened from somewhere else, which on a phone is the only way it opens.
 
-    On a phone the dock spans the full width and pins itself just above the tab bar, so the last inch
-    of every page was underneath it and could not be scrolled into view - the tab bar was allowed for
-    in the page padding and this was not. Measured rather than written into the stylesheet, because
-    the dock is a bar when minimised and a panel when open, and a hardcoded number would be right for
-    one of those and wrong for the other.
-
-    Only while it is minimised. Open, it is a panel somebody is reading and will close, and padding
-    the page by the height of it would leave most of a screen of nothing under the last card.
+    The dock is not on the screen there any more - see the stylesheet - and its handle is a button in
+    the status bar instead. That button has no way to reach in here, and lifting three states and a
+    poll out of this component so that it could would be a great deal of moving for one verb. So the
+    same nudge the profile card and the conversation list already use: a name on the window, and
+    whoever cares is listening.
   */
-  const dock = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    const node = dock.current
-    const clear = () => document.documentElement.style.removeProperty('--chat-dock-height')
-    if (!node || state !== 'minimised') { clear(); return clear }
+    const open = () => move('open')
+    window.addEventListener('street-empire:chat', open)
+    return () => window.removeEventListener('street-empire:chat', open)
+  }, [])
 
-    const publish = () => document.documentElement.style.setProperty(
-      '--chat-dock-height',
-      `${Math.ceil(node.getBoundingClientRect().height)}px`)
-    publish()
-    const observer = new ResizeObserver(publish)
-    observer.observe(node)
-    return () => { observer.disconnect(); clear() }
-  }, [state])
+  // What the handle elsewhere has to badge. Sent up rather than counted again over there: this
+  // component is already polling for it, and two pollers would disagree every few seconds.
+  const carried = unread + (list?.unread ?? 0)
+  useEffect(() => { onUnread(carried) }, [carried, onUnread])
 
   const say = async () => {
     const body = draft.trim()
@@ -706,7 +704,7 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
 
   if (state === 'closed') {
     return <button
-      className="chat-launcher position-fixed btn rounded-pill border-primary text-primary fw-bold bg-body-tertiary px-3 py-2"
+      className="chat-launcher position-fixed d-none d-md-block btn rounded-pill border-primary text-primary fw-bold bg-body-tertiary px-3 py-2"
       type="button"
       onClick={() => move('open')}
       aria-label="Open chat"
@@ -716,11 +714,19 @@ function ChatDock({ dashboard, busy, onOpenConversation }: {
   }
 
   const isOpen = state === 'open'
-  const totalUnread = unread + (list?.unread ?? 0)
+  const totalUnread = carried
 
+  /*
+    Minimised is a bar in the corner of a desktop and nothing at all on a phone, where the handle is
+    the button in the status bar instead.
+
+    d-grid moves into the branch rather than staying on the base beside a d-none. Both are display
+    utilities, both carry !important and both are unconditional, so which of the two wins comes down
+    to which Bootstrap happened to write first - a question with an answer today and no promise of
+    the same one tomorrow. One display class at a time and there is nothing to lose.
+  */
   return <section
-    ref={dock}
-    className={`chat-dock position-fixed d-grid border border-bottom-0 rounded-top-3 bg-body-secondary p-2 ${isOpen ? 'open gap-2' : ''}`}
+    className={`chat-dock position-fixed border border-bottom-0 rounded-top-3 bg-body-secondary p-2 ${isOpen ? 'open d-grid gap-2' : 'd-none d-md-grid'}`}
     aria-label="Chat"
   >
     <header className="d-flex align-items-center gap-2">
@@ -1156,6 +1162,10 @@ function App() {
     because the only thing that reads it is a stylesheet, and re-rendering the whole game to move one
     sticky offset would be paying a great deal for a number CSS can hold on its own.
   */
+  // Counted inside the chat dock, which is already polling for it, and held here so the handle in
+  // the status bar can wear it.
+  const [chatUnread, setChatUnread] = useState(0)
+
   const setStatusBarHeight = useCallback((height: number) => {
     document.documentElement.style.setProperty('--status-bar-height', `${height}px`)
   }, [])
@@ -1951,7 +1961,7 @@ function App() {
       currentPlayerId={dashboard.playerId}
       onClose={() => setOpenProfileId(null)}
     />}
-    <ChatWindows dashboard={dashboard} busy={busy} />
+    <ChatWindows dashboard={dashboard} busy={busy} onUnread={setChatUnread} />
     {dashboard && <Walkthrough
       active={tourStep !== null}
       stepIndex={tourStep ?? 0}
@@ -2021,6 +2031,7 @@ function App() {
         dashboard={dashboard}
         nextTurn={nextTurn}
         unread={dashboard.unreadDefenceAlerts}
+        chatUnread={chatUnread}
         onRead={() => void refresh()}
         onHeight={setStatusBarHeight}
       />
@@ -5159,10 +5170,11 @@ function StrikesOutPanel({ dashboard }: { dashboard: Dashboard }) {
  * which is which decides whether half the buttons on the screen will work. Chrome that arrives
  * because the state calls for it, rather than standing there permanently in case.
  */
-function StatusBar({ dashboard, nextTurn, unread, onRead, onHeight }: {
+function StatusBar({ dashboard, nextTurn, unread, chatUnread, onRead, onHeight }: {
   dashboard: Dashboard
   nextTurn: string
   unread: number
+  chatUnread: number
   onRead: () => void
   onHeight: (height: number) => void
 }) {
@@ -5230,6 +5242,24 @@ function StatusBar({ dashboard, nextTurn, unread, onRead, onHeight }: {
           <strong>{dashboard.hideout.heatLabel}</strong>
         </span>
         <i className={`bi ms-auto text-body-tertiary ${open ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true" />
+      </button>
+      {/*
+        Chat's handle on a phone, beside the bell rather than docked along the bottom. The two things
+        that want you are then in one place, and the page below stops paying rent on a bar it was
+        padding itself around whether anybody had said anything or not.
+      */}
+      <button
+        className={`status-chat btn position-relative d-flex align-items-center px-3 ${chatUnread > 0 ? 'btn-outline-warning' : 'btn-outline-secondary'}`}
+        type="button"
+        title={chatUnread > 0 ? `${chatUnread} unread message${chatUnread === 1 ? '' : 's'}` : 'Chat'}
+        onClick={() => window.dispatchEvent(new CustomEvent('street-empire:chat'))}
+      >
+        <i className="bi bi-chat-dots fs-5" aria-hidden="true" />
+        <span className="visually-hidden">Chat</span>
+        {chatUnread > 0 && <b className="badge rounded-pill bg-danger">
+          {chatUnread > 99 ? '99+' : chatUnread}
+          <span className="visually-hidden"> unread</span>
+        </b>}
       </button>
       <AlertBell unread={unread} onRead={onRead} />
     </div>

@@ -4,7 +4,7 @@ import type { BlackjackAction, BlackjackBoard, BlackjackRound, CasinoBoard, Casi
   CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin,
   SlotWin } from '../api'
 import { money, number, signedMoney, wait } from '../format'
-import { AdminMetric, BUSY, Button, firstReason, type Blocked } from '../ui'
+import { AdminMetric, BUSY, Button, firstReason, useRouteTab, type Blocked } from '../ui'
 import type { PageContext } from '../pagecontext'
 
 /*
@@ -354,7 +354,16 @@ export function CasinoPage(ctx: PageContext) {
   const [anticipating, setAnticipating] = useState(false)
   const spinning = stoppedColumns < slotColumns
   const [compNote, setCompNote] = useState('')
-  const [game, setGame] = useState<CasinoGame>('slots')
+  /*
+    Which room you are in, in the address bar rather than in local state.
+
+    It was the one section strip in the game still held in useState, so it was also the one that
+    forgot itself on a reload - and it forgot itself onto slots, meaning a refresh at the blackjack
+    table put you in front of a machine. The casino is the page where reloading is most tempting: the
+    reels are the longest-running thing on screen and a stuck one is the obvious thing to try it on.
+    That is the complaint route.ts was written for, and this is the last strip that was not answering it.
+  */
+  const [game, setGame] = useRouteTab('casino', CASINO_TABS, 'slots')
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
@@ -906,7 +915,16 @@ function RouletteWheel({ order, red, rotation, turning }: {
   </div>
 }
 
-type CasinoGame = 'slots' | 'roulette' | 'blackjack'
+/*
+  The three rooms of the floor, in the order the strip lists them.
+
+  One list rather than a type beside a literal beside a lookup. It is the strip's order, the set the
+  address bar is allowed to name, and the union every one of those three is checked against - which
+  is the only arrangement where adding a fourth game cannot leave one of them behind.
+*/
+const CASINO_TABS = ['slots', 'roulette', 'blackjack'] as const
+
+type CasinoGame = typeof CASINO_TABS[number]
 
 const casinoGameNames: Record<CasinoGame, string> = {
   slots: 'Slots',
@@ -920,7 +938,7 @@ function CasinoGames({ game, onPick }: { game: CasinoGame, onPick: (game: Casino
   // width on the others. Same three words, two widths, depending on which one you had open. It
   // carries its own width now so the parent cannot decide it.
   return <div className="casino-games btn-group" role="group" aria-label="Casino games">
-    {(['slots', 'roulette', 'blackjack'] as const).map(key =>
+    {CASINO_TABS.map(key =>
       <button
         className={`btn ${game === key ? 'btn-primary' : 'btn-secondary'}`}
         type="button"

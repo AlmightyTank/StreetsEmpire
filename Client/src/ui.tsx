@@ -192,6 +192,60 @@ export function PrimaryAction({ blocked, onClick, className, children }: {
 }
 
 /**
+ * Whether this is a phone, for the handful of decisions CSS cannot make on its own.
+ *
+ * Same breakpoint as the stylesheet's md, written out because Sass's copy of it does not survive to
+ * runtime. Everything that can be answered in CSS still is - this is for the cases where the markup
+ * itself differs rather than its appearance.
+ */
+export function usePhone() {
+  const [phone, setPhone] = useState(() => window.matchMedia('(max-width: 767.98px)').matches)
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767.98px)')
+    const onChange = () => setPhone(query.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+  return phone
+}
+
+/**
+ * A panel that arrives shut on a phone.
+ *
+ * For the ones that are reference rather than something to do: eleven rows of readiness, a count of
+ * every pile in the store. On a desk they are worth having open, because there is a second column to
+ * put them in and nothing is displaced by them. On a phone they are a screen and a half of scrolling
+ * between the player and the next thing they can act on, answering a question nobody asked yet.
+ *
+ * Shut rather than gone: the heading stays, so the page still says what it holds, and one tap has it
+ * back. Above md there is no toggle at all - a control that is always in the same state is furniture.
+ */
+export function Fold({ title, sub, children }: { title: string, sub?: string, children: ReactNode }) {
+  const phone = usePhone()
+  const [open, setOpen] = useState(false)
+
+  return <section className="card p-3">
+    <div className="panel-title">
+      {phone
+        ? <h2>
+          <button
+            className="fold-toggle btn btn-link d-flex align-items-center gap-2 p-0 text-start"
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen(value => !value)}
+          >
+            {title}
+            <i className={`bi ${open ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true" />
+          </button>
+        </h2>
+        : <h2>{title}</h2>}
+      {sub && <span>{sub}</span>}
+    </div>
+    {(!phone || open) && children}
+  </section>
+}
+
+/**
  * One figure with its name over it. Small enough to have lived wherever it was first needed, shared
  * enough now that a page loaded on its own would otherwise have to bring the admin desk with it.
  */

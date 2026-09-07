@@ -414,6 +414,16 @@ input:focus-visible, textarea:focus-visible {
 // what puts the panel across the content width rather than under a button.
 .status-bar .alert-bell { position: static; }
 
+// A folded panel's heading is a control, and has to read as the heading it
+// replaced rather than as a link sitting where one used to be.
+.fold-toggle {
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+
+  &:hover { color: inherit; }
+}
+
 // The page's one verb, along the bottom of a phone.
 //
 // See PrimaryAction in ui.tsx for why it comes and goes rather than simply

@@ -10,7 +10,7 @@ import { clampText, compactDateTime, money, number, signedMoney, tightMoney, wai
 import { ActivityList, AdminMetric, betaKeyStatusClass, BUSY, Button, copyToClipboard,
   DismissibleMessage, firstReason, percent, StatusRow, updateCategories, updateCategoryClass,
   bannerClass, countdown, PlayerAvatar, PlayerName, ProfileBadgeStrip, profileAccentClass, secondsUntil, timeUntil, updateSeverities,
-  useSecondHand, SectionTabs, timeLeft, PrimaryAction, PrimaryActionProvider, type PrimaryAction as PrimaryActionShape,
+  useSecondHand, SectionTabs, timeLeft, PrimaryAction, PrimaryActionProvider, Fold, type PrimaryAction as PrimaryActionShape,
   updateSeverityClass, useRouteTab, useSecondsTicker, WORKING, type Blocked } from './ui'
 import { awayFromHideout, flowPage, flowTarget, goToFlow, pageMeta, primaryPages, spendable,
   type AppPage, type GoTo, type PageContext, type RefreshScope } from './pagecontext'
@@ -2191,9 +2191,23 @@ function SeasonPanel({ onPage }: { onPage: (page: AppPage) => void }) {
 function OverviewPage(ctx: PageContext) {
   const { dashboard, leaders, worldNews, totalCrew, weaponCoverage, managementCapacity, busy, act, setActivePage } = ctx
   return <div className="d-grid gtc-1 gtc-xl-split-108 gap-3 align-items-start">
+    {/*
+      What is happening to you, then what to do about it, then everything else.
+
+      The order used to be the order the panels were written in: strikes, a snapshot, the season
+      clock, and Next Moves fifth - which on a phone is four panels of scrolling to reach the one
+      panel on the page that answers the question the player opened the game with. The ladder was
+      seventh, on the page a new player sees first.
+
+      Both of those disappear once they have nothing to say - Next Moves when there is nothing worth
+      doing, the ladder when it is finished - so for a settled player this is the old order with the
+      two of them missing, and for everybody else it is the useful half first.
+    */}
     <div className="d-grid gap-3 align-items-start">
       <InboundStrikePanel dashboard={dashboard} />
       <StrikesOutPanel dashboard={dashboard} />
+      <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
+      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} />
       <section className="card p-3 hero-panel d-grid align-content-between">
         <span className="eyebrow">Empire Snapshot</span>
         <h2 className="fs-1 my-2 mb-3">{dashboard.name}</h2>
@@ -2212,16 +2226,13 @@ function OverviewPage(ctx: PageContext) {
       </section>
 
       <SeasonPanel onPage={setActivePage} />
-      <NextMovePanel dashboard={dashboard} onPage={setActivePage} />
       <UpdatesPanel updates={dashboard.updates.updates} unread={dashboard.updates.unreadCount} busy={busy} act={act} onPage={setActivePage} />
-      <OpeningLadderPanel dashboard={dashboard} onPage={setActivePage} />
 
       <TravelPanel markets={dashboard.cityMarkets} turns={dashboard.turns} travel={dashboard.travel} busy={busy} act={act} />
     </div>
 
     <div className="d-grid gap-3 align-items-start">
-      <section className="card p-3">
-        <div className="panel-title"><h2>Readiness</h2><span>Combat prep</span></div>
+      <Fold title="Readiness" sub="Combat prep">
         <StatusRow
           label="Hoe morale"
           value={`${dashboard.hoeHappiness.toFixed(0)}%`}
@@ -2246,13 +2257,12 @@ function OverviewPage(ctx: PageContext) {
           value={hourlyUpkeepLabel(dashboard)}
           warn={hourlyUpkeepWarn(dashboard)}
         />
-      </section>
+      </Fold>
 
       {/* Directly under readiness, because the last two readiness rows are counts of these same piles. */}
-      <section className="card p-3">
-        <div className="panel-title"><h2>Inventory</h2><span>On hand</span></div>
+      <Fold title="Inventory" sub="On hand">
         <MiniInventory dashboard={dashboard} />
-      </section>
+      </Fold>
 
       <section className="card p-3">
         <StandingsPanel dashboard={dashboard} leaders={leaders} cityLeaders={ctx.cityLeaders} limit={8} />

@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { adminApi, api, cheapestWeapon, configApi, discordStartUrl, opsApi, RequestError } from './api'
@@ -6,7 +6,7 @@ import { applyPreferences, loadPreferences, savePreferences, systemPrefersReduce
 import { onRouteChange, routePage, routeTab, writeRoute } from './route'
 import { profileBanners, type ProfileBanner } from './api'
 import type { ArrestBoard, PlayerSession, Account, AccountInviteKey, AuthProviders, DiscordOutcome, DiscordSignUpTicket, DiscordIntegrationSettings, DiscordCrewChannelSyncResult, DiscordRoleSyncResult, BlockedList, ChatBoard, ChatChannelKey, ChatConversation, ChatConversationList, Person, ActionResult, AdminAuditEntry, AdminBetaKey, Alert, AdminConfig, AdminConfigEntry, AdminCustomTitle, AdminCustomTitleDraft, CustomTitleCriteria, AdminGameAnnouncement, AdminGameAnnouncementDraft, AnnouncementDeliverySettings, AdminOverview, AdminBotHealth, AdminOversight, AdminPlayerDetail, AdminPlayerSummary, AllianceAssistCall, AllianceBoard, AllianceBrief, AllianceDoorKey, AllianceMember, AlliancePact, AlliancePower, AllianceRequest, AllianceSummary, AllianceTransfer, AttackMethod, AttackMethodKey, PrayerBoard, PlayerTitle, StreetDistrict, WeaponTier, WeaponTierKey, CombatLog, CombatMission, Dashboard, CrewReport, GameAnnouncement, GameUpdates, BreakableRoom, HideoutDamage, HideoutRepair, HideoutRoom, HideoutRoomUpgrade, LeaderboardEntry, LiveOps, Pimp, BotDirective, MoraleDirection, MoraleTrend, MarketBoard, MuleBoard, MuleQuote, TraderJobBoard, BlackjackAction, BlackjackBoard, BlackjackRound, CasinoBoard, CasinoMachine, CasinoTransaction, ClaimedComp, CompReward, RouletteBoard, RouletteSpin, RouletteStake, SlotSpin, SlotWin, PlayerProfile, PlayerTarget, TerritoryBoard, Season, SeasonArchiveEntry, SeasonStanding, SeasonTable, TravelStatus, WorldNews, WorldNewsEntry, CatchUp, CityMarket, PublicStats } from './api'
-import { clampText, compactDateTime, money, number, signedMoney, wait } from './format'
+import { clampText, compactDateTime, money, number, signedMoney, tightMoney, wait } from './format'
 import { ActivityList, AdminMetric, betaKeyStatusClass, BUSY, Button, copyToClipboard,
   DismissibleMessage, firstReason, percent, StatusRow, updateCategories, updateCategoryClass,
   bannerClass, countdown, PlayerAvatar, PlayerName, ProfileBadgeStrip, profileAccentClass, secondsUntil, timeUntil, updateSeverities,
@@ -1145,6 +1145,20 @@ function App() {
   */
   const [scrollRequest, setScrollRequest] = useState<{ area: string, id: number } | null>(null)
   const scrollRequests = useRef(0)
+
+  /*
+    How much of the top of the screen the status bar is holding, published for the section strip
+    underneath to pin itself by.
+
+    Measured and handed up rather than written into the stylesheet, for the reason the chat dock
+    measures itself: the bar is one line most of the time and two while the player is out of town, and
+    a number typed into the CSS would be wrong for one of those. On the root rather than in state
+    because the only thing that reads it is a stylesheet, and re-rendering the whole game to move one
+    sticky offset would be paying a great deal for a number CSS can hold on its own.
+  */
+  const setStatusBarHeight = useCallback((height: number) => {
+    document.documentElement.style.setProperty('--status-bar-height', `${height}px`)
+  }, [])
   const setActivePage: GoTo = (page, tab, area) => {
     setPage(page)
     writeRoute(page, tab)
@@ -1980,21 +1994,21 @@ function App() {
     </aside>
 
     <section className="app-main min-w-0 mx-auto">
-      <header className="command-header d-flex justify-content-between align-items-end gap-3 mb-3">
-        {/*
-          Below md this is clipped rather than removed. The bottom bar lights the page you are on and
-          writes its name under the icon, so the heading and its kicker are the same fact said twice,
-          three inches apart, on the screen with the least room to say anything twice.
+      {/*
+        Below md the whole of this is clipped away and the bell moves into the status bar, which
+        leaves the header a zero-height element carrying one heading.
 
-          Clipped and not display:none because it is still the page's only h1. A screen reader
-          announces it, the document keeps a heading outline, and nothing that reads structure rather
-          than pixels can tell the difference.
-        */}
+        Kept rather than removed, because that heading is the page's only h1. A screen reader
+        announces it, the document keeps a heading outline, and nothing that reads structure rather
+        than pixels can tell the difference - while the phone gets back a row that was saying the name
+        of the page three inches above a tab bar already lighting it.
+      */}
+      <header className="command-header d-flex justify-content-between align-items-end gap-3 mb-3">
         <div className="command-title min-w-0 flex-fill">
           <span className="eyebrow d-block text-truncate">{pageMeta[activePage].kicker}</span>
           <h1 className="mt-1 text-truncate">{pageMeta[activePage].label}</h1>
         </div>
-        <div className="d-flex align-items-stretch gap-2 flex-shrink-0">
+        <div className="command-aside d-none d-md-flex align-items-stretch gap-2 flex-shrink-0">
           <AlertBell unread={dashboard.unreadDefenceAlerts} onRead={() => void refresh()} />
           <div className="player-plate tnum d-grid justify-items-end gap-1 border rounded p-3">
             <strong className="text-primary">{dashboard.name}</strong>
@@ -2003,6 +2017,13 @@ function App() {
         </div>
       </header>
 
+      <StatusBar
+        dashboard={dashboard}
+        nextTurn={nextTurn}
+        unread={dashboard.unreadDefenceAlerts}
+        onRead={() => void refresh()}
+        onHeight={setStatusBarHeight}
+      />
       <StatusStrip dashboard={dashboard} nextTurn={nextTurn} />
       {contextualUpdate && <ContextualUpdateCallout update={contextualUpdate} onPage={setActivePage} />}
 
@@ -5120,8 +5141,131 @@ function StrikesOutPanel({ dashboard }: { dashboard: Dashboard }) {
   </section>
 }
 
+/**
+ * The eight figures on a phone, in one line of them.
+ *
+ * The strip was the largest thing on every page and it was never the page: four rows of tiles, near
+ * enough three hundred pixels, standing above the content whether or not the player was using any of
+ * it. But the numbers themselves are not the problem - three of them are, and the other five are
+ * reference. Cash, turns and heat are what every decision in this game is made against; bank, net
+ * worth, upkeep, rank and town are things you look up when you have a reason to.
+ *
+ * So: the three, pinned, and the other five one tap away. Pinned rather than merely small, because
+ * the version that scrolled away meant checking your turns was a scroll to the top and a scroll back
+ * - which is how a strip this size came to be justified in the first place.
+ *
+ * The town only appears when it disagrees with the hideout's. A player at home has one location and a
+ * bar that says so on every page is a bar that stops being read; a player who is away has two, and
+ * which is which decides whether half the buttons on the screen will work. Chrome that arrives
+ * because the state calls for it, rather than standing there permanently in case.
+ */
+function StatusBar({ dashboard, nextTurn, unread, onRead, onHeight }: {
+  dashboard: Dashboard
+  nextTurn: string
+  unread: number
+  onRead: () => void
+  onHeight: (height: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const bar = useRef<HTMLElement | null>(null)
+  const away = !dashboard.location.atHideout
+
+  /*
+    How far down the page starts, published for the section strip to pin itself under.
+
+    The whole bar rather than the row of figures inside it, because what the strip below has to clear
+    is the bar's outside edge - its padding and its border are as much in the way as its contents.
+
+    Two things change that height and only one of them counts. The away line is chrome the state put
+    there, so the strip must clear it. The eight figures are something the player opened, and a strip
+    that followed them would be pinned to the bottom of the screen. So this measures while the bar is
+    shut and holds that answer while it is open, which is the number the strip wants either way.
+  */
+  useEffect(() => {
+    const node = bar.current
+    if (!node || open) return
+    const publish = () => onHeight(Math.ceil(node.getBoundingClientRect().height))
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [onHeight, open])
+
+  // A panel the height of the screen, still pinned to the top of it, is not something to scroll a
+  // page behind. It closes the way any dropdown closes: move on, and it is gone.
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    window.addEventListener('scroll', close, { passive: true })
+    window.addEventListener('keydown', escape)
+    return () => {
+      window.removeEventListener('scroll', close)
+      window.removeEventListener('keydown', escape)
+    }
+  }, [open])
+
+  return <section className={`status-bar tnum d-grid d-md-none ${open ? 'open' : ''}`} data-area="status" ref={bar}>
+    <div className="status-summary d-flex align-items-center gap-2">
+      <button
+        className="status-figures btn btn-link d-flex align-items-center gap-3 min-w-0 flex-fill text-start p-0"
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(value => !value)}
+      >
+        <span className="d-inline-flex align-items-center gap-1 text-body">
+          <i className="bi bi-cash-stack text-body-tertiary" aria-hidden="true" />
+          <span className="visually-hidden">Cash </span>
+          <strong>{tightMoney(dashboard.cash)}</strong>
+        </span>
+        <span className="d-inline-flex align-items-baseline gap-1 min-w-0 text-body">
+          <i className="bi bi-hourglass-split text-body-tertiary" aria-hidden="true" />
+          <span className="visually-hidden">Turns </span>
+          <strong>{dashboard.turns}<span className="text-body-tertiary">/{dashboard.maxTurns}</span></strong>
+          <small className="status-tick text-body-tertiary text-truncate">{nextTurn === 'MAX' ? 'full' : nextTurn}</small>
+        </span>
+        <span className={`status-heat d-inline-flex align-items-center gap-1 ${heatTone(dashboard.hideout.heatLabel)}`}>
+          <i className="bi bi-thermometer-half" aria-hidden="true" />
+          <span className="visually-hidden">Heat </span>
+          <strong>{dashboard.hideout.heatLabel}</strong>
+        </span>
+        <i className={`bi ms-auto text-body-tertiary ${open ? 'bi-chevron-up' : 'bi-chevron-down'}`} aria-hidden="true" />
+      </button>
+      <AlertBell unread={unread} onRead={onRead} />
+    </div>
+
+    {/* Load-bearing enough to be worth a line of its own, and only while it is true. */}
+    {away && <p className="status-away d-flex align-items-center gap-1 text-warning mb-0">
+      <i className="bi bi-suitcase-lg" aria-hidden="true" />
+      You are in {dashboard.city}. Your crew, storage and safe are in {dashboard.location.hideoutCity}.
+    </p>}
+
+    {open && <div className="status-open d-grid gap-2">
+      <StatusTiles dashboard={dashboard} nextTurn={nextTurn} />
+    </div>}
+  </section>
+}
+
+/** Which of the four bands the law has you in, said in colour as well as in a word. */
+function heatTone(label: string) {
+  return label === 'Hunted'
+    ? 'text-danger'
+    : label === 'Watched'
+      ? 'text-warning'
+      : label === 'Noticed'
+        ? 'text-body'
+        : 'text-body-secondary'
+}
+
 function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
-  return <section className="status-strip tnum d-grid gap-2 mb-3" data-area="status">
+  return <section className="status-strip tnum d-none d-md-grid gap-2 mb-3" data-area="status-tiles">
+    <StatusTiles dashboard={dashboard} nextTurn={nextTurn} />
+  </section>
+}
+
+/** The eight themselves, drawn the same whether a desktop is showing them or a phone has opened them. */
+function StatusTiles({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: string }) {
+  return <>
     <Stat label="Cash" value={money.format(dashboard.cash)} />
     <Stat label="Bank" value={money.format(dashboard.bankCash)} />
     <Stat label="Net Worth" value={money.format(dashboard.netWorth)} />
@@ -5153,7 +5297,7 @@ function StatusStrip({ dashboard, nextTurn }: { dashboard: Dashboard, nextTurn: 
         ? undefined
         : `Your crew, your storage and your safe are in ${dashboard.location.hideoutCity}. Only what you are carrying is here.`}
     />
-  </section>
+  </>
 }
 
 function hourlyUpkeepLabel(dashboard: Dashboard) {

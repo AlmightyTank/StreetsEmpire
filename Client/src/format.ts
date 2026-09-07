@@ -11,6 +11,26 @@ export const money = new Intl.NumberFormat('en-US', { style: 'currency', currenc
 
 export const number = new Intl.NumberFormat('en-US')
 
+/**
+ * Money in the width a phone's status bar has for it.
+ *
+ * Exact for as long as the figure still fits, and shortened only once it does not: an empire worth
+ * twelve million reads perfectly well as $12.9M, and the two digits lost are two nobody was reading.
+ * A hundred thousand is the line because below it the exact number is still being spent - supplies
+ * are bought in hundreds, and "$1.2K" is a worse answer than "$1,240" to somebody deciding whether
+ * they can afford a shift.
+ */
+const compactMoney = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+export function tightMoney(value: number) {
+  return Math.abs(value) < 100_000 ? money.format(value) : compactMoney.format(value)
+}
+
 /** A delta, where the sign is the point: what a move cost you or paid you. */
 export function signedMoney(value: number) {
   return `${value >= 0 ? '+' : '-'}${money.format(Math.abs(value))}`
